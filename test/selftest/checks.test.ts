@@ -20,7 +20,7 @@ function tinyPng(w: number, h: number): Buffer {
 
 type Handler = (args: Record<string, unknown>) => ToolResult | undefined;
 
-/** A well-behaved browser-hub: everything works and every safety rule holds. `over` replaces single tools. */
+/** A well-behaved Stephen: everything works and every safety rule holds. `over` replaces single tools. */
 function fakeHub(over: Record<string, Handler> = {}) {
   const hits: string[] = [];
   const submissions: string[] = [];

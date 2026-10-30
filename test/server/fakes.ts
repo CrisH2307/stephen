@@ -132,7 +132,7 @@ export class FakeManager implements IBrowserManager {
   current = new Map<BrowserName, string>();
   connectCalls: [BrowserName, ProfileMode | undefined][] = [];
   shutdownCalls = 0;
-  /** Tabs opened through openTab (browser-hub's own); everything else counts as the user's. */
+  /** Tabs opened through openTab (Stephen's own); everything else counts as the user's. */
   opened = new Set<string>();
   closeCalls: string[] = [];
   private seq: Record<BrowserName, number> = { chrome: 0, zen: 0 };
@@ -319,7 +319,7 @@ export class FakeGate implements ISafetyGate {
     this.evaluations.push(req);
     const url = req.kind === 'navigate' || req.kind === 'tab_open' ? (req.targetUrl ?? '') : req.pageUrl;
     if (this.blockedHosts.has(hostOf(url))) {
-      return { verdict: 'deny', risk: 'high', rules: ['blocked-url'], reason: `${hostOf(url)} is on browser-hub's blocked list.` };
+      return { verdict: 'deny', risk: 'high', rules: ['blocked-url'], reason: `${hostOf(url)} is on Stephen's blocked list.` };
     }
     return allow().decision;
   }
@@ -385,7 +385,7 @@ export interface SetupOptions {
 
 export async function setup(opts: SetupOptions = {}) {
   const tmp = mkdtempSync(join(tmpdir(), 'bh-server-'));
-  const cfg = loadConfig(opts.overrides, { HOME: tmp, BROWSER_HUB_HOME: join(tmp, 'hub') });
+  const cfg = loadConfig(opts.overrides, { HOME: tmp, STEPHEN_HOME: join(tmp, 'hub') });
   const manager = new FakeManager();
   const page = manager.addPage('z1', new FakePage('https://mail.example.com/inbox', 'Inbox – Mail'));
   const engine = makeEngine(opts.elements);

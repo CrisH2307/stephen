@@ -123,7 +123,7 @@ describe('secret-field', () => {
     expect(d.verdict).toBe('deny');
     expect(d.rules).toContain('secret-field');
     expect(d.reason).toBe(
-      'That field holds a password/one-time code/payment detail. browser-hub never types these — ask the user to enter it themselves.',
+      'That field holds a password/one-time code/payment detail. Stephen never types these — ask the user to enter it themselves.',
     );
   });
   it('fill_form (type) into a card-number field in a Stripe frame is denied', () => {

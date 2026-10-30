@@ -73,7 +73,7 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
   let profile: string;
   let http: Server;
   let url: string;
-  const env = () => ({ BROWSER_HUB_HOME: home });
+  const env = () => ({ STEPHEN_HOME: home });
   const statePath = () => join(home, 'state', 'zen.json');
 
   async function startServe(): Promise<{ client: Client; call: (n: string, a?: Record<string, unknown>) => Promise<ToolResult>; transport: StdioClientTransport }> {
@@ -120,14 +120,14 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
     rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
-  it('never launches Zen itself; zen-launch makes the user\'s Zen Claude-ready; serve attaches to it and leaves it running', async () => {
+  it('never launches Zen itself; zen-launch makes the user\'s Zen Stephen-ready; serve attaches to it and leaves it running', async () => {
     const srv = await startServe();
     try {
       // 1) Default config, no Zen: status says attach-only, and a Zen tool explains what to do — nothing spawned.
       expect(text(await srv.call('browser_status'))).toContain('Zen: attach-only (uses your open Zen; never launches one)');
       const none = await srv.call('tabs_list', { browser: 'zen' });
       expect(none.isError).toBe(true);
-      expect(text(none)).toMatch(/NEEDS_USER: Zen isn't open\. Open Zen with the 'Zen for Claude' app/);
+      expect(text(none)).toMatch(/NEEDS_USER: Zen isn't open\. Open Zen with the 'Zen for Stephen' app/);
       const agent = await srv.call('browser_connect', { browser: 'zen', mode: 'agent' });
       expect(text(agent)).toMatch(/DENIED.*attach-only/s);
       expect(pids(fakeZen)).toEqual([]);
@@ -151,7 +151,7 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
       // Running it again just reports the ready Zen (exit 0) — no second browser.
       const again = await runCli(['zen-launch'], env());
       expect(again.code, again.stderr).toBe(0);
-      expect(again.stdout).toContain(`✓ Zen is already running with Claude access (pid ${result.pid}).`);
+      expect(again.stdout).toContain(`✓ Zen is already running with Stephen access (pid ${result.pid}).`);
 
       // 3) The user opens a tab themselves (their own connection, then gone).
       const port = (await readDevToolsActivePort(profile))!;
@@ -205,8 +205,8 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
     }
   }, 240_000);
 
-  it('a Zen opened normally (no Claude access): zen-launch exits 2, serve says to reopen it with the app; nothing is quit or spawned', async () => {
-    // Stop the Claude-ready one from the previous test (test cleanup only — browser-hub itself never kills Zen).
+  it('a Zen opened normally (no Stephen access): zen-launch exits 2, serve says to reopen it with the app; nothing is quit or spawned', async () => {
+    // Stop the Stephen-ready one from the previous test (test cleanup only — Stephen itself never kills Zen).
     try {
       execFileSync('pkill', ['-TERM', '-f', fakeZen], { stdio: 'ignore' });
     } catch {
@@ -221,7 +221,7 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
 
     const r = await runCli(['zen-launch'], env());
     expect(r.code).toBe(2);
-    expect(r.stderr).toMatch(/^! Zen is open without Claude access\. .*--quit-running/);
+    expect(r.stderr).toMatch(/^! Zen is open without Stephen access\. .*--quit-running/);
     expect(r.stdout).toBe('');
     const json = await runCli(['zen-launch', '--json'], env());
     expect(json.code).toBe(2);
@@ -231,7 +231,7 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
     try {
       const res = await srv.call('tab_open', { browser: 'zen', intent: 'open the song' });
       expect(res.isError).toBe(true);
-      expect(text(res)).toMatch(/NEEDS_USER: Zen is open, but it wasn't started with Claude access\. Quit Zen \(⌘Q\) and reopen it with the 'Zen for Claude' app/);
+      expect(text(res)).toMatch(/NEEDS_USER: Zen is open, but it wasn't started with Stephen access\. Quit Zen \(⌘Q\) and reopen it with the 'Zen for Stephen' app/);
     } finally {
       await srv.client.close();
     }
@@ -244,7 +244,7 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
   it('install-zen-launcher --dry-run prints the AppleScript with the real node and cli paths', async () => {
     const r = await runCli(['install-zen-launcher', '--dry-run'], { ...env(), HOME: join(home, 'user home') });
     expect(r.code, r.stderr).toBe(0);
-    expect(r.stdout).toContain(`App:     ${join(home, 'user home', 'Applications', 'Zen for Claude.app')}`);
+    expect(r.stdout).toContain(`App:     ${join(home, 'user home', 'Applications', 'Zen for Stephen.app')}`);
     expect(r.stdout).toContain(`set nodePath to ${JSON.stringify(process.execPath)}`);
     expect(r.stdout).toContain(`set cliPath to ${JSON.stringify(CLI)}`);
     expect(existsSync(join(home, 'user home'))).toBe(false);

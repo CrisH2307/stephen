@@ -76,7 +76,7 @@ describe('#5 browser_connect cannot escalate to the real profile', () => {
     expect(h.manager.connectCalls).toEqual([]);
     expect(h.confirmer.prompts).toHaveLength(1);
     expect(h.confirmer.prompts[0]!.title).toMatch(/REAL profile/);
-    expect(h.confirmer.prompts[0]!.body).toContain('Claude says: use my logins');
+    expect(h.confirmer.prompts[0]!.body).toContain('Claude says (unverified): use my logins');
 
     h.confirmer.answer = 'approved';
     const ok = await h.call('browser_connect', { browser: 'zen', mode: 'real' });
@@ -512,7 +512,7 @@ describe('R1 page-controlled strings are always inside untrusted blocks', () => 
 
   it('review #2 N1: recent_actions never returns earlier sessions, nor labels/intents of private sites unread this session', async () => {
     const h = await setup();
-    // An entry from a previous browser-hub session (the audit log outlives the server).
+    // An entry from a previous Stephen session (the audit log outlives the server).
     await h.audit.append({
       ts: '2020-01-01T00:00:00.000Z',
       tool: 'click',

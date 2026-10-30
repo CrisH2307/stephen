@@ -1,5 +1,5 @@
 /**
- * `browser-hub zen-launch` and `install-zen-launcher` against fakes: exit codes, never killing Zen
+ * `stephen zen-launch` and `install-zen-launcher` against fakes: exit codes, never killing Zen
  * (quit only via AppleScript), the state written for `serve`, and the launcher AppleScript with
  * paths containing spaces and quotes.
  */
@@ -18,12 +18,15 @@ import {
   ZEN_RUNNING_NORMALLY_LEAD,
   type ZenLaunchDeps,
   buildLauncherAppleScript,
+  findLegacyZenLauncher,
   formatZenLaunch,
   installZenLauncher,
+  legacyZenLauncherAppPath,
   parseZenLaunchArgs,
   planZenLauncher,
   runZenLaunch,
   shellQuote,
+  zenLauncherAppPath,
 } from '../../src/zen-launcher.js';
 import { FakeBrowser, type TestConfig, makeTestConfig } from './helpers.js';
 
@@ -160,10 +163,10 @@ describe('zen-launch', () => {
     expect(h.children[0]!.killed).toBe(false);
     expect(killSpy).not.toHaveBeenCalled();
     expect(h.runs).toEqual([]); // no osascript, no open
-    expect(formatZenLaunch(r)).toMatch(/^✓ Started Zen with Claude access \(pid 7001\)\./);
+    expect(formatZenLaunch(r)).toMatch(/^✓ Started Zen with Stephen access \(pid 7001\)\./);
   });
 
-  it('a Claude-ready Zen is already running: brings it to the front (open -a Zen.app) and exits 0 without launching', async () => {
+  it('a Stephen-ready Zen is already running: brings it to the front (open -a Zen.app) and exits 0 without launching', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const app = fakeZenApp(tc.home);
     tc.cfg.zen.executablePath = join(app, 'Contents', 'MacOS', 'zen');
@@ -187,7 +190,7 @@ describe('zen-launch', () => {
     expect(r.message).toMatch(/--quit-running/);
     expect(h.runs).toEqual([]);
     expect(h.launches).toBe(0);
-    expect(formatZenLaunch(r)).toMatch(/^! Zen is open without Claude access\./);
+    expect(formatZenLaunch(r)).toMatch(/^! Zen is open without Stephen access\./);
   });
 
   it('--quit-running: asks Zen to quit with osascript (bundle id from Info.plist), waits for it to exit, then launches — never kill', async () => {
@@ -266,7 +269,7 @@ describe('zen-launch', () => {
   });
 
   it('the driver error text and zen-launch agree on how to recover', () => {
-    expect(ZEN_NOT_CLAUDE_READY_MESSAGE).toMatch(/Zen for Claude.*browser-hub zen-launch/);
+    expect(ZEN_NOT_CLAUDE_READY_MESSAGE).toMatch(/Zen for Stephen.*stephen zen-launch/);
   });
 });
 
@@ -294,7 +297,7 @@ describe('install-zen-launcher', () => {
     // exit 2 + "open normally" → the Reopen dialog; other failures show zen-launch's message
     expect(script).toContain(`if errNum is 2 and errMsg contains ${appleScriptString(ZEN_RUNNING_NORMALLY_LEAD)} then`);
     expect(script).toContain(
-      'display dialog "Zen is open without Claude access. Quit and reopen it for Claude? Your tabs come back if Zen restores your previous session." with title "Zen for Claude" buttons {"Cancel", "Reopen"} default button "Reopen" cancel button "Cancel"',
+      'display dialog "Zen is open without Stephen access. Quit and reopen it for Stephen? Your tabs come back if Zen restores your previous session." with title "Zen for Stephen" buttons {"Cancel", "Reopen"} default button "Reopen" cancel button "Cancel"',
     );
     expect(script).toContain('my showError(errMsg)');
     expect(script).not.toMatch(/\bproperty\b/); // applets would write properties back into themselves
@@ -305,7 +308,7 @@ describe('install-zen-launcher', () => {
     tc = makeTestConfig();
     const app = fakeZenApp(tc.home);
     tc.cfg.zen.executablePath = join(app, 'Contents', 'MacOS', 'zen');
-    const appPath = join(tc.home, 'Applications', 'Zen for Claude.app');
+    const appPath = join(tc.home, 'Applications', 'Zen for Stephen.app');
     const plan = await planZenLauncher(tc.cfg, { nodePath: NODE, cliPath: CLI, appPath });
     expect(plan.iconPath).toBe(join(app, 'Contents', 'Resources', 'firefox.icns'));
     const lines: string[] = [];
@@ -339,7 +342,7 @@ describe('install-zen-launcher', () => {
     const cli = join(tc.home, 'dist dir', 'cli.js');
     mkdirSync(join(cli, '..'), { recursive: true });
     writeFileSync(cli, '');
-    const appPath = join(tc.home, 'Applications', 'Zen for Claude.app');
+    const appPath = join(tc.home, 'Applications', 'Zen for Stephen.app');
     const plan = await planZenLauncher(tc.cfg, { nodePath: NODE, cliPath: cli, appPath });
     const runs: { cmd: string; args: string[] }[] = [];
     let compiled = '';
@@ -365,12 +368,12 @@ describe('install-zen-launcher', () => {
     expect(runs[1]!.args).toEqual(['--force', '--sign', '-', appPath]);
     // re-install replaces it
     expect(await installZenLauncher(plan, {}, deps)).toBe(0);
-    // an app with that name that browser-hub did not make is left alone
+    // an app with that name that Stephen did not make is left alone
     const foreign = join(tc.home, 'Applications', 'Other.app');
     mkdirSync(foreign, { recursive: true });
     const lines: string[] = [];
     expect(await installZenLauncher({ ...plan, appPath: foreign }, {}, { ...deps, log: (l) => lines.push(l) })).toBe(1);
-    expect(lines.join('\n')).toMatch(/not made by browser-hub/);
+    expect(lines.join('\n')).toMatch(/not made by Stephen/);
     expect(existsSync(foreign)).toBe(true);
   });
 
@@ -380,5 +383,50 @@ describe('install-zen-launcher', () => {
     const lines: string[] = [];
     expect(await installZenLauncher(plan, {}, { run: async () => ({ code: 0, stdout: '', stderr: '' }), platform: 'darwin', exists: async (p) => existsSync(p), log: (l) => lines.push(l) })).toBe(1);
     expect(lines.join('\n')).toMatch(/npm run build/);
+  });
+});
+
+describe('launcher rename: "Zen for Stephen", old "Zen for Claude"', () => {
+  it('the launcher is ~/Applications/Zen for Stephen.app; the old one was ~/Applications/Zen for Claude.app', () => {
+    expect(zenLauncherAppPath('/Users/jo')).toBe('/Users/jo/Applications/Zen for Stephen.app');
+    expect(legacyZenLauncherAppPath('/Users/jo')).toBe('/Users/jo/Applications/Zen for Claude.app');
+  });
+
+  it('doctor finds the old app only when browser-hub made it (its marker is inside)', () => {
+    tc = makeTestConfig();
+    expect(findLegacyZenLauncher(tc.home)).toBeNull();
+    const old = join(tc.home, 'Applications', 'Zen for Claude.app');
+    mkdirSync(join(old, 'Contents', 'Resources'), { recursive: true });
+    expect(findLegacyZenLauncher(tc.home)).toBeNull(); // same name, not ours: never suggest deleting it
+    writeFileSync(join(old, 'Contents', 'Resources', 'browser-hub-zen-launcher'), 'Created by browser-hub install-zen-launcher.\n');
+    expect(findLegacyZenLauncher(tc.home)).toBe(old);
+  });
+
+  it('install-zen-launcher builds the new app and leaves the old one alone (the user deletes it)', async () => {
+    tc = makeTestConfig();
+    const old = join(tc.home, 'Applications', 'Zen for Claude.app');
+    mkdirSync(join(old, 'Contents', 'Resources'), { recursive: true });
+    writeFileSync(join(old, 'Contents', 'Resources', 'browser-hub-zen-launcher'), '');
+    const cli = join(tc.home, 'cli.js');
+    writeFileSync(cli, '');
+    const appPath = zenLauncherAppPath(tc.home);
+    const plan = await planZenLauncher(tc.cfg, { nodePath: '/usr/bin/node', cliPath: cli, appPath });
+    const lines: string[] = [];
+    const deps: InstallLauncherDeps = {
+      platform: 'darwin',
+      exists: async (p) => existsSync(p),
+      log: (l) => lines.push(l),
+      run: async (cmd, args) => {
+        if (cmd === '/usr/bin/osacompile') mkdirSync(join(args[1]!, 'Contents', 'Resources'), { recursive: true });
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    expect(await installZenLauncher(plan, {}, deps)).toBe(0);
+    expect(existsSync(join(appPath, 'Contents', 'Resources', 'stephen-zen-launcher'))).toBe(true);
+    expect(existsSync(old)).toBe(true);
+    expect(lines.join('\n')).toContain('drag "Zen for Stephen" to your Dock');
+    expect(plan.script).toContain('-- Zen for Stephen: opens Zen with Stephen access.');
+    expect(plan.script).toContain('with title "Zen for Stephen"');
+    expect(plan.script).not.toMatch(/Claude|browser-hub/);
   });
 });

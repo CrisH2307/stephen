@@ -8,14 +8,14 @@
  * forwards each WebSocket connection to Chromium's DevTools endpoint, rewriting the request path
  * `/session` → `/devtools/browser/<id>`. Puppeteer's `connect({protocol: 'webDriverBiDi'})` first tries
  * pure BiDi (`session.status`) and falls back to BiDi-over-CDP on that socket, so the session is real
- * WebDriver BiDi as far as browser-hub is concerned (Chromium allows several sessions, unlike Gecko).
+ * WebDriver BiDi as far as Stephen is concerned (Chromium allows several sessions, unlike Gecko).
  * It prints the listening line on stderr exactly like Gecko, and exits when Chromium exits.
  */
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const SCRIPT = (chromium: string) => `#!${process.execPath}
-// fake zen for browser-hub tests (generated)
+// fake zen for Stephen tests (generated)
 const { spawn } = require('node:child_process');
 const { readFileSync } = require('node:fs');
 const net = require('node:net');

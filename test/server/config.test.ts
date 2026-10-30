@@ -1,8 +1,16 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ZEN_EXECUTABLE_CANDIDATES, configFilePath, detectZenExecutable, expandPath, loadConfig } from '../../src/config.js';
+import {
+  ZEN_EXECUTABLE_CANDIDATES,
+  configFilePath,
+  detectZenExecutable,
+  expandPath,
+  legacyHomeNotice,
+  loadConfig,
+  resolveStephenHome,
+} from '../../src/config.js';
 import { HubError } from '../../src/errors.js';
 
 let HOME: string;
@@ -30,7 +38,7 @@ function expectInvalid(fn: () => unknown, ...fragments: string[]) {
 describe('loadConfig', () => {
   it('applies defaults with every path absolute (no config file)', () => {
     const cfg = loadConfig(undefined, { HOME });
-    const home = join(HOME, '.browser-hub');
+    const home = join(HOME, '.stephen');
     expect(cfg).toEqual({
       home,
       defaultBrowser: 'zen',
@@ -42,7 +50,7 @@ describe('loadConfig', () => {
         extraArgs: [],
       },
       zen: {
-        // attach-only real mode: use the Zen the user opened for Claude, never launch one
+        // attach-only real mode: use the Zen the user opened for Stephen, never launch one
         mode: 'real',
         launch: 'never',
         executablePath: expect.stringMatching(/^\/Applications\/Zen.*\.app\/Contents\/MacOS\/zen$/),
@@ -64,10 +72,12 @@ describe('loadConfig', () => {
       output: { maxSnapshotChars: 20000, maxTextChars: 20000, saveDir: join(home, 'output') },
       auditLogPath: join(home, 'audit.log'),
       stateDir: join(home, 'state'),
+      desktop: {},
+      voice: {},
     });
   });
 
-  it('BROWSER_HUB_HOME moves home and the config file; file values merge over defaults', () => {
+  it('STEPHEN_HOME moves home and the config file; file values merge over defaults', () => {
     const hub = join(HOME, 'custom-hub');
     writeJson(join(hub, 'config.json'), {
       defaultBrowser: 'chrome',
@@ -75,7 +85,7 @@ describe('loadConfig', () => {
       safety: { blockedDomains: ['evil.example'], maxActionsPerMinute: 10 },
       output: { saveDir: 'dumps' },
     });
-    const cfg = loadConfig(undefined, { HOME, BROWSER_HUB_HOME: hub });
+    const cfg = loadConfig(undefined, { HOME, STEPHEN_HOME: hub });
     expect(cfg.home).toBe(hub);
     expect(cfg.defaultBrowser).toBe('chrome');
     expect(cfg.chrome.mode).toBe('agent');
@@ -87,9 +97,9 @@ describe('loadConfig', () => {
     expect(cfg.auditLogPath).toBe(join(hub, 'audit.log'));
   });
 
-  it('overrides beat the file; BROWSER_HUB_CONFIG with ~ points at another file', () => {
+  it('overrides beat the file; STEPHEN_CONFIG with ~ points at another file', () => {
     writeJson(join(HOME, 'cfgs/bh.json'), { zen: { mode: 'real', profilePath: '~/zen-profile' }, safety: { allowEvaluate: true } });
-    const env = { HOME, BROWSER_HUB_CONFIG: '~/cfgs/bh.json' };
+    const env = { HOME, STEPHEN_CONFIG: '~/cfgs/bh.json' };
     expect(configFilePath(env)).toBe(join(HOME, 'cfgs/bh.json'));
     const cfg = loadConfig({ safety: { allowEvaluate: false, sensitiveDomains: ['x.test'] }, chrome: { extraArgs: ['--headless'] } }, env);
     expect(cfg.zen.mode).toBe('real');
@@ -142,24 +152,24 @@ describe('loadConfig', () => {
     expect(loadConfig({ zen: { mode: 'real' } }, { HOME }).zen.launch).toBe('never');
     expect(loadConfig({ zen: { mode: 'agent', launch: 'never' } }, { HOME }).zen.launch).toBe('never');
     // null = default
-    writeJson(join(HOME, '.browser-hub/config.json'), { zen: { mode: null, launch: null } });
+    writeJson(join(HOME, '.stephen/config.json'), { zen: { mode: null, launch: null } });
     expect(loadConfig(undefined, { HOME }).zen.launch).toBe('never');
     expectInvalid(() => loadConfig({ zen: { launch: 'always' as never } }, { HOME }), '"zen.launch"');
   });
 
   it('a missing or empty file is fine', () => {
-    writeJson(join(HOME, '.browser-hub/config.json'), '  \n');
+    writeJson(join(HOME, '.stephen/config.json'), '  \n');
     expect(loadConfig(undefined, { HOME }).defaultBrowser).toBe('zen');
   });
 
   it('invalid JSON names the file', () => {
-    const path = join(HOME, '.browser-hub/config.json');
+    const path = join(HOME, '.stephen/config.json');
     writeJson(path, '{ "chrome": { "mode": "real", } ');
     expectInvalid(() => loadConfig(undefined, { HOME }), path, 'not valid JSON');
   });
 
   it('invalid values name the key', () => {
-    writeJson(join(HOME, '.browser-hub/config.json'), { safety: { maxActionsPerMinute: 0 } });
+    writeJson(join(HOME, '.stephen/config.json'), { safety: { maxActionsPerMinute: 0 } });
     expectInvalid(() => loadConfig(undefined, { HOME }), '"safety.maxActionsPerMinute"');
     expectInvalid(() => loadConfig({ chrome: { mode: 'sometimes' as never } }, { HOME: join(HOME, 'x') }), '"chrome.mode"', 'overrides');
     expectInvalid(() => loadConfig({ defaultBrowser: 'safari' as never }, { HOME: join(HOME, 'x') }), '"defaultBrowser"');
@@ -168,13 +178,80 @@ describe('loadConfig', () => {
   });
 
   it('unknown keys are reported (catches typos)', () => {
-    writeJson(join(HOME, '.browser-hub/config.json'), { safety: { allowEval: true }, chorme: {} });
+    writeJson(join(HOME, '.stephen/config.json'), { safety: { allowEval: true }, chorme: {} });
     expectInvalid(() => loadConfig(undefined, { HOME }), '"safety.allowEval"', '"chorme"');
   });
 
   it('a non-object config is rejected', () => {
-    writeJson(join(HOME, '.browser-hub/config.json'), '[1,2]');
+    writeJson(join(HOME, '.stephen/config.json'), '[1,2]');
     expectInvalid(() => loadConfig(undefined, { HOME }), 'Invalid config');
+  });
+});
+
+describe('home folder: ~/.stephen, env fallbacks, legacy ~/.browser-hub', () => {
+  const mk = (...p: string[]) => mkdirSync(join(HOME, ...p), { recursive: true });
+
+  it('no folder yet → ~/.stephen (not legacy); audit log, state and output live under it', () => {
+    expect(resolveStephenHome({ HOME })).toEqual({ dir: join(HOME, '.stephen'), source: 'default', legacy: false });
+    const cfg = loadConfig(undefined, { HOME });
+    expect(cfg.home).toBe(join(HOME, '.stephen'));
+    expect(cfg.auditLogPath).toBe(join(HOME, '.stephen', 'audit.log'));
+    expect(cfg.stateDir).toBe(join(HOME, '.stephen', 'state'));
+    expect(configFilePath({ HOME })).toBe(join(HOME, '.stephen', 'config.json'));
+    expect(existsSync(join(HOME, '.stephen'))).toBe(false); // resolving never creates anything
+  });
+
+  it('only ~/.browser-hub exists → keeps using it (legacy), reads its config.json, and moves nothing', () => {
+    writeJson(join(HOME, '.browser-hub/config.json'), { defaultBrowser: 'chrome' });
+    mk('.browser-hub', 'state');
+    expect(resolveStephenHome({ HOME })).toEqual({ dir: join(HOME, '.browser-hub'), source: 'legacy', legacy: true });
+    const cfg = loadConfig(undefined, { HOME });
+    expect(cfg.home).toBe(join(HOME, '.browser-hub'));
+    expect(cfg.defaultBrowser).toBe('chrome');
+    expect(cfg.auditLogPath).toBe(join(HOME, '.browser-hub', 'audit.log'));
+    expect(cfg.stateDir).toBe(join(HOME, '.browser-hub', 'state'));
+    expect(cfg.zen.agentProfileDir).toBe(join(HOME, '.browser-hub', 'profiles', 'zen'));
+    expect(configFilePath({ HOME })).toBe(join(HOME, '.browser-hub', 'config.json'));
+    // not moved, not copied, no ~/.stephen created
+    expect(existsSync(join(HOME, '.stephen'))).toBe(false);
+    expect(readdirSync(join(HOME, '.browser-hub')).sort()).toEqual(['config.json', 'state']);
+  });
+
+  it('both exist → ~/.stephen wins (the legacy folder is ignored)', () => {
+    writeJson(join(HOME, '.browser-hub/config.json'), { defaultBrowser: 'chrome' });
+    mk('.stephen');
+    expect(resolveStephenHome({ HOME })).toEqual({ dir: join(HOME, '.stephen'), source: 'default', legacy: false });
+    const cfg = loadConfig(undefined, { HOME });
+    expect(cfg.home).toBe(join(HOME, '.stephen'));
+    expect(cfg.defaultBrowser).toBe('zen'); // ~/.browser-hub/config.json is not read
+  });
+
+  it('STEPHEN_HOME beats BROWSER_HUB_HOME; BROWSER_HUB_HOME is still honoured on its own; blank values are ignored', () => {
+    mk('.browser-hub'); // an env var always wins over the legacy folder
+    expect(resolveStephenHome({ HOME, STEPHEN_HOME: '~/s', BROWSER_HUB_HOME: '~/b' })).toEqual({ dir: join(HOME, 's'), source: 'STEPHEN_HOME', legacy: false });
+    expect(resolveStephenHome({ HOME, BROWSER_HUB_HOME: '~/b' })).toEqual({ dir: join(HOME, 'b'), source: 'BROWSER_HUB_HOME', legacy: false });
+    expect(resolveStephenHome({ HOME, STEPHEN_HOME: '  ', BROWSER_HUB_HOME: '~/b' }).dir).toBe(join(HOME, 'b'));
+    expect(loadConfig(undefined, { HOME, BROWSER_HUB_HOME: join(HOME, 'b') }).auditLogPath).toBe(join(HOME, 'b', 'audit.log'));
+    expect(loadConfig(undefined, { HOME, STEPHEN_HOME: join(HOME, 's'), BROWSER_HUB_HOME: join(HOME, 'b') }).home).toBe(join(HOME, 's'));
+  });
+
+  it('STEPHEN_CONFIG beats BROWSER_HUB_CONFIG; BROWSER_HUB_CONFIG is still honoured on its own', () => {
+    writeJson(join(HOME, 'new.json'), { defaultBrowser: 'chrome' });
+    writeJson(join(HOME, 'old.json'), { safety: { allowEvaluate: true } });
+    const both = { HOME, STEPHEN_CONFIG: '~/new.json', BROWSER_HUB_CONFIG: '~/old.json' };
+    expect(configFilePath(both)).toBe(join(HOME, 'new.json'));
+    expect(loadConfig(undefined, both).defaultBrowser).toBe('chrome');
+    expect(loadConfig(undefined, both).safety.allowEvaluate).toBe(false);
+    const old = { HOME, BROWSER_HUB_CONFIG: '~/old.json' };
+    expect(configFilePath(old)).toBe(join(HOME, 'old.json'));
+    expect(loadConfig(undefined, old).safety.allowEvaluate).toBe(true);
+  });
+
+  it("doctor's legacy note names the folder and how to move it (quit the agent windows first)", () => {
+    const note = legacyHomeNotice(join(HOME, '.browser-hub'));
+    expect(note).toContain(`legacy folder ${join(HOME, '.browser-hub')}`);
+    expect(note).toMatch(/quit the Zen and Chrome windows Stephen uses/);
+    expect(note).toContain('mv ~/.browser-hub ~/.stephen');
   });
 });
 

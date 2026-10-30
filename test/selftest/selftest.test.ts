@@ -1,5 +1,5 @@
 /**
- * Unit tests for `browser-hub selftest` orchestration — no browser: fake sessions, checks and fixtures.
+ * Unit tests for `stephen selftest` orchestration — no browser: fake sessions, checks and fixtures.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,7 +38,7 @@ function userConfig(): ResolvedConfig {
       zen: { mode: 'real', executablePath: '/opt/zen', profilePath: '/Users/me/zen-profile', extraArgs: ['--zen-flag'] },
       safety: { confirm: 'auto', sensitiveDomains: ['127.0.0.1'] },
     },
-    { HOME: home, BROWSER_HUB_HOME: home },
+    { HOME: home, STEPHEN_HOME: home },
   );
 }
 
@@ -124,7 +124,7 @@ function harness(opts: {
       return r;
     },
     out: (l) => out.push(l),
-    configPath: () => '/Users/me/.browser-hub/config.json',
+    configPath: () => '/Users/me/.stephen/config.json',
   };
   return { deps, log, out, configs, fixtures };
 }
@@ -357,7 +357,7 @@ describe('summarize', () => {
 });
 
 describe('connectHint', () => {
-  const cfg = '/u/.browser-hub/config.json';
+  const cfg = '/u/.stephen/config.json';
   it('maps driver errors to actionable fixes', () => {
     expect(connectHint('zen', 'NOT_CONNECTED: Zen was not found at /Applications/Zen.app/…', cfg)).toMatch(/"zen\.executablePath".*config\.json/);
     expect(connectHint('zen', 'NOT_CONNECTED: Zen (pid 9) was started but has not enabled remote control within 60 s', cfg)).toMatch(
@@ -367,6 +367,6 @@ describe('connectHint', () => {
     expect(connectHint('chrome', 'NOT_CONNECTED: Launched Chrome (x) but it did not open its debugging port within 15 s', cfg)).toMatch(
       /chrome\.extraArgs/,
     );
-    expect(connectHint('chrome', 'something odd', cfg)).toMatch(/browser-hub doctor/);
+    expect(connectHint('chrome', 'something odd', cfg)).toMatch(/stephen doctor/);
   });
 });

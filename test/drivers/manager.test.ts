@@ -198,7 +198,7 @@ describe('BrowserManager', () => {
 describe('review #2 finding 11: tab origin and closing', () => {
   const opened = (m: IBrowserManager, tab: string) => (m as IBrowserManager & { openedByHub(t: string): boolean }).openedByHub(tab);
 
-  it('openedByHub: true only for tabs browser-hub opened (until they close)', async () => {
+  it('openedByHub: true only for tabs Stephen opened (until they close)', async () => {
     const { m, chrome } = setup();
     await m.connect('chrome');
     chrome.browser!.addPage('https://user.example/');

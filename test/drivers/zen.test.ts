@@ -52,25 +52,41 @@ describe('user.js block', () => {
   it('adds the block to an empty file and is idempotent', () => {
     const once = upsertUserJsBlock('');
     expect(once).toContain(PREF);
-    expect(once.startsWith('// >>> browser-hub')).toBe(true);
+    expect(once.startsWith('// >>> stephen')).toBe(true);
     expect(upsertUserJsBlock(once)).toBe(once);
   });
 
   it('preserves existing content and appends after it', () => {
     const existing = 'user_pref("browser.startup.page", 3);\n// my comment';
     const out = upsertUserJsBlock(existing);
-    expect(out.startsWith(`${existing}\n// >>> browser-hub`)).toBe(true);
+    expect(out.startsWith(`${existing}\n// >>> stephen`)).toBe(true);
     expect(upsertUserJsBlock(out)).toBe(out);
   });
 
   it('replaces an outdated block in place, keeping lines before and after', () => {
-    const old = 'a();\n// >>> browser-hub old header\nuser_pref("x", 1);\n// <<< browser-hub\nb();\n';
+    const old = 'a();\n// >>> stephen old header\nuser_pref("x", 1);\n// <<< stephen\nb();\n';
     const out = upsertUserJsBlock(old);
-    expect(out).toMatch(/^a\(\);\n\/\/ >>> browser-hub/);
+    expect(out).toMatch(/^a\(\);\n\/\/ >>> stephen/);
     expect(out).toContain(PREF);
     expect(out).not.toContain('user_pref("x", 1)');
-    expect(out.endsWith('// <<< browser-hub\nb();\n')).toBe(true);
-    expect(out.match(/>>> browser-hub/g)).toHaveLength(1);
+    expect(out.endsWith('// <<< stephen\nb();\n')).toBe(true);
+    expect(out.match(/>>> stephen/g)).toHaveLength(1);
+  });
+
+  it('replaces the block browser-hub (the pre-rename name) wrote, in place — never a second block', () => {
+    const old = 'a();\n// >>> browser-hub (managed by browser-hub; keeps automation prefs out of your real profile)\nuser_pref("x", 1);\n// <<< browser-hub\nb();\n';
+    const out = upsertUserJsBlock(old);
+    expect(out).toBe(`a();\n${upsertUserJsBlock('')}b();\n`);
+    expect(out).not.toContain('browser-hub');
+    expect(out.match(/>>> /g)).toHaveLength(1);
+    expect(upsertUserJsBlock(out)).toBe(out);
+    // both an old and a new block (should not happen): one block remains, where the first one was
+    const both = `${old}c();\n${upsertUserJsBlock('')}d();\n`;
+    const merged = upsertUserJsBlock(both);
+    expect(merged).toBe(`a();\n${upsertUserJsBlock('')}b();\nc();\nd();\n`);
+    // a block-like comment with another name is not ours and is kept
+    const foreign = '// >>> stephenson\nuser_pref("y", 2);\n// <<< stephenson\n';
+    expect(upsertUserJsBlock(foreign)).toBe(`${foreign}${upsertUserJsBlock('')}`);
   });
 
   it('ensureUserJsBlock writes once, then reports no change', async () => {
@@ -201,14 +217,14 @@ describe('ZenDriver agent mode', () => {
     const h = harness();
     await h.driver.connect('agent');
     const userJs = readFileSync(join(dir, 'user.js'), 'utf8');
-    expect(userJs.startsWith('user_pref("selftest.keep", 1);\n// >>> browser-hub')).toBe(true);
+    expect(userJs.startsWith('user_pref("selftest.keep", 1);\n// >>> stephen')).toBe(true);
     expect(userJs).toContain(PREF);
     expect(userJs).toContain('user_pref("fission.webContentIsolationStrategy", 0);');
     expect(userJs).toContain('user_pref("some.string", "a \\"b\\"");');
-    // extraPrefs override browser-hub's own defaults
+    // extraPrefs override Stephen's own defaults
     expect(userJs).toContain('user_pref("zen.welcome-screen.seen", false);');
     expect(userJs).not.toContain('user_pref("zen.welcome-screen.seen", true);');
-    expect(userJs.match(/>>> browser-hub/g)).toHaveLength(1);
+    expect(userJs.match(/>>> stephen/g)).toHaveLength(1);
     // never turns off Safe Browsing / updates / blocklist itself
     expect(userJs).not.toMatch(/safebrowsing|app\.update|services\.settings|signon/);
   });
@@ -222,7 +238,7 @@ describe('ZenDriver agent mode', () => {
   it('extraPrefs never reach the real profile, cannot re-enable recommended prefs, and bad entries are dropped', () => {
     const extra = { 'fission.webContentIsolationStrategy': 0, 'remote.prefs.recommended': true, 'bad name");x(': 1, 'a.b': 1.5, 'c.d': 'x\ny' };
     const real = buildUserJsBlock('real', extra);
-    expect(real).toBe(`// >>> browser-hub (managed by browser-hub; keeps automation prefs out of your real profile)\n${PREF}\n// <<< browser-hub\n`);
+    expect(real).toBe(`// >>> stephen (managed by Stephen; keeps automation prefs out of your real profile)\n${PREF}\n// <<< stephen\n`);
     expect(sanitizeExtraPrefs(extra)).toEqual([['fission.webContentIsolationStrategy', 0]]);
     const agent = buildUserJsBlock('agent', extra);
     expect(agent).not.toContain('user_pref("remote.prefs.recommended", true)');
@@ -296,7 +312,7 @@ describe('ZenDriver agent mode', () => {
       JSON.stringify({ pid: 4242, wsUrl: 'ws://127.0.0.1:7777/session', profileDir: tc.cfg.zen.agentProfileDir, mode: 'agent' }),
     );
     const h = harness({ isPidAlive: () => true, connectError: new Error('session not created Maximum number of active sessions') });
-    await expectHubError(h.driver.connect('agent'), 'NEEDS_USER', /previous automation session.*Quit the browser-hub agent Zen window/);
+    await expectHubError(h.driver.connect('agent'), 'NEEDS_USER', /previous automation session.*Quit the Stephen agent Zen window/);
     expect(h.spawns).toHaveLength(0);
   });
 
@@ -457,7 +473,7 @@ describe('ZenDriver attach-only (launch: never)', () => {
   const readState = () => JSON.parse(readFileSync(join(tc.cfg.stateDir, 'zen.json'), 'utf8'));
   const WS = 'ws://127.0.0.1:7777/session';
 
-  it('attaches to the Claude-ready Zen from the state file (zen-launch wrote it), never spawns, records ownership', async () => {
+  it('attaches to the Stephen-ready Zen from the state file (zen-launch wrote it), never spawns, records ownership', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const dir = realProfile();
     writeState({ pid: 4242, wsUrl: WS, profileDir: dir, mode: 'real' });
@@ -478,26 +494,26 @@ describe('ZenDriver attach-only (launch: never)', () => {
     expect(readState()).toEqual({ pid: 4242, wsUrl: WS, profileDir: dir, mode: 'real' });
   });
 
-  it('Zen running but not Claude-ready (no state): NEEDS_USER "open it with Zen for Claude", nothing spawned or touched', async () => {
+  it('Zen running but not Stephen-ready (no state): NEEDS_USER "open it with Zen for Stephen", nothing spawned or touched', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const dir = realProfile();
     const h = harness({ resolveRealProfile: async () => dir, isProcessRunning: async (n) => n === 'zen' });
-    const e = await expectHubError(h.driver.connect('real'), 'NEEDS_USER', /wasn't started with Claude access/);
+    const e = await expectHubError(h.driver.connect('real'), 'NEEDS_USER', /wasn't started with Stephen access/);
     expect(e.message).toContain(ZEN_NOT_CLAUDE_READY_MESSAGE);
     expect(e.message).toMatch(/retrying will not help/);
     expect(h.spawns).toHaveLength(0);
     expect(h.connects).toHaveLength(0);
     expect(existsSync(join(dir, 'user.js'))).toBe(false);
-    expect(h.driver.status().detail).toMatch(/without Claude access/);
+    expect(h.driver.status().detail).toMatch(/without Stephen access/);
   });
 
-  it('Zen not running: NEEDS_USER "open Zen with the Zen for Claude app", nothing spawned', async () => {
+  it('Zen not running: NEEDS_USER "open Zen with the Zen for Stephen app", nothing spawned', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const dir = realProfile();
     const h = harness({ resolveRealProfile: async () => dir, isProcessRunning: async () => false });
     const e = await expectHubError(h.driver.connect('real'), 'NEEDS_USER', /Zen isn't open/);
     expect(e.message).toContain(ZEN_NOT_RUNNING_MESSAGE);
-    expect(e.message).toContain("'Zen for Claude' app");
+    expect(e.message).toContain("'Zen for Stephen' app");
     expect(e.message).toContain('install-zen-launcher');
     expect(h.spawns).toHaveLength(0);
     expect(existsSync(join(tc.cfg.stateDir, 'zen-real.log'))).toBe(false);
@@ -524,7 +540,7 @@ describe('ZenDriver attach-only (launch: never)', () => {
       isProcessRunning: async () => true,
       connectError: new Error('connect ECONNREFUSED 127.0.0.1:7777'),
     });
-    await expectHubError(h.driver.connect('real'), 'NEEDS_USER', /wasn't started with Claude access/);
+    await expectHubError(h.driver.connect('real'), 'NEEDS_USER', /wasn't started with Stephen access/);
     expect(h.connects).toHaveLength(1);
     expect(h.spawns).toHaveLength(0);
   });
@@ -534,22 +550,22 @@ describe('ZenDriver attach-only (launch: never)', () => {
     const dir = realProfile();
     writeState({ pid: 4242, wsUrl: WS, profileDir: tc.cfg.zen.agentProfileDir, mode: 'agent' });
     const h = harness({ resolveRealProfile: async () => dir, isPidAlive: () => true, isProcessRunning: async () => true });
-    const e = await expectHubError(h.driver.connect('real'), 'NEEDS_USER', /wasn't started with Claude access/);
+    const e = await expectHubError(h.driver.connect('real'), 'NEEDS_USER', /wasn't started with Stephen access/);
     expect(e.message).toMatch(/agent Zen counts too/);
     expect(h.connects).toHaveLength(0);
     expect(h.spawns).toHaveLength(0);
   });
 
-  it('session limit while attaching: another live browser-hub → "someone else", stale → reopen with Zen for Claude', async () => {
+  it('session limit while attaching: another live Stephen → "someone else", stale → reopen with Zen for Stephen', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const dir = realProfile();
     const limit = new Error('session not created Maximum number of active sessions');
     writeState({ pid: 4242, wsUrl: WS, profileDir: dir, mode: 'real', ownerPid: 999 });
     const other = harness({ resolveRealProfile: async () => dir, isPidAlive: () => true, connectError: limit });
-    await expectHubError(other.driver.connect('real'), 'NEEDS_USER', /another Claude Code session.*your Zen \(browser-hub pid 999\)/);
+    await expectHubError(other.driver.connect('real'), 'NEEDS_USER', /another Claude Code session.*your Zen \(Stephen pid 999\)/);
     writeState({ pid: 4242, wsUrl: WS, profileDir: dir, mode: 'real' });
     const stale = harness({ resolveRealProfile: async () => dir, isPidAlive: () => true, connectError: limit });
-    await expectHubError(stale.driver.connect('real'), 'NEEDS_USER', /previous automation session.*reopen it with the 'Zen for Claude' app/);
+    await expectHubError(stale.driver.connect('real'), 'NEEDS_USER', /previous automation session.*reopen it with the 'Zen for Stephen' app/);
     expect(other.spawns.length + stale.spawns.length).toBe(0);
   });
 
@@ -581,7 +597,7 @@ describe('ZenDriver attach-only (launch: never)', () => {
     expect(h.driver.status().detail).toContain(ZEN_ATTACH_ONLY_LABEL);
     await h.driver.connect('real');
     h.browsers[0]!.drop();
-    expect(h.driver.status().detail).toMatch(/Reopen Zen with the 'Zen for Claude' app/);
+    expect(h.driver.status().detail).toMatch(/Reopen Zen with the 'Zen for Stephen' app/);
   });
 
   it('launch "auto" (or a config without zen.launch) keeps the old real-mode behaviour: launches once Zen is quit', async () => {

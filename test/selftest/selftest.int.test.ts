@@ -1,5 +1,5 @@
 /**
- * `browser-hub selftest` for real: the BUILT CLI against Chromium from @sparticuz/chromium.
+ * `stephen selftest` for real: the BUILT CLI against Chromium from @sparticuz/chromium.
  *  - Chrome: `selftest --browser chrome --json` with chrome.executablePath pointed at Chromium.
  *  - Zen: a fake `zen` executable (test/helpers/fake-zen.ts) that launches Chromium and prints Gecko's
  *    "WebDriver BiDi listening on ws://…" line, so the real ZenDriver launch + BiDi connect path runs.
@@ -47,7 +47,7 @@ function killAll(needle: string): void {
   }
 }
 
-describe('browser-hub selftest (real Chromium)', () => {
+describe('Stephen selftest (real Chromium)', () => {
   let home: string;
   let configText: string;
   let realChromeDir: string;
@@ -97,7 +97,7 @@ describe('browser-hub selftest (real Chromium)', () => {
   };
 
   it('selftest --browser chrome --json: all 16 checks pass over CDP in a temp agent profile', async () => {
-    const r = await runCli(['selftest', '--browser', 'chrome', '--json'], { BROWSER_HUB_HOME: home });
+    const r = await runCli(['selftest', '--browser', 'chrome', '--json'], { STEPHEN_HOME: home });
     const report = JSON.parse(r.stdout) as SelftestReport;
     expect(r.code, r.stdout + r.stderr).toBe(0);
     expect(report).toMatchObject({ ok: true, exitCode: 0, node: process.versions.node });
@@ -111,7 +111,7 @@ describe('browser-hub selftest (real Chromium)', () => {
   }, 180_000);
 
   it('selftest --browser zen: the real Zen launch path (BiDi line on stderr → /session) passes all checks', async () => {
-    const r = await runCli(['selftest', '--browser', 'zen'], { BROWSER_HUB_HOME: home });
+    const r = await runCli(['selftest', '--browser', 'zen'], { STEPHEN_HOME: home });
     expect(r.code, r.stdout + r.stderr).toBe(0);
     expect(r.stdout).toMatch(/^Zen \(WebDriver BiDi\) — .*\/zen$/m);
     expect(r.stdout).toMatch(/^ {2}16 {2}disconnect & clean up +PASS .*BiDi session ended/m);
@@ -129,7 +129,7 @@ describe('browser-hub selftest (real Chromium)', () => {
     try {
       const deps = {
         ...defaultSelftestDeps({ zenListenTimeoutMs: 2000 }),
-        loadConfig: () => loadConfig({ zen: { executablePath: hung } }, { HOME: home3, BROWSER_HUB_HOME: home3 }),
+        loadConfig: () => loadConfig({ zen: { executablePath: hung } }, { HOME: home3, STEPHEN_HOME: home3 }),
         configPath: () => join(home3, 'config.json'),
       };
       const report = await runSelftest({ browser: 'zen', keepOpen: false, json: true }, deps);

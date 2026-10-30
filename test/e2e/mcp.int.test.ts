@@ -50,7 +50,7 @@ const refFor = (snapshot: string, label: string): string => {
   return m[1]!;
 };
 
-describe('browser-hub end-to-end over stdio (Chrome agent mode, real Chromium)', () => {
+describe('Stephen end-to-end over stdio (Chrome agent mode, real Chromium)', () => {
   let home: string;
   let http: Server;
   let url: string;
@@ -103,7 +103,7 @@ describe('browser-hub end-to-end over stdio (Chrome agent mode, real Chromium)',
       new StdioClientTransport({
         command: process.execPath,
         args: [CLI, 'serve'],
-        env: { ...process.env, BROWSER_HUB_HOME: home } as Record<string, string>,
+        env: { ...process.env, STEPHEN_HOME: home } as Record<string, string>,
         stderr: 'ignore',
       }),
     );
@@ -143,7 +143,7 @@ describe('browser-hub end-to-end over stdio (Chrome agent mode, real Chromium)',
     expect(prompts).toEqual([]);
   });
 
-  it('keeps browser-hub dirs private (0700)', () => {
+  it('keeps Stephen dirs private (0700)', () => {
     for (const d of [home, join(home, 'state'), join(home, 'output'), join(home, 'profiles', 'chrome')]) {
       expect(statSync(d).mode & 0o777, d).toBe(0o700);
     }
@@ -272,7 +272,7 @@ describe('browser-hub end-to-end over stdio (Chrome agent mode, real Chromium)',
     expect(text(await call('tabs_list', { browser: 'chrome' }))).not.toContain('SECRET VAULT');
   });
 
-  it("review #2 #11: closing a tab browser-hub did not open asks the human; declined → it stays", async () => {
+  it("review #2 #11: closing a tab Stephen did not open asks the human; declined → it stays", async () => {
     const opened = await call('tab_open', { browser: 'chrome', url: `${url}unsaved`, intent: 'open the draft' });
     const draft = /\b(c\d+)\b/.exec(text(opened))![1]!;
     const before = new Set([...text(await call('tabs_list', { browser: 'chrome' })).matchAll(/- (c\d+)/g)].map((m) => m[1]));
@@ -301,7 +301,7 @@ describe('browser-hub end-to-end over stdio (Chrome agent mode, real Chromium)',
     prompts.length = 0;
     const r = await call('tab_close', { tab: draft, intent: 'done with the draft' });
     expect(r.isError, text(r)).toBeFalsy();
-    expect(prompts).toEqual([]); // browser-hub opened it: no confirmation for the close itself
+    expect(prompts).toEqual([]); // Stephen opened it: no confirmation for the close itself
     expect(text(r)).toContain('beforeunload dialog opened');
     expect(text(await call('tabs_list', { browser: 'chrome' }))).toContain(`- ${draft}`);
     approveNext = true; // accepting a beforeunload dialog is confirmed by the human

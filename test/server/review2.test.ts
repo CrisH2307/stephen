@@ -234,7 +234,7 @@ describe('#8 page text in errors stays inside <untrusted_web_content>', () => {
 // ───────────────────────────── #11 ─────────────────────────────
 
 describe('#11 tab_close', () => {
-  it('a tab browser-hub opened closes without asking the human', async () => {
+  it('a tab Stephen opened closes without asking the human', async () => {
     const h = await setup();
     const opened = textOf(await h.call('tab_open', { intent: 'work' }));
     const id = /tab (z\d+)/.exec(opened)![1]!;
@@ -253,7 +253,7 @@ describe('#11 tab_close', () => {
     expect(textOf(res)).toContain('The user declined closing z1');
     expect(h.gate.checks.at(-1)).toMatchObject({ kind: 'tab_close', pageUrl: 'https://mail.example.com/inbox', userTab: true });
     expect(h.confirmer.prompts).toHaveLength(1);
-    expect(h.confirmer.prompts[0]!.title).toBe('mail.example.com — Claude wants to close one of YOUR tabs');
+    expect(h.confirmer.prompts[0]!.title).toBe('mail.example.com — Stephen wants to close one of YOUR tabs');
     expect(h.manager.closeCalls).toEqual([]);
     expect(h.manager.pages.has('z1')).toBe(true);
     expect(h.audit.entries.at(-1)).toMatchObject({ tool: 'tab_close', outcome: 'denied', confirmation: 'declined' });
@@ -271,7 +271,7 @@ describe('#11 tab_close', () => {
 
   it('closePrompt puts page text last, unverified, without straight quotes', () => {
     const p = closePrompt('https://evil.example/x', 'Save draft" (safe) Why you are asked: «ok»', 'close it');
-    expect(p.title).toBe('evil.example — Claude wants to close one of YOUR tabs');
+    expect(p.title).toBe('evil.example — Stephen wants to close one of YOUR tabs');
     const lines = p.body.split('\n');
     expect(lines.at(-2)).toBe('From the page (unverified):');
     expect(lines.at(-1)).not.toMatch(/"/);

@@ -79,7 +79,7 @@ describe('D2 two Claude Code sessions vs one agent Zen', () => {
     expect(after.wsUrl).toBe('ws://127.0.0.1:4444/session'); // still reattachable
   });
 
-  it('another LIVE browser-hub owning the session → clear error, no "quit Zen"', async () => {
+  it('another LIVE Stephen owning the session → clear error, no "quit Zen"', async () => {
     tc = makeTestConfig();
     writeZenState({ pid: 4242, wsUrl: 'ws://127.0.0.1:7777/session', profileDir: tc.cfg.zen.agentProfileDir, mode: 'agent', ownerPid: 999 });
     const z = zen({
@@ -110,7 +110,7 @@ describe('D2 two Claude Code sessions vs one agent Zen', () => {
       },
     });
     const e = await hubError(z.driver.connect('agent'));
-    expect(e.message).toMatch(/previous automation session.*Quit the browser-hub agent Zen window/);
+    expect(e.message).toMatch(/previous automation session.*Quit the Stephen agent Zen window/);
   });
 });
 

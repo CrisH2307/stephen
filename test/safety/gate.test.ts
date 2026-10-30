@@ -60,7 +60,7 @@ describe('SafetyGate.check', () => {
     expect(r.decision.verdict).toBe('deny');
     expect(r.confirmation).toBe('not-needed');
     // review #2 #8: the element is named by role + ref, never by its page-supplied label
-    expect(r.message).toMatch(/^Blocked by browser-hub safety policy — did not type into textbox z1:e1 on example\.com\./);
+    expect(r.message).toMatch(/^Blocked by Stephen's safety policy — did not type into textbox z1:e1 on example\.com\./);
     expect(r.message).not.toContain('Password');
     expect(r.message).toMatch(/ask the user to enter it themselves/);
     expect(confirmer.prompts).toHaveLength(0);
@@ -72,7 +72,7 @@ describe('SafetyGate.check', () => {
     const { gate, audit, confirmer } = setup('approved');
     const r = await gate.check(req({ element: button('Send'), intent: 'send it' }));
     expect(r).toMatchObject({ allowed: true, confirmation: 'approved', message: '' });
-    expect(confirmer.prompts[0]!.title).toBe('example.com — Claude wants to click a button');
+    expect(confirmer.prompts[0]!.title).toBe('example.com — Stephen wants to click a button');
     expect(confirmer.prompts[0]!.body).toContain('Element label: «Send»');
     expect(audit.entries[0]).toMatchObject({ verdict: 'confirm', confirmation: 'approved', outcome: 'ok', risk: 'high' });
   });
@@ -312,7 +312,7 @@ describe('createSafety', () => {
       },
     });
     expect((await gate.check(req({ element: button('Send') }))).allowed).toBe(true);
-    expect(asked).toEqual(['example.com — Claude wants to click a button']);
+    expect(asked).toEqual(['example.com — Stephen wants to click a button']);
   });
 
   it('injected clock drives the rate limit', async () => {

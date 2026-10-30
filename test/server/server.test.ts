@@ -32,6 +32,10 @@ const EXPECTED_TOOLS = [
   'upload_file',
   'handle_dialog',
   'recent_actions',
+  // Stephen desktop actions (src/desktop), registered by default (desktop.enabled).
+  'open_app',
+  'open_url',
+  'desktop_status',
 ];
 
 describe('server surface', () => {
@@ -54,7 +58,7 @@ describe('server surface', () => {
       expect(byName[n]!.annotations?.destructiveHint, n).toBe(false);
     }
     for (const t of tools) {
-      expect(t.annotations?.openWorldHint, t.name).toBe(t.name !== 'recent_actions');
+      expect(t.annotations?.openWorldHint, t.name).toBe(t.name !== 'recent_actions' && t.name !== 'desktop_status');
       expect(t.description!.length, t.name).toBeGreaterThan(60);
     }
     // Every mutating tool requires intent.
@@ -77,13 +81,16 @@ describe('server surface', () => {
     expect(textOf(res)).toContain('"evaluated": "document.title"');
   });
 
-  it('identifies as browser-hub and sends workflow + safety instructions', async () => {
+  it('identifies as Stephen and sends workflow + safety instructions', async () => {
     const h = await setup();
-    expect(h.client.getServerVersion()?.name).toBe('browser-hub');
+    expect(h.client.getServerVersion()?.name).toBe('stephen');
     const ins = h.client.getInstructions() ?? '';
     for (const s of ['browser_status', 'z1:e12', 'untrusted_web_content', 'stale', 'approve', 'Passwords']) {
       expect(ins).toContain(s);
     }
+    // introduces the assistant as Stephen, with Claude (the model) as the AI behind it
+    expect(ins).toMatch(/^Stephen is the user's Mac assistant, and you are the AI behind it/);
+    expect(ins).not.toContain('browser-hub');
   });
 
   it('creates safety lazily on the first tool call, once', async () => {
@@ -111,10 +118,10 @@ describe('reads', () => {
 
   it('a denied read never touches the page', async () => {
     const h = await setup();
-    h.gate.decide = () => deny('This site is blocked by browser-hub policy.');
+    h.gate.decide = () => deny('This site is blocked by Stephen policy.');
     const res = await h.call('read_text', { tab: 'z1' });
     expect(res.isError).toBe(true);
-    expect(textOf(res)).toBe('This site is blocked by browser-hub policy.');
+    expect(textOf(res)).toBe('This site is blocked by Stephen policy.');
     expect(h.engine.readText).not.toHaveBeenCalled();
     expect(h.gate.reads).toEqual([]);
   });
@@ -381,7 +388,7 @@ describe('actions', () => {
     h.manager.connected.zen = false;
     expect(textOf(await h.call('browser_status'))).toContain("- zen: not connected (will attach to the user's open Zen, real profile)");
     const ins = h.client.getInstructions() ?? '';
-    expect(ins).toContain('"Zen for Claude" app');
+    expect(ins).toContain('"Zen for Stephen" app');
     expect(ins).toMatch(/do not retry in a loop/);
     expect(ins).toMatch(/tab_open for a new tab in their Zen/);
   });
@@ -493,7 +500,7 @@ describe('elicitation wiring', () => {
     ];
     const h = await setup({ elicitation: true, onElicit: () => answers.shift()! });
     h.gate.decide = async (req) => {
-      const r = await h.safety.deps!.elicit!({ title: `Claude wants to click "${req.element?.name}" on mail.example.com`, body: 'Claude says: send the reply' });
+      const r = await h.safety.deps!.elicit!({ title: `Stephen wants to click "${req.element?.name}" on mail.example.com`, body: 'Claude says: send the reply' });
       return r === 'accept' ? { ...allow(), confirmation: 'approved' } : deny(`Not done: the user answered ${r}.`);
     };
 
@@ -501,7 +508,7 @@ describe('elicitation wiring', () => {
     expect(ok.isError).toBeFalsy();
     expect(h.engine.click).toHaveBeenCalledTimes(1);
     expect(h.elicitRequests[0]).toMatchObject({
-      message: 'Claude wants to click "Send" on mail.example.com\n\nClaude says: send the reply',
+      message: 'Stephen wants to click "Send" on mail.example.com\n\nClaude says: send the reply',
       requestedSchema: {
         type: 'object',
         properties: { approve: { type: 'boolean', title: 'Allow this action?', default: false } },
