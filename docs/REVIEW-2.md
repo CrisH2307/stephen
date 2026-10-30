@@ -1,4 +1,4 @@
-# browser-hub — independent review #2
+# Stephen (then browser-hub) — independent review #2
 
 Scope: `main` @ 48e9479 (dist/ built from it). Nothing under `/home/claude/browser-hub` was modified.
 
