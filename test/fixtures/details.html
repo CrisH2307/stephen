@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Details</title></head>
+<body>
+<details id="d"><summary>More options</summary><button id="inner">Inside details</button><p>DETAILSTEXT</p></details>
+<label for="big">Big select</label>
+<select id="big"></select>
+<script>
+  const s = document.getElementById('big');
+  for (let i = 0; i < 40; i++) { const o = document.createElement('option'); o.value = 'v' + i; o.textContent = 'Option ' + i; s.appendChild(o); }
+</script>
+</body></html>

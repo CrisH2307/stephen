@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Busy</title></head>
+<body>
+<button>Busy frame button</button>
+<script>
+  // Hang this frame's main thread for a while after load (simulates a wedged ad/widget frame).
+  addEventListener('load', () => setTimeout(() => { const end = Date.now() + 9000; while (Date.now() < end) {} }, 50));
+</script>
+</body></html>

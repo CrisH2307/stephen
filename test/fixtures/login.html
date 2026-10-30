@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sign in – Example Bank</title></head>
+<body>
+<main>
+  <h1>Sign in</h1>
+  <form id="login" action="/session" method="post" aria-label="Sign in">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="username">
+    <label for="pw">Password</label>
+    <input id="pw" name="pw" type="password" autocomplete="current-password">
+    <label for="otp">Verification code</label>
+    <input id="otp" name="code" type="text" autocomplete="one-time-code" inputmode="numeric">
+    <label>Two-factor token <input id="tfa" name="token" type="text" placeholder="2FA token"></label>
+    <label for="remember"><input id="remember" type="checkbox" checked> Remember me</label>
+    <button id="signin">Sign in</button>
+  </form>
+  <form id="pay" action="https://pay.example.com/charge" aria-label="Payment">
+    <label for="cc">Card number</label>
+    <input id="cc" name="cardnumber" type="text" autocomplete="cc-number">
+    <label for="cvc">CVC</label>
+    <input id="cvc" name="cvc" type="text">
+    <label for="nick">Nickname</label>
+    <input id="nick" name="nickname" type="text" value="Daily card">
+    <input id="paybtn" type="submit" value="Pay now">
+  </form>
+  <a id="help" href="/help/signin">Need help?</a>
+  <button id="loose" type="button">Not in a form</button>
+</main>
+</body></html>

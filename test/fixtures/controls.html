@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Controls</title>
+<style>
+  #box { width: 300px; height: 150px; overflow: auto; border: 1px solid #000; }
+  #box div { height: 1200px; width: 900px; }
+  .tall { height: 3000px; }
+</style></head>
+<body>
+<h1>Controls</h1>
+<form id="f" action="/search" onsubmit="event.preventDefault(); document.title='submitted:'+document.getElementById('name').value">
+  <label for="name">Full name</label>
+  <input id="name" type="text" value="Old value">
+  <label for="bio">Bio</label>
+  <textarea id="bio">old bio</textarea>
+  <label for="country">Country</label>
+  <select id="country" onchange="window.changed=(window.changed||0)+1">
+    <option value="">Choose…</option>
+    <option value="ca">Canada</option>
+    <option value="us">United States</option>
+    <option value="mx">Mexico</option>
+  </select>
+  <label for="langs">Languages</label>
+  <select id="langs" multiple>
+    <option value="en">English</option>
+    <option value="fr">French</option>
+    <option value="de">German</option>
+  </select>
+  <label for="ro">Read only</label>
+  <input id="ro" readonly value="fixed">
+  <button id="go" type="submit">Search</button>
+</form>
+<div role="combobox" aria-label="Custom dropdown" id="custom" tabindex="0">Pick one</div>
+<div id="ce" contenteditable="true" aria-label="Notes">Hello</div>
+<button id="dbl" ondblclick="this.dataset.dbl='yes'" oncontextmenu="event.preventDefault(); this.dataset.ctx='yes'">Double me</button>
+<button id="hov" onmouseenter="this.dataset.hovered='yes'">Hover me</button>
+<input id="keys" aria-label="Key log" onkeydown="window.keylog=(window.keylog||[]); window.keylog.push((event.metaKey?'Meta+':'')+(event.ctrlKey?'Control+':'')+(event.shiftKey?'Shift+':'')+event.key)">
+<label for="file">Resume</label>
+<input id="file" type="file">
+<label class="upload">Attach photos <input id="hiddenfile" type="file" multiple style="opacity:0; position:absolute; width:1px; height:1px"></label>
+<div id="box"><div>scroll content</div></div>
+<div id="status">Idle</div>
+<div class="tall"></div>
+<p id="bottom">Bottom of page</p>
+</body></html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Compose – Mail</title>
+<style> .chip { display: inline-block; padding: 2px 6px; background: #ddd; border-radius: 8px; } .btn { display:inline-block; padding: 6px; cursor: pointer; } </style></head>
+<body>
+<div role="dialog" aria-label="New Message" id="dlg">
+  <div class="row" id="torow">
+    <span>To</span>
+    <div class="chip" role="option" data-hovercard-id="maria@example.com"><span email="maria@example.com" name="Maria">Maria</span></div>
+    <div class="chip" role="option" data-hovercard-id="bob@example.com"><span email="bob@example.com">Bob</span></div>
+    <input id="to" aria-label="To recipients">
+  </div>
+  <div class="row"><span>Cc</span><div class="chip" title="Carol &lt;carol@example.org&gt;">Carol</div><input aria-label="Cc"></div>
+  <input id="subject" aria-label="Subject" value="Q3 summary">
+  <input type="hidden" name="token" value="HIDDENTOKEN">
+  <input aria-label="Secret note" style="display:none" value="INVISIBLE">
+  <div id="body" contenteditable="true" role="textbox" aria-label="Message Body">Hi Maria,<br>here are the numbers.</div>
+  <div class="btn" role="button" tabindex="0" id="send">Send</div>
+  <a href="#x" id="link">Discard draft link</a>
+</div>
+<form id="login" action="/session">
+  <label for="em">Email</label> <input id="em" value="me@example.com">
+  <label for="pw">Password</label> <input id="pw" type="password" value="hunter2">
+  <label for="code">Security code</label> <input id="code" value="777888">
+  <label for="pin">PIN</label> <input id="pin" value="4321">
+  <label for="pwd2">Login</label> <input id="pwd2" name="loginPasswd" value="sekrit99">
+  <label for="api">API key</label> <input id="api" value="sk-live-abc">
+  <label><input type="checkbox" checked> Keep me signed in</label>
+  <button id="signin">Sign in</button>
+</form>
+<form id="big"><textarea aria-label="Long text" id="long"></textarea><input type="submit" value="Post"></form>
+<button id="loose">Not in a form</button>
+<script>document.getElementById('long').value = 'word '.repeat(400);</script>
+</body></html>

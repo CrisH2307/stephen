@@ -1,0 +1,37 @@
+{
+  "name": "browser-hub",
+  "version": "0.1.0",
+  "description": "MCP server that lets Claude Code drive Zen (WebDriver BiDi) and Chrome (CDP) on macOS, with a safety gate.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "browser-hub": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude 'test/**/*.int.test.ts'",
+    "test:int": "vitest run test/**/*.int.test.ts",
+    "start": "node dist/cli.js serve"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "puppeteer-core": "25.16.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@sparticuz/chromium": "153.0.0",
+    "@types/node": "^22",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.5"
+  }
+}

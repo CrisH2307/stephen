@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Overlays</title>
+<style>
+  body { margin: 0; font-family: sans-serif; height: 2400px; }
+  .abs { position: absolute; }
+  #next { left: 10px; top: 10px; width: 200px; height: 50px; }
+  #clear { position: fixed; left: 0; top: 0; width: 400px; height: 200px; opacity: 0.01; background: #000; z-index: 9; }
+  #del { left: 500px; top: 100px; width: 200px; height: 40px; }
+  #banner { position: fixed; left: 0; right: 0; top: 80px; height: 120px; background: #eee; z-index: 10; }
+  #partial { left: 800px; top: 10px; width: 200px; height: 60px; }
+  #corner { position: absolute; left: 800px; top: 10px; width: 40px; height: 20px; background: red; z-index: 5; }
+  #far { position: absolute; left: 20px; top: 2000px; }
+  #framewrap { position: absolute; left: 20px; top: 400px; }
+  #frameshield { position: absolute; left: 20px; top: 400px; width: 300px; height: 150px; z-index: 5; }
+</style></head>
+<body>
+<script>window.hits = [];</script>
+<button id="next" class="abs" onclick="hits.push('next')">Next</button>
+<div id="clear" onclick="hits.push('overlay')"></div>
+<button id="del" class="abs" onclick="hits.push('delete')">Delete account</button>
+<div id="banner" role="dialog" aria-label="Cookie consent"><p>We use cookies.</p><button onclick="hits.push('accept')">Accept all</button></div>
+<button id="partial" class="abs" onclick="hits.push('partial')">Partially covered</button>
+<div id="corner"></div>
+<x-host id="host" class="abs" style="left:500px; top:300px"></x-host>
+<button id="far" onclick="hits.push('far')">Far below</button>
+<div id="framewrap"><iframe id="fr" width="300" height="150" srcdoc="<button onclick=&quot;parent.hits.push('framed')&quot;>Framed button</button>"></iframe></div>
+<div id="frameshield" onclick="hits.push('shield')" style="display:none"></div>
+<script>
+  customElements.define('x-host', class extends HTMLElement {
+    constructor() {
+      super();
+      const r = this.attachShadow({ mode: 'open' });
+      r.innerHTML = '<button id="sb"><span>Shadow</span> <b>button</b></button>';
+      r.getElementById('sb').addEventListener('click', () => hits.push('shadow'));
+    }
+  });
+</script>
+</body></html>

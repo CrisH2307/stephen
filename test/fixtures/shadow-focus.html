@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Shadow focus</title></head>
+<body>
+<x-closed id="closed"></x-closed>
+<x-open id="open"></x-open>
+<x-plain id="plain" tabindex="0">Focusable custom element</x-plain>
+<input id="plaininput" aria-label="Plain input">
+<script>
+  customElements.define('x-closed', class extends HTMLElement {
+    constructor() {
+      super();
+      const r = this.attachShadow({ mode: 'closed' });
+      r.innerHTML = '<input type="password" aria-label="Hidden password">';
+      window.closedInput = r.querySelector('input');
+    }
+  });
+  customElements.define('x-open', class extends HTMLElement {
+    constructor() {
+      super();
+      const r = this.attachShadow({ mode: 'open' });
+      r.innerHTML = '<input aria-label="Open shadow input">';
+    }
+  });
+  customElements.define('x-plain', class extends HTMLElement {});
+</script>
+</body></html>
