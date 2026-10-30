@@ -27,8 +27,8 @@ export function redactValue(value: string, secret: boolean): string {
 // ───────────────────────────── Prompt ─────────────────────────────
 //
 // A human must be able to decide from the dialog alone, and the page must not be able to dress itself up as
-// browser-hub (review #2 finding 7). Layout:
-//   title:  evil.com — Claude wants to click a button                    ← computed only, no page text
+// Stephen (review #2 finding 7). Layout:
+//   title:  evil.com — Stephen wants to click a button                    ← computed only, no page text
 //   Site: https://evil.com (Chrome, tab c1)                              ┐
 //   Action: click · button c1:e2                                         │ computed facts: origin, action,
 //   Link goes to / Form is sent to / Destination / Text to type / Key …  │ role, URLs, the exact text/keys/
@@ -40,6 +40,8 @@ export function redactValue(value: string, secret: boolean): string {
 // quoted with « » after a fixed prefix on its own line: line breaks collapsed, " « » escaped, control / bidi /
 // zero-width characters shown as \u{…} escapes, each field capped, and the phrases "Why you are asked",
 // "Claude says" and "Page says" bracketed — so no page or model text can start a line or imitate a header.
+// Wording: the dialog is Stephen's, so Stephen is the actor ("Stephen wants to …"); the model's own words stay
+// labelled "Claude says (unverified)" (the AI behind Stephen is Claude) and page text "Page says (unverified)".
 
 const BROWSER_LABEL: Record<string, string> = { chrome: 'Chrome', zen: 'Zen' };
 /** Typed text shown to the human before it is entered (cross-site typing etc.). */
@@ -233,10 +235,10 @@ export function buildPrompt(req: ActionRequest, decision: PolicyDecision, ctx: P
   let title: string;
   if (onlyTrust) {
     const verb = decision.rules.includes('first-interaction') ? 'interact with' : 'visit';
-    title = `Claude has read private content (${ctx.readSources ?? 'a private site'}). Allow it to ${verb} ${trust} for the rest of this session?`;
+    title = `Stephen has read private content (${ctx.readSources ?? 'a private site'}). Allow it to ${verb} ${trust} for the rest of this session?`;
   } else {
     const on = req.kind === 'navigate' || req.kind === 'tab_open' ? displayHost(req.pageUrl) : where;
-    title = `${on} — Claude wants to ${titleAction(req)}`;
+    title = `${on} — Stephen wants to ${titleAction(req)}`;
     if (flags.length > 0) title += ` (uses ${flags.join(', ')})`;
   }
   title = clean(title, 200);
@@ -247,7 +249,7 @@ export function buildPrompt(req: ActionRequest, decision: PolicyDecision, ctx: P
   lines.push(`Action: ${describeAction(req)}`);
   if (onlyTrust && trust) {
     lines.push(
-      `If you allow: pages on ${trust} will see every click, key press, hover and scroll Claude makes there, and Claude can open short links on ${trust} without asking again (links carrying data still ask).`,
+      `If you allow: pages on ${trust} will see every click, key press, hover and scroll Stephen makes there, and Stephen can open short links on ${trust} without asking again (links carrying data still ask).`,
     );
   }
   const el = req.element;
@@ -277,7 +279,7 @@ export function buildPrompt(req: ActionRequest, decision: PolicyDecision, ctx: P
       lines.push(`Dialog type: ${clean(req.dialog.type, 20) || 'unknown'}`);
       page.push(`Dialog message: ${quoteUntrusted(req.dialog.message, PAGE_DIALOG_MAX)}`);
     }
-    if (req.text !== undefined && req.dialog?.accept !== false) lines.push(`Text Claude will enter: ${showText(req.text, false)}`);
+    if (req.text !== undefined && req.dialog?.accept !== false) lines.push(`Text Stephen will enter: ${showText(req.text, false)}`);
   } else if (req.kind === 'select' && req.text) {
     lines.push(`Option(s): ${showText(req.text, secret)}`);
   } else if (req.text !== undefined && req.text !== '') {
@@ -296,8 +298,8 @@ export function buildPrompt(req: ActionRequest, decision: PolicyDecision, ctx: P
     lines.push(`Files: ${shown.join(', ')}${more}`);
   }
   lines.push(`Why you are asked: ${clean(decision.reason, 700)}`);
-  if (trust && !onlyTrust) lines.push(`Approving also lets Claude interact with ${trust} for the rest of this session without asking again.`);
-  else if (trust) lines.push(`Approving lets Claude interact with ${trust} for the rest of this session without asking again.`);
+  if (trust && !onlyTrust) lines.push(`Approving also lets Stephen interact with ${trust} for the rest of this session without asking again.`);
+  else if (trust) lines.push(`Approving lets Stephen interact with ${trust} for the rest of this session without asking again.`);
   const intent = clean(req.intent, INTENT_MAX);
   lines.push(`Claude says (unverified): ${intent ? quoteUntrusted(intent, INTENT_MAX) : '(no reason given)'}`);
   if (page.length > 0) {

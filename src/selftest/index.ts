@@ -1,5 +1,5 @@
 /**
- * `browser-hub selftest` — proves on the user's machine that each browser works end to end, safely:
+ * `stephen selftest` — proves on the user's machine that each browser works end to end, safely:
  *  - always the AGENT mode with a fresh temporary profile under <home>/selftest/<browser>-<random>
  *    (mode 0700), never the user's real profile, whatever the config says;
  *  - only local fixture pages served from this process on 127.0.0.1 (two origins: 127.0.0.1 and localhost);
@@ -51,7 +51,8 @@ export interface BrowserReport {
 export interface SelftestReport {
   ok: boolean;
   exitCode: number;
-  browserHub: string;
+  /** Stephen's version. */
+  stephen: string;
   node: string;
   platform: string;
   fixtures: { a: string; b: string } | null;
@@ -98,7 +99,7 @@ export const CHROME_SELFTEST_ARGS: readonly string[] = [
  * checks (which would reach the internet), no telemetry.
  */
 export const ZEN_SELFTEST_USER_JS = [
-  '// browser-hub selftest: temporary profile, deleted after the run',
+  '// Stephen selftest: temporary profile, deleted after the run',
   'user_pref("browser.startup.page", 0);',
   'user_pref("browser.startup.homepage", "about:blank");',
   'user_pref("browser.startup.homepage_override.mstone", "ignore");',
@@ -164,6 +165,9 @@ export function buildSelftestConfig(user: ResolvedConfig, browser: BrowserName, 
     output: { maxSnapshotChars: 20_000, maxTextChars: 20_000, saveDir: join(runDir, 'output') },
     auditLogPath: join(runDir, 'audit.log'),
     stateDir: join(runDir, 'state'),
+    // Desktop actions and the voice listener are not exercised by the browser selftest.
+    desktop: {},
+    voice: {},
   };
 }
 
@@ -224,7 +228,7 @@ export function connectHint(browser: BrowserName, message: string, configPath: s
   if (/active sessions|automation session/i.test(message)) {
     return 'Zen refused a new automation session. Re-run the selftest; if it persists, report it.';
   }
-  return `Run \`browser-hub doctor\` and fix anything red, then re-run. ${REPORT_HINT}`;
+  return `Run \`stephen doctor\` and fix anything red, then re-run. ${REPORT_HINT}`;
 }
 
 // ───────────────────────────── default deps ─────────────────────────────
@@ -412,9 +416,9 @@ export async function runSelftest(opts: SelftestOptions, deps: SelftestDeps = de
   const configPath = deps.configPath();
   const names: BrowserName[] = opts.browser === 'all' ? ['chrome', 'zen'] : [opts.browser];
   const explicit = opts.browser !== 'all';
-  const base = { browserHub: packageVersion(), node: process.versions.node, platform: process.platform };
+  const base = { stephen: packageVersion(), node: process.versions.node, platform: process.platform };
 
-  say(`browser-hub selftest v${base.browserHub} · Node ${base.node} · ${base.platform}`);
+  say(`stephen selftest v${base.stephen} · Node ${base.node} · ${base.platform}`);
   const fixtures = await deps.startFixtures();
   say([`Local test pages: ${fixtures.a} and ${fixtures.b} (loopback only)`, '']);
 
@@ -538,7 +542,7 @@ export async function runSelftest(opts: SelftestOptions, deps: SelftestDeps = de
 
 // ───────────────────────────── CLI ─────────────────────────────
 
-export const SELFTEST_USAGE = 'browser-hub selftest [--browser chrome|zen|all] [--keep-open] [--json]';
+export const SELFTEST_USAGE = 'stephen selftest [--browser chrome|zen|all] [--keep-open] [--json]';
 
 /** Parse `selftest` flags. Returns an error string for bad input. */
 export function parseSelftestArgs(argv: string[]): SelftestOptions | { error: string } {

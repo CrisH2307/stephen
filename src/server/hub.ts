@@ -108,7 +108,7 @@ export interface ReadTicket {
 }
 
 /**
- * Optional BrowserManager capability (src/drivers/manager.ts): whether browser-hub opened this tab
+ * Optional BrowserManager capability (src/drivers/manager.ts): whether Stephen opened this tab
  * (tab_open). Without it every tab counts as the user's own (fail safe).
  */
 export interface TabOrigin {
@@ -414,7 +414,7 @@ export class Hub {
       const d = this.safety().gate.evaluate({ ...req, pageUrl: f });
       if (d.verdict === 'deny') {
         throw new NoticeError(
-          `Blocked by browser-hub safety policy — did not ${tool} ${tab}: it contains a frame from a blocked site (${hostOf(f)}). ${d.reason}`,
+          `Blocked by Stephen's safety policy — did not ${tool} ${tab}: it contains a frame from a blocked site (${hostOf(f)}). ${d.reason}`,
         );
       }
     }
@@ -507,7 +507,7 @@ export class Hub {
     return v === 'shown' ? url : v === 'blocked' ? originOf(url) : reduceUrl(url);
   }
 
-  /** Whether browser-hub opened this tab (manager's TabRegistry); false (= user's tab) if unknown. */
+  /** Whether Stephen opened this tab (manager's TabRegistry); false (= user's tab) if unknown. */
   openedByHub(tab: TabId): boolean {
     const m = this.manager as Partial<TabOrigin>;
     try {
@@ -556,10 +556,10 @@ export class Hub {
     });
     const where = /^https?:/i.test(landed) ? `a blocked site (${host})` : `a browser-internal or non-web page (${landed.split(':')[0]}:)`;
     throw new NoticeError(
-      `Blocked by browser-hub safety policy: the action ended on ${where}, which is off-limits. ` +
+      `Blocked by Stephen's safety policy: the action ended on ${where}, which is off-limits. ` +
         (left
-          ? `browser-hub sent ${tab} to about:blank; nothing from that page is shown. `
-          : `browser-hub could not leave that page; every action on ${tab} will be refused — close it with tab_close. `) +
+          ? `Stephen sent ${tab} to about:blank; nothing from that page is shown. `
+          : `Stephen could not leave that page; every action on ${tab} will be refused — close it with tab_close. `) +
         'Do not try to reach it another way; ask the user to do this themselves.',
     );
   }

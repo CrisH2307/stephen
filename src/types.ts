@@ -1,5 +1,5 @@
 /**
- * Shared contracts for browser-hub. FROZEN for the parallel build: every worktree
+ * Shared contracts for Stephen. FROZEN for the parallel build: every worktree
  * codes against these types. Changing them requires a coordinated update.
  */
 import type { Browser, Page } from 'puppeteer-core';
@@ -7,7 +7,7 @@ import type { Browser, Page } from 'puppeteer-core';
 // ───────────────────────────── Basics ─────────────────────────────
 
 export type BrowserName = 'chrome' | 'zen';
-/** 'real' = the user's everyday profile (with logins). 'agent' = a dedicated profile owned by browser-hub. */
+/** 'real' = the user's everyday profile (with logins). 'agent' = a dedicated profile owned by Stephen. */
 export type ProfileMode = 'real' | 'agent';
 export type Protocol = 'cdp' | 'webDriverBiDi';
 
@@ -20,7 +20,7 @@ export type Ref = string;
 
 /** Fully-resolved configuration (all paths absolute, all defaults applied). Produced by src/config.ts. */
 export interface ResolvedConfig {
-  /** Root dir for state/profiles/output/audit. Default ~/.browser-hub (env BROWSER_HUB_HOME). */
+  /** Root dir for state/profiles/output/audit. Default ~/.stephen (env STEPHEN_HOME; see resolveStephenHome in config.ts). */
   home: string;
   defaultBrowser: BrowserName;
   chrome: {
@@ -102,7 +102,7 @@ export interface TabInfo {
   browser: BrowserName;
   title: string;
   url: string;
-  /** True for the tab browser-hub considers current for that browser (last opened/focused/used). */
+  /** True for the tab Stephen considers current for that browser (last opened/focused/used). */
   current: boolean;
 }
 
@@ -277,7 +277,7 @@ export interface ActionRequest {
   files?: string[];
   /** For dialog: dialog type ('alert'|'confirm'|'prompt'|'beforeunload') and accept flag. */
   dialog?: { type: string; message: string; accept: boolean };
-  /** The model's one-line description of why. Shown to the human as "Claude says: …", never trusted. */
+  /** The model's one-line description of why. Shown to the human as "Claude says (unverified): …", never trusted. */
   intent: string;
 }
 
@@ -293,7 +293,7 @@ export interface PolicyDecision {
 }
 
 export interface ConfirmPrompt {
-  title: string; // e.g. 'Claude wants to click "Send" on mail.google.com'
+  title: string; // e.g. 'mail.google.com — Stephen wants to click a button'
   /** Multi-line body built from LIVE page facts; secrets redacted. */
   body: string;
 }

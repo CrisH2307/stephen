@@ -127,7 +127,7 @@ export async function openSelftestSession(cfg: ResolvedConfig, browser: BrowserN
   const manager = createBrowserManager(cfg, { chrome, zen });
   const mcp = buildServer({ cfg, manager, engine: pageEngine, safetyFactory: createSafety });
   // No elicitation capability: with confirm "deny" nothing can ever ask a human.
-  const client = new Client({ name: 'browser-hub-selftest', version: packageVersion() }, { capabilities: {} });
+  const client = new Client({ name: 'stephen-selftest', version: packageVersion() }, { capabilities: {} });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await mcp.connect(serverTransport);
   await client.connect(clientTransport);

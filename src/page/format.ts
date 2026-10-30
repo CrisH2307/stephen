@@ -75,7 +75,7 @@ const KNOWN_ROLES = new Set(
 );
 
 /**
- * A role for text written by browser-hub itself (error messages outside the untrusted wrapper,
+ * A role for text written by Stephen itself (error messages outside the untrusted wrapper,
  * finding #8): only real ARIA roles pass; a page-invented role attribute becomes `fallback`.
  */
 export function knownRole(r: unknown, fallback = 'element'): string {

@@ -3,7 +3,7 @@
  *
  * The real profile holds the user's logins, so the model (which may be prompt-injected by a web
  * page) must never be able to escalate to it. Rules for browser_connect:
- *   - the model may connect in the mode configured in ~/.browser-hub/config.json, or downgrade to 'agent';
+ *   - the model may connect in the mode configured in ~/.stephen/config.json, or downgrade to 'agent';
  *   - asking for 'real' when the config says 'agent' is refused — only the user can change the config;
  *   - even when the config allows 'real', SWITCHING a connected browser from 'agent' to 'real' through
  *     the tool needs the human's approval (a plain connect in the configured mode does not — that is
@@ -33,9 +33,9 @@ export function decideConnect(
     return {
       verdict: 'refuse',
       message:
-        `Refused: ${NICE[browser]} is ${ZEN_ATTACH_ONLY_LABEL}. browser-hub only uses the ${NICE[browser]} the user opened for Claude ` +
+        `Refused: ${NICE[browser]} is ${ZEN_ATTACH_ONLY_LABEL}. Stephen only uses the ${NICE[browser]} the user opened for Stephen ` +
         `(the configured ${configured} profile) and never starts a separate ${NICE[browser]} window. Connect without "mode" and work in the ` +
-        `user's ${NICE[browser]} (tab_open opens a new tab there), or use Chrome. Do not edit ~/.browser-hub/config.json yourself.`,
+        `user's ${NICE[browser]} (tab_open opens a new tab there), or use Chrome. Do not edit ~/.stephen/config.json yourself.`,
     };
   }
   if (mode === 'agent') return { verdict: 'connect', mode, confirm: false };
@@ -43,9 +43,9 @@ export function decideConnect(
     return {
       verdict: 'refuse',
       message:
-        `Refused: ${browser} is configured to use the separate browser-hub (agent) profile, and browser-hub never switches to ` +
-        `the user's real ${NICE[browser]} profile on Claude's request. Tell the user: if they want Claude to use their everyday ` +
-        `${NICE[browser]} profile, they can set "${browser}": {"mode": "real"} in ~/.browser-hub/config.json themselves and restart Claude Code. ` +
+        `Refused: ${browser} is configured to use the separate Stephen (agent) profile, and Stephen never switches to ` +
+        `the user's real ${NICE[browser]} profile on Claude's request. Tell the user: if they want Stephen to use their everyday ` +
+        `${NICE[browser]} profile, they can set "${browser}": {"mode": "real"} in ~/.stephen/config.json themselves and restart Claude Code. ` +
         `Do not edit that file yourself.`,
     };
   }
@@ -59,13 +59,13 @@ export function switchPrompt(browser: BrowserName, from: ProfileMode, intent: st
   const what =
     browser === 'zen'
       ? 'Zen will be relaunched on your everyday profile with remote control enabled (Zen must be quit first).'
-      : 'browser-hub will attach to your everyday Chrome (Chrome may ask you to click Allow).';
+      : 'Stephen will attach to your everyday Chrome (Chrome may ask you to click Allow).';
   return {
-    title: `Claude wants to switch ${NICE[browser]} from the ${from} profile to your REAL profile`,
+    title: `Stephen wants to switch ${NICE[browser]} from the ${from} profile to your REAL profile`,
     body: [
       `Your real ${NICE[browser]} profile has your logins, cookies and history. ${what}`,
-      'Only allow this if you asked Claude to work in your everyday browser.',
-      ...(intent ? [`Claude says: ${intent.replace(/\s+/g, ' ').slice(0, 300)}`] : []),
+      'Only allow this if you asked Stephen to work in your everyday browser.',
+      ...(intent ? [`Claude says (unverified): ${intent.replace(/\s+/g, ' ').slice(0, 300)}`] : []),
     ].join('\n'),
   };
 }

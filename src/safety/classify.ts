@@ -48,7 +48,7 @@ export function secretFieldReason(el: ElementInfo): string | null {
   return null;
 }
 
-/** Password / one-time code / payment / bank / national-id field: never typed into by browser-hub. */
+/** Password / one-time code / payment / bank / national-id field: never typed into by Stephen. */
 export function isSecretField(el: ElementInfo): boolean {
   return secretFieldReason(el) !== null;
 }

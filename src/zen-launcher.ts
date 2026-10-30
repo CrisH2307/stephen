@@ -1,19 +1,20 @@
 /**
- * `browser-hub zen-launch` and `browser-hub install-zen-launcher`.
+ * `stephen zen-launch` and `stephen install-zen-launcher`.
  *
  * Gecko only enables its Remote Agent (WebDriver BiDi) when Zen is STARTED with
  * --remote-debugging-port; a Zen opened normally can never be attached to. So instead of the server
  * launching Zen (it is attach-only by default), the user opens their everyday Zen through a small
- * "Zen for Claude" app that runs `zen-launch`:
- *  - a Claude-ready Zen already runs → bring it to the front, exit 0;
+ * "Zen for Stephen" app that runs `zen-launch`:
+ *  - a Stephen-ready Zen already runs → bring it to the front, exit 0;
  *  - Zen runs normally → exit 2 (the app then offers "Quit and reopen"; `--quit-running` asks Zen to
  *    quit like ⌘Q via AppleScript, waits for it, then launches) — never kill/SIGKILL;
  *  - otherwise launch Zen on the real profile with remote control, record it in the state file, exit 0.
  * zen-launch never opens a BiDi session (Gecko allows one at a time; `serve` attaches later).
  *
- * Exit codes: 0 = Zen is ready for Claude, 2 = the user must do something, 1 = error.
+ * Exit codes: 0 = Zen is ready for Stephen, 2 = the user must do something, 1 = error.
  */
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,7 +28,7 @@ import {
   readAppBundleInfo,
 } from './drivers/macos.js';
 import { type Clock, errText, realClock } from './drivers/util.js';
-import { ZEN_LAUNCHER_APP_NAME, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
+import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_LAUNCHER_APP_NAME, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import type { ResolvedConfig } from './types.js';
 
 export type ExitCode = 0 | 1 | 2;
@@ -82,11 +83,11 @@ export interface ZenLaunchResult {
 }
 
 /** Start of the exit-2 message for "Zen is open normally"; the launcher app keys its "Reopen" dialog on it. */
-export const ZEN_RUNNING_NORMALLY_LEAD = 'Zen is open without Claude access.';
+export const ZEN_RUNNING_NORMALLY_LEAD = 'Zen is open without Stephen access.';
 
 export const ZEN_RUNNING_NORMALLY_MESSAGE =
-  `${ZEN_RUNNING_NORMALLY_LEAD} Quit Zen (⌘Q) and run this again, or run \`browser-hub zen-launch --quit-running\` ` +
-  'to have Zen asked to quit and reopened for Claude. Your tabs come back if Zen is set to restore your previous session.';
+  `${ZEN_RUNNING_NORMALLY_LEAD} Quit Zen (⌘Q) and run this again, or run \`stephen zen-launch --quit-running\` ` +
+  'to have Zen asked to quit and reopened for Stephen. Your tabs come back if Zen is set to restore your previous session.';
 
 export function defaultZenLaunchDeps(cfg: ResolvedConfig): ZenLaunchDeps {
   return {
@@ -107,17 +108,17 @@ async function zenBundleId(cfg: ResolvedConfig): Promise<{ app: string | null; b
   return { app, bundleId };
 }
 
-/** Start the user's Zen with Claude access (see file comment). Never kills anything; never opens a BiDi session. */
+/** Start the user's Zen with Stephen access (see file comment). Never kills anything; never opens a BiDi session. */
 export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps): Promise<ZenLaunchResult> {
   const { cfg } = deps;
   const notes: string[] = [];
   if (cfg.zen.mode !== 'real') {
     notes.push(
-      `Your config has "zen": {"mode": "${cfg.zen.mode}"}, so Claude uses the separate agent Zen and will not use this one. ` +
-        'Remove "mode" from the "zen" section of ~/.browser-hub/config.json to use your own Zen.',
+      `Your config has "zen": {"mode": "${cfg.zen.mode}"}, so Stephen uses the separate agent Zen and will not use this one. ` +
+        'Remove "mode" from the "zen" section of ~/.stephen/config.json to use your own Zen.',
     );
   } else if (!isZenAttachOnly(cfg)) {
-    notes.push('"zen.launch" is "auto": browser-hub may also start Zen itself when it is not running.');
+    notes.push('"zen.launch" is "auto": Stephen may also start Zen itself when it is not running.');
   }
   const fail = (exitCode: ExitCode, status: ZenLaunchStatus, message: string): ZenLaunchResult => ({ exitCode, status, message, notes });
 
@@ -134,7 +135,7 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
       return {
         exitCode: 0,
         status: 'already-running',
-        message: `Zen is already running with Claude access (pid ${st.pid}).`,
+        message: `Zen is already running with Stephen access (pid ${st.pid}).`,
         notes,
         pid: st.pid,
         wsUrl: st.wsUrl,
@@ -147,13 +148,13 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
     if (readiness.kind !== 'starting' && (await deps.isProcessRunning('zen'))) {
       if (!opts.quitRunning) return fail(2, 'zen-running', ZEN_RUNNING_NORMALLY_MESSAGE);
       if (deps.platform !== 'darwin') {
-        return fail(2, 'quit-failed', 'Asking Zen to quit only works on macOS. Quit Zen yourself, then run `browser-hub zen-launch` again.');
+        return fail(2, 'quit-failed', 'Asking Zen to quit only works on macOS. Quit Zen yourself, then run `stephen zen-launch` again.');
       }
       const { bundleId } = await zenBundleId(cfg);
       const r = await deps.run('/usr/bin/osascript', osascriptQuitArgv(bundleId), 30_000);
       if (r.code !== 0) {
         const why = (r.stderr || r.stdout).trim().split('\n')[0] || `osascript exit code ${r.code}`;
-        return fail(2, 'quit-failed', `Could not ask Zen to quit (${why}). Quit Zen yourself (⌘Q), then try again. browser-hub never force-quits Zen.`);
+        return fail(2, 'quit-failed', `Could not ask Zen to quit (${why}). Quit Zen yourself (⌘Q), then try again. Stephen never force-quits Zen.`);
       }
       const deadline = deps.clock.now() + deps.quitTimeoutMs;
       while (await deps.isProcessRunning('zen')) {
@@ -162,7 +163,7 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
             2,
             'quit-failed',
             `Zen did not quit within ${Math.round(deps.quitTimeoutMs / 1000)} s — it may be asking you to confirm closing windows or tabs. ` +
-              'Answer that (or quit Zen with ⌘Q), then try again. browser-hub never force-quits Zen.',
+              'Answer that (or quit Zen with ⌘Q), then try again. Stephen never force-quits Zen.',
           );
         }
         await deps.clock.sleep(deps.pollIntervalMs);
@@ -175,8 +176,8 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
       exitCode: 0,
       status: 'launched',
       message: info.resumed
-        ? `Zen finished starting with Claude access (pid ${info.pid}).`
-        : `Started Zen with Claude access (pid ${info.pid}).`,
+        ? `Zen finished starting with Stephen access (pid ${info.pid}).`
+        : `Started Zen with Stephen access (pid ${info.pid}).`,
       notes,
       pid: info.pid,
       wsUrl: info.wsUrl,
@@ -198,9 +199,9 @@ export function formatZenLaunch(r: ZenLaunchResult): string {
     if (r.wsUrl) lines.push(`  Remote control: ${r.wsUrl} (this Mac only)`);
     if (r.logPath) lines.push(`  Zen log: ${r.logPath}`);
     lines.push(
-      '  Claude Code can now use your open Zen windows.',
+      '  Stephen can now use your open Zen windows.',
       '  While this Zen runs, any program on this Mac can control it (no password on that local port).',
-      '  When you no longer need Claude in Zen, quit it (⌘Q) and open Zen normally.',
+      '  When you no longer need Stephen in Zen, quit it (⌘Q) and open Zen normally.',
     );
   } else {
     lines.push(`${r.exitCode === 2 ? '!' : '✗'} ${r.message}`);
@@ -221,17 +222,36 @@ export function parseZenLaunchArgs(argv: string[]): { quitRunning: boolean; json
 
 // ───────────────────────────── install-zen-launcher ─────────────────────────────
 
-export const ZEN_LAUNCHER_USAGE = 'browser-hub install-zen-launcher [--dry-run]';
-/** Written into the applet so a re-install only ever replaces an app browser-hub made. */
-const LAUNCHER_MARKER = 'browser-hub-zen-launcher';
+export const ZEN_LAUNCHER_USAGE = 'stephen install-zen-launcher [--dry-run]';
+/** Written into the applet so a re-install only ever replaces an app Stephen made. */
+const LAUNCHER_MARKER = 'stephen-zen-launcher';
+/** The marker browser-hub (the pre-rename name) wrote into "Zen for Claude.app"; see findLegacyZenLauncher. */
+const LEGACY_LAUNCHER_MARKER = 'browser-hub-zen-launcher';
 
-/** `~/Applications/Zen for Claude.app` */
+/** `~/Applications/Zen for Stephen.app` */
 export function zenLauncherAppPath(userHome: string = process.env.HOME?.trim() || homedir()): string {
   return join(userHome, 'Applications', `${ZEN_LAUNCHER_APP_NAME}.app`);
 }
 
+/** `~/Applications/Zen for Claude.app` — where browser-hub (the pre-rename name) put its launcher. */
+export function legacyZenLauncherAppPath(userHome: string = process.env.HOME?.trim() || homedir()): string {
+  return join(userHome, 'Applications', `${LEGACY_ZEN_LAUNCHER_APP_NAME}.app`);
+}
+
+/**
+ * The old "Zen for Claude.app" if browser-hub made it (its marker file is inside), else null — an app of that
+ * name the user made themselves is not ours to suggest deleting. Doctor uses this.
+ */
+export function findLegacyZenLauncher(
+  userHome: string = process.env.HOME?.trim() || homedir(),
+  exists: (p: string) => boolean = existsSync,
+): string | null {
+  const app = legacyZenLauncherAppPath(userHome);
+  return exists(join(app, 'Contents', 'Resources', LEGACY_LAUNCHER_MARKER)) ? app : null;
+}
+
 const DIALOG_REOPEN =
-  'Zen is open without Claude access. Quit and reopen it for Claude? Your tabs come back if Zen restores your previous session.';
+  'Zen is open without Stephen access. Quit and reopen it for Stephen? Your tabs come back if Zen restores your previous session.';
 
 /**
  * The applet's AppleScript. Paths are AppleScript string literals (quotes/backslashes escaped) and
@@ -242,8 +262,8 @@ const DIALOG_REOPEN =
  */
 export function buildLauncherAppleScript(nodePath: string, cliPath: string): string {
   const title = appleScriptString(ZEN_LAUNCHER_APP_NAME);
-  return `-- ${ZEN_LAUNCHER_APP_NAME}: opens Zen with Claude access.
--- Generated by \`browser-hub install-zen-launcher\`; run that again to update it.
+  return `-- ${ZEN_LAUNCHER_APP_NAME}: opens Zen with Stephen access.
+-- Generated by \`stephen install-zen-launcher\`; run that again to update it.
 
 on zenLaunch(extraArgs)
 	set nodePath to ${appleScriptString(nodePath)}
@@ -261,7 +281,7 @@ on run
 	on error errMsg number errNum
 		if errNum is -128 then return
 		if errNum is 2 and errMsg contains ${appleScriptString(ZEN_RUNNING_NORMALLY_LEAD)} then
-			-- Zen is open normally: offer to quit it (like ⌘Q) and reopen it with Claude access.
+			-- Zen is open normally: offer to quit it (like ⌘Q) and reopen it with Stephen access.
 			try
 				display dialog ${appleScriptString(DIALOG_REOPEN)} with title ${title} buttons {"Cancel", "Reopen"} default button "Reopen" cancel button "Cancel" with icon caution
 			on error number -128
@@ -341,7 +361,7 @@ export function defaultInstallLauncherDeps(): InstallLauncherDeps {
   return { run: defaultRun, platform: process.platform, exists: pathExists, log: (l) => console.log(l) };
 }
 
-/** Build `Zen for Claude.app` with osacompile (or just print the plan with dryRun). Returns the exit code. */
+/** Build `Zen for Stephen.app` with osacompile (or just print the plan with dryRun). Returns the exit code. */
 export async function installZenLauncher(plan: LauncherPlan, opts: { dryRun?: boolean }, deps: InstallLauncherDeps): Promise<ExitCode> {
   const { log } = deps;
   if (opts.dryRun) {
@@ -359,7 +379,7 @@ export async function installZenLauncher(plan: LauncherPlan, opts: { dryRun?: bo
   }
   if (await deps.exists(plan.appPath)) {
     if (!(await deps.exists(join(plan.appPath, 'Contents', 'Resources', LAUNCHER_MARKER)))) {
-      log(`${plan.appPath} already exists and was not made by browser-hub. Move it away (or rename it), then run this again.`);
+      log(`${plan.appPath} already exists and was not made by Stephen. Move it away (or rename it), then run this again.`);
       return 1;
     }
     await rm(plan.appPath, { recursive: true, force: true });
@@ -387,7 +407,7 @@ export async function installZenLauncher(plan: LauncherPlan, opts: { dryRun?: bo
       iconNote = `default applet icon (could not copy Zen's icon: ${errText(e)})`;
     }
   }
-  await writeFile(join(resources, LAUNCHER_MARKER), 'Created by browser-hub install-zen-launcher.\n', 'utf8');
+  await writeFile(join(resources, LAUNCHER_MARKER), 'Created by stephen install-zen-launcher.\n', 'utf8');
   // Changing Resources invalidates osacompile's ad-hoc signature: re-sign ad hoc (best effort) and nudge Finder's icon cache.
   await deps.run('/usr/bin/codesign', ['--force', '--sign', '-', plan.appPath], 60_000).catch(() => undefined);
   await deps.run('/usr/bin/touch', [plan.appPath], 10_000).catch(() => undefined);
@@ -399,9 +419,9 @@ export async function installZenLauncher(plan: LauncherPlan, opts: { dryRun?: bo
       `  It runs: ${shellQuote(plan.nodePath)} ${shellQuote(plan.cliPath)} zen-launch`,
       '',
       `Next: open ~/Applications in Finder and drag "${ZEN_LAUNCHER_APP_NAME}" to your Dock.`,
-      `Open Zen with it (instead of Zen's own icon) whenever you want Claude to use your Zen. If Zen is already open`,
-      'normally, it offers to quit and reopen it for Claude. If you move or rebuild browser-hub or switch Node versions,',
-      'run `browser-hub install-zen-launcher` again.',
+      `Open Zen with it (instead of Zen's own icon) whenever you want Stephen to use your Zen. If Zen is already open`,
+      'normally, it offers to quit and reopen it for Stephen. If you move or rebuild Stephen or switch Node versions,',
+      'run `stephen install-zen-launcher` again.',
     ].join('\n'),
   );
   return 0;

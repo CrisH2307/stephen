@@ -10,12 +10,12 @@
  *
  * `zen.launch: 'never'` (the default for 'real') makes the driver ATTACH-ONLY: it never spawns Zen.
  * It reattaches to the Zen named by the state file — started with remote control by
- * `browser-hub zen-launch` (the "Zen for Claude" app, see launchForClaude()) — and otherwise fails with
+ * `stephen zen-launch` (the "Zen for Stephen" app, see launchForClaude()) — and otherwise fails with
  * a NEEDS_USER error telling the user to open Zen with that app.
  *
  * Gecko allows ONE BiDi session at a time, so disconnect() must end the session (see the
  * note in disconnect()). A state file lets a restarted server reattach to a Zen it launched; it
- * also records which browser-hub process owns the session, so a second Claude Code session gets
+ * also records which Stephen process owns the session, so a second Claude Code session gets
  * a clear "someone else is using it" error instead of being told to quit Zen.
  *
  * We never kill Zen — not even one we just launched that is slow to start (first launch after an
@@ -90,28 +90,30 @@ export interface ZenState {
   wsUrl: string;
   profileDir: string;
   mode: ProfileMode;
-  /** pid of the browser-hub server whose BiDi session is open on this Zen (absent = none). */
+  /** pid of the Stephen server whose BiDi session is open on this Zen (absent = none). */
   ownerPid?: number;
   /** Launched but still starting up: the next connect keeps waiting on `logPath` instead of relaunching. */
   starting?: boolean;
   logPath?: string;
 }
 
-/** Name of the launcher app `browser-hub install-zen-launcher` creates in ~/Applications. */
-export const ZEN_LAUNCHER_APP_NAME = 'Zen for Claude';
+/** Name of the launcher app `stephen install-zen-launcher` creates in ~/Applications. */
+export const ZEN_LAUNCHER_APP_NAME = 'Zen for Stephen';
+/** The launcher's name before the rename (from browser-hub); doctor suggests replacing it. */
+export const LEGACY_ZEN_LAUNCHER_APP_NAME = 'Zen for Claude';
 
 /** How browser_status / browser_connect / doctor describe attach-only Zen. */
 export const ZEN_ATTACH_ONLY_LABEL = 'attach-only (uses your open Zen; never launches one)';
 
 /** Attach-only: Zen runs, but not with remote control (it was opened normally). */
 export const ZEN_NOT_CLAUDE_READY_MESSAGE =
-  "Zen is open, but it wasn't started with Claude access. Quit Zen (⌘Q) and reopen it with the 'Zen for Claude' app " +
-  '(or run `browser-hub zen-launch`). Your tabs come back if Zen is set to restore your previous session.';
+  "Zen is open, but it wasn't started with Stephen access. Quit Zen (⌘Q) and reopen it with the 'Zen for Stephen' app " +
+  '(or run `stephen zen-launch`). Your tabs come back if Zen is set to restore your previous session.';
 
 /** Attach-only: no Zen at all. */
 export const ZEN_NOT_RUNNING_MESSAGE =
-  "Zen isn't open. Open Zen with the 'Zen for Claude' app (or run `browser-hub zen-launch`) so Claude can use it — " +
-  'browser-hub never starts Zen itself. (One-time setup if that app is missing: `browser-hub install-zen-launcher`.)';
+  "Zen isn't open. Open Zen with the 'Zen for Stephen' app (or run `stephen zen-launch`) so Stephen can use it — " +
+  'Stephen never starts Zen itself. (One-time setup if that app is missing: `stephen install-zen-launcher`.)';
 
 const ATTACH_ONLY_MODEL_HINT = ' Tell the user; retrying will not help until they have done this.';
 
@@ -121,12 +123,12 @@ export function zenLaunchOf(cfg: ResolvedConfig): ZenLaunch {
   return v === 'never' ? 'never' : 'auto';
 }
 
-/** True when browser-hub must never start Zen (it only attaches to a Zen opened for Claude). */
+/** True when Stephen must never start Zen (it only attaches to a Zen opened for Stephen). */
 export function isZenAttachOnly(cfg: ResolvedConfig): boolean {
   return zenLaunchOf(cfg) === 'never';
 }
 
-/** What a Zen started by launchForClaude() looks like (for `browser-hub zen-launch`). */
+/** What a Zen started by launchForClaude() looks like (for `stephen zen-launch`). */
 export interface ZenLaunchInfo {
   pid: number;
   wsUrl: string;
@@ -137,7 +139,7 @@ export interface ZenLaunchInfo {
 }
 
 /**
- * Is a Claude-ready Zen running for `mode`? Read-only (never connects, never edits the state file).
+ * Is a Stephen-ready Zen running for `mode`? Read-only (never connects, never edits the state file).
  *  - ready:    state names a live pid in this mode/profile whose ws endpoint answers;
  *  - starting: state names a live pid that was launched and has not reported its endpoint yet;
  *  - none:     no usable state.
@@ -150,16 +152,17 @@ export interface ZenReadiness {
 }
 
 export const ZEN_RUNNING_MESSAGE =
-  'Quit Zen (⌘Q) and retry — Zen must be relaunched with remote control enabled; browser-hub never force-quits it.';
+  'Quit Zen (⌘Q) and retry — Zen must be relaunched with remote control enabled; Stephen never force-quits it.';
 
-const USER_JS_BEGIN = '// >>> browser-hub';
-const USER_JS_END = '// <<< browser-hub';
-const USER_JS_BLOCK_RE = /\/\/ >>> browser-hub[^\n]*\n[\s\S]*?\/\/ <<< browser-hub[^\n]*(?:\n|$)/;
+const USER_JS_BEGIN = '// >>> stephen';
+const USER_JS_END = '// <<< stephen';
+/** Our block in user.js — also the one browser-hub (the pre-rename name) wrote, which is replaced in place. */
+const USER_JS_BLOCK_RE = /\/\/ >>> (stephen|browser-hub)\b[^\n]*\n[\s\S]*?\/\/ <<< \1\b[^\n]*(?:\n|$)/;
 
 export type ZenPrefValue = string | number | boolean;
 export type ZenPrefs = Readonly<Record<string, ZenPrefValue>>;
 
-/** Pref names browser-hub writes: dotted identifiers only (nothing that could break out of user_pref("…")). */
+/** Pref names Stephen writes: dotted identifiers only (nothing that could break out of user_pref("…")). */
 export const ZEN_PREF_NAME_RE = /^[A-Za-z0-9_\-]+(?:\.[A-Za-z0-9_\-[\]]+)*$/;
 
 /**
@@ -211,12 +214,12 @@ export function sanitizeExtraPrefs(prefs: ZenPrefs | undefined | null): [string,
 export function buildUserJsBlock(mode: ProfileMode, extraPrefs?: ZenPrefs | null): string {
   const lines: string[] = [];
   if (mode === 'real') {
-    lines.push(`${USER_JS_BEGIN} (managed by browser-hub; keeps automation prefs out of your real profile)`, prefLine(...RECOMMENDED_OFF));
+    lines.push(`${USER_JS_BEGIN} (managed by Stephen; keeps automation prefs out of your real profile)`, prefLine(...RECOMMENDED_OFF));
   } else {
     const prefs = new Map<string, ZenPrefValue>(ZEN_AGENT_PREFS);
     for (const [k, v] of sanitizeExtraPrefs(extraPrefs)) prefs.set(k, v);
     lines.push(
-      `${USER_JS_BEGIN} (managed by browser-hub; agent profile: Safe Browsing, blocklist and updates stay on)`,
+      `${USER_JS_BEGIN} (managed by Stephen; agent profile: Safe Browsing, blocklist and updates stay on)`,
       prefLine(...RECOMMENDED_OFF),
       ...[...prefs].map(([k, v]) => prefLine(k, v)),
     );
@@ -238,14 +241,22 @@ export function bidiSessionEndpoint(url: string): string {
   return trimmed.endsWith('/session') ? trimmed : `${trimmed}/session`;
 }
 
-/** Pure: return user.js content containing exactly one browser-hub block (default: the real-profile one); the rest is preserved. */
+/** Pure: return user.js content containing exactly one Stephen block (default: the real-profile one); the rest is preserved. */
 export function upsertUserJsBlock(existing: string, block: string = REAL_BLOCK): string {
-  if (USER_JS_BLOCK_RE.test(existing)) return existing.replace(USER_JS_BLOCK_RE, () => block);
+  if (USER_JS_BLOCK_RE.test(existing)) {
+    // The first block (ours or browser-hub's) is replaced in place; any further one is dropped.
+    let first = true;
+    return existing.replace(new RegExp(USER_JS_BLOCK_RE.source, 'g'), () => {
+      const out = first ? block : '';
+      first = false;
+      return out;
+    });
+  }
   if (existing.length === 0) return block;
   return `${existing}${existing.endsWith('\n') ? '' : '\n'}${block}`;
 }
 
-/** Ensure `<profileDir>/user.js` has the browser-hub block. Returns true if the file was changed. */
+/** Ensure `<profileDir>/user.js` has the Stephen block. Returns true if the file was changed. */
 export async function ensureUserJsBlock(profileDir: string, block: string = REAL_BLOCK): Promise<boolean> {
   const file = join(profileDir, 'user.js');
   let existing = '';
@@ -273,19 +284,19 @@ function otherSessionError(mode: ProfileMode, ownerPid: number, cause: unknown):
   const which = mode === 'agent' ? "Zen's agent profile" : 'your Zen';
   return new HubError(
     'NEEDS_USER',
-    `Can't connect: ${ZEN_OTHER_SESSION_MESSAGE.replace("Zen's automation session", `${which} (browser-hub pid ${ownerPid})`)}`,
+    `Can't connect: ${ZEN_OTHER_SESSION_MESSAGE.replace("Zen's automation session", `${which} (Stephen pid ${ownerPid})`)}`,
     { cause },
   );
 }
 
 function sessionLimitError(mode: ProfileMode, cause: unknown, attachOnly = false): HubError {
-  const which = mode === 'agent' ? 'the browser-hub agent Zen window' : 'Zen';
+  const which = mode === 'agent' ? 'the Stephen agent Zen window' : 'Zen';
   const then = attachOnly
-    ? "then reopen it with the 'Zen for Claude' app (or `browser-hub zen-launch`) and retry."
-    : 'then retry browser_connect — browser-hub will relaunch it.';
+    ? "then reopen it with the 'Zen for Stephen' app (or `stephen zen-launch`) and retry."
+    : 'then retry browser_connect — Stephen will relaunch it.';
   return new HubError(
     'NEEDS_USER',
-    `Zen still has a previous automation session open (it allows only one at a time, e.g. after a crash of an earlier browser-hub). ` +
+    `Zen still has a previous automation session open (it allows only one at a time, e.g. after a crash of an earlier Stephen server). ` +
       `Quit ${which} (⌘Q), ${then}`,
     { cause },
   );
@@ -367,7 +378,7 @@ export class ZenDriver implements BrowserDriver {
     this.#version = null;
     if (!b) return;
     await this.#releaseOwnership();
-    this.#detail = 'Disconnected by browser-hub (BiDi session ended, Zen left running).';
+    this.#detail = 'Disconnected by Stephen (BiDi session ended, Zen left running).';
     // What puppeteer-core 25.16.0 does over BiDi (lib/puppeteer/bidi/Browser.js):
     //   BidiBrowser.disconnect() → `await this.#browserCore.session.end()` — sends the BiDi
     //   `session.end` command (core/Session.js end()) — then `this.connection.dispose()` closes
@@ -404,7 +415,7 @@ export class ZenDriver implements BrowserDriver {
       // Endpoint gone (pid reused, or Zen restarted without the debug port) → launch below (or, attach-only, explain).
     }
 
-    // 2) Attach-only: never start Zen — tell the user how to open it for Claude.
+    // 2) Attach-only: never start Zen — tell the user how to open it for Stephen.
     if (attachOnly) throw await this.#notReadyError(mode, state);
 
     // 3) Launch.
@@ -433,7 +444,7 @@ export class ZenDriver implements BrowserDriver {
       if (isSessionLimitError(e)) {
         const owner = state.ownerPid;
         if (owner !== undefined && owner !== this.#deps.ownerPid && this.#deps.isPidAlive(owner)) {
-          this.#detail = `Zen's automation session is in use by another browser-hub (pid ${owner}).`;
+          this.#detail = `Zen's automation session is in use by another Stephen server (pid ${owner}).`;
           throw otherSessionError(mode, owner, e);
         }
         this.#detail = 'A previous automation session is still open in Zen.';
@@ -445,31 +456,31 @@ export class ZenDriver implements BrowserDriver {
 
   #agentHint(state: ZenState | null): string {
     return state && state.mode === 'agent' && this.#deps.isPidAlive(state.pid)
-      ? ' (The browser-hub agent Zen counts too — quit that window as well.)'
+      ? ' (The Stephen agent Zen counts too — quit that window as well.)'
       : '';
   }
 
   /** Attach-only and nothing to attach to: the NEEDS_USER error for this situation. Never spawns or quits anything. */
   async #notReadyError(mode: ProfileMode, state: ZenState | null): Promise<HubError> {
     if (mode === 'agent') {
-      this.#detail = 'zen.launch is "never": the agent Zen is not started by browser-hub.';
+      this.#detail = 'zen.launch is "never": the agent Zen is not started by Stephen.';
       return new HubError(
         'NEEDS_USER',
-        'The browser-hub agent Zen is not running, and "zen.launch" is "never", so browser-hub will not start it. ' +
-          'The user can set "zen": {"mode": "agent", "launch": "auto"} in ~/.browser-hub/config.json (separate agent window), ' +
-          'or remove "mode" to use their own Zen opened with the \'Zen for Claude\' app.' +
+        'The Stephen agent Zen is not running, and "zen.launch" is "never", so Stephen will not start it. ' +
+          'The user can set "zen": {"mode": "agent", "launch": "auto"} in ~/.stephen/config.json (separate agent window), ' +
+          'or remove "mode" to use their own Zen opened with the \'Zen for Stephen\' app.' +
           ATTACH_ONLY_MODEL_HINT,
       );
     }
     if (await this.#deps.isProcessRunning('zen')) {
-      this.#detail = `Zen is open without Claude access (${ZEN_ATTACH_ONLY_LABEL}).`;
+      this.#detail = `Zen is open without Stephen access (${ZEN_ATTACH_ONLY_LABEL}).`;
       return new HubError('NEEDS_USER', `${ZEN_NOT_CLAUDE_READY_MESSAGE}${this.#agentHint(state)}${ATTACH_ONLY_MODEL_HINT}`);
     }
     this.#detail = `Zen is not open (${ZEN_ATTACH_ONLY_LABEL}).`;
     return new HubError('NEEDS_USER', `${ZEN_NOT_RUNNING_MESSAGE}${ATTACH_ONLY_MODEL_HINT}`);
   }
 
-  /** Read-only: is a Claude-ready Zen running for `mode`? See ZenReadiness. */
+  /** Read-only: is a Stephen-ready Zen running for `mode`? See ZenReadiness. */
   async inspect(mode: ProfileMode = 'real'): Promise<ZenReadiness> {
     let profileDir: string | null = null;
     try {
@@ -486,7 +497,7 @@ export class ZenDriver implements BrowserDriver {
   }
 
   /**
-   * `browser-hub zen-launch`: start Zen on the user's REAL profile with remote control on, record it in
+   * `stephen zen-launch`: start Zen on the user's REAL profile with remote control on, record it in
    * the state file (no owner — nobody holds a BiDi session) and return. Never opens a BiDi session, so a
    * server can attach later (Gecko allows one at a time). If an earlier launch is still starting, waits
    * for it instead. The caller checks first that no other Zen runs (a second Zen on an in-use profile
@@ -558,14 +569,14 @@ export class ZenDriver implements BrowserDriver {
       throw new HubError(
         'NEEDS_USER',
         `Could not find your Zen profile (no usable profiles.ini in ${this.#cfg.zen.zenAppSupportDir}). ` +
-          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.browser-hub/config.json — or use mode "agent".`,
+          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.stephen/config.json — or use mode "agent".`,
       );
     }
     if (!(await isDir(dir))) {
       this.#detail = `Zen profile ${dir} does not exist.`;
       throw new HubError(
         'NEEDS_USER',
-        `The Zen profile ${dir} does not exist. Check "zen.profilePath" in ~/.browser-hub/config.json against the "Root Directory" shown in Zen's about:profiles.`,
+        `The Zen profile ${dir} does not exist. Check "zen.profilePath" in ~/.stephen/config.json against the "Root Directory" shown in Zen's about:profiles.`,
       );
     }
     return dir;
@@ -580,7 +591,7 @@ export class ZenDriver implements BrowserDriver {
       this.#mode = null;
       this.#version = null;
       this.#detail = isZenAttachOnly(this.#cfg)
-        ? "Zen connection lost (Zen was closed or the connection dropped). Reopen Zen with the 'Zen for Claude' app."
+        ? "Zen connection lost (Zen was closed or the connection dropped). Reopen Zen with the 'Zen for Stephen' app."
         : 'Zen connection lost (Zen was closed or the connection dropped). It relaunches on next use.';
     });
     void browser
@@ -618,7 +629,7 @@ export class ZenDriver implements BrowserDriver {
       this.#detail = `Zen binary not found at ${exe}.`;
       throw new HubError(
         'NOT_CONNECTED',
-        `Zen was not found at ${exe}. Install Zen (zen-browser.app), or set "zen.executablePath" in ~/.browser-hub/config.json to the binary inside Zen.app/Contents/MacOS/.`,
+        `Zen was not found at ${exe}. Install Zen (zen-browser.app), or set "zen.executablePath" in ~/.stephen/config.json to the binary inside Zen.app/Contents/MacOS/.`,
       );
     }
     await ensurePrivateDir(this.#cfg.stateDir, this.#cfg.home);
@@ -699,7 +710,7 @@ export class ZenDriver implements BrowserDriver {
         throw new HubError(
           'NOT_CONNECTED',
           `Zen (pid ${pid}) was started but has not enabled remote control within ${Math.round(this.#deps.listenTimeoutMs / 1000)} s — ` +
-            `the first launch after a Zen update can take longer. browser-hub left it running (it never quits Zen). ` +
+            `the first launch after a Zen update can take longer. Stephen left it running (it never quits Zen). ` +
             `Ask the user to wait until that Zen window has finished opening, then retry browser_connect (it will pick up the same Zen). ` +
             `If it seems stuck, the user can quit that Zen window (⌘Q) and retry. Log: ${logPath}`,
         );

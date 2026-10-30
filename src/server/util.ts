@@ -31,7 +31,7 @@ export function toErrorResult(e: unknown): CallToolResult {
 
 // ───────────── page text in errors (review #2 finding 8) ─────────────
 
-const PAGE_ORIGIN = Symbol.for('browser-hub.pageOrigin');
+const PAGE_ORIGIN = Symbol.for('stephen.pageOrigin');
 
 /** Mark an error as thrown by the page layer (its message may quote page text). Returns it. */
 export function markPageError<E>(e: E): E {
@@ -242,5 +242,5 @@ export function truncate(s: string, max: number): { text: string; truncated: boo
 
 export function log(...args: unknown[]): void {
   // stdout belongs to MCP; everything else goes to stderr.
-  console.error('[browser-hub]', ...args);
+  console.error('[stephen]', ...args);
 }

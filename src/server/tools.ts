@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises';
+import { registerDesktopTools } from '../desktop/index.js';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
 import type { McpServer, ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -30,7 +31,7 @@ import {
   toErrorResult,
 } from './util.js';
 
-/** When this browser-hub process started (ISO, comparable with AuditEntry.ts). recent_actions shows only later entries. */
+/** When this Stephen process started (ISO, comparable with AuditEntry.ts). recent_actions shows only later entries. */
 const SESSION_STARTED_AT = new Date().toISOString();
 const ZEN_ATTACH_ONLY_LINE = `Zen: ${ZEN_ATTACH_ONLY_LABEL}`;
 
@@ -103,9 +104,9 @@ export function closePrompt(url: string, title: string, intent: string): { title
   }
   const clean = (t: string, n: number) => t.replace(/[\s"«»]+/g, ' ').trim().slice(0, n);
   return {
-    title: `${host || 'a browser page'} — Claude wants to close one of YOUR tabs`,
+    title: `${host || 'a browser page'} — Stephen wants to close one of YOUR tabs`,
     body: [
-      'browser-hub did not open this tab; it is one of yours. Unsaved work in it may be lost (the page may still ask "Leave page?").',
+      'Stephen did not open this tab; it is one of yours. Unsaved work in it may be lost (the page may still ask "Leave page?").',
       `Claude says (unverified): «${clean(intent, 300)}»`,
       'From the page (unverified):',
       `  tab title: «${clean(title, 120)}»`,
@@ -177,7 +178,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
   tool(
     'browser_status',
     'Browser status',
-    'Start here. Shows which browsers (chrome, zen) are connected, in which profile mode (real = the user\'s everyday logged-in profile, agent = a dedicated browser-hub profile), the open tabs of connected browsers with their ids, and the safety settings (how approvals are asked). Cheap; does not connect anything.',
+    'Start here. Shows which browsers (chrome, zen) are connected, in which profile mode (real = the user\'s everyday logged-in profile, agent = a dedicated Stephen profile), the open tabs of connected browsers with their ids, and the safety settings (how approvals are asked). Cheap; does not connect anything.',
     {},
     READ,
     async () => {
@@ -223,7 +224,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
   tool(
     'browser_connect',
     'Connect a browser',
-    'Connect to Chrome or Zen explicitly (other tools also connect on demand), in the profile mode the user configured. mode "agent" (a separate browser-hub profile) is always allowed. mode "real" (the user\'s everyday profile) is only possible if the user configured it; switching a connected browser from agent to real asks the user first. Returns the browser status and its open tabs. If it fails, relay the error\'s instructions to the user.',
+    'Connect to Chrome or Zen explicitly (other tools also connect on demand), in the profile mode the user configured. mode "agent" (a separate Stephen profile) is always allowed. mode "real" (the user\'s everyday profile) is only possible if the user configured it; switching a connected browser from agent to real asks the user first. Returns the browser status and its open tabs. If it fails, relay the error\'s instructions to the user.',
     {
       browser: browserArg.describe('Which browser.'),
       mode: z.enum(['real', 'agent']).optional().describe('Profile mode; defaults to the configured mode. "real" only works if the user configured it.'),
@@ -1081,7 +1082,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
   tool(
     'recent_actions',
     'Recent actions',
-    'Shows the most recent browser actions of THIS session (since browser-hub started) from the audit log, newest FIRST: time, tool, tab, element, site, outcome, whether the user was asked, and the stated intent. Element names come from web pages (untrusted); for private sites not read in this session they are hidden. Use it to tell the user what you did.',
+    'Shows the most recent browser actions of THIS session (since Stephen started) from the audit log, newest FIRST: time, tool, tab, element, site, outcome, whether the user was asked, and the stated intent. Element names come from web pages (untrusted); for private sites not read in this session they are hidden. Use it to tell the user what you did.',
     { limit: z.number().int().min(1).max(200).optional().describe('Default 20.') },
     LOCAL_READ,
     async ({ limit }) => {
@@ -1169,6 +1170,9 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
         }),
     );
   }
+
+  // ═════════════════════════════ desktop (Stephen) ═════════════════════════════
+  registerDesktopTools(mcp, hub, names);
 
   return names;
 }

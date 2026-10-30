@@ -1,7 +1,7 @@
 /**
  * Errors that carry page-supplied text (review #2 finding 8).
  *
- * The `message` of every error the page engine throws is written by browser-hub and never contains
+ * The `message` of every error the page engine throws is written by Stephen and never contains
  * page text (element names, option labels, ids…): it refers to elements by ref and to a fixed set of
  * roles only. When page text is useful to the model (the options of a <select>, what covers a click
  * target) it travels in `pageText`, which the server must show ONLY inside its untrusted-content

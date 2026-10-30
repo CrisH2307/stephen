@@ -4,7 +4,7 @@
  * 'real'  attaches to the user's everyday Chrome through the Chrome 144+ consent flow
  *         (chrome://inspect/#remote-debugging → DevToolsActivePort → per-connection Allow dialog).
  *         We keep ONE long-lived connection because each new one re-prompts the user.
- * 'agent' uses a dedicated profile owned by browser-hub; launched detached so it outlives the
+ * 'agent' uses a dedicated profile owned by Stephen; launched detached so it outlives the
  *         server, and reattached on restart through its DevToolsActivePort.
  *
  * disconnect() only ever calls browser.disconnect() — the user's Chrome is never closed.
@@ -139,7 +139,7 @@ export class ChromeDriver implements BrowserDriver {
     this.#mode = null;
     this.#version = null;
     if (!b) return;
-    this.#detail = 'Disconnected by browser-hub (Chrome left running).';
+    this.#detail = 'Disconnected by Stephen (Chrome left running).';
     try {
       // NEVER browser.close(): that would quit the user's Chrome.
       await withTimeout(b.disconnect(), 5000, 'Disconnecting from Chrome');
@@ -181,7 +181,7 @@ export class ChromeDriver implements BrowserDriver {
       throw new HubError(
         'NEEDS_USER',
         `Chrome is not accepting remote control yet (no DevToolsActivePort in ${dir}). ${CHROME_ENABLE_STEPS} ` +
-          `Alternatively use mode "agent" for a separate browser-hub Chrome profile.`,
+          `Alternatively use mode "agent" for a separate Stephen Chrome profile.`,
       );
     }
     const timeout = this.#deps.realConnectTimeoutMs;
@@ -241,7 +241,7 @@ export class ChromeDriver implements BrowserDriver {
           this.#deps.agentConnectTimeoutMs,
           'Reattaching to agent Chrome',
         );
-        this.#detail = `Reattached to the running browser-hub Chrome (profile ${dir}).`;
+        this.#detail = `Reattached to the running Stephen Chrome (profile ${dir}).`;
         return browser;
       } catch {
         // Stale file from a crashed/quit agent Chrome — fall through and relaunch.
@@ -254,7 +254,7 @@ export class ChromeDriver implements BrowserDriver {
       this.#detail = `Chrome binary not found at ${executablePath}.`;
       throw new HubError(
         'NOT_CONNECTED',
-        `Google Chrome was not found at ${executablePath}. Install Chrome, or set "chrome.executablePath" in ~/.browser-hub/config.json to your Chrome binary.`,
+        `Google Chrome was not found at ${executablePath}. Install Chrome, or set "chrome.executablePath" in ~/.stephen/config.json to your Chrome binary.`,
       );
     }
     const args = buildChromeAgentArgs(dir, extraArgs);
@@ -279,7 +279,7 @@ export class ChromeDriver implements BrowserDriver {
           this.#detail = `Agent Chrome exited before enabling remote debugging (${exited}).`;
           throw new HubError(
             'NOT_CONNECTED',
-            `The browser-hub Chrome exited right after launch (${exited}). If another Chrome window is already using the profile ${dir}, quit it and retry.`,
+            `The Stephen Chrome exited right after launch (${exited}). If another Chrome window is already using the profile ${dir}, quit it and retry.`,
           );
         }
         if (this.#deps.clock.now() >= deadline) {
@@ -300,7 +300,7 @@ export class ChromeDriver implements BrowserDriver {
           this.#deps.agentConnectTimeoutMs,
           'Connecting to agent Chrome',
         );
-        this.#detail = `Launched and connected to the browser-hub Chrome (profile ${dir}).`;
+        this.#detail = `Launched and connected to the Stephen Chrome (profile ${dir}).`;
         return browser;
       } catch (e) {
         this.#detail = `Could not connect to the launched agent Chrome: ${errText(e)}`;

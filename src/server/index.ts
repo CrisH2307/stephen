@@ -30,7 +30,11 @@ export interface ServerDeps {
   actionTimeoutMs?: number;
 }
 
-export const SERVER_NAME = 'browser-hub';
+/**
+ * MCP server name. Claude Code shows the tools as `mcp__stephen__<tool>` (the voice listener allows exactly that
+ * prefix), and `stephen install` registers the server under this name.
+ */
+export const SERVER_NAME = 'stephen';
 
 /** package.json version (works from src/ and dist/, both two levels below the root). */
 export function packageVersion(): string {

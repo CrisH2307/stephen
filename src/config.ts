@@ -9,9 +9,9 @@ import type { ResolvedConfig } from './types.js';
 export type ZenExtraPrefs = Record<string, string | number | boolean>;
 
 /**
- * Whether browser-hub may start Zen itself.
- *  - 'never': attach-only — use a Zen the user opened with remote control on (the "Zen for Claude"
- *    app / `browser-hub zen-launch`); never spawn one. Default for mode 'real'.
+ * Whether Stephen may start Zen itself.
+ *  - 'never': attach-only — use a Zen the user opened with remote control on (the "Zen for Stephen"
+ *    app / `stephen zen-launch`); never spawn one. Default for mode 'real'.
  *  - 'auto': launch Zen when needed (the agent window, or a real-profile relaunch once Zen is quit). Default for mode 'agent'.
  */
 export type ZenLaunch = 'never' | 'auto';
@@ -21,7 +21,13 @@ export type ZenLaunch = 'never' | 'auto';
  * `zen.extraPrefs` — prefs written into the agent Zen profile's user.js (never the real profile);
  * `zen.launch` — see ZenLaunch.
  */
-export type HubConfig = ResolvedConfig & { zen: ResolvedConfig['zen'] & { extraPrefs: ZenExtraPrefs; launch: ZenLaunch } };
+export type HubConfig = ResolvedConfig & {
+  zen: ResolvedConfig['zen'] & { extraPrefs: ZenExtraPrefs; launch: ZenLaunch };
+  /** Raw "desktop" section of config.json ({} if absent); src/desktop validates and applies defaults. */
+  desktop: Record<string, unknown>;
+  /** Raw "voice" section of config.json ({} if absent); src/voice validates and applies defaults. */
+  voice: Record<string, unknown>;
+};
 
 type BaseUserConfig = {
   [K in keyof ResolvedConfig]?: ResolvedConfig[K] extends object
@@ -69,7 +75,7 @@ const prefs = z
       error: 'pref values must be true/false, integers, or one-line strings',
     }),
   )
-  .refine((r) => !Object.hasOwn(r, 'remote.prefs.recommended'), 'remote.prefs.recommended is managed by browser-hub')
+  .refine((r) => !Object.hasOwn(r, 'remote.prefs.recommended'), 'remote.prefs.recommended is managed by Stephen')
   .nullish();
 
 const UserConfigSchema = z.strictObject({
@@ -116,6 +122,10 @@ const UserConfigSchema = z.strictObject({
     .nullish(),
   auditLogPath: optPath,
   stateDir: optPath,
+  /** Stephen desktop actions — validated by src/desktop (raw here so the two can evolve independently). */
+  desktop: z.record(z.string(), z.unknown()).nullish(),
+  /** "Hey Stephen" voice listener — validated by src/voice. */
+  voice: z.record(z.string(), z.unknown()).nullish(),
 });
 
 type ParsedUserConfig = z.infer<typeof UserConfigSchema>;
@@ -173,18 +183,71 @@ export function expandPath(p: string, home: string, base: string = process.cwd()
   return isAbsolute(s) ? resolve(s) : resolve(base, s);
 }
 
+/** Stephen's home folder name under the user's home directory. */
+export const STEPHEN_HOME_DIRNAME = '.stephen';
+/** browser-hub's home folder (before the rename); still used when it exists and ~/.stephen does not. */
+export const LEGACY_HOME_DIRNAME = '.browser-hub';
+
+/** Where Stephen's home folder came from (see resolveStephenHome). */
+export type HomeSource = 'STEPHEN_HOME' | 'BROWSER_HUB_HOME' | 'default' | 'legacy';
+
+export interface StephenHome {
+  /** Absolute path of the home folder (state, profiles, output, audit log, config.json). */
+  dir: string;
+  source: HomeSource;
+  /** true = using the pre-rename ~/.browser-hub because ~/.stephen does not exist (doctor explains how to move it). */
+  legacy: boolean;
+}
+
+function userHomeOf(env: NodeJS.ProcessEnv): string {
+  return env.HOME && env.HOME.trim() ? env.HOME : homedir();
+}
+
 /**
- * Load config: defaults ← $BROWSER_HUB_CONFIG or <home>/config.json ← `overrides`.
- * home = $BROWSER_HUB_HOME or ~/.browser-hub. Expands '~'. Validates (throws HubError('INVALID_ARG') with a clear message).
+ * Stephen's home folder, before any `"home"` key in config.json is applied:
+ *   $STEPHEN_HOME → $BROWSER_HUB_HOME (pre-rename name, still honoured) → ~/.stephen,
+ *   except that ~/.browser-hub keeps being used while it exists and ~/.stephen does not. It is never moved
+ *   automatically: a running agent Zen and the state files point inside it.
+ */
+export function resolveStephenHome(env: NodeJS.ProcessEnv = process.env, exists: (p: string) => boolean = existsSync): StephenHome {
+  const userHome = userHomeOf(env);
+  const fromEnv = env.STEPHEN_HOME?.trim();
+  if (fromEnv) return { dir: expandPath(fromEnv, userHome), source: 'STEPHEN_HOME', legacy: false };
+  const legacyEnv = env.BROWSER_HUB_HOME?.trim();
+  if (legacyEnv) return { dir: expandPath(legacyEnv, userHome), source: 'BROWSER_HUB_HOME', legacy: false };
+  const dir = join(resolve(userHome), STEPHEN_HOME_DIRNAME);
+  const legacyDir = join(resolve(userHome), LEGACY_HOME_DIRNAME);
+  if (!exists(dir) && exists(legacyDir)) return { dir: legacyDir, source: 'legacy', legacy: true };
+  return { dir, source: 'default', legacy: false };
+}
+
+/** Doctor's note when Stephen still uses browser-hub's ~/.browser-hub (it is never moved automatically). */
+export function legacyHomeNotice(dir: string): string {
+  return (
+    `using the legacy folder ${dir} (from browser-hub), because ~/${STEPHEN_HOME_DIRNAME} does not exist. ` +
+    'To move it: quit the Zen and Chrome windows Stephen uses (agent windows, and a Zen opened with the "Zen for Stephen" app), ' +
+    `then run: mv ~/${LEGACY_HOME_DIRNAME} ~/${STEPHEN_HOME_DIRNAME}`
+  );
+}
+
+/** $STEPHEN_CONFIG, else $BROWSER_HUB_CONFIG (pre-rename name), else <home>/config.json. */
+function configPathFor(env: NodeJS.ProcessEnv, home: string): string {
+  const userHome = userHomeOf(env);
+  const fromEnv = env.STEPHEN_CONFIG?.trim() || env.BROWSER_HUB_CONFIG?.trim();
+  return fromEnv ? expandPath(fromEnv, userHome) : join(home, 'config.json');
+}
+
+/**
+ * Load config: defaults ← $STEPHEN_CONFIG (or $BROWSER_HUB_CONFIG) or <home>/config.json ← `overrides`.
+ * home = resolveStephenHome(env) (~/.stephen by default; see there for the env vars and the legacy ~/.browser-hub),
+ * unless config.json sets "home". Expands '~'. Validates (throws HubError('INVALID_ARG') with a clear message).
  */
 export function loadConfig(overrides?: UserConfig, env: NodeJS.ProcessEnv = process.env): HubConfig {
-  const userHome = env.HOME && env.HOME.trim() ? env.HOME : homedir();
+  const userHome = userHomeOf(env);
   const xp = (p: string, base?: string) => expandPath(p, userHome, base);
 
-  const envHome = env.BROWSER_HUB_HOME?.trim();
-  const baseHome = xp(envHome || '~/.browser-hub');
-  const envConfig = env.BROWSER_HUB_CONFIG?.trim();
-  const configPath = envConfig ? xp(envConfig) : join(baseHome, 'config.json');
+  const baseHome = resolveStephenHome(env).dir;
+  const configPath = configPathFor(env, baseHome);
 
   const file = validate(readConfigFile(configPath), configPath);
   const over = validate(overrides ?? {}, 'overrides');
@@ -206,7 +269,7 @@ export function loadConfig(overrides?: UserConfig, env: NodeJS.ProcessEnv = proc
   const output = pick('output') as NonNullable<ParsedUserConfig['output']>;
 
   const home = top.home ? xp(top.home) : baseHome;
-  // Zen defaults to attach-only real mode (use the Zen the user opened for Claude, never start one);
+  // Zen defaults to attach-only real mode (use the Zen the user opened for Stephen, never start one);
   // an explicit agent mode keeps launching its own window unless launch says otherwise.
   const zenMode = zen.mode ?? 'real';
   const zenLaunch: ZenLaunch = zen.launch ?? (zenMode === 'agent' ? 'auto' : 'never');
@@ -248,12 +311,12 @@ export function loadConfig(overrides?: UserConfig, env: NodeJS.ProcessEnv = proc
     },
     auditLogPath: hp(top.auditLogPath, join(home, 'audit.log')),
     stateDir: hp(top.stateDir, join(home, 'state')),
+    desktop: { ...((file as { desktop?: Record<string, unknown> | null }).desktop ?? {}), ...((over as { desktop?: Record<string, unknown> | null }).desktop ?? {}) },
+    voice: { ...((file as { voice?: Record<string, unknown> | null }).voice ?? {}), ...((over as { voice?: Record<string, unknown> | null }).voice ?? {}) },
   };
 }
 
 /** Where loadConfig looks for the config file (for doctor / README). */
-export function configFilePath(env: NodeJS.ProcessEnv = process.env): string {
-  const userHome = env.HOME && env.HOME.trim() ? env.HOME : homedir();
-  if (env.BROWSER_HUB_CONFIG?.trim()) return expandPath(env.BROWSER_HUB_CONFIG, userHome);
-  return join(expandPath(env.BROWSER_HUB_HOME?.trim() || '~/.browser-hub', userHome), 'config.json');
+export function configFilePath(env: NodeJS.ProcessEnv = process.env, exists: (p: string) => boolean = existsSync): string {
+  return configPathFor(env, resolveStephenHome(env, exists).dir);
 }

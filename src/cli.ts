@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// browser-hub CLI. Commands: serve (default) | doctor | selftest | install [--run] | zen-launch | install-zen-launcher | help | --version
-import { execFile } from 'node:child_process';
+// Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | voice-setup | zen-launch | install-zen-launcher | help | --version
+import { parseServeArgs } from './serve-args.js';
+import { runListen, runVoiceSetup } from './voice/index.js';
 import { existsSync } from 'node:fs';
 import { access, constants, mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configFilePath, loadConfig } from './config.js';
+import { configFilePath, legacyHomeNotice, loadConfig, resolveStephenHome } from './config.js';
 import { createBrowserManager } from './drivers/index.js';
 import { securePrivateDirs } from './drivers/util.js';
 import {
@@ -15,8 +17,9 @@ import {
   readDevToolsActivePort,
   resolveZenRealProfile,
 } from './drivers/macos.js';
-import { ZEN_ATTACH_ONLY_LABEL, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
+import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import { errorMessage } from './errors.js';
+import { defaultRunClaude, runInstall } from './install.js';
 import { pageEngine } from './page/index.js';
 import { createSafety } from './safety/index.js';
 import { SELFTEST_USAGE, emergencyCleanup, parseSelftestArgs, runSelftest } from './selftest/index.js';
@@ -26,6 +29,8 @@ import {
   ZEN_LAUNCHER_USAGE,
   defaultInstallLauncherDeps,
   defaultZenLaunchDeps,
+  findLegacyZenLauncher,
+  shellQuote,
   formatZenLaunch,
   installZenLauncher,
   parseZenLaunchArgs,
@@ -37,40 +42,45 @@ import {
 const MIN_NODE: [number, number] = [20, 19];
 const MIN_CHROME = 144;
 
-const HELP = `browser-hub ${packageVersion()} — MCP server that lets Claude Code use Zen and Chrome on macOS
+const HELP = `stephen ${packageVersion()} — lets Claude use your Mac's browsers (Zen and Chrome), from Claude Code or by voice
 
 Usage:
-  browser-hub [serve]        Run the MCP server on stdio (what Claude Code starts)
-  browser-hub doctor         Check this Mac's setup and print fixes
-  browser-hub selftest       Prove each browser works end to end, safely (temporary agent profile,
-                             local test pages only; closes what it opened). Options:
-                             --browser chrome|zen|all (default all)  --keep-open  --json
-  browser-hub install        Print the "claude mcp add" command for this install
-  browser-hub install --run  …and run it (registers browser-hub for all your projects)
-  browser-hub zen-launch     Open your everyday Zen with Claude access (remote control on), then exit.
-                             --quit-running  ask a normally-open Zen to quit (like ⌘Q) and reopen it
-                             --json          machine-readable result
-                             Exit code: 0 ready, 2 you need to do something, 1 error
-  browser-hub install-zen-launcher [--dry-run]
-                             Create "~/Applications/Zen for Claude.app" (runs zen-launch; put it in your Dock)
-  browser-hub help | --help  This help
-  browser-hub --version      Print the version
+  stephen [serve]        Run the MCP server on stdio (what Claude Code starts; tools are mcp__stephen__*)
+  stephen doctor         Check this Mac's setup and print fixes
+  stephen selftest       Prove each browser works end to end, safely (temporary agent profile,
+                         local test pages only; closes what it opened). Options:
+                         --browser chrome|zen|all (default all)  --keep-open  --json
+  stephen install        Print the "claude mcp add" command for this install
+  stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
+  stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
+  stephen voice-setup    Download and check the local wake-word and speech models (once)
+  stephen zen-launch     Open your everyday Zen with Stephen access (remote control on), then exit.
+                         --quit-running  ask a normally-open Zen to quit (like ⌘Q) and reopen it
+                         --json          machine-readable result
+                         Exit code: 0 ready, 2 you need to do something, 1 error
+  stephen install-zen-launcher [--dry-run]
+                         Create "~/Applications/${ZEN_LAUNCHER_APP_NAME}.app" (runs zen-launch; put it in your Dock)
+  stephen help | --help  This help
+  stephen --version      Print the version
 
-Config: ${configFilePath()}  (env BROWSER_HUB_HOME, BROWSER_HUB_CONFIG)`;
+Config: ${configFilePath()}  (env STEPHEN_HOME, STEPHEN_CONFIG)`;
 
 // ───────────────────────────── serve ─────────────────────────────
 
-async function serve(): Promise<void> {
+async function serve(argv: string[] = []): Promise<void> {
   // stdout carries MCP JSON-RPC only — route all console output to stderr before anything can log.
   console.log = console.error.bind(console);
   console.info = console.error.bind(console);
   console.debug = console.error.bind(console);
   const cfg = loadConfig();
+  const opts = parseServeArgs(argv);
+  if ('error' in opts) throw new Error(opts.error);
+  if (opts.confirm) cfg.safety.confirm = opts.confirm;
   // Profiles, state and saved page output are private to this user (mode 0700).
   try {
     await securePrivateDirs(cfg);
   } catch (e) {
-    console.error(`[browser-hub] could not secure ${cfg.home}: ${errorMessage(e)}`);
+    console.error(`[stephen] could not secure ${cfg.home}: ${errorMessage(e)}`);
   }
   const manager = createBrowserManager(cfg);
   await serveStdio({ cfg, manager, engine: pageEngine, safetyFactory: createSafety });
@@ -127,7 +137,7 @@ async function doctor(): Promise<number> {
     ok: process.platform === 'darwin',
     label: 'macOS',
     detail: process.platform,
-    fix: 'browser-hub drives Zen and Chrome on macOS. Other platforms only work with explicit config paths (tests).',
+    fix: 'Stephen drives Zen and Chrome on macOS. Other platforms only work with explicit config paths (tests).',
     blocking: true,
   });
   add({
@@ -146,9 +156,14 @@ async function doctor(): Promise<number> {
     add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
   }
 
+  const homeInfo = resolveStephenHome();
+  if (homeInfo.legacy) {
+    add({ ok: true, info: true, label: 'Home folder', detail: legacyHomeNotice(homeInfo.dir) });
+  }
+
   if (cfg) {
     const err = await writable(cfg.home);
-    add({ ok: !err, label: 'Home dir writable', detail: err ? `${cfg.home}: ${err}` : cfg.home, fix: `Make ${cfg.home} writable, or set BROWSER_HUB_HOME.`, blocking: true });
+    add({ ok: !err, label: 'Home dir writable', detail: err ? `${cfg.home}: ${err}` : cfg.home, fix: `Make ${cfg.home} writable, or set STEPHEN_HOME.`, blocking: true });
 
     // ── Chrome
     const chromeExists = existsSync(cfg.chrome.executablePath);
@@ -172,7 +187,7 @@ async function doctor(): Promise<number> {
         ok: !!port.value,
         label: 'Chrome remote debugging enabled',
         detail: port.value ? `DevToolsActivePort → port ${port.value.port}` : (port.error ?? `no DevToolsActivePort in ${cfg.chrome.userDataDir}`),
-        fix: 'Open chrome://inspect/#remote-debugging in Chrome, turn on "Allow remote debugging for this browser instance", keep Chrome open, and click Allow when Chrome asks the first time browser-hub connects.',
+        fix: 'Open chrome://inspect/#remote-debugging in Chrome, turn on "Allow remote debugging for this browser instance", keep Chrome open, and click Allow when Chrome asks the first time Stephen connects.',
       });
     } else if (cfg.chrome.mode === 'agent') {
       add({ ok: true, info: true, label: 'Chrome agent profile', detail: `${cfg.chrome.agentProfileDir}${existsSync(cfg.chrome.agentProfileDir) ? '' : ' (created on first use)'}` });
@@ -196,7 +211,7 @@ async function doctor(): Promise<number> {
       ok: true,
       info: true,
       label: 'Zen mode',
-      detail: `${cfg.zen.mode} · launch: ${zenAttach ? 'never' : 'auto'}${zenAttach ? ` — ${ZEN_ATTACH_ONLY_LABEL}` : cfg.zen.mode === 'agent' ? ' — browser-hub starts a separate agent Zen window' : ' — browser-hub relaunches Zen on your profile when Zen is quit'}`,
+      detail: `${cfg.zen.mode} · launch: ${zenAttach ? 'never' : 'auto'}${zenAttach ? ` — ${ZEN_ATTACH_ONLY_LABEL}` : cfg.zen.mode === 'agent' ? ' — Stephen starts a separate agent Zen window' : ' — Stephen relaunches Zen on your profile when Zen is quit'}`,
     });
     if (cfg.zen.mode === 'real') {
       const prof = await tryCall(() => resolveZenRealProfile(cfg!));
@@ -212,38 +227,48 @@ async function doctor(): Promise<number> {
       const launcher = zenLauncherAppPath();
       const launcherExists = existsSync(launcher);
       const openHint = launcherExists
-        ? `Open Zen with the "Zen for Claude" app (${launcher}) or run \`browser-hub zen-launch\`.`
-        : 'Run `browser-hub install-zen-launcher` once, then open Zen with the "Zen for Claude" app (or run `browser-hub zen-launch`).';
+        ? `Open Zen with the "${ZEN_LAUNCHER_APP_NAME}" app (${launcher}) or run \`stephen zen-launch\`.`
+        : `Run \`stephen install-zen-launcher\` once, then open Zen with the "${ZEN_LAUNCHER_APP_NAME}" app (or run \`stephen zen-launch\`).`;
       if (readiness === 'ready' || readiness === 'starting') {
         const st = ready.value!.state!;
-        add({ ok: true, label: 'Claude-ready Zen running', detail: readiness === 'ready' ? `pid ${st.pid}, ${st.wsUrl}` : `pid ${st.pid}, still starting` });
+        add({ ok: true, label: 'Stephen-ready Zen running', detail: readiness === 'ready' ? `pid ${st.pid}, ${st.wsUrl}` : `pid ${st.pid}, still starting` });
       } else if (running) {
         add({
           ok: false,
-          label: 'Claude-ready Zen running',
-          detail: 'no — Zen is open normally (without Claude access)',
-          fix: `Quit Zen (⌘Q) and reopen it for Claude. ${openHint} Your tabs come back if Zen restores your previous session.`,
+          label: 'Stephen-ready Zen running',
+          detail: 'no — Zen is open normally (without Stephen access)',
+          fix: `Quit Zen (⌘Q) and reopen it for Stephen. ${openHint} Your tabs come back if Zen restores your previous session.`,
         });
       } else {
-        add({ ok: true, info: true, label: 'Claude-ready Zen running', detail: `no — Zen is not open. ${zenAttach ? openHint : 'browser-hub starts it when needed (launch: auto).'}` });
+        add({ ok: true, info: true, label: 'Stephen-ready Zen running', detail: `no — Zen is not open. ${zenAttach ? openHint : 'Stephen starts it when needed (launch: auto).'}` });
       }
-      add({ ok: true, info: true, label: 'Zen running normally (without Claude access)', detail: running && readiness === 'none' ? 'yes' : 'no' });
+      add({ ok: true, info: true, label: 'Zen running normally (without Stephen access)', detail: running && readiness === 'none' ? 'yes' : 'no' });
       add({
         ok: launcherExists,
-        label: '"Zen for Claude" launcher app',
+        label: `"${ZEN_LAUNCHER_APP_NAME}" launcher app`,
         detail: launcherExists ? launcher : `not found at ${launcher}`,
-        fix: 'Run `browser-hub install-zen-launcher` (creates the app; then drag it to your Dock).',
+        fix: 'Run `stephen install-zen-launcher` (creates the app; then drag it to your Dock).',
       });
       if (!zenAttach) {
         add({
           ok: !running || readiness !== 'none',
           label: 'Zen is not running (real-profile mode, launch: auto)',
           detail: running ? 'Zen is running' : 'not running',
-          fix: 'Quit Zen (⌘Q) before browser-hub connects — it relaunches Zen with remote control on your profile.',
+          fix: 'Quit Zen (⌘Q) before Stephen connects — it relaunches Zen with remote control on your profile.',
         });
       }
     } else {
       add({ ok: true, info: true, label: 'Zen agent profile', detail: `${cfg.zen.agentProfileDir}${existsSync(cfg.zen.agentProfileDir) ? '' : ' (created on first use; runs alongside your normal Zen)'}` });
+    }
+
+    const legacyLauncher = findLegacyZenLauncher();
+    if (legacyLauncher) {
+      add({
+        ok: false,
+        label: `Old "${LEGACY_ZEN_LAUNCHER_APP_NAME}" launcher app (from browser-hub)`,
+        detail: legacyLauncher,
+        fix: `Run \`stephen install-zen-launcher\` (creates "${ZEN_LAUNCHER_APP_NAME}"), put that in your Dock instead, then delete the old app: rm -rf ${shellQuote(legacyLauncher)}`,
+      });
     }
 
     add({ ok: true, info: true, label: 'Audit log', detail: cfg.auditLogPath });
@@ -251,7 +276,7 @@ async function doctor(): Promise<number> {
     add({ ok: true, info: true, label: 'Modes', detail: `chrome: ${cfg.chrome.mode} · zen: ${cfg.zen.mode} · default browser: ${cfg.defaultBrowser} · confirm: ${cfg.safety.confirm}` });
   }
 
-  const out: string[] = [`browser-hub doctor (v${packageVersion()})`, ''];
+  const out: string[] = [`stephen doctor (v${packageVersion()})`, ''];
   for (const c of checks) {
     const mark = c.info ? '•' : c.ok ? '✓' : '✗';
     out.push(`${mark} ${c.label}${c.detail ? ` — ${c.detail}` : ''}`);
@@ -262,7 +287,7 @@ async function doctor(): Promise<number> {
   out.push(
     '',
     failed.length === 0
-      ? 'All good. Next: `browser-hub selftest` tries each browser end to end (temporary profile, local test pages).'
+      ? 'All good. Next: `stephen selftest` tries each browser end to end (temporary profile, local test pages).'
       : `${failed.length} problem${failed.length === 1 ? '' : 's'}${blocking.length ? ` (${blocking.length} blocking)` : ' (none blocking)'}.`,
   );
   console.log(out.join('\n'));
@@ -303,33 +328,10 @@ function distCliPath(): string {
 }
 
 async function install(run: boolean): Promise<number> {
-  const cli = distCliPath();
-  const args = ['mcp', 'add', '--scope', 'user', 'browser-hub', '--', 'node', cli, 'serve'];
-  const printable = `claude mcp add --scope user browser-hub -- node "${cli}" serve`;
-  if (!existsSync(cli)) console.log(`Note: ${cli} does not exist yet — run \`npm run build\` first.\n`);
-  if (!run) {
-    console.log(`Register browser-hub with Claude Code (all projects):\n\n  ${printable}\n\nThen restart Claude Code and check /mcp. Or run: browser-hub install --run`);
-    return 0;
-  }
-  console.log(`Running: ${printable}`);
-  return new Promise((resolveExit) => {
-    execFile('claude', args, (err, stdout, stderr) => {
-      if (stdout.trim()) console.log(stdout.trim());
-      if (stderr.trim()) console.error(stderr.trim());
-      if (err) {
-        const notFound = (err as NodeJS.ErrnoException).code === 'ENOENT';
-        console.error(
-          notFound
-            ? 'The `claude` command was not found. Install Claude Code, or run the command above in a terminal where `claude` works.'
-            : `claude mcp add failed: ${err.message.split('\n')[0]}. If browser-hub is already registered, remove it first: claude mcp remove --scope user browser-hub`,
-        );
-        resolveExit(1);
-        return;
-      }
-      console.log('Done. Restart Claude Code, then run /mcp to see browser-hub.');
-      resolveExit(0);
-    });
-  });
+  return runInstall(
+    { run, cliPath: distCliPath() },
+    { runClaude: defaultRunClaude, exists: existsSync, log: (l) => console.log(l), error: (l) => console.error(l) },
+  );
 }
 
 // ───────────────────────────── zen-launch ─────────────────────────────
@@ -337,7 +339,7 @@ async function install(run: boolean): Promise<number> {
 async function zenLaunch(argv: string[]): Promise<number> {
   const opts = parseZenLaunchArgs(argv);
   if ('error' in opts) {
-    console.error(`${opts.error}\nUsage: browser-hub zen-launch [--quit-running] [--json]`);
+    console.error(`${opts.error}\nUsage: stephen zen-launch [--quit-running] [--json]`);
     return 1;
   }
   const cfg = loadConfig();
@@ -349,7 +351,7 @@ async function zenLaunch(argv: string[]): Promise<number> {
   const result = await runZenLaunch({ quitRunning: opts.quitRunning }, defaultZenLaunchDeps(cfg));
   if (opts.json) console.log(JSON.stringify(result, null, 2));
   else if (result.exitCode === 0) console.log(formatZenLaunch(result));
-  // Not ready: the message goes to stderr, which is what the "Zen for Claude" app shows in its dialog.
+  // Not ready: the message goes to stderr, which is what the "Zen for Stephen" app shows in its dialog.
   else console.error(formatZenLaunch(result));
   return result.exitCode;
 }
@@ -372,7 +374,7 @@ async function main(argv: string[]): Promise<number> {
   const [cmd = 'serve', ...rest] = argv;
   switch (cmd) {
     case 'serve':
-      await serve();
+      await serve(rest);
       return -1; // keep running
     case 'doctor':
       return doctor();
@@ -384,6 +386,10 @@ async function main(argv: string[]): Promise<number> {
       return zenLaunch(rest);
     case 'install-zen-launcher':
       return installLauncher(rest);
+    case 'listen':
+      return runListen(rest);
+    case 'voice-setup':
+      return runVoiceSetup(rest);
     case 'help':
     case '--help':
     case '-h':
@@ -405,7 +411,7 @@ main(process.argv.slice(2)).then(
     if (code >= 0) process.exitCode = code;
   },
   (e: unknown) => {
-    console.error(`browser-hub: ${errorMessage(e)}`);
+    console.error(`stephen: ${errorMessage(e)}`);
     process.exit(1);
   },
 );

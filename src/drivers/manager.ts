@@ -33,7 +33,7 @@ interface TabRegistry {
   byId: Map<TabId, Page>;
   byPage: Map<Page, TabId>;
   current: TabId | null;
-  /** Tabs browser-hub opened itself (openTab). Every other tab is the user's (review #2 finding 11). */
+  /** Tabs Stephen opened itself (openTab). Every other tab is the user's (review #2 finding 11). */
   opened: Set<TabId>;
   /** The Browser instance the registered pages belong to. */
   browser: Browser | null;
@@ -134,7 +134,7 @@ export class BrowserManager implements IBrowserManager {
     return { id, page };
   }
 
-  /** True if browser-hub opened this tab (tab_open) in this process; user tabs and unknown ids → false. */
+  /** True if Stephen opened this tab (tab_open) in this process; user tabs and unknown ids → false. */
   openedByHub(tab: TabId): boolean {
     try {
       return this.#tabs[browserOfTab(tab)].opened.has(tab);

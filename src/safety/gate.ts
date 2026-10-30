@@ -94,7 +94,7 @@ export class SafetyGate implements ISafetyGate {
     this.onAuditError =
       opts.onAuditError ??
       ((e) => {
-        process.stderr.write(`browser-hub: audit log write failed: ${e instanceof Error ? e.message : String(e)}\n`);
+        process.stderr.write(`stephen: audit log write failed: ${e instanceof Error ? e.message : String(e)}\n`);
       });
   }
 
@@ -164,7 +164,7 @@ export class SafetyGate implements ISafetyGate {
 
     let trustHosts: string[] = [];
     if (decision.verdict === 'deny') {
-      message = `Blocked by browser-hub safety policy — did not ${what}. ${decision.reason}`;
+      message = `Blocked by Stephen's safety policy — did not ${what}. ${decision.reason}`;
     } else if (decision.verdict === 'confirm') {
       const ctx: PromptContext = {};
       if (decision.rules.includes('first-interaction') || decision.rules.includes('first-destination')) {
@@ -189,12 +189,12 @@ export class SafetyGate implements ISafetyGate {
       if (confirmation === 'declined') {
         message =
           this.confirmer.kind === 'deny'
-            ? `Not performed: "${what}" needs the user's confirmation (${decision.reason}) and browser-hub is configured to decline such actions automatically (safety.confirm = "deny"). Ask the user to do this step themselves.`
+            ? `Not performed: "${what}" needs the user's confirmation (${decision.reason}) and Stephen is configured to decline such actions automatically (safety.confirm = "deny"). Ask the user to do this step themselves.`
             : `The user declined: did not ${what}. Do not retry this action; ask the user how they want to proceed.`;
       } else if (confirmation === 'unavailable') {
         message =
           `Not performed: "${what}" needs the user's confirmation (${decision.reason}), but no confirmation channel is available, so it was denied. ` +
-          'To enable confirmations, use an MCP client that supports elicitation, or run browser-hub on macOS with "safety": {"confirm": "auto"} or "dialog" in ~/.browser-hub/config.json. Until then, ask the user to do this step themselves.';
+          'To enable confirmations, use an MCP client that supports elicitation, or run Stephen on macOS with "safety": {"confirm": "auto"} or "dialog" in ~/.stephen/config.json. Until then, ask the user to do this step themselves.';
       }
     }
 

@@ -193,7 +193,7 @@ export async function ensurePrivateDir(dir: string, root?: string): Promise<void
   }
 }
 
-/** Create/lock down browser-hub's own directories (home, state, output, agent profiles, audit dir). */
+/** Create/lock down Stephen's own directories (home, state, output, agent profiles, audit dir). */
 export async function securePrivateDirs(cfg: ResolvedConfig): Promise<void> {
   const home = cfg.home;
   await ensurePrivateDir(home);

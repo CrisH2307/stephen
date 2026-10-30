@@ -1,5 +1,5 @@
 /**
- * Fixture pages for `browser-hub selftest`, served from this process on 127.0.0.1 only.
+ * Fixture pages for `stephen selftest`, served from this process on 127.0.0.1 only.
  *
  * Two listeners give two origins (and sites): A = http://127.0.0.1:<pa>, B = http://localhost:<pb>.
  * Both share one record of what the pages reported back (`hits`) and of form submissions, so the
@@ -33,7 +33,7 @@ function page(title: string, body: string): string {
 const FORM_PAGE = page(
   'Selftest form',
   `<main>
-<h1>browser-hub selftest form</h1>
+<h1>Stephen selftest form</h1>
 <form id="f" method="post" action="/submit">
   <label>Full name <input id="name" name="fullname" type="text"></label>
   <label>Notes <textarea id="notes" name="notes" rows="3" cols="40"></textarea></label>
@@ -85,7 +85,7 @@ const FRAME_CHILD = page(
 <button id="framebtn" onclick="hit('frame-button')">Frame button</button>`,
 );
 
-const INDEX_PAGE = page('Selftest', '<main><h1>browser-hub selftest</h1><p>Local fixture server.</p></main>');
+const INDEX_PAGE = page('Selftest', '<main><h1>Stephen selftest</h1><p>Local fixture server.</p></main>');
 
 const MAX_BODY = 64 * 1024;
 

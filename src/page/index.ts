@@ -744,7 +744,7 @@ function secretError(ref: Ref, typed: number, total: number): HubError {
   const done = typed === 0 ? 'nothing was typed' : `only the first ${typed} of ${total} characters had been typed`;
   return new HubError(
     'DENIED',
-    `Blocked by browser-hub safety policy — ${ref} became a password / one-time-code field when it was focused (or focus moved into one), so typing stopped (${done}). Secrets must be entered by the user: ask them to type it themselves.`,
+    `Blocked by Stephen's safety policy — ${ref} became a password / one-time-code field when it was focused (or focus moved into one), so typing stopped (${done}). Secrets must be entered by the user: ask them to type it themselves.`,
   );
 }
 

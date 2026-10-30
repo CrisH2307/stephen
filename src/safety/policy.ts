@@ -122,7 +122,7 @@ export interface PolicyState {
   mutationTimes: readonly number[];
   /** Private scopes read this session (no expiry). */
   privateReads: readonly PrivateRead[];
-  /** Hosts the user allowed Claude to interact with after a private read (first-interaction rule). */
+  /** Hosts the user allowed Stephen to interact with after a private read (first-interaction rule). */
   trustedHosts?: readonly string[];
 }
 
@@ -194,16 +194,16 @@ export function untrustedInteractionHosts(req: ActionRequest, reads: readonly Pr
 const ASK_USER = 'Ask the user to do this themselves.';
 
 function blockedListMessage(host: string): string {
-  return `${host} is on browser-hub's blocked list (password-manager vaults and sites the user has blocked) and is off-limits. ${ASK_USER}`;
+  return `${host} is on Stephen's blocked list (password-manager vaults and sites the user has blocked) and is off-limits. ${ASK_USER}`;
 }
 
 /** Why a navigation target is blocked, or null. Only http(s) and about:blank may be opened. */
 export function blockedTargetReason(url: string, lists: PolicyLists): string | null {
   const u = parseUrl(url);
-  if (!u) return `"${clean(url, 100)}" is not an absolute URL; browser-hub only opens http(s) URLs.`;
+  if (!u) return `"${clean(url, 100)}" is not an absolute URL; Stephen only opens http(s) URLs.`;
   if (u.protocol === 'about:' && u.href === 'about:blank') return null;
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-    return `${u.protocol} URLs (browser-internal pages, local files, scripts, extensions, app links) are off-limits to browser-hub. ${ASK_USER}`;
+    return `${u.protocol} URLs (browser-internal pages, local files, scripts, extensions, app links) are off-limits to Stephen. ${ASK_USER}`;
   }
   if (findMatch(u, lists.blocked)) return blockedListMessage(u.host);
   return null;
@@ -212,10 +212,10 @@ export function blockedTargetReason(url: string, lists: PolicyLists): string | n
 /** Why acting on/reading a page (or frame) at `url` is blocked, or null. */
 export function blockedPageReason(url: string, lists: PolicyLists, what = 'This page'): string | null {
   const u = parseUrl(url);
-  if (!u) return `${what}'s URL could not be determined, so browser-hub will not act on it.`;
+  if (!u) return `${what}'s URL could not be determined, so Stephen will not act on it.`;
   if (u.protocol === 'about:' && (u.href === 'about:blank' || u.href === 'about:srcdoc')) return null;
   if (!u.isWeb) {
-    return `${what} is a ${u.protocol} page (browser-internal page, local file, extension or other non-web content), which is off-limits to browser-hub. ${ASK_USER}`;
+    return `${what} is a ${u.protocol} page (browser-internal page, local file, extension or other non-web content), which is off-limits to Stephen. ${ASK_USER}`;
   }
   if (findMatch(u, lists.blocked)) return blockedListMessage(u.host);
   return null;
@@ -374,7 +374,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
 
   // ── missing-element (deny, fail closed)
   if ((kind === 'click' || kind === 'type' || kind === 'select' || kind === 'upload') && !el) {
-    fire('missing-element', 'deny', 'high', `browser-hub could not read the target element, so the ${kind} was not performed. Re-run snapshot and try again.`);
+    fire('missing-element', 'deny', 'high', `Stephen could not read the target element, so the ${kind} was not performed. Re-run snapshot and try again.`);
   }
 
   // ── secret-field (deny)
@@ -385,7 +385,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
         'secret-field',
         'deny',
         'high',
-        'That field holds a password/one-time code/payment detail. browser-hub never types these — ask the user to enter it themselves.',
+        'That field holds a password/one-time code/payment detail. Stephen never types these — ask the user to enter it themselves.',
       );
     }
   }
@@ -396,7 +396,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
       'focus-unknown',
       'deny',
       'high',
-      `browser-hub could not tell which element has keyboard focus, so it did not press ${clean(req.key, 30)} (it could type into a password field, submit a form or delete something). Click the field or control you mean first (click with its ref), then press the key again — or use the type tool.`,
+      `Stephen could not tell which element has keyboard focus, so it did not press ${clean(req.key, 30)} (it could type into a password field, submit a form or delete something). Click the field or control you mean first (click with its ref), then press the key again — or use the type tool.`,
     );
   }
 
@@ -422,13 +422,13 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
   if (kind === 'evaluate') {
     const len = (req.text ?? '').length;
     if (!safety.allowEvaluate) {
-      fire('evaluate-disabled', 'deny', 'high', 'Running JavaScript in pages is disabled in browser-hub (safety.allowEvaluate is false).');
+      fire('evaluate-disabled', 'deny', 'high', 'Running JavaScript in pages is disabled in Stephen (safety.allowEvaluate is false).');
     } else if (len > EVALUATE_MAX_CHARS) {
       fire(
         'evaluate-too-long',
         'deny',
         'high',
-        `The expression is ${len} characters; the user must be able to read all of the code they approve, so browser-hub only runs expressions of at most ${EVALUATE_MAX_CHARS} characters. Shorten it.`,
+        `The expression is ${len} characters; the user must be able to read all of the code they approve, so Stephen only runs expressions of at most ${EVALUATE_MAX_CHARS} characters. Shorten it.`,
       );
     } else {
       fire('evaluate', 'confirm', 'high', 'Runs arbitrary JavaScript in the page, with access to everything the logged-in page can do.');
@@ -531,7 +531,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
           'cross-site-typing',
           'confirm',
           'high',
-          `Claude read private content on ${describeSources(others)} earlier in this session and is now entering text on ${destHost} — the usual shape of data exfiltration.`,
+          `Stephen read private content on ${describeSources(others)} earlier in this session and is now entering text on ${destHost} — the usual shape of data exfiltration.`,
         );
       }
     }
@@ -543,7 +543,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
         'first-interaction',
         'confirm',
         'medium',
-        `Claude read private content on ${describeSources(reads)} earlier in this session. Scripts on ${where} see every click, key, hover and scroll, so interacting there can leak what was read. Approving lets Claude interact with ${where} for the rest of this session.`,
+        `Stephen read private content on ${describeSources(reads)} earlier in this session. Scripts on ${where} see every click, key, hover and scroll, so interacting there can leak what was read. Approving lets Stephen interact with ${where} for the rest of this session.`,
       );
     }
 
@@ -554,7 +554,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
         'first-destination',
         'confirm',
         'medium',
-        `Claude read private content on ${describeSources(reads)} earlier in this session, and this goes to ${where} with a path or sub-domain that could carry a short piece of it (a code, a name). Approving lets Claude visit ${where} for the rest of this session.`,
+        `Stephen read private content on ${describeSources(reads)} earlier in this session, and this goes to ${where} with a path or sub-domain that could carry a short piece of it (a code, a name). Approving lets Stephen visit ${where} for the rest of this session.`,
       );
     }
 
@@ -567,7 +567,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
           'cross-site-navigate',
           'confirm',
           'high',
-          `Claude read private content on ${describeSources(reads)} earlier in this session, and this ${c.what} goes to ${host} — a redirect / form / data-collection endpoint that forwards whatever the URL carries.`,
+          `Stephen read private content on ${describeSources(reads)} earlier in this session, and this ${c.what} goes to ${host} — a redirect / form / data-collection endpoint that forwards whatever the URL carries.`,
         );
         continue;
       }
@@ -577,7 +577,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
           'cross-site-navigate',
           'confirm',
           'high',
-          `Claude read private content on ${describeSources(others)} earlier in this session, and this ${c.what} to ${host} can carry data: ${o.dataReason}.`,
+          `Stephen read private content on ${describeSources(others)} earlier in this session, and this ${c.what} to ${host} can carry data: ${o.dataReason}.`,
         );
       }
     }

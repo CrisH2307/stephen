@@ -74,13 +74,13 @@ export interface CheckEnv {
 
 /**
  * Zen (Gecko) cannot yet dispatch mouse events into out-of-process (cross-site) iframes when
- * automated (Mozilla bug 1773393). browser-hub does not weaken site isolation by default; the user
+ * automated (Mozilla bug 1773393). Stephen does not weaken site isolation by default; the user
  * can opt in for the agent profile only.
  */
 export const ZEN_IFRAME_HINT =
   'Zen could not deliver a click into a cross-site iframe (a known Gecko automation limitation with site isolation). ' +
-  'If you need that, add "zen": {"extraPrefs": {"fission.webContentIsolationStrategy": 0}} to ~/.browser-hub/config.json, quit the agent Zen window, and re-run the selftest. ' +
-  'This only affects the browser-hub agent profile, but it weakens site isolation there (see README, "Zen and cross-site iframes").';
+  'If you need that, add "zen": {"extraPrefs": {"fission.webContentIsolationStrategy": 0}} to ~/.stephen/config.json, quit the agent Zen window, and re-run the selftest. ' +
+  'This only affects the Stephen agent profile, but it weakens site isolation there (see README, "Zen and cross-site iframes").';
 
 /** A check failed; `hint` tells the user what to do. */
 export class CheckFailure extends Error {
@@ -95,9 +95,9 @@ export class CheckFailure extends Error {
 
 class SkipCheck extends Error {}
 
-export const REPORT_HINT = 'Please report this with the output of `browser-hub selftest --json`.';
+export const REPORT_HINT = 'Please report this with the output of `stephen selftest --json`.';
 const SAFETY_HINT =
-  'A safety rule did not hold. Do not let Claude use this browser through browser-hub until this is fixed; ' + REPORT_HINT;
+  'A safety rule did not hold. Do not let Claude use this browser through Stephen until this is fixed; ' + REPORT_HINT;
 
 export function resultText(r: ToolResult): string {
   return r.content
@@ -161,7 +161,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
   };
   const snapshot = async (t: string): Promise<string> => ok(await call('snapshot', { tab: t }), 'snapshot');
   const navigate = async (t: string, path: string): Promise<string> =>
-    ok(await call('navigate', { tab: t, url: `${fx.a}${path}`, intent: 'browser-hub selftest: open a local test page' }), `navigate to ${path}`);
+    ok(await call('navigate', { tab: t, url: `${fx.a}${path}`, intent: 'Stephen selftest: open a local test page' }), `navigate to ${path}`);
   const ref = (s: string, label: string): string => {
     const r = refFor(s, label);
     if (!r) throw new CheckFailure(`no ${label} in the snapshot:\n${s.slice(0, 1500)}`, REPORT_HINT);
@@ -193,14 +193,14 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
 
   // 1. connect & open tab
   await step(1, async () => {
-    const c = await call('browser_connect', { browser, mode: 'agent', intent: 'browser-hub selftest' });
+    const c = await call('browser_connect', { browser, mode: 'agent', intent: 'Stephen selftest' });
     if (c.isError) {
       const msg = oneLine(resultText(c), 600);
       throw new CheckFailure(`browser_connect failed: ${msg}`, env.connectHint?.(msg));
     }
     const connected = resultText(c);
     if (!/agent profile/.test(connected)) throw new CheckFailure(`connected, but not in the agent profile: ${oneLine(connected)}`, SAFETY_HINT);
-    const t = ok(await call('tab_open', { browser, intent: 'browser-hub selftest: open a scratch tab' }), 'tab_open');
+    const t = ok(await call('tab_open', { browser, intent: 'Stephen selftest: open a scratch tab' }), 'tab_open');
     const m = /\b([cz]\d+)\b/.exec(t);
     if (!m) throw new CheckFailure(`tab_open did not return a tab id: ${oneLine(t)}`, REPORT_HINT);
     tab = m[1]!;
@@ -269,9 +269,9 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
     5,
     async () => {
       const t = needForm();
-      ok(await call('type', { target: refs.name, text: 'Ada Lovelace', intent: 'browser-hub selftest: fill the name field' }), 'type (text field)');
+      ok(await call('type', { target: refs.name, text: 'Ada Lovelace', intent: 'Stephen selftest: fill the name field' }), 'type (text field)');
       ok(
-        await call('type', { target: refs.notes, text: 'line one\nline two', intent: 'browser-hub selftest: fill the notes field' }),
+        await call('type', { target: refs.notes, text: 'line one\nline two', intent: 'Stephen selftest: fill the notes field' }),
         'type (textarea)',
       );
       const s = await snapshot(t);
@@ -292,7 +292,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
     async () => {
       needForm();
       const out = ok(
-        await call('select_option', { target: refs.color, values: ['Green'], intent: 'browser-hub selftest: choose a color' }),
+        await call('select_option', { target: refs.color, values: ['Green'], intent: 'Stephen selftest: choose a color' }),
         'select_option',
       );
       if (!/selected: "green"/.test(out)) throw new CheckFailure(`select_option did not report "green" as selected: ${oneLine(out)}`);
@@ -306,7 +306,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
     7,
     async () => {
       const t = needForm();
-      ok(await call('click', { target: refs.extras, intent: 'browser-hub selftest: tick the checkbox' }), 'click (checkbox)');
+      ok(await call('click', { target: refs.extras, intent: 'Stephen selftest: tick the checkbox' }), 'click (checkbox)');
       const line = lineFor(await snapshot(t), 'checkbox "Include extra details"');
       if (!/\bchecked\b/.test(line)) throw new CheckFailure(`the checkbox is not checked after the click: ${line || '(missing)'}`);
       return 'checkbox checked';
@@ -333,7 +333,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
   // 9. password field refused
   await step(9, async () => {
     needForm();
-    const r = await call('type', { target: refs.password, text: 'not-a-real-password', intent: 'browser-hub selftest: try the password field' });
+    const r = await call('type', { target: refs.password, text: 'not-a-real-password', intent: 'Stephen selftest: try the password field' });
     if (!r.isError) throw new CheckFailure('typing into the password field was ALLOWED', SAFETY_HINT);
     await noHit('password-input');
     return 'refused, nothing typed';
@@ -342,7 +342,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
   // 10. "Send" refused (needs confirmation; confirm=deny) and nothing reached the server
   await step(10, async () => {
     needForm();
-    const r = await call('click', { target: refs.send, intent: 'browser-hub selftest: try to send the form' });
+    const r = await call('click', { target: refs.send, intent: 'Stephen selftest: try to send the form' });
     await noHit('submit-event');
     const subs = fx.submissions();
     if (subs.length) throw new CheckFailure(`the server received ${subs.length} submission(s)`, SAFETY_HINT);
@@ -358,7 +358,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
       onForm = false;
       await navigate(t, '/overlay');
       const target = ref(await snapshot(t), 'button "Continue to next step"');
-      const r = await call('click', { target, intent: 'browser-hub selftest: click a covered button' });
+      const r = await call('click', { target, intent: 'Stephen selftest: click a covered button' });
       await noHit('covered-button');
       if (fx.hits().includes('overlay')) throw new CheckFailure('the click landed on the overlay', REPORT_HINT);
       if (!r.isError) throw new CheckFailure(`the click on a covered button was reported as done: ${oneLine(resultText(r))}`);
@@ -383,7 +383,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
       parentRef = refFor(s, 'button "Parent button"') ?? undefined;
       const target = ref(s, 'button "Frame button"');
       if (!/:f\d+e\d+$/.test(target)) throw new CheckFailure(`the frame button got a main-frame ref (${target})`, REPORT_HINT);
-      ok(await call('click', { target, intent: 'browser-hub selftest: click inside the iframe' }), 'click (iframe)');
+      ok(await call('click', { target, intent: 'Stephen selftest: click inside the iframe' }), 'click (iframe)');
       if (!(await fx.waitForHit('frame-button', 5000))) {
         throw new CheckFailure('the click inside the iframe did not reach the page', browser === 'zen' ? ZEN_IFRAME_HINT : REPORT_HINT);
       }
@@ -415,7 +415,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
     14,
     async () => {
       const t = needTab();
-      ok(await call('press_key', { tab: t, key: 'Escape', intent: 'browser-hub selftest: press Escape' }), 'press_key Escape');
+      ok(await call('press_key', { tab: t, key: 'Escape', intent: 'Stephen selftest: press Escape' }), 'press_key Escape');
       return 'allowed';
     },
     REPORT_HINT,
@@ -426,7 +426,7 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
     const t = needTab();
     if (!parentRef) throw new SkipCheck('not run: no ref from the frames page (check 12)');
     await navigate(t, '/form');
-    const r = await call('click', { target: parentRef, intent: 'browser-hub selftest: use a ref from the previous page' });
+    const r = await call('click', { target: parentRef, intent: 'Stephen selftest: use a ref from the previous page' });
     await noHit('parent-button');
     if (!r.isError) throw new CheckFailure(`a ref from the previous page was accepted: ${oneLine(resultText(r))}`, SAFETY_HINT);
     if (!/STALE_REF/.test(resultText(r))) throw new CheckFailure(`expected STALE_REF, got: ${oneLine(resultText(r), 300)}`, REPORT_HINT);
