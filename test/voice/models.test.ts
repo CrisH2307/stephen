@@ -4,7 +4,20 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ASR_ARCHIVES, ensureModels, isInstalled, KWS_MODEL, modelPaths, requiredArchives, VAD_MODEL, type Downloader, type ModelArchive } from '../../src/voice/models.js';
+import { DEFAULT_ASR_MODEL } from '../../src/voice/config.js';
+import {
+  ASR_ARCHIVES,
+  ensureModels,
+  isInstalled,
+  KWS_MODEL,
+  modelPaths,
+  requiredArchives,
+  resolveAsrModel,
+  VAD_MODEL,
+  type Downloader,
+  type ModelArchive,
+} from '../../src/voice/models.js';
+import { fakeInstall } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-models-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -86,5 +99,29 @@ describe('ensureModels', () => {
     expect(p.kws.encoder).toBe(`/m/${KWS_MODEL.dir}/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx`);
     expect(p.vad).toBe('/m/silero-vad/silero_vad.onnx');
     expect(Object.keys(p.asr.files)).toEqual(['tiny.en-encoder.int8.onnx', 'tiny.en-decoder.int8.onnx', 'tiny.en-tokens.txt']);
+  });
+});
+
+describe('resolveAsrModel (which speech-to-text model `stephen listen` uses)', () => {
+  it('the default is whisper-small.en, pinned like the others', () => {
+    expect(DEFAULT_ASR_MODEL).toBe('whisper-small.en');
+    expect(ASR_ARCHIVES[DEFAULT_ASR_MODEL].keep).toEqual(['small.en-encoder.int8.onnx', 'small.en-decoder.int8.onnx', 'small.en-tokens.txt']);
+    expect(Object.keys(modelPaths('/m', 'parakeet-tdt-0.6b-v2').asr.files)).toEqual(['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt']);
+    expect(Object.keys(modelPaths('/m', 'moonshine-base-v2').asr.files)).toEqual(['encoder_model.ort', 'decoder_model_merged.ort', 'tokens.txt', 'LICENSE']);
+  });
+
+  it('configured model always wins; unset → default if installed, else the old tiny model with a hint, else the default', async () => {
+    const root = mkdtempSync(join(tmp, 'resolve-'));
+    expect(await resolveAsrModel(root, 'whisper-base.en')).toEqual({ id: 'whisper-base.en', note: null });
+    // fresh install: nothing there → the default (voice-setup / listen download it)
+    expect(await resolveAsrModel(root, null)).toEqual({ id: DEFAULT_ASR_MODEL, note: null });
+    // an existing user who only has whisper-tiny: keep working, tell them how to upgrade
+    fakeInstall(root, ASR_ARCHIVES['whisper-tiny.en']);
+    const r = await resolveAsrModel(root, null);
+    expect(r.id).toBe('whisper-tiny.en');
+    expect(r.note).toMatch(/run `stephen voice-setup` to get the better model \(whisper-small\.en, 636 MB/i);
+    fakeInstall(root, ASR_ARCHIVES[DEFAULT_ASR_MODEL]);
+    expect(await resolveAsrModel(root, null)).toEqual({ id: DEFAULT_ASR_MODEL, note: null });
+    expect(await resolveAsrModel(root, 'whisper-tiny.en')).toEqual({ id: 'whisper-tiny.en', note: null });
   });
 });

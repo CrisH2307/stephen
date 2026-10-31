@@ -81,7 +81,7 @@ describe('registration', () => {
     );
     const names: string[] = [];
     registerDesktopTools(mcp, hub, names, standardMac().deps());
-    expect(names).toEqual(['open_app', 'open_url', 'desktop_status']);
+    expect(names).toEqual(['open_app', 'open_url', 'play_media', 'desktop_status']);
     const d = new Desktop(hub, standardMac().deps(), parseDesktopConfig({}));
     expect(textOf(await d.openApp('music', intent))).toBe(`Opened com.apple.Music.${nameBlock('Music')}`);
   });
@@ -249,7 +249,8 @@ describe('open_url', () => {
     expect(r.isError).toBeFalsy();
     expect(h.mac.opens()).toEqual([['-a', '/Applications/Zen Browser.app', 'https://www.youtube.com/']]);
     expect(textOf(r)).toMatch(/^Opened https:\/\/www\.youtube\.com\/ in Zen\. Stephen is not attached to Zen, so there is no tab id/);
-    expect(h.manager.connectCalls).toEqual([]); // nothing connected or launched for this
+    // It tries to attach to a running "Zen for Stephen" (attach-only: never launches); none is running here.
+    expect(h.manager.connectCalls).toEqual([["zen", undefined]]);
     // gate decision (tab_open with the target) + outcome
     expect(h.audit.entries.find((e) => e.kind === 'tab_open' && e.tool === 'open_url')).toMatchObject({ outcome: 'ok', browser: 'zen', args: { url: 'https://www.youtube.com/' } });
     expect(h.audit.entries.at(-1)).toMatchObject({ tool: 'open_url', outcome: 'ok', browser: 'zen', args: { url: 'https://www.youtube.com/', app: '/Applications/Zen Browser.app', via: 'open -a' } });

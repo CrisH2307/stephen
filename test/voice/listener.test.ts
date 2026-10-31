@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Assistant } from '../../src/voice/assistant.js';
 import type { KeywordHit } from '../../src/voice/engine.js';
-import { Listener, type ListenerOptions } from '../../src/voice/listener.js';
+import { BARE_PREROLL_EXTRA_SEC, Listener, type ListenerOptions } from '../../src/voice/listener.js';
 import { FakeRunner, FakeTranscriber, FakeVad, FRAME, ScriptedSource, ScriptedSpotter, frames } from './fakes.js';
 import { RecordingChimes, RecordingSpeaker, waitFor } from './helpers.js';
 
@@ -9,7 +9,7 @@ const OPTS: ListenerOptions = { wakePhrase: 'hey stephen', silenceSec: 0.8, maxC
 
 function setup(opts: {
   pattern: string;
-  hits: Record<number, KeywordHit['id']>;
+  hits: Record<number, KeywordHit['id'] | 'WAKE_BARE'>;
   texts: string[];
   runner?: FakeRunner;
   speakMs?: number;
@@ -27,6 +27,56 @@ function setup(opts: {
   const listener = new Listener({ ...OPTS, ...opts.o }, { source: new ScriptedSource(frames(opts.pattern), opts.gates), spotter, vad: new FakeVad(), transcriber, assistant, chimes, status });
   return { listener, runner, speaker, chimes, lines, transcriber, spotter, assistant };
 }
+
+describe('Listener: wake variants (phase 1.6)', () => {
+  const ALL = { wakePhrases: ['hey stephen', 'yo stephen', 'ok stephen', 'stephen'], stopPhrase: 'stephen stop' };
+  const PAT = '.'.repeat(60) + 's'.repeat(30) + '.'.repeat(40);
+
+  it.each([
+    ['Yo Stephen, open Spotify.', 'open spotify'],
+    ['OK Stephen, search YouTube for lofi beats.', 'search youtube for lofi beats'],
+    ['hi steve can you play one call away by charlie puth', 'can you play one call away by charlie puth'],
+  ])('accepts every variant: %j', async (text, want) => {
+    const t = setup({ pattern: PAT, hits: { 65: 'WAKE' }, texts: [text], o: ALL });
+    await t.listener.run();
+    expect(t.runner.prompts).toEqual([want]);
+  });
+
+  it('a bare "Stephen" must open the transcript and be the name itself', async () => {
+    for (const text of ['Even Stephen agreed to open YouTube.', 'Stefan and Stella are coming over tonight.', 'Stephanie said open YouTube.']) {
+      const t = setup({ pattern: PAT, hits: { 65: 'WAKE_BARE' }, texts: [text], o: ALL });
+      await t.listener.run();
+      expect(t.runner.prompts, text).toEqual([]);
+      expect(t.lines.some((l) => l.startsWith('Ignored — "hey stephen" wasn\'t in the transcript')), text).toBe(true);
+    }
+    const ok = setup({ pattern: PAT, hits: { 65: 'WAKE_BARE' }, texts: ['Steven, open YouTube.'], o: ALL });
+    await ok.listener.run();
+    expect(ok.runner.prompts).toEqual(['open youtube']);
+  });
+
+  it('a bare wake keeps more audio from before it (so a word said just before reaches the check)', async () => {
+    const greet = setup({ pattern: PAT, hits: { 65: 'WAKE' }, texts: ['Hey Stephen, open YouTube.'], o: ALL });
+    const bare = setup({ pattern: PAT, hits: { 65: 'WAKE_BARE' }, texts: ['Stephen, open YouTube.'], o: ALL });
+    await greet.listener.run();
+    await bare.listener.run();
+    const extra = bare.transcriber.heard[0]!.length - greet.transcriber.heard[0]!.length;
+    expect(extra).toBeGreaterThanOrEqual(Math.floor((BARE_PREROLL_EXTRA_SEC * 16000) / FRAME) * FRAME);
+  });
+
+  it('"Stephen, stop" whose STOP was missed is never sent as a command', async () => {
+    const t = setup({ pattern: PAT, hits: { 65: 'WAKE_BARE' }, texts: ['Steven, stop.'], o: ALL });
+    await t.listener.run();
+    expect(t.runner.prompts).toEqual([]);
+    expect(t.lines).toContain('Heard "stephen stop" — nothing to stop.');
+  });
+
+  it('a bare wake then STOP (the spotter\'s second look) cancels the capture', async () => {
+    const t = setup({ pattern: PAT, hits: { 65: 'WAKE_BARE', 80: 'STOP' }, texts: ['unused'], o: ALL });
+    await t.listener.run();
+    expect(t.runner.prompts).toEqual([]);
+    expect(t.lines).toContain('Cancelled (stop phrase).');
+  });
+});
 
 describe('Listener', () => {
   it('wake → command (with pre-roll) → Claude → spoken reply → chimes', async () => {
@@ -59,13 +109,13 @@ describe('Listener', () => {
   });
 
   it('drops the command when the transcript does not contain the wake phrase (verifyWake)', async () => {
-    const t = setup({ pattern: '.'.repeat(20) + 's'.repeat(30) + '.'.repeat(40), hits: { 25: 'WAKE' }, texts: ['Hey Steve, open YouTube.'] });
+    const t = setup({ pattern: '.'.repeat(20) + 's'.repeat(30) + '.'.repeat(40), hits: { 25: 'WAKE' }, texts: ['Hey Stepping, open YouTube.'] });
     await t.listener.run();
     expect(t.runner.prompts).toEqual([]);
     expect(t.lines.some((l) => l.startsWith('Ignored — "hey stephen" wasn\'t in the transcript'))).toBe(true);
-    const off = setup({ pattern: '.'.repeat(20) + 's'.repeat(30) + '.'.repeat(40), hits: { 25: 'WAKE' }, texts: ['Hey Steve, open YouTube.'], o: { verifyWake: false } });
+    const off = setup({ pattern: '.'.repeat(20) + 's'.repeat(30) + '.'.repeat(40), hits: { 25: 'WAKE' }, texts: ['Hey Stepping, open YouTube.'], o: { verifyWake: false } });
     await off.listener.run();
-    expect(off.runner.prompts).toEqual(['hey steve open youtube']);
+    expect(off.runner.prompts).toEqual(['hey stepping open youtube']);
   });
 
   it('times out when nothing is said after the wake word', async () => {
@@ -239,7 +289,7 @@ describe('Listener', () => {
       const t: ReturnType<typeof setup> = setup({
         pattern: PATTERN,
         hits: { 12: 'WAKE', 80: 'WAKE' },
-        texts: ['hey steve open youtube', 'hey stephen open mail'],
+        texts: ['hey stepping open youtube', 'hey stephen open mail'],
         o: { cooldownSec: 20 },
         gates: new Map([[80, () => waitFor(() => t.transcriber.heard.length === 1 && !t.listener.busy, 5000, 'first wake dropped')]]),
       });

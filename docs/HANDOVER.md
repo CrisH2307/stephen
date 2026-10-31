@@ -1,5 +1,8 @@
 # Stephen — handover & progress log
 
+> New chat? Read `docs/PROJECT-CONTEXT.md` first (where the code is, how to sync), then `docs/ROADMAP.md` (what's next).
+> The cloud workspace path `/home/claude/browser-hub` below belonged to the first chat and won't exist in a new one.
+
 Read this first if you are picking up the work. Keep it current: update "Status" at the end of every step.
 
 ## Where things are
@@ -82,3 +85,34 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   TTS temp dirs removed on exit (#4); ELEVENLABS_API_KEY stripped from claude's env (#7). Open (documented, phase 2):
   helper socket authentication (#6 — hello nonce + lock file), Keychain item readable by same-user processes (#5).
   Synced to the owner's Mac. Owner's next steps: see README "Voice" + docs/HELPER.md.
+- 2026-10-31 12:20 — Owner feedback round (phase 1.6): (1) ASR mishears names ("one car away charlie pool") →
+  bigger default ASR + persona says transcripts may contain recognition errors; (2) 10–20 s to play a YouTube song →
+  `play_media` fast path (resolve the video server-side, open the watch URL) + faster `claude --model` default for voice;
+  (3) Stephen said it "can't click a result" → play_media + persona "don't give up, say what failed"; (4) wake variants
+  "hey/yo/ok stephen" + bare "stephen"; (5) casual Gen-Z tone for spoken replies (dialogs stay plain). The owner put
+  "Stephen Helper.app" in the Dock — keep its path `~/Applications/Stephen Helper.app` when rebuilding.
+- 2026-10-31 — `fix/media` (feedback 2, 3, 5): new desktop tool `play_media {query, service?, browser?, intent}`
+  (`src/desktop/media.ts` resolver: server-side GET of www.youtube.com/results only, no cookies/redirects, 4 s, 3 MB;
+  `src/desktop/play.ts`: opens the watch URL via `Desktop.openParsed` = open_url's path and gate, presses `k` if
+  paused when attached, search-results fallback). Persona rewritten (ASR-tolerant names, announce + one play_media,
+  don't give up, Gen-Z tone, serious on safety). `voice.claudeModel` defaults to `haiku` ("default" = no flag).
+  Lock-down gains `--no-chrome` (Claude in Chrome tools survived `--strict-mcp-config`) and
+  `--no-session-persistence`. Each command logs `claude: … (start-up + MCP, model, tools)`. Timing study and
+  proposed next wins: docs/VOICE.md "Where the time goes". Mac-only: real YouTube page shape / consent redirect,
+  player button labels, that the owner's `claude` accepts `--no-chrome`.
+- 2026-10-31 — Phase 1.6 merged (fix/asr + fix/media): default ASR whisper-small.en (636 MB, `stephen voice-setup`;
+  falls back to tiny with a hint), wake variants hey/yo/ok/bare "Stephen" (bare one stricter), `play_media`
+  (server-side YouTube resolve → open watch URL via the open_url gate path), persona: fix misheard names, use
+  announce+play_media, don't give up, casual Gen-Z tone; `voice.claudeModel` default "haiku"; `--no-chrome` and
+  `--no-session-persistence` added to the lock-down but dropped automatically if the owner's `claude --help` lacks
+  them (required lock-down flags missing → listen refuses with "update Claude Code"). No Swift changes → no helper rebuild.
+- 2026-10-31 15:30 — Owner report: "play One Call Away" opened YouTube but didn't play. Audit log on the Mac showed
+  play_media resolved the right video but used `open -a` although "Zen for Stephen" was running: each voice command
+  is a fresh server, never "already attached". Fix: `Desktop.tryAttach` attaches on demand to an attach-only Zen
+  (real + launch "never" — never launches; Chrome and agent mode never auto-attach), then ensurePlaying presses k.
+  play_media reuses an open YouTube / YouTube Music tab (`REUSE_HOSTS`) instead of opening a new one. The `open -a`
+  fallback now says honestly it may not start (Zen blocks autoplay with sound). Voice model default → "sonnet"
+  (the owner's choice). The Mac's audit log is at ~/.browser-hub/audit.log (legacy home), readable via device tools.
+- 2026-10-31 15:45 — Owner: Stephen works well. Next = phase 2a "read my stuff" (Gmail, Canvas, Notion, Calendar,
+  Maps), read-only, recommended via connectors/APIs + `serve --assume-private-read`. Plan in docs/ROADMAP.md.
+  Wrapping up this chat; added docs/PROJECT-CONTEXT.md for a new chat / Claude Project.

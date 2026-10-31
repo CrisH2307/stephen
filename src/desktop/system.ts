@@ -2,6 +2,7 @@
  * Everything that touches macOS, behind injectable deps so the tests run on Linux:
  * process spawning (execFile with an argv array — never a shell), the file system, the platform.
  */
+import { nodeFetch, type FetchFn, type MediaTiming } from './media.js';
 import { execFile as nodeExecFile } from 'node:child_process';
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -40,6 +41,10 @@ export interface DesktopDeps {
   homeDir: string;
   /** Stephen's own package/repo directory (apps inside it are never opened). */
   repoDir: string;
+  /** HTTP GET for play_media's YouTube search (default: Node's fetch). Only ever called with www.youtube.com/results. */
+  fetch?: FetchFn;
+  /** play_media's player polling (tests only). */
+  mediaTiming?: Partial<MediaTiming>;
 }
 
 /** Absolute paths: a PATH change can't swap in another binary. */
@@ -123,7 +128,7 @@ export function defaultRepoDir(): string {
 }
 
 export function defaultDesktopDeps(): DesktopDeps {
-  return { platform: process.platform, execFile: nodeExecFileFn, fs: nodeFs, homeDir: homedir(), repoDir: defaultRepoDir() };
+  return { platform: process.platform, execFile: nodeExecFileFn, fs: nodeFs, homeDir: homedir(), repoDir: defaultRepoDir(), fetch: nodeFetch };
 }
 
 /** First line of an exec error's stderr (or message), control characters removed, capped. */

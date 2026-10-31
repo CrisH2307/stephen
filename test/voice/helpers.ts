@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,3 +109,14 @@ export async function prepareModels(archives: readonly ModelArchive[]): Promise<
 
 export const prepareKwsModel = () => prepareModels([KWS_MODEL]);
 export const prepareAllModels = (asr: AsrModelId = 'whisper-tiny.en') => prepareModels(requiredArchives(asr));
+
+/** Make `m` look installed under `root` (marker + empty files) — for tests that only check model selection. */
+export function fakeInstall(root: string, m: ModelArchive): void {
+  const dir = join(root, m.dir);
+  mkdirSync(dir, { recursive: true });
+  for (const f of m.keep) {
+    mkdirSync(dirname(join(dir, f)), { recursive: true });
+    writeFileSync(join(dir, f), '');
+  }
+  writeFileSync(join(dir, '.stephen-model.json'), JSON.stringify({ id: m.id, sha256: m.sha256 }));
+}

@@ -2,15 +2,28 @@ import { z } from 'zod';
 import { TTS_CONFIG_SHAPE } from './tts/config.js';
 
 /** Offline speech-to-text models the listener can use (see models.ts for the pinned archives). */
-export const ASR_MODELS = ['whisper-tiny.en', 'whisper-base.en', 'moonshine-tiny', 'moonshine-base'] as const;
+export const ASR_MODELS = [
+  'whisper-small.en',
+  'parakeet-tdt-0.6b-v2',
+  'moonshine-base-v2',
+  'whisper-tiny.en',
+  'whisper-base.en',
+  'moonshine-tiny',
+  'moonshine-base',
+] as const;
 export type AsrModelId = (typeof ASR_MODELS)[number];
+/** Used when `voice.asrModel` is not set (see docs/VOICE.md "Speech-to-text models" for the benchmark). */
+export const DEFAULT_ASR_MODEL: AsrModelId = 'whisper-small.en';
+/** The previous default: used (with a hint to run `stephen voice-setup`) when the new default isn't downloaded yet. */
+export const FALLBACK_ASR_MODEL: AsrModelId = 'whisper-tiny.en';
 
 /**
- * A wake/stop phrase: 2–4 plain English words (letters and inner apostrophes). The keyword spotter needs the
- * phrase tokenized into its BPE units, so anything else (digits, punctuation, non-Latin letters) is refused here
- * rather than failing later. One-word phrases are refused: they false-trigger far too often.
+ * A wake/stop phrase: plain English words (letters and inner apostrophes). The keyword spotter needs the phrase
+ * tokenized into its BPE units, so anything else (digits, punctuation, non-Latin letters) is refused here rather
+ * than failing later. Wake phrases may be one word ("stephen": it gets the stricter `bareWakeThreshold`); the stop
+ * phrase needs 2–4 words, since a one-word stop phrase would cancel commands on any passing "stop".
  */
-const phrase = (what: string) =>
+const phrase = (what: string, minWords: 1 | 2) =>
   z
     .string()
     .transform((s) => s.trim().replace(/\s+/g, ' ').toLowerCase())
@@ -18,10 +31,13 @@ const phrase = (what: string) =>
       z
         .string()
         .regex(
-          /^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){1,3}$/,
-          `${what} must be 2–4 plain English words (letters only), e.g. "hey stephen"`,
+          new RegExp(`^[a-z]+(?:'[a-z]+)?(?: [a-z]+(?:'[a-z]+)?){${minWords - 1},3}$`),
+          `${what} must be ${minWords === 1 ? '1' : '2'}–4 plain English words (letters only), e.g. "hey stephen"`,
         ),
     );
+
+/** Wake phrases used when config.json sets neither `wakePhrases` nor the old single `wakePhrase`. */
+export const DEFAULT_WAKE_PHRASES = ['hey stephen', 'yo stephen', 'ok stephen', 'stephen'] as const;
 
 /** say(1) voice names: letters, digits, spaces and a little punctuation; never an option-looking value. */
 const voiceName = z
@@ -29,29 +45,50 @@ const voiceName = z
   .trim()
   .regex(/^[A-Za-z0-9][A-Za-z0-9 ._()'-]{0,63}$/, 'voice must be a macOS voice name like "Samantha" (see `say -v ?`)');
 
+/** Default `bareWakeThreshold` (see docs/VOICE.md "Wake phrases" for the measurements). */
+export const BARE_WAKE_THRESHOLD_DEFAULT = 0.35;
+
 const claudeModel = z
   .string()
   .trim()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/, 'claudeModel must be a model alias or name like "sonnet"');
 
+/** The voice default: the fastest model (see docs/VOICE.md "Model" for the speed/quality trade-off). */
+export const DEFAULT_VOICE_CLAUDE_MODEL = 'sonnet';
+
+/** null/absent → the voice default; "default" → no --model flag (Claude Code's own default). */
+export function resolveClaudeModel(v: string | null | undefined): string | null {
+  if (v === undefined || v === null) return DEFAULT_VOICE_CLAUDE_MODEL;
+  return v.toLowerCase() === 'default' ? null : v;
+}
+
 const VoiceConfigSchema = z
   .strictObject({
-    /** Phrase that starts a command. */
-    wakePhrase: phrase('wakePhrase').default('hey stephen'),
+    /** Phrases that start a command (any of them). Default: DEFAULT_WAKE_PHRASES. */
+    wakePhrases: z.array(phrase('each of wakePhrases', 1)).min(1).max(8).optional(),
+    /** Old single-phrase form of `wakePhrases` (still accepted). */
+    wakePhrase: phrase('wakePhrase', 1).optional(),
     /** Phrase that cancels the running command / stops Stephen talking. */
-    stopPhrase: phrase('stopPhrase').default('stephen stop'),
+    stopPhrase: phrase('stopPhrase', 2).default('stephen stop'),
     /** Microphone: PvRecorder device index (-1 = system default) or part of the device name. */
     device: z.union([z.number().int().min(-1).max(255), z.string().trim().min(1).max(200)]).nullish(),
-    asrModel: z.enum(ASR_MODELS).default('whisper-tiny.en'),
+    /** Speech-to-text model; unset = DEFAULT_ASR_MODEL (falling back to whisper-tiny.en until it is downloaded). */
+    asrModel: z.enum(ASR_MODELS).optional(),
     /** Keyword-spotter trigger threshold (higher = fewer false wakes, more misses). */
     keywordsThreshold: z.number().min(0.05).max(0.95).default(0.3),
+    /** Threshold for one-word wake phrases (bare "Stephen"), which false-trigger more easily. */
+    bareWakeThreshold: z.number().min(0.05).max(0.95).default(BARE_WAKE_THRESHOLD_DEFAULT),
     /** Keyword-spotter boosting score (higher = easier to trigger). */
     keywordsScore: z.number().min(0.5).max(5).default(1.0),
     /** Re-check the transcript for the wake phrase and drop the command if it isn't there (cuts false wakes). */
     verifyWake: z.boolean().default(true),
     /** Path or command name of the Claude Code CLI. */
     claudePath: z.string().trim().min(1).max(1000).default('claude'),
-    /** Optional model alias for the headless session (e.g. "sonnet", "haiku"). */
+    /**
+     * Model for the headless session (`claude --model`). Default "haiku": the fastest model, plenty for one-shot
+     * voice commands. Use "sonnet" (or a full model name) for better judgement on harder requests, or "default"
+     * for Claude Code's own default (no --model flag). See docs/VOICE.md "Model".
+     */
     claudeModel: claudeModel.nullish(),
     maxTurns: z.number().int().min(1).max(100).default(15),
     /**
@@ -88,12 +125,29 @@ const VoiceConfigSchema = z
     /** Voice output: `tts` (auto|elevenlabs|kokoro|say), `elevenlabs` {voiceId, modelId, apiKeyFile, timeoutSec}, `kokoro` {speaker, speed}. */
     ...TTS_CONFIG_SHAPE,
   })
-  .refine((c) => c.wakePhrase !== c.stopPhrase, { message: 'wakePhrase and stopPhrase must differ', path: ['stopPhrase'] });
+  .refine((c) => !(c.wakePhrases && c.wakePhrase), {
+    message: 'set either wakePhrases (a list) or the old single wakePhrase, not both',
+    path: ['wakePhrase'],
+  })
+  .refine((c) => !(c.wakePhrases ?? [c.wakePhrase ?? '']).includes(c.stopPhrase), {
+    message: 'the stop phrase must differ from every wake phrase',
+    path: ['stopPhrase'],
+  });
 
-export type VoiceConfig = Omit<z.output<typeof VoiceConfigSchema>, 'device' | 'claudeModel' | 'voice' | 'rate' | 'followUpWindowSec'> & {
+export type VoiceConfig = Omit<
+  z.output<typeof VoiceConfigSchema>,
+  'device' | 'claudeModel' | 'voice' | 'rate' | 'followUpWindowSec' | 'wakePhrase' | 'wakePhrases' | 'asrModel'
+> & {
+  /** All wake phrases (deduplicated, ≥ 1). */
+  wakePhrases: string[];
+  /** The first wake phrase — shown in status lines ("Listening for …"). */
+  wakePhrase: string;
+  /** The configured speech-to-text model, or null = the default (see resolveAsrModel in models.ts). */
+  asrModel: AsrModelId | null;
   device: number | string | null;
   /** Set only when config.json has it; ignored in phase 1 (runListen prints a note). */
   followUpWindowSec: number | null;
+  /** `--model` value; null = no flag (config "default"). */
   claudeModel: string | null;
   voice: string | null;
   rate: number | null;
@@ -125,10 +179,14 @@ export function parseVoiceConfig(raw: unknown): VoiceConfig {
   }
   const r = VoiceConfigSchema.safeParse(obj);
   if (!r.success) throw new VoiceConfigError(`Invalid voice config: ${describe(r.error)}`);
+  const wakePhrases = [...new Set(r.data.wakePhrases ?? (r.data.wakePhrase ? [r.data.wakePhrase] : DEFAULT_WAKE_PHRASES))];
   return {
     ...r.data,
+    wakePhrases,
+    wakePhrase: wakePhrases[0]!,
+    asrModel: r.data.asrModel ?? null,
     device: r.data.device ?? null,
-    claudeModel: r.data.claudeModel ?? null,
+    claudeModel: resolveClaudeModel(r.data.claudeModel),
     voice: r.data.voice ?? null,
     rate: r.data.rate ?? null,
     followUpWindowSec: r.data.followUpWindowSec ?? null,

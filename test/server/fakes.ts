@@ -145,8 +145,11 @@ export class FakeManager implements IBrowserManager {
     this.connected[b] = true;
     return page;
   }
+  /** Browsers that can't be attached (e.g. no "Zen for Stephen" running): connect() throws NEEDS_USER. */
+  unreachable = new Set<BrowserName>();
   async connect(name: BrowserName, mode?: ProfileMode) {
     this.connectCalls.push([name, mode]);
+    if (this.unreachable.has(name)) throw new HubError('NEEDS_USER', `${name} is not open for Stephen.`);
     this.connected[name] = true;
     if (mode) this.modes[name] = mode;
     return {} as never;

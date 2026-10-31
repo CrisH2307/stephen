@@ -30,14 +30,22 @@ import { BROWSER_LABEL, browserAppCandidates, findBrowserApp } from './browsers.
 import { parseDesktopConfig, type DesktopConfig } from './config.js';
 import { readBundleId, resolveApp } from './resolve.js';
 import { BIN, defaultDesktopDeps, execErrorText, queryStatus, verifyCodeSignature, type DesktopDeps, type DesktopStatus } from './system.js';
-import { parseOpenUrl, redirectSignals, UrlDenied, type RedirectSignal } from './url.js';
+import { parseOpenUrl, redirectSignals, UrlDenied, type ParsedOpenUrl, type RedirectSignal } from './url.js';
+import { MediaPlayer } from './play.js';
 
 export { parseDesktopConfig, type DesktopConfig } from './config.js';
 export type { DesktopDeps, DesktopFs, ExecFileFn, ExecResult } from './system.js';
 
-export const DESKTOP_TOOLS = ['open_app', 'open_url', 'desktop_status'] as const;
+export const DESKTOP_TOOLS = ['open_app', 'open_url', 'play_media', 'desktop_status'] as const;
+
+/** How openParsed opened a page: a new tab in the attached browser, or the user's normal window via `open -a`. */
+export type OpenOutcome =
+  | { via: 'tab'; id: string; page: Page; res: CallToolResult }
+  | { via: 'everyday'; fallbackNote: string };
 /** At most this many running app names in desktop_status. */
 export const MAX_RUNNING_APPS = 40;
+/** How long open_url / play_media wait to attach to a running "Zen for Stephen" before using `open -a`. */
+export const ATTACH_TIMEOUT_MS = 6000;
 const OPEN_TIMEOUT_MS = 15_000;
 /** The pseudo tab id desktop actions use in gate requests and audit entries. */
 export const DESKTOP_TAB = 'desktop';
@@ -115,6 +123,23 @@ export function registerDesktopTools(mcp: McpServer, hub: Hub, names: string[], 
     async ({ url, browser, intent }) => desktop.openUrl(url, browser, intent),
   );
 
+  const player = new MediaPlayer(hub, desktop);
+  tool(
+    'play_media',
+    'Play a song or video',
+    'Plays a song or video on YouTube (default) or YouTube Music in Zen or Chrome, in ONE call — e.g. "play One Call Away by Charlie Puth": query "One Call Away Charlie Puth". ' +
+      'Stephen finds the top video itself (no browser needed for that), opens its watch page through the same safety checks as open_url, and, when it is attached to the browser, makes sure it is playing. ' +
+      'Use this instead of opening a search page and clicking a result. Call announce first. If it could not pick a video it opens the search results and says so. Refused while the Mac is locked.',
+    {
+      query: z.string().trim().min(1).max(200).describe('What to play, with the names spelled correctly: "One Call Away Charlie Puth", "lofi hip hop", "MKBHD iPhone review".'),
+      service: z.enum(['youtube', 'youtube_music']).optional().describe('Default "youtube". "youtube_music" opens music.youtube.com.'),
+      browser: z.enum(['zen', 'chrome']).optional().describe('Which browser; defaults to the configured default browser.'),
+      intent: intentArg,
+    },
+    ACT,
+    async ({ query, service, browser, intent }) => player.play(query, service ?? 'youtube', browser, intent),
+  );
+
   tool(
     'desktop_status',
     'Desktop status',
@@ -134,7 +159,7 @@ export class Desktop {
     readonly dcfg: DesktopConfig,
   ) {}
 
-  private requireMac(): void {
+  requireMac(): void {
     if (this.deps.platform !== 'darwin') {
       throw new NoticeError(
         `Desktop actions need macOS — Stephen is running on ${this.deps.platform}, where open_app, open_url and desktop_status are unavailable. ` +
@@ -143,12 +168,12 @@ export class Desktop {
     }
   }
 
-  private audit(entry: Omit<AuditEntry, 'ts'>): Promise<void> {
+  audit(entry: Omit<AuditEntry, 'ts'>): Promise<void> {
     return this.hub.audit({ tab: DESKTOP_TAB, ...entry });
   }
 
   /** Refuses (and audits) when the screen is locked or its state is unknown. Returns the status it read. */
-  private async assertUnlocked(tool: string, intent: string, args: Record<string, unknown>): Promise<DesktopStatus> {
+  async assertUnlocked(tool: string, intent: string, args: Record<string, unknown>): Promise<DesktopStatus> {
     const s = await queryStatus(this.deps);
     if (s.locked === false) return s;
     const locked = s.locked === true;
@@ -296,9 +321,32 @@ export class Desktop {
       if (e instanceof UrlDenied) throw new NoticeError(`Not opened: ${e.message}`);
       throw e;
     }
+    await this.assertUnlocked(tool, intent, { url: redactUrl(parsed.href) });
+    const o = await this.openParsed(tool, parsed, browser, intent);
+    if (o.via === 'tab') return o.res;
+    const label = BROWSER_LABEL[browser];
+    return okResult(
+      `Opened ${parsed.href} in ${label}${o.fallbackNote}. ` +
+        `Stephen is not attached to ${label}, so there is no tab id and it cannot work inside this page; that's fine for "open X" requests.`,
+    );
+  }
+
+  /**
+   * The one way desktop tools open a web page (open_url and play_media): http:// asks first, then the browser
+   * safety gate exactly as tab_open uses it, then a new tab in the attached browser (landing check, page facts),
+   * or else `open -a <browser.app> <url>` in the user's normal window (with the agent-mode / redirector question).
+   * The caller has checked that the screen is unlocked.
+   */
+  async openParsed(
+    tool: string,
+    parsed: ParsedOpenUrl,
+    browser: BrowserName,
+    intent: string,
+    opts: { reuseTabOnHosts?: readonly string[] } = {},
+  ): Promise<OpenOutcome> {
+    const why = clean(intent, 200);
     const { href, host } = parsed;
     const auditUrl = redactUrl(href);
-    await this.assertUnlocked(tool, intent, { url: auditUrl });
 
     let confirmation: AuditEntry['confirmation'] = 'not-needed';
     if (parsed.rule === 'http') {
@@ -319,8 +367,15 @@ export class Desktop {
     if (!g.allowed) throw this.hub.denied(g, 'about:blank');
 
     const label = BROWSER_LABEL[browser];
-    const attached = this.hub.manager.status().find((s) => s.name === browser)?.connected === true;
+    const attached = await this.tryAttach(browser);
     let fallbackNote = '';
+    if (attached && opts.reuseTabOnHosts?.length) {
+      // Reuse a tab already on this site (e.g. the YouTube tab the user has open) instead of piling up new tabs.
+      const reused = await this.findTabOnHosts(browser, opts.reuseTabOnHosts);
+      if (reused) {
+        return { via: 'tab', id: reused.id, page: reused.page, res: await this.loadInExistingTab(tool, browser, reused.id, reused.page, href, intent, g) };
+      }
+    }
     if (attached) {
       let tab: { id: string; page: Page } | null = null;
       try {
@@ -329,7 +384,7 @@ export class Desktop {
         // The browser went away since status(): open it the normal way instead (the gate already approved).
         fallbackNote = ` (Stephen's connection to ${label} was lost, so it was opened in the normal window)`;
       }
-      if (tab) return this.loadInNewTab(browser, tab.id, tab.page, href, intent, g);
+      if (tab) return { via: 'tab', id: tab.id, page: tab.page, res: await this.loadInNewTab(tool, browser, tab.id, tab.page, href, intent, g) };
     }
 
     const appPath = await findBrowserApp(this.deps, this.hub.cfg, browser);
@@ -375,19 +430,95 @@ export class Desktop {
       throw new NoticeError(`Could not open ${href} in ${label}: ${msg || 'open failed'}.`);
     }
     await this.audit({ tool, browser, args: { url: auditUrl, app: appPath, via: 'open -a', ...(agent || redirects.length ? { everydayProfile: agent, redirector: redirects.length > 0 } : {}) }, verdict: g.decision.verdict, confirmation: g.confirmation !== 'not-needed' ? g.confirmation : confirmation, outcome: 'ok', intent: why });
-    return okResult(
-      `Opened ${href} in ${label}${fallbackNote}. ` +
-        `Stephen is not attached to ${label}, so there is no tab id and it cannot work inside this page; that's fine for "open X" requests.`,
+    return { via: 'everyday', fallbackNote };
+  }
+
+  /**
+   * Connected to `browser` already, or able to attach WITHOUT starting anything: every voice command runs a fresh
+   * server, so "already connected" is never true there. Zen in attach-only mode (real profile, launch "never") only
+   * attaches to a Zen the user opened with "Zen for Stephen" — connect() never launches one, it throws if there is
+   * none. Chrome is not attached here: its real-profile connection asks the user to click Allow each time.
+   */
+  async tryAttach(browser: BrowserName): Promise<boolean> {
+    if (this.hub.manager.status().find((s) => s.name === browser)?.connected === true) return true;
+    if (browser !== 'zen') return false;
+    const zen = this.hub.cfg.zen as HubConfig['zen'];
+    if (zen.mode !== 'real' || zen.launch !== 'never') return false;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.hub.manager.connect('zen'),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('attach timed out')), ATTACH_TIMEOUT_MS);
+        }),
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** The most recently used tab of `browser` whose host is one of `hosts` (exact match), or null. */
+  private async findTabOnHosts(browser: BrowserName, hosts: readonly string[]): Promise<{ id: string; page: Page } | null> {
+    try {
+      const tabs = await this.hub.manager.listTabs(browser);
+      const match = [...tabs].sort((a, b) => Number(b.current) - Number(a.current)).find((t) => {
+        try {
+          return hosts.includes(new URL(t.url).host);
+        } catch {
+          return false;
+        }
+      });
+      if (!match) return null;
+      return { id: match.id, page: await this.hub.manager.getPage(match.id) };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Load `href` in an existing tab (brought to front), through hub.perform like loadInNewTab. */
+  private async loadInExistingTab(tool: string, browser: BrowserName, id: string, page: Page, href: string, intent: string, g: GateResult): Promise<CallToolResult> {
+    this.hub.dialogs.attach(page, id);
+    const before = safeUrl(page);
+    try {
+      await this.hub.manager.focusTab(id);
+    } catch {
+      // not fatal: the page still loads
+    }
+    const res = await this.hub.withTab(id, 'write', () =>
+      this.hub.perform(
+        {
+          tool,
+          kind: 'navigate',
+          tab: id,
+          page,
+          intent,
+          targetUrl: href,
+          auditArgs: { url: redactUrl(href), via: 'attached browser (reused tab)' },
+          run: async () => {
+            const r = await page.goto(href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
+            if (r && !r.ok()) return `(HTTP ${r.status()})`;
+          },
+          done: `Loaded ${href} in the ${BROWSER_LABEL[browser]} tab that was already on this site`,
+          timeoutMs: NAV_TIMEOUT_MS + 5000,
+        },
+        g,
+        before || 'about:blank',
+      ),
     );
+    if (!res.isError) res.content.push({ type: 'text', text: `Tab id: ${id} (reused).` });
+    return res;
   }
 
   /** Same path as tab_open: a new tab in the attached browser, loaded through hub.perform (audit, landing check, page facts). */
-  private async loadInNewTab(browser: BrowserName, id: string, page: Page, href: string, intent: string, g: GateResult): Promise<CallToolResult> {
+  private async loadInNewTab(tool: string, browser: BrowserName, id: string, page: Page, href: string, intent: string, g: GateResult): Promise<CallToolResult> {
     this.hub.dialogs.attach(page, id);
     const res = await this.hub.withTab(id, 'write', () =>
       this.hub.perform(
         {
-          tool: 'open_url',
+          tool,
           kind: 'tab_open',
           tab: id,
           page,

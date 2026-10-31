@@ -73,6 +73,8 @@ describe('claude argv', () => {
       'dontAsk',
       '--setting-sources',
       '',
+      '--no-chrome',
+      '--no-session-persistence',
       '--allowedTools',
       'mcp__stephen',
       '--disallowedTools',
@@ -84,7 +86,7 @@ describe('claude argv', () => {
       '--model',
       'sonnet',
     ]);
-    expect([...LOCKDOWN_ARGS]).toEqual(['--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', '']);
+    expect([...LOCKDOWN_ARGS]).toEqual(['--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', '', '--no-chrome', '--no-session-persistence']);
   });
 
   it('every variadic flag is followed by another option, so nothing swallows a value it shouldn’t', () => {
@@ -178,7 +180,7 @@ describe('claude argv', () => {
 describe('parseClaudeOutput', () => {
   it('reads result and session id', () => {
     const out = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'Opened YouTube.', session_id: 'abc-123', total_cost_usd: 0.02, num_turns: 3 });
-    expect(parseClaudeOutput(out, 0)).toEqual({ kind: 'ok', text: 'Opened YouTube.', sessionId: 'abc-123', costUsd: 0.02, turns: 3 });
+    expect(parseClaudeOutput(out, 0)).toEqual({ kind: 'ok', text: 'Opened YouTube.', sessionId: 'abc-123', costUsd: 0.02, turns: 3, durationMs: null, apiMs: null });
     expect(parseClaudeOutput(`warning line\n${out}\n`, 0)).toMatchObject({ kind: 'ok', text: 'Opened YouTube.' });
   });
   it('maps errors', () => {

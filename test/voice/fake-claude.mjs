@@ -8,6 +8,8 @@
 //   FAKE_CLAUDE_MODE=hang-stubborn like hang, but ignore SIGTERM (exercises the SIGKILL escalation)
 //   FAKE_CLAUDE_MODE=error         print an error_max_turns result
 //   FAKE_CLAUDE_MODE=garbage       print non-JSON and exit 1
+// FAKE_CLAUDE_STARTUP_MS / FAKE_CLAUDE_DURATION_MS / FAKE_CLAUDE_API_MS (ok mode): wait start-up + duration ms, and
+// report duration_ms / duration_api_ms like the real result JSON (timing tests).
 import { spawn } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -40,9 +42,13 @@ if (mode === 'hang' || mode === 'hang-stubborn') {
   process.stderr.write('Error: something broke\n');
   process.exit(1);
 } else {
+  const startup = Number(process.env.FAKE_CLAUDE_STARTUP_MS ?? 0);
+  const duration = process.env.FAKE_CLAUDE_DURATION_MS !== undefined ? Number(process.env.FAKE_CLAUDE_DURATION_MS) : undefined;
+  if (startup + (duration ?? 0) > 0) await new Promise((r) => setTimeout(r, startup + (duration ?? 0)));
+  const timing = duration !== undefined ? { duration_ms: duration, duration_api_ms: Number(process.env.FAKE_CLAUDE_API_MS ?? 0) } : {};
   const prompt = at('-p') ?? '';
   const reply = process.env.FAKE_CLAUDE_REPLY ?? `**Done!** I opened [YouTube](https://www.youtube.com/) for "${prompt}".`;
   process.stdout.write(
-    JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: reply, session_id: at('--resume') ?? `sess-${n}`, total_cost_usd: 0.01, num_turns: 2 }) + '\n',
+    JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: reply, session_id: at('--resume') ?? `sess-${n}`, total_cost_usd: 0.01, num_turns: 2, ...timing }) + '\n',
   );
 }

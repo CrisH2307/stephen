@@ -102,7 +102,7 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
     expect(h.transcripts).toHaveLength(1);
     const runs = readFakeLog(h.log);
     const mcpPath = join(tmp, 'home', 'voice', 'mcp-config.json');
-    expect(runs.map((r) => r.argv)).toEqual([buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 15, model: null, mcpConfigPath: mcpPath })]);
+    expect(runs.map((r) => r.argv)).toEqual([buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: mcpPath })]);
     expect(JSON.parse(readFileSync(mcpPath, 'utf8')).mcpServers.stephen.args).toEqual(['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice']);
     expect(h.speaker.said).toEqual(['Done! I opened YouTube for "open youtube".']);
     expect(h.chimes.played).toEqual(['wake', 'done']);

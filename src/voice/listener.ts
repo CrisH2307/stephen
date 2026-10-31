@@ -28,7 +28,12 @@ import { normalizeTranscript } from './transcript.js';
 import { SAMPLE_RATE, concatSamples } from './wav.js';
 
 export interface ListenerOptions {
+  /** Shown in status lines ("Listening for …"); also the only wake phrase when `wakePhrases` is absent. */
   wakePhrase: string;
+  /** Every wake phrase the transcript check accepts (default [wakePhrase]). */
+  wakePhrases?: readonly string[];
+  /** The stop phrase: a capture whose transcript is just this is never sent (a bare "Stephen" started it). */
+  stopPhrase?: string;
   silenceSec: number;
   maxCommandSec: number;
   noSpeechTimeoutSec: number;
@@ -64,6 +69,11 @@ export interface ListenerDeps {
 
 /** Audio kept from before the keyword's first token (KWS token times lag the speech a little). */
 export const PREROLL_MARGIN_SEC = 0.3;
+/**
+ * A bare "Stephen" keeps more: a word said right before it ("Even Stephen agreed…") must reach the transcript,
+ * where the bare-wake check (anchored) then rejects it.
+ */
+export const BARE_PREROLL_EXTRA_SEC = 0.7;
 const MAX_PREROLL_SEC = 3;
 const RING_SEC = 4;
 /** Speech shorter than this after the wake word (e.g. the tail of "…phen") doesn't count as the command. */
@@ -117,6 +127,8 @@ export class Listener {
   private sawHelperUp = false;
   private lastCommandEndMs: number | null = null;
   private ignoredWakes = 0;
+  /** The wake that started the current capture was a bare "Stephen" (stricter transcript check). */
+  private bareWake = false;
 
   constructor(
     private readonly o: ListenerOptions,
@@ -313,9 +325,10 @@ export class Listener {
 
   private beginCapture(hit: KeywordHit): void {
     this.wakeCount++;
+    this.bareWake = !!hit.bare;
     this.d.chimes.play('wake');
     this.d.status('Wake word heard — listening…');
-    const pre = Math.min(hit.startAgoSec + PREROLL_MARGIN_SEC, MAX_PREROLL_SEC);
+    const pre = Math.min(hit.startAgoSec + PREROLL_MARGIN_SEC + (hit.bare ? BARE_PREROLL_EXTRA_SEC : 0), MAX_PREROLL_SEC);
     // Keep the audio from just before the wake phrase: "Hey Stephen open YouTube" in one breath must not
     // lose "open". The wake phrase itself is stripped from the transcript (and re-checked there).
     this.capture = [this.ring.last(pre).slice()];
@@ -448,9 +461,14 @@ export class Listener {
     this.menu('working');
     if (ptt) this.d.spotter.restart(); // "hey stephen" said while holding the keys must not cancel this command
     const token: Token = (this.cancelToken = { cancelled: false, reachedClaude: false });
+    // The wake phrase must open the transcript after a bare "Stephen" ("Even Stephen agreed…" is not a command)
+    // and in push-to-talk (no pre-roll there: earlier words are part of the command, "play songs by Stephen…").
+    // After a bare wake the name itself must be there too, not a sound-alike ("Stefan and Stella…").
+    const wake = { anchored: ptt || this.bareWake, strict: !ptt && this.bareWake };
+    this.bareWake = false;
     // A push-to-talk press may have cancelled a command that is still winding down: run after it.
     const previous = this.task;
-    this.task = this.process(audio, token, ptt, previous)
+    this.task = this.process(audio, token, ptt, wake, previous)
       .catch((e: unknown): CommandResult => {
         this.d.status(`Problem: ${(e as Error).message}`);
         return 'error';
@@ -484,12 +502,18 @@ export class Listener {
     this.menu('listening');
   }
 
-  private async process(audio: Float32Array, token: Token, ptt: boolean, previous: Promise<void>): Promise<CommandResult | null> {
+  private async process(
+    audio: Float32Array,
+    token: Token,
+    ptt: boolean,
+    wake: { anchored: boolean; strict: boolean },
+    previous: Promise<void>,
+  ): Promise<CommandResult | null> {
     this.d.status('Transcribing…');
     const t0 = Date.now();
     const raw = await this.d.transcriber.transcribe(audio);
     const ms = Date.now() - t0;
-    const { text, hadWake } = normalizeTranscript(raw, this.o.wakePhrase);
+    const { text, hadWake } = normalizeTranscript(raw, this.o.wakePhrases ?? [this.o.wakePhrase], wake);
     this.d.onTranscript?.(raw, text, ms);
     if (token.cancelled) {
       this.d.status('Cancelled.');
@@ -498,6 +522,12 @@ export class Listener {
     // Push-to-talk needs no wake word (the keys are the intent); a spoken "hey stephen" is still stripped.
     if (!ptt && this.o.verifyWake && !hadWake) {
       this.d.status(`Ignored — "${this.o.wakePhrase}" wasn't in the transcript${raw ? ` ("${raw.slice(0, 80)}")` : ''}.`);
+      return null;
+    }
+    // "Stephen, stop" whose STOP the spotter missed: the bare "Stephen" started a capture of… "stop".
+    const stop = this.o.stopPhrase ? normalizeTranscript(raw, [this.o.stopPhrase], { anchored: true }) : null;
+    if (stop?.hadWake && !stop.text) {
+      this.d.status(`Heard "${this.o.stopPhrase}" — nothing to stop.`);
       return null;
     }
     if (!text) {

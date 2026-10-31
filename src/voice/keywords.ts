@@ -4,8 +4,8 @@
  * The KWS model (zipformer, GigaSpeech, BPE-500) needs each phrase written in its own BPE units, e.g.
  * "HEY STEPHEN" → "▁HE Y ▁ST E PH EN". sherpa-onnx does this with `sherpa-onnx-cli text2token`
  * (Python sentencepiece). We do it in TypeScript instead, by reading the model's own `bpe.model`
- * (a sentencepiece ModelProto) and running sentencepiece's BPE merge algorithm — so a custom
- * `voice.wakePhrase` works at runtime with no Python. test/voice/keywords.test.ts checks the output
+ * (a sentencepiece ModelProto) and running sentencepiece's BPE merge algorithm — so custom
+ * `voice.wakePhrases` work at runtime with no Python. test/voice/keywords.test.ts checks the output
  * against Python sentencepiece on ~340 phrases. (Despite the file name, icefall's "bpe.model" is a
  * sentencepiece *unigram* model; both model types are supported.)
  */
@@ -298,6 +298,9 @@ export class BpeEncoder implements PieceEncoder {
 export const HOMOPHONES: Readonly<Record<string, readonly string[]>> = {
   stephen: ['steven'],
   steven: ['stephen'],
+  // Different BPE units ("▁O K" vs "▁OKAY"), same word.
+  ok: ['okay'],
+  okay: ['ok'],
 };
 
 /** All spellings of a phrase (homophones substituted), the original first, at most `max`. */
@@ -311,8 +314,8 @@ export function phraseVariants(phrase: string, max = 4): string[] {
 }
 
 export interface KeywordSpec {
-  /** Returned as the spotter's `keyword` (sherpa's `@` field). */
-  id: 'WAKE' | 'STOP';
+  /** Returned as the spotter's `keyword` (sherpa's `@` field). WAKE_BARE = a one-word wake phrase ("stephen"). */
+  id: 'WAKE' | 'WAKE_BARE' | 'STOP';
   phrase: string;
   threshold: number;
   score: number;
@@ -324,6 +327,7 @@ export interface KeywordSpec {
  */
 export function buildKeywordsFile(specs: readonly KeywordSpec[], encoder: PieceEncoder, tokens: ReadonlySet<string>): string {
   const lines: string[] = [];
+  const seen = new Set<string>();
   for (const s of specs) {
     for (const v of phraseVariants(s.phrase)) {
       const toks = encoder.encode(v.toUpperCase());
@@ -331,7 +335,10 @@ export function buildKeywordsFile(specs: readonly KeywordSpec[], encoder: PieceE
       if (missing.length) {
         throw new Error(`"${v}" can't be used as a keyword: the wake-word model has no unit for ${missing.map((m) => `"${m}"`).join(', ')}`);
       }
-      lines.push(`${toks.join(' ')} :${s.score} #${s.threshold} @${s.id}`);
+      const key = toks.join(' ');
+      if (seen.has(key)) continue; // "ok stephen" + "okay stephen" give the same spellings: the first one wins
+      seen.add(key);
+      lines.push(`${key} :${s.score} #${s.threshold} @${s.id}`);
     }
   }
   return lines.join('\n') + '\n';

@@ -1,12 +1,15 @@
 # Stephen desktop actions (phase 1)
 
-Three MCP tools that let Claude do simple things on the user's Mac: open an app, open a web page, and
-look at the desktop's state. They never click, type or take screenshots, and they never read the screen.
+Four MCP tools that let Claude do simple things on the user's Mac: open an app, open a web page, play a
+song or video, and look at the desktop's state. They never click, type or take screenshots on the desktop,
+and they never read the screen (play_media only presses play inside a browser tab Stephen is attached to,
+through the browser tools' gate).
 On-screen text therefore can't steer them. The design and its reasons are in [STEPHEN.md](STEPHEN.md)
 (ADR-002) and [RESEARCH-STEPHEN.md](RESEARCH-STEPHEN.md).
 
 Code: `src/desktop/` (`index.ts` tools, `apps.ts` lists and policy, `resolve.ts` app lookup, `url.ts`
-scheme rules, `browsers.ts`, `system.ts` macOS calls, `config.ts`). Tests: `test/desktop/`.
+scheme rules, `browsers.ts`, `system.ts` macOS calls, `config.ts`, `media.ts` + `play.ts` play_media).
+Tests: `test/desktop/`.
 
 ## Tools
 
@@ -114,6 +117,62 @@ URLs never open in any other app.
 
 "Open YouTube" becomes `open_url https://www.youtube.com`.
 
+### `play_media {query, service?, browser?, intent}`
+
+"Play One Call Away by Charlie Puth" in **one** tool call (phase 1.6, owner feedback: 10–20 s and "I can't
+click a result"). `service` is `youtube` (default) or `youtube_music`; `browser` defaults to `defaultBrowser`.
+The model calls `announce`, then `play_media {query: "One Call Away Charlie Puth"}`; nothing else.
+
+1. **Locked screen** → refused, nothing fetched.
+2. **Gate pre-check** (`gate.evaluate`, pure, counts nothing) of `tab_open https://www.youtube.com/results?search_query=…`:
+   a deny (rate limit, YouTube on `safety.blockedDomains`) stops here. If the gate would **ask** (e.g. after a
+   private read the first-destination rule fires, because the query could carry what was read), Stephen
+   does **not** search on its own: it goes to step 5, where the search URL goes through `gate.check`
+   and the user is asked, with the full URL shown.
+3. **Resolve server-side, no browser needed** (`src/desktop/media.ts`). One `GET` of
+   `https://www.youtube.com/results?search_query=<q>` with Node `fetch`: desktop Chrome User-Agent, no
+   cookies (`credentials: 'omit'`, no Cookie header), `redirect: 'manual'` (a 3xx — e.g. the EU consent
+   page — is a failure, never followed), **4 s** timeout (aborts the request), **3 MB** cap (declared
+   `content-length`, then counted while streaming). The URL is built from a fixed origin and path with the
+   query as the only parameter, and checked again (`isAllowedFetchUrl`) right before the fetch: nothing but
+   `www.youtube.com/results` is ever fetched. `ytInitialData` is cut out by brace matching (strings respected)
+   and parsed; the first top-level `videoRenderer` that is a normal video wins. Ads (`adSlotRenderer`,
+   promoted renderers, "Ad" badges), shorts (`reelWatchEndpoint`, `/shorts/`), playlists, mixes, channels and
+   live streams are skipped; videos inside shelves, then live streams, then shorts are used only when
+   nothing else matches. The video id must match `^[A-Za-z0-9_-]{11}$`.
+   The fetch is a read of a public page: it **never arms the private-read taint**, and it is audited
+   (`tool: play_media`, `args: {fetch: "https://www.youtube.com/results?…", query, publicRead: true, ms, videoId, kind}`,
+   or `outcome: error` with the reason).
+4. **Open `https://www.youtube.com/watch?v=<id>`** (`https://music.youtube.com/watch?v=<id>` for YouTube Music)
+   through `Desktop.openParsed` — **the exact code path of `open_url`**: `gate.check` as `tab_open` (taint and
+   first-destination rules, rate limit, audit), then a new tab in the attached browser (`hub.perform`, landing
+   check) or `open -a <browser .app> <url>` with the agent-mode / redirector question.
+   - **Attached:** Stephen makes sure it plays. It reads the player's Play/Pause button with the page engine
+     (`find "pause"` / `find "play"`, gated as reads; YouTube labels it "Pause (k)" / "Play (k)" or
+     "… keyboard shortcut k"). "Pause" → playing, done. "Play" on **two readings in a row** (so a video
+     that is about to autoplay isn't paused by mistake) → it presses `k` through the `press_key` pipeline
+     (`hub.action` kind `press`: focus check and re-check, audit). If focus is in a text field (or unknown),
+     where `k` would type, it clicks the Play button instead (`hub.action` kind `click`). Watches for up to
+     6 s; if it never sees the button it says so.
+   - **Not attached:** the watch page opens in the user's normal window; YouTube starts it by itself.
+5. **Fallback** (fetch or parse failed, or step 2 wanted the user's OK): open the **search results**
+   (`www.youtube.com/results?search_query=…` or `music.youtube.com/search?q=…`) the same way.
+   - **Attached:** snapshot the results tab, `describe` the links in order and click the first one whose
+     href is a `/watch?v=<11 chars>` link on youtube.com (through `hub.action`, like the `click` tool), then
+     make sure it plays (step 4). Polls up to 5 s for the results to render.
+   - **Not attached:** returns the search URL with a clear note — the results are up for the user to pick,
+     and attaching Zen ("Zen for Stephen") lets Stephen start videos hands-free. Never "I can't".
+6. **Result** (short, for a spoken reply): `Playing on YouTube in Zen — tab z1.` plus the title, channel
+   and length inside `<untrusted_web_content source="youtube">` — `"<title>" — <channel> (<duration>)` is
+   page-controlled text, so it is wrapped like every other page text (and can't close the wrapper).
+
+Why not let the model search and click: that took 4–6 model turns (search page, snapshot, pick, click,
+check) with a big snapshot in context, and failed outright when Zen wasn't attached (`open -a` gives no tab).
+play_media needs no browser connection for the lookup, and one model turn.
+
+Not verifiable here (the cloud box can't reach YouTube): the real `ytInitialData` shape today (tests use
+synthetic fixtures built from it), the consent redirect in the EU, and YouTube's player button labels.
+
 ### `desktop_status {}` (read-only)
 
 Reports:
@@ -144,13 +203,15 @@ Recording or Automation.
 
 ## Shared rules
 
-- **Locked screen.** `open_app` and `open_url` refuse with "Your Mac is locked". They also refuse when
+- **Locked screen.** `open_app`, `open_url` and `play_media` refuse with "Your Mac is locked". They also refuse when
   the lock state **cannot be determined**, because the check fails closed.
 - **Audit.** Every desktop action writes to the hub's audit log with `tab: "desktop"`, `tool`,
   `args` (app name, bundle id, path and rule; or the redacted URL), `verdict`, `confirmation`,
   `outcome` and `intent`. That includes denials, declines and errors. The gate adds its usual decision
   entry.
-- **Rate limit.** Shared with the browser tools. `open_url` is counted by its `tab_open` gate check.
+- **Rate limit.** Shared with the browser tools. `open_url` is counted by its `tab_open` gate check;
+  `play_media` by the same check on the URL it opens (plus `k` / a click when it presses play), and its
+  YouTube search runs only after a pure gate pre-check of the same request passed.
   `open_app` is counted through a URL-less `tab_open` gate request (`tool: "open_app"`,
   `tab: "desktop"`), so only the rate limit applies to it. That request is also checked before the human
   is asked anything.
@@ -251,7 +312,10 @@ macOS:
   Warp, Cursor, Dashlane, Screens, Teams, Script Debugger, OrbStack, Termius, Wave, Sublime Merge,
   Insomnia and Tower releases;
 - `codesign --verify --deep --strict` timing on large bundles (Stephen allows 20 s; a timeout asks);
-- that the confirmation dialog appears when the MCP client has no elicitation support.
+- that the confirmation dialog appears when the MCP client has no elicitation support;
+- play_media against the real YouTube: the results page still embeds `ytInitialData` for a desktop UA without
+  cookies (outside the EU consent redirect), and the player's Play/Pause labels match `PAUSE_RE` / `PLAY_RE`
+  in `src/desktop/play.ts`.
 
 ## Phase 2 (not built)
 

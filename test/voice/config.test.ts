@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseVoiceConfig, VoiceConfigError } from '../../src/voice/config.js';
+import { BARE_WAKE_THRESHOLD_DEFAULT, DEFAULT_WAKE_PHRASES, parseVoiceConfig, VoiceConfigError } from '../../src/voice/config.js';
 import { parseListenArgs } from '../../src/voice/args.js';
 
 describe('parseVoiceConfig', () => {
@@ -8,14 +8,16 @@ describe('parseVoiceConfig', () => {
       const c = parseVoiceConfig(raw);
       expect(c).toMatchObject({
         wakePhrase: 'hey stephen',
+        wakePhrases: ['hey stephen', 'yo stephen', 'ok stephen', 'stephen'],
         stopPhrase: 'stephen stop',
         device: null,
-        asrModel: 'whisper-tiny.en',
+        asrModel: null, // = the default model, resolved against what is installed (models.ts resolveAsrModel)
         keywordsThreshold: 0.3,
+        bareWakeThreshold: BARE_WAKE_THRESHOLD_DEFAULT,
         keywordsScore: 1,
         verifyWake: true,
         claudePath: 'claude',
-        claudeModel: null,
+        claudeModel: 'sonnet',
         maxTurns: 15,
         followUpWindowSec: null, // ignored in phase 1: every command is a fresh session
         cooldownSec: 20,
@@ -29,6 +31,19 @@ describe('parseVoiceConfig', () => {
         noSpeechTimeoutSec: 5,
       });
     }
+  });
+
+  it('wake phrases: a list (default the four Stephen variants), or the old single wakePhrase', () => {
+    expect(DEFAULT_WAKE_PHRASES).toEqual(['hey stephen', 'yo stephen', 'ok stephen', 'stephen']);
+    const c = parseVoiceConfig({ wakePhrases: ['  Hey Stephen ', 'STEPHEN', 'hey stephen'], bareWakeThreshold: 0.5 });
+    expect(c.wakePhrases).toEqual(['hey stephen', 'stephen']); // normalized, duplicates dropped
+    expect(c.wakePhrase).toBe('hey stephen');
+    expect(c.bareWakeThreshold).toBe(0.5);
+    expect(parseVoiceConfig({ wakePhrase: 'stephen' }).wakePhrases).toEqual(['stephen']); // one word is allowed now
+    expect(parseVoiceConfig({ wakePhrase: null }).wakePhrases).toEqual([...DEFAULT_WAKE_PHRASES]);
+    expect(parseVoiceConfig({ asrModel: 'parakeet-tdt-0.6b-v2' }).asrModel).toBe('parakeet-tdt-0.6b-v2');
+    expect(parseVoiceConfig({ asrModel: 'moonshine-base-v2' }).asrModel).toBe('moonshine-base-v2');
+    expect(parseVoiceConfig({ asrModel: 'whisper-tiny.en' }).asrModel).toBe('whisper-tiny.en');
   });
 
   it('accepts and normalizes valid values; null means default', () => {
@@ -50,6 +65,7 @@ describe('parseVoiceConfig', () => {
       silenceSec: null,
     });
     expect(c.wakePhrase).toBe('hey computer');
+    expect(c.wakePhrases).toEqual(['hey computer']); // the old single value still works
     expect(c.stopPhrase).toBe("computer don't");
     expect(c.device).toBe('MacBook');
     expect(c.asrModel).toBe('moonshine-base');
@@ -65,11 +81,17 @@ describe('parseVoiceConfig', () => {
 
   it.each([
     [{ wakeword: 'x' }, /unknown key "voice.wakeword"/],
-    [{ wakePhrase: 'stephen' }, /voice.wakePhrase.*2–4 plain English words/],
+    [{ stopPhrase: 'stop' }, /voice.stopPhrase.*2–4 plain English words/],
+    [{ wakePhrases: [] }, /voice.wakePhrases/],
+    [{ wakePhrases: ['hey stephen', 'hey 2'] }, /voice.wakePhrases.1/],
+    [{ wakePhrases: 'hey stephen' }, /voice.wakePhrases/],
+    [{ wakePhrases: ['hey stephen'], wakePhrase: 'yo stephen' }, /not both/],
+    [{ wakePhrases: ['stephen stop', 'hey stephen'] }, /stop phrase must differ/],
     [{ wakePhrase: 'hey stephen 2' }, /voice.wakePhrase/],
     [{ wakePhrase: 'hey, stephen!' }, /voice.wakePhrase/],
     [{ wakePhrase: 'one two three four five' }, /voice.wakePhrase/],
     [{ wakePhrase: 'hey stephen', stopPhrase: 'Hey Stephen' }, /must differ/],
+    [{ bareWakeThreshold: 0.99 }, /voice.bareWakeThreshold/],
     [{ asrModel: 'whisper-large' }, /voice.asrModel/],
     [{ keywordsThreshold: 0 }, /voice.keywordsThreshold/],
     [{ keywordsThreshold: 1.5 }, /voice.keywordsThreshold/],

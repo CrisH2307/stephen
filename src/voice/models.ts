@@ -3,11 +3,12 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
-import type { AsrModelId } from './config.js';
+import { DEFAULT_ASR_MODEL, FALLBACK_ASR_MODEL, type AsrModelId } from './config.js';
 
 /**
  * Pinned model archives from github.com/k2-fsa/sherpa-onnx/releases. The sha256 values were computed when
- * these were pinned (2026-10-30); a download that doesn't match is deleted and refused.
+ * these were pinned (2026-10-30; whisper-small.en, parakeet-tdt-0.6b-v2 and moonshine-base-v2 on
+ * 2026-10-31); a download that doesn't match is deleted and refused.
  */
 export interface ModelArchive {
   id: string;
@@ -54,6 +55,16 @@ export const VAD_MODEL: ModelArchive = {
 };
 
 export const ASR_ARCHIVES: Record<AsrModelId, ModelArchive> = {
+  'parakeet-tdt-0.6b-v2': {
+    id: 'parakeet-tdt-0.6b-v2',
+    url: `${REL}/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2`,
+    sha256: '157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad',
+    bytes: 482_468_385,
+    kind: 'tar.bz2',
+    dir: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8',
+    keep: ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt'],
+    license: 'CC-BY-4.0',
+  },
   'whisper-tiny.en': {
     id: 'whisper-tiny.en',
     url: `${REL}/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2`,
@@ -72,6 +83,16 @@ export const ASR_ARCHIVES: Record<AsrModelId, ModelArchive> = {
     kind: 'tar.bz2',
     dir: 'sherpa-onnx-whisper-base.en',
     keep: ['base.en-encoder.int8.onnx', 'base.en-decoder.int8.onnx', 'base.en-tokens.txt'],
+    license: 'MIT',
+  },
+  'whisper-small.en': {
+    id: 'whisper-small.en',
+    url: `${REL}/asr-models/sherpa-onnx-whisper-small.en.tar.bz2`,
+    sha256: '0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a',
+    bytes: 635_693_775,
+    kind: 'tar.bz2',
+    dir: 'sherpa-onnx-whisper-small.en',
+    keep: ['small.en-encoder.int8.onnx', 'small.en-decoder.int8.onnx', 'small.en-tokens.txt'],
     license: 'MIT',
   },
   'moonshine-tiny': {
@@ -94,7 +115,37 @@ export const ASR_ARCHIVES: Record<AsrModelId, ModelArchive> = {
     keep: ['preprocess.onnx', 'encode.int8.onnx', 'uncached_decode.int8.onnx', 'cached_decode.int8.onnx', 'tokens.txt', 'LICENSE'],
     license: 'MIT',
   },
+  'moonshine-base-v2': {
+    id: 'moonshine-base-v2',
+    url: `${REL}/asr-models/sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2`,
+    sha256: '43232c1d13013d37317163baec3135bd771a186a4356f28c889bab453bb0e891',
+    bytes: 111_266_225,
+    kind: 'tar.bz2',
+    dir: 'sherpa-onnx-moonshine-base-en-quantized-2026-02-27',
+    keep: ['encoder_model.ort', 'decoder_model_merged.ort', 'tokens.txt', 'LICENSE'],
+    license: 'MIT',
+  },
 };
+
+/**
+ * Which speech-to-text model `stephen listen` uses. A configured `voice.asrModel` always wins (and is downloaded
+ * if missing). Unset means DEFAULT_ASR_MODEL — but an existing user who only has the old default (whisper-tiny.en)
+ * keeps using it, with a hint to run `stephen voice-setup`, instead of a surprise 636 MB download at start-up.
+ */
+export async function resolveAsrModel(root: string, configured: AsrModelId | null): Promise<{ id: AsrModelId; note: string | null }> {
+  if (configured) return { id: configured, note: null };
+  if (await isInstalled(root, ASR_ARCHIVES[DEFAULT_ASR_MODEL])) return { id: DEFAULT_ASR_MODEL, note: null };
+  if (await isInstalled(root, ASR_ARCHIVES[FALLBACK_ASR_MODEL])) {
+    const mb = Math.round(ASR_ARCHIVES[DEFAULT_ASR_MODEL].bytes / 1e6);
+    return {
+      id: FALLBACK_ASR_MODEL,
+      note:
+        `Speech-to-text: using ${FALLBACK_ASR_MODEL}. Run \`stephen voice-setup\` to get the better model ` +
+        `(${DEFAULT_ASR_MODEL}, ${mb} MB download: far fewer misheard names), then restart \`stephen listen\`.`,
+    };
+  }
+  return { id: DEFAULT_ASR_MODEL, note: null };
+}
 
 /** The archives `stephen listen` needs for a given ASR model. */
 export function requiredArchives(asr: AsrModelId): ModelArchive[] {

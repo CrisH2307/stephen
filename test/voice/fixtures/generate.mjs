@@ -3,6 +3,7 @@
 //
 //   node test/voice/fixtures/generate.mjs <models dir containing vits-piper-en_US-amy-low and vits-piper-en_GB-alan-low>
 //
+// A newer sherpa-onnx renders the older clips very slightly differently: commit only the clips you added.
 // Every clip: 16 kHz mono 16-bit, 0.6 s lead-in, 1.5 s tail, deterministic low-level noise (≈ -50 dBFS).
 import { createRequire } from 'node:module';
 import { join, dirname } from 'node:path';
@@ -36,9 +37,15 @@ const CLIPS = {
   'stop': ['Stephen, stop.'],
   // Push-to-talk: the command alone, no wake phrase (and a wake-word negative).
   'ptt-open': ['Open YouTube.'],
+  // Phase 1.6: the other wake variants, the owner's song request, and a Steve inside a sentence.
+  'wake-yo': ['Yo Stephen, open Spotify.'],
+  'wake-ok': ['Okay Stephen, search YouTube for lo-fi beats.'],
+  'wake-bare': ['Stephen.', 0.8, 'Open YouTube.'],
+  'wake-song': ['Hey Stephen, can you play One Call Away by Charlie Pooth?'], // "Pooth": how "Puth" is said
+  'neg-steve-mid': ['Tell Steve the meeting moved to Monday.'],
 };
 /** Clips added later get their own noise generator, so regenerating never changes the older clips. */
-const OWN_SEED = { 'ptt-open': 4242 };
+const OWN_SEED = { 'ptt-open': 4242, 'wake-yo': 4243, 'wake-ok': 4244, 'wake-bare': 4245, 'wake-song': 4246, 'neg-steve-mid': 4247 };
 
 const RATE = 16000;
 let seed = 12345;

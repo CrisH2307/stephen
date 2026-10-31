@@ -35,6 +35,7 @@ const EXPECTED_TOOLS = [
   // Stephen desktop actions (src/desktop), registered by default (desktop.enabled).
   'open_app',
   'open_url',
+  'play_media',
   'desktop_status',
 ];
 

@@ -5,8 +5,10 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { buildClaudeArgs } from '../../src/voice/claude.js';
 import { PTT_NEEDS_HELPER } from '../../src/voice/helper-link.js';
 import { FOLLOW_UP_IGNORED_NOTE, runListen, runVoiceSetup, type ListenEnv } from '../../src/voice/index.js';
+import { symlinkSync } from 'node:fs';
+import { ASR_ARCHIVES, KWS_MODEL, VAD_MODEL } from '../../src/voice/models.js';
 import { FakeHelper } from './fakes.js';
-import { fakeClaudePath, readFakeLog, RecordingChimes, RecordingSpeaker } from './helpers.js';
+import { fakeClaudePath, fakeInstall, prepareKwsModel, readFakeLog, RecordingChimes, RecordingSpeaker } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-listen-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -36,7 +38,7 @@ describe('stephen listen --text', () => {
     const line = t.out.find((l) => l.startsWith('claude argv (dry run): '))!;
     const argv = JSON.parse(line.slice(line.indexOf('['))) as string[];
     const mcpPath = join(tmp, 'home', 'voice', 'mcp-config.json');
-    expect(argv).toEqual(['/usr/local/bin/claude', ...buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 8, model: null, mcpConfigPath: mcpPath })]);
+    expect(argv).toEqual(['/usr/local/bin/claude', ...buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 8, model: 'sonnet', mcpConfigPath: mcpPath })]);
     expect(JSON.parse(readFileSync(mcpPath, 'utf8'))).toEqual({ mcpServers: { stephen: { command: process.execPath, args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice'] } } });
     expect(t.out[0]).toMatch(/^MCP config \(.*mcp-config\.json\): \{"mcpServers":\{"stephen":/);
     expect(t.speaker.said).toEqual([]); // dry run never speaks
@@ -78,7 +80,7 @@ describe('stephen listen --text', () => {
   });
 
   it('rejects bad config and bad options with exit 2', async () => {
-    const bad = env({ wakePhrase: 'stephen' });
+    const bad = env({ wakePhrase: 'hey stephen!' });
     expect(await runListen(['--text', 'x'], bad.e)).toBe(2);
     expect(bad.err[0]).toMatch(/Invalid voice config: "voice.wakePhrase"/);
     const opt = env();
@@ -123,5 +125,57 @@ describe('stephen listen: push-to-talk only needs the helper', () => {
     expect(t.out[0]).toMatch(/--ptt-only/);
     expect(t.out[0]).toMatch(/--no-helper/);
     expect(t.out[0]).toMatch(/hold Fn\+Option/);
+  });
+});
+
+const kws = await prepareKwsModel();
+
+describe.skipIf(!kws.ok)('stephen listen: speech-to-text model selection (needs the KWS model)', () => {
+  /** A models folder with the real KWS model (keywords are tokenized at start-up) and fake VAD/ASR installs. */
+  function modelsRoot(...asr: (keyof typeof ASR_ARCHIVES)[]): string {
+    const root = mkdtempSync(join(tmp, 'models-'));
+    symlinkSync(join(kws.ok ? kws.root : '', KWS_MODEL.dir), join(root, KWS_MODEL.dir));
+    fakeInstall(root, VAD_MODEL);
+    for (const a of asr) fakeInstall(root, ASR_ARCHIVES[a]);
+    return root;
+  }
+  const noDownload = async () => Promise.reject(new Error('must not download'));
+
+  async function listenWith(root: string, voice: Record<string, unknown> = {}) {
+    let used: string | null = null;
+    const t = env(voice, {
+      modelsRoot: root,
+      download: noDownload,
+      helper: () => null,
+      engines: async (paths) => {
+        used = paths.asr.id;
+        throw new Error('stop here');
+      },
+    });
+    const code = await runListen(['--no-helper'], t.e);
+    return { code, used, out: t.out, err: t.err };
+  }
+
+  it('an existing user with only whisper-tiny keeps working and is told to run voice-setup', async () => {
+    const r = await listenWith(modelsRoot('whisper-tiny.en'));
+    expect(r.used).toBe('whisper-tiny.en');
+    expect(r.out.some((l) => /run `stephen voice-setup` to get the better model/i.test(l))).toBe(true);
+    expect(r.err).toContain('Could not start the speech engine: stop here');
+  });
+
+  it('uses the new default once it is installed, and a configured model as is', async () => {
+    const both = modelsRoot('whisper-tiny.en', 'whisper-small.en');
+    const r = await listenWith(both);
+    expect(r.used).toBe('whisper-small.en');
+    expect(r.out.some((l) => /voice-setup/.test(l))).toBe(false);
+    expect((await listenWith(both, { asrModel: 'whisper-tiny.en' })).used).toBe('whisper-tiny.en');
+  });
+
+  it('voice-setup downloads the new default even when whisper-tiny is there', async () => {
+    const root = modelsRoot('whisper-tiny.en');
+    const urls: string[] = [];
+    const t = env({}, { modelsRoot: root, download: async (url) => (urls.push(url), Promise.reject(new Error('offline'))) });
+    expect(await runVoiceSetup([], t.e)).toBe(1);
+    expect(urls).toEqual([ASR_ARCHIVES['whisper-small.en'].url]);
   });
 });

@@ -14,6 +14,7 @@ import { plistString } from '../../src/drivers/macos.js';
 import { SafetyGate } from '../../src/safety/gate.js';
 import { buildServer, type ServerDeps } from '../../src/server/index.js';
 import { FakeAudit, FakeConfirmer, FakeManager, makeEngine } from '../server/fakes.js';
+import { FakeFetch } from './media-fixtures.js';
 
 export const HOME = '/Users/tester';
 export const REPO = '/Users/tester/code/stephen';
@@ -96,6 +97,8 @@ export class FakeMac {
   openFails: string | null = null;
   /** .app paths whose `codesign --verify` fails (stderr), e.g. tampered or unsigned bundles. */
   readonly codesignFails = new Map<string, string>();
+  /** play_media's YouTube search (never the network). */
+  readonly yt = new FakeFetch();
 
   constructor() {
     for (const d of ['/Applications', '/System/Applications', '/System/Applications/Utilities', '/Applications/Utilities', `${HOME}/Applications`]) {
@@ -177,6 +180,8 @@ export class FakeMac {
       homeDir: HOME,
       repoDir: REPO,
       execFile: (file, args) => this.exec(file, args),
+      fetch: (url, init) => this.yt.fn(url, init),
+      mediaTiming: { pollMs: 5, playerWaitMs: 60, resultsWaitMs: 60 },
       fs: {
         list: async (dir) => [...(this.dirs.get(dir) ?? [])],
         read: async (p) => this.files.get(p) ?? null,
@@ -225,13 +230,15 @@ export async function setupDesktop(opts: DesktopSetupOptions = {}) {
   const mac = opts.mac ?? standardMac();
   const manager = new FakeManager();
   manager.connected.zen = false; // nothing attached unless a test says so
+  manager.unreachable.add('zen'); // and no "Zen for Stephen" to attach to on demand, unless a test removes it
   const audit = new FakeAudit();
   const confirmer = new FakeConfirmer();
   const gate = new SafetyGate({ safety: cfg.safety, confirmer, audit });
+  const engine = makeEngine();
   const deps: ServerDeps & { desktop: DesktopDeps } = {
     cfg,
     manager,
-    engine: makeEngine(),
+    engine,
     safetyFactory: (() => ({ gate, audit })) as unknown as ServerDeps['safetyFactory'],
     confirmerFactory: () => confirmer,
     orphanWaitMs: 500,
@@ -242,7 +249,7 @@ export async function setupDesktop(opts: DesktopSetupOptions = {}) {
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(st), client.connect(ct)]);
   const call = async (name: string, args: Record<string, unknown> = {}) => (await client.callTool({ name, arguments: args })) as CallToolResult;
-  return { tmp, cfg, mac, manager, audit, confirmer, gate, server, client, call };
+  return { tmp, cfg, mac, manager, engine, audit, confirmer, gate, server, client, call };
 }
 
 export function textOf(res: CallToolResult): string {

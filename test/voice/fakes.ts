@@ -42,9 +42,11 @@ export class ScriptedSource implements AudioSource {
 export class ScriptedSpotter implements Spotter {
   private n = 0;
   restarts = 0;
-  constructor(private readonly hits: Record<number, KeywordHit['id']>) {}
+  /** 'WAKE_BARE' = a bare "Stephen" (a WAKE hit with `bare`). */
+  constructor(private readonly hits: Record<number, KeywordHit['id'] | 'WAKE_BARE'>) {}
   accept(): KeywordHit | null {
     const id = this.hits[this.n++];
+    if (id === 'WAKE_BARE') return { id: 'WAKE', bare: true, startAgoSec: 0.5 };
     return id ? { id, startAgoSec: 0.5 } : null;
   }
   restart() {

@@ -88,7 +88,10 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     return { env, log, speaker, chimes, out, transcripts };
   }
 
-  const clips = readdirSync(FIXTURES).filter((f) => f.endsWith('.wav')).sort();
+  // The phase-1 clips (wake-variants.int.test.ts covers the newer ones with the default model).
+  const clips = readdirSync(FIXTURES)
+    .filter((f) => f.endsWith('.wav') && f.split('.')[0]! in EXPECTED)
+    .sort();
   const report: string[] = [];
   afterAll(() => process.stderr.write(`\n[voice pipeline results]\n${report.join('\n')}\n`));
 
@@ -113,7 +116,7 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     expect(tr!.command).toBe(want);
     expect(runs).toHaveLength(1);
     const mcpPath = join(tmp, 'home', 'voice', 'mcp-config.json');
-    expect(runs[0]!.argv).toEqual(buildClaudeArgs(want!, { claudePath: 'x', maxTurns: 15, model: null, mcpConfigPath: mcpPath }));
+    expect(runs[0]!.argv).toEqual(buildClaudeArgs(want!, { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: mcpPath }));
     expect(h.speaker.said).toEqual([`Done! I opened YouTube for "${want}".`]);
     expect(h.chimes.played).toEqual(['wake', 'done']);
     expect(h.out).toContain(`Heard: "${want}"`);

@@ -16,6 +16,7 @@ import { MicrophoneSource, listInputDevices, resolveDeviceIndex, wavFileSource, 
 import {
   ClaudeRunner,
   buildClaudeArgs,
+  formatTiming,
   mcpConfig,
   stephenCliBuilt,
   stephenCliPath,
@@ -23,12 +24,13 @@ import {
   type ClaudeOutcome,
   type ClaudeSettings,
   type SpawnFn,
+  probeClaudeFlags,
 } from './claude.js';
-import { VoiceConfigError, parseVoiceConfig, type VoiceConfig } from './config.js';
+import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
-import { ensureModels, modelPaths, modelsDir, requiredArchives, type Downloader, type ModelPaths } from './models.js';
+import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelPaths } from './models.js';
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 
@@ -106,14 +108,19 @@ export const FOLLOW_UP_IGNORED_NOTE =
   "because each one also starts a fresh Stephen server whose safety checks don't remember the earlier commands. " +
   'Follow-ups return in phase 3 (see docs/VOICE.md). You can remove the setting.';
 
-export async function createEngines(paths: ModelPaths, cfg: VoiceConfig, workDir: string): Promise<Engines> {
-  const spotter = new SherpaSpotter(paths, {
-    wakePhrase: cfg.wakePhrase,
+function spotterOptions(cfg: VoiceConfig, workDir: string) {
+  return {
+    wakePhrases: cfg.wakePhrases,
     stopPhrase: cfg.stopPhrase,
     threshold: cfg.keywordsThreshold,
+    bareThreshold: cfg.bareWakeThreshold,
     score: cfg.keywordsScore,
     workDir,
-  });
+  };
+}
+
+export async function createEngines(paths: ModelPaths, cfg: VoiceConfig, workDir: string): Promise<Engines> {
+  const spotter = new SherpaSpotter(paths, spotterOptions(cfg, workDir));
   const vad = new SherpaVad(paths.vad, cfg.silenceSec);
   const transcriber = await SherpaTranscriber.create(paths);
   return { spotter, vad, transcriber };
@@ -145,12 +152,19 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): { home: string; cf
   }
 }
 
-async function setupModels(root: string, cfg: VoiceConfig, workDir: string, env: ListenEnv, out: (l: string) => void): Promise<ModelPaths> {
-  const installed = await ensureModels(root, requiredArchives(cfg.asrModel), { log: out, download: env.download });
-  const paths = modelPaths(root, cfg.asrModel);
+async function setupModels(
+  root: string,
+  cfg: VoiceConfig,
+  asr: AsrModelId,
+  workDir: string,
+  env: ListenEnv,
+  out: (l: string) => void,
+): Promise<ModelPaths> {
+  const installed = await ensureModels(root, requiredArchives(asr), { log: out, download: env.download });
+  const paths = modelPaths(root, asr);
   // Tokenize the configured phrases now, so a phrase the model can't spot fails here with a clear message.
   await mkdir(workDir, { recursive: true, mode: 0o700 });
-  writeKeywordsFile(paths, { wakePhrase: cfg.wakePhrase, stopPhrase: cfg.stopPhrase, threshold: cfg.keywordsThreshold, score: cfg.keywordsScore, workDir });
+  writeKeywordsFile(paths, spotterOptions(cfg, workDir));
   if (installed.length) out(`Speech models ready in ${root}.`);
   return paths;
 }
@@ -171,8 +185,10 @@ export async function runVoiceSetup(argv: string[], env: ListenEnv = {}): Promis
   if (!loaded) return 2;
   const root = env.modelsRoot ?? modelsDir(loaded.home);
   try {
-    await setupModels(root, loaded.cfg, join(loaded.home, 'voice'), env, out);
-    out(`Models: ${root} (speech-to-text: ${loaded.cfg.asrModel}). Wake phrase "${loaded.cfg.wakePhrase}", stop phrase "${loaded.cfg.stopPhrase}".`);
+    const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
+    await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), env, out);
+    const wakes = loaded.cfg.wakePhrases.map((p) => `"${p}"`).join(', ');
+    out(`Models: ${root} (speech-to-text: ${asr}). Wake phrases ${wakes}; stop phrase "${loaded.cfg.stopPhrase}".`);
     out('Next: `stephen listen` (allow Microphone access for your terminal app when macOS asks).');
     return 0;
   } catch (e) {
@@ -223,12 +239,25 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const cliPath = env.cliPath ?? stephenCliPath();
   const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath);
   const settings: ClaudeSettings = { claudePath: cfg.claudePath, maxTurns: cfg.maxTurns, model: cfg.claudeModel, mcpConfigPath };
+  // Check once that this Claude Code knows our lock-down flags: required ones missing → refuse (update Claude Code);
+  // optional ones (--no-chrome, --no-session-persistence) missing → leave them out instead of failing every command.
+  if (!args.dryRun && !env.spawn) {
+    const probe = await probeClaudeFlags(cfg.claudePath);
+    if (probe && !probe.ok) {
+      err(`Your Claude Code is too old for Stephen's voice lock-down (missing ${probe.missing.join(', ')}). Update it (claude update) and try again.`);
+      return 1;
+    }
+    if (probe?.ok && probe.unsupportedOptional.size) {
+      settings.unsupportedOptionalFlags = probe.unsupportedOptional;
+      err(`Note: this Claude Code doesn't know ${[...probe.unsupportedOptional].join(', ')}; running without them (update Claude Code for the faster lock-down).`);
+    }
+  }
   if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath))}`);
   else if (!stephenCliBuilt(cliPath)) err(`Note: ${cliPath} does not exist yet — run \`npm run build\` first, or Claude can't start Stephen's tools.`);
 
   const claude = args.dryRun
     ? null
-    : new ClaudeRunner({ ...settings, cwd: workDir, env: env.env, spawn: env.spawn, killGraceMs: env.killGraceMs });
+    : new ClaudeRunner({ ...settings, cwd: workDir, env: env.env, spawn: env.spawn, killGraceMs: env.killGraceMs, onTiming: (t) => out(formatTiming(t)) });
   const runner: CommandRunner = claude ?? new DryRunRunner(settings, out);
   const speak = cfg.speak && !args.dryRun;
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts). Tests inject env.speaker.
@@ -305,7 +334,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     const root = env.modelsRoot ?? modelsDir(home);
     let engines: Engines;
     try {
-      const paths = await setupModels(root, cfg, voiceDir, env, out);
+      const asr = await resolveAsrModel(root, cfg.asrModel);
+      if (asr.note) out(asr.note);
+      const paths = await setupModels(root, cfg, asr.id, voiceDir, env, out);
       engines = await (env.engines ?? createEngines)(paths, cfg, voiceDir);
     } catch (e) {
       err(`Could not start the speech engine: ${(e as Error).message}`);
@@ -321,6 +352,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     listener = new Listener(
       {
         wakePhrase: cfg.wakePhrase,
+        wakePhrases: cfg.wakePhrases,
+        stopPhrase: cfg.stopPhrase,
         silenceSec: cfg.silenceSec,
         maxCommandSec: cfg.maxCommandSec,
         noSpeechTimeoutSec: cfg.noSpeechTimeoutSec,
