@@ -43,6 +43,12 @@ Without `npm link`, run the same commands as `stephen doctor`, `stephen install 
 claude mcp add --scope user stephen -- node "/absolute/path/to/stephen/dist/cli.js" serve
 ```
 
+Open manually
+```
+open -a "$HOME/Applications/Stephen Helper.app" --args --home "$HOME/.browser-hub"
+
+```
+
 Then **restart Claude Code** and type `/mcp`  `stephen` should be listed as connected. (If you move the folder, remove and re-add it: `claude mcp remove --scope user stephen`.)
 
 ## Upgrading from browser-hub
