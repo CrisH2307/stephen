@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TTS_CONFIG_SHAPE } from './tts/config.js';
 
 /** Offline speech-to-text models the listener can use (see models.ts for the pinned archives). */
 export const ASR_MODELS = ['whisper-tiny.en', 'whisper-base.en', 'moonshine-tiny', 'moonshine-base'] as const;
@@ -62,8 +63,14 @@ const VoiceConfigSchema = z
     /**
      * After every command, the wake word is ignored for this many seconds (a page or video Stephen just opened
      * may say "Hey Stephen…"). Press Enter in the listener's terminal to re-arm early. 0 = no cooldown.
+     * Only used without Stephen Helper: with it, the wake word is ignored only while the Mac plays sound.
      */
     cooldownSec: z.number().min(0).max(600).default(20),
+    /**
+     * "Hey Stephen" on/off. false = push-to-talk only (hold Fn+Option), which needs Stephen Helper
+     * (`stephen install-helper`). The stop phrase keeps working either way.
+     */
+    wakeWord: z.boolean().default(true),
     /** Speak the reply with macOS `say`. */
     speak: z.boolean().default(true),
     /** macOS `say` voice (default: the system voice). */
@@ -78,6 +85,8 @@ const VoiceConfigSchema = z
     maxCommandSec: z.number().min(2).max(60).default(12),
     /** Give up if nothing is said this long after the wake word. */
     noSpeechTimeoutSec: z.number().min(1).max(30).default(5),
+    /** Voice output: `tts` (auto|elevenlabs|kokoro|say), `elevenlabs` {voiceId, modelId, apiKeyFile, timeoutSec}, `kokoro` {speaker, speed}. */
+    ...TTS_CONFIG_SHAPE,
   })
   .refine((c) => c.wakePhrase !== c.stopPhrase, { message: 'wakePhrase and stopPhrase must differ', path: ['stopPhrase'] });
 

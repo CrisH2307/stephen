@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { buildClaudeArgs } from '../../src/voice/claude.js';
+import { PTT_NEEDS_HELPER } from '../../src/voice/helper-link.js';
 import { FOLLOW_UP_IGNORED_NOTE, runListen, runVoiceSetup, type ListenEnv } from '../../src/voice/index.js';
+import { FakeHelper } from './fakes.js';
 import { fakeClaudePath, readFakeLog, RecordingChimes, RecordingSpeaker } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-listen-'));
@@ -35,7 +37,7 @@ describe('stephen listen --text', () => {
     const argv = JSON.parse(line.slice(line.indexOf('['))) as string[];
     const mcpPath = join(tmp, 'home', 'voice', 'mcp-config.json');
     expect(argv).toEqual(['/usr/local/bin/claude', ...buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 8, model: null, mcpConfigPath: mcpPath })]);
-    expect(JSON.parse(readFileSync(mcpPath, 'utf8'))).toEqual({ mcpServers: { stephen: { command: process.execPath, args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog'] } } });
+    expect(JSON.parse(readFileSync(mcpPath, 'utf8'))).toEqual({ mcpServers: { stephen: { command: process.execPath, args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice'] } } });
     expect(t.out[0]).toMatch(/^MCP config \(.*mcp-config\.json\): \{"mcpServers":\{"stephen":/);
     expect(t.speaker.said).toEqual([]); // dry run never speaks
     expect(t.chimes.played).toEqual([]);
@@ -92,5 +94,34 @@ describe('stephen listen --text', () => {
     expect(await runVoiceSetup([], t.e)).toBe(1);
     expect(t.err[0]).toMatch(/voice-setup failed: offline/);
     expect(await runVoiceSetup(['--bogus'], t.e)).toBe(2);
+  });
+});
+
+describe('stephen listen: push-to-talk only needs the helper', () => {
+  it('--ptt-only without a helper exits 1 with an install hint (before loading any model)', async () => {
+    const t = env({}, { helper: () => null, download: async () => Promise.reject(new Error('must not download')) });
+    expect(await runListen(['--ptt-only'], t.e)).toBe(1);
+    expect(t.err).toContain(PTT_NEEDS_HELPER + ' (Stephen Helper is not installed)');
+  });
+
+  it('voice.wakeWord false with a helper that fails to start exits 1 with its reason', async () => {
+    const t = env({ wakeWord: false }, { helper: () => new FakeHelper({ ok: false, reason: 'helper did not answer' }) });
+    expect(await runListen([], t.e)).toBe(1);
+    expect(t.err).toContain(`${PTT_NEEDS_HELPER} (helper did not answer)`);
+  });
+
+  it('--text never connects to the helper', async () => {
+    let calls = 0;
+    const t = env({}, { helper: () => (calls++, null) });
+    expect(await runListen(['--text', 'open youtube', '--dry-run'], t.e)).toBe(0);
+    expect(calls).toBe(0);
+  });
+
+  it('usage mentions push-to-talk, --ptt-only and --no-helper', async () => {
+    const t = env();
+    await runListen(['--help'], t.e);
+    expect(t.out[0]).toMatch(/--ptt-only/);
+    expect(t.out[0]).toMatch(/--no-helper/);
+    expect(t.out[0]).toMatch(/hold Fn\+Option/);
   });
 });

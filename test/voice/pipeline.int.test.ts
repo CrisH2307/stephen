@@ -30,6 +30,7 @@ const EXPECTED: Record<string, string | null> = {
   'neg-step': null,
   'neg-weather': null,
   stop: null, // "Stephen, stop." alone: the stop phrase must not start anything
+  'ptt-open': null, // "Open YouTube." without the wake word (the push-to-talk clip) never starts a command
 };
 
 /** Source that pauses before frame `at` until `until()` holds (to line audio up with the running command). */
@@ -82,6 +83,7 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
       env: { ...process.env, FAKE_CLAUDE_LOG: log, ...extraEnv },
       onTranscript: (raw, command, ms) => transcripts.push({ raw, command, ms }),
       killGraceMs: 500,
+      helper: () => null, // no Stephen Helper: the wake-word cooldown applies (see ptt.int.test.ts for the helper)
     };
     return { env, log, speaker, chimes, out, transcripts };
   }

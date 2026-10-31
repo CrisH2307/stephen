@@ -6,6 +6,7 @@
  * `stephen voice-setup` (or `stephen listen --setup`) calls runVoiceSetup(argv).
  * Config comes from loadConfig().voice — the raw "voice" section of config.json, validated here.
  */
+import { createTts } from './tts/index.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
@@ -25,9 +26,10 @@ import {
 } from './claude.js';
 import { VoiceConfigError, parseVoiceConfig, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
+import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
 import { ensureModels, modelPaths, modelsDir, requiredArchives, type Downloader, type ModelPaths } from './models.js';
-import { AfplayChimes, SaySpeaker, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
+import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 
 export { LISTEN_USAGE } from './args.js';
@@ -67,6 +69,23 @@ export interface ListenEnv {
    * returns an unsubscribe function. Default: watch stdin when it is a terminal and `signals` is on.
    */
   keys?: (onEnter: () => void) => () => void;
+  /**
+   * Stephen Helper (push-to-talk, Esc, audio.playing, menu-bar state): returns an un-started link, or null when
+   * there is none. Default: the real client from src/helper/client.ts, loaded lazily (missing → null).
+   */
+  helper?: (home: string) => Promise<HelperLink | null> | HelperLink | null;
+}
+
+/** Start the helper link; null when unavailable (never throws). */
+async function connectHelper(env: ListenEnv, home: string): Promise<{ bridge: HelperBridge } | { reason: string }> {
+  let link: HelperLink | null;
+  try {
+    link = await (env.helper ?? loadHelperClient)(home);
+  } catch (e) {
+    return { reason: (e as Error).message };
+  }
+  if (!link) return { reason: 'Stephen Helper is not installed' };
+  return HelperBridge.connect(link);
 }
 
 /** Enter on a terminal stdin (line mode, so Ctrl-C still raises SIGINT). No-op when stdin isn't a terminal. */
@@ -212,10 +231,20 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     : new ClaudeRunner({ ...settings, cwd: workDir, env: env.env, spawn: env.spawn, killGraceMs: env.killGraceMs });
   const runner: CommandRunner = claude ?? new DryRunRunner(settings, out);
   const speak = cfg.speak && !args.dryRun;
-  const speaker = speak ? (env.speaker ?? new SaySpeaker(cfg.voice, cfg.rate, err)) : silentSpeaker;
+  // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts). Tests inject env.speaker.
+  let speaker: Speaker = silentSpeaker;
+  if (speak) {
+    if (env.speaker) speaker = env.speaker;
+    else {
+      const tts = createTts(cfg, { home, log: err });
+      void tts.warm().catch(() => {});
+      speaker = tts;
+    }
+  }
   const chimes = cfg.chimes && !args.dryRun ? (env.chimes ?? new AfplayChimes()) : silentChimes;
-  const assistant = new Assistant({ runner, speaker, chimes, speak, status: out });
-
+  const makeAssistant = (bridge: HelperBridge | null) => new Assistant({ runner, speaker, chimes, speak, status: out, ...assistantHooks(bridge) });
+  let assistant = makeAssistant(null);
+  let bridge: HelperBridge | null = null;
   let listener: Listener | null = null;
   let lastSigint = 0;
   const onSigint = () => {
@@ -252,6 +281,27 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       return r === 'ok' ? 0 : 1;
     }
 
+    // Stephen Helper: push-to-talk, Esc, menu-bar state, and "is the Mac playing sound?". Not with --wav (a file
+    // has no keyboard) or --no-helper; without it the wake word falls back to the fixed cooldown.
+    const wakeWord = cfg.wakeWord && !args.pttOnly;
+    const wantHelper = !args.noHelper && !(args.wav && !env.source);
+    if (wantHelper) {
+      const h = await connectHelper(env, home);
+      if ('bridge' in h) bridge = h.bridge;
+      else if (!wakeWord) {
+        err(`${PTT_NEEDS_HELPER} (${h.reason})`);
+        return 1;
+      }
+    }
+    if (!bridge) {
+      if (!wakeWord) {
+        err(PTT_NEEDS_HELPER);
+        return 1;
+      }
+      if (!args.noHelper && !args.wav) out(HELPER_HINT);
+    }
+    assistant = makeAssistant(bridge);
+
     const root = env.modelsRoot ?? modelsDir(home);
     let engines: Engines;
     try {
@@ -277,8 +327,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         verifyWake: cfg.verifyWake,
         once: args.once,
         cooldownSec: cfg.cooldownSec,
+        wakeWord,
       },
-      { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript },
+      { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge },
     );
     const keys = env.keys ?? (signals ? watchEnterKey : null);
     const live = listener;
@@ -289,6 +340,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       unwatch();
     }
   } finally {
+    bridge?.close();
     if (signals) {
       process.off('SIGINT', onSigint);
       process.off('exit', onExit);

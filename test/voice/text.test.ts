@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { stripForSpeech } from '../../src/voice/speech.js';
-import { cleanTypedCommand, findWakePhrase, normalizeTranscript, plainWords } from '../../src/voice/transcript.js';
+import { cleanTypedCommand, collapseRepeats, findWakePhrase, normalizeTranscript, plainWords } from '../../src/voice/transcript.js';
 
 describe('normalizeTranscript', () => {
   it.each([
@@ -41,6 +41,25 @@ describe('normalizeTranscript', () => {
     expect(cleanTypedCommand('  open https://example.com/a?b=c  ')).toBe('open https://example.com/a?b=c');
     expect(cleanTypedCommand('--dangerously-skip-permissions open x')).toBe('dangerously-skip-permissions open x');
     expect(cleanTypedCommand('line1\nline2\u0007')).toBe('line1 line2');
+  });
+});
+
+describe('collapseRepeats (Whisper repetition loops on short push-to-talk clips)', () => {
+  const c = (t: string) => collapseRepeats(t.split(' ')).join(' ');
+  it('keeps one copy of a looped phrase and drops a dangling partial copy', () => {
+    expect(c('open youtube open youtube open youtube open youtube')).toBe('open youtube');
+    expect(c('open youtube open youtube open youtube open')).toBe('open youtube');
+    expect(c('search for cats search for cats')).toBe('search for cats');
+    expect(c('ha ha ha ha')).toBe('ha');
+  });
+  it('leaves normal speech alone', () => {
+    expect(c('open youtube')).toBe('open youtube');
+    expect(c('turn the volume very very low')).toBe('turn the volume very very low');
+    expect(c('play bora bora by the beach')).toBe('play bora bora by the beach');
+    expect(c('open mail and open notes')).toBe('open mail and open notes');
+  });
+  it('is applied by normalizeTranscript', () => {
+    expect(normalizeTranscript('Open YouTube Open YouTube Open YouTube Open', 'hey stephen')).toEqual({ text: 'open youtube', hadWake: false });
   });
 });
 

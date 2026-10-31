@@ -34,7 +34,11 @@ const CLIPS = {
   'neg-step': ['Hey, step in and open YouTube.'],
   'neg-weather': ['The weather is lovely today, let us go for a walk.'],
   'stop': ['Stephen, stop.'],
+  // Push-to-talk: the command alone, no wake phrase (and a wake-word negative).
+  'ptt-open': ['Open YouTube.'],
 };
+/** Clips added later get their own noise generator, so regenerating never changes the older clips. */
+const OWN_SEED = { 'ptt-open': 4242 };
 
 const RATE = 16000;
 let seed = 12345;
@@ -71,7 +75,9 @@ for (const v of VOICES) {
     const out = new Float32Array(total);
     let o = 0;
     for (const c of chunks) { out.set(c, o); o += c.length; }
-    for (let i = 0; i < out.length; i++) out[i] = out[i] * 0.8 + rand() * 0.003;
+    let own = OWN_SEED[name];
+    const noise = own === undefined ? rand : () => ((own = (own * 1103515245 + 12345) >>> 0) / 2 ** 32) * 2 - 1;
+    for (let i = 0; i < out.length; i++) out[i] = out[i] * 0.8 + noise() * 0.003;
     const file = join(here, `${name}.${v.id}.wav`);
     writeFileSync(file, wav16(out));
     console.log(file, (total / RATE).toFixed(2) + ' s');

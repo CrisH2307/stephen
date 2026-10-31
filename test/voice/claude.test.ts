@@ -46,6 +46,11 @@ describe('claude argv', () => {
     expect(persona).toMatch(/prefer open_url/);
     expect(persona).toMatch(/never try to work around a refusal/);
     expect(persona).toMatch(/ONE short spoken sentence/);
+    // Speak first, then act (the announce tool exists because the server is started with `serve --voice`).
+    expect(persona).toContain(
+      "Before doing anything that will play sound (music, a video, a podcast), first call the announce tool with a short line saying what you're about to play (≤ 12 words), then do it.",
+    );
+    expect(persona).toContain('After starting playback, your final reply should be very short.');
     expect(a).not.toContain('--resume');
     expect(a).not.toContain('--model');
     expect(a).not.toContain('--dangerously-skip-permissions');
@@ -105,13 +110,21 @@ describe('claude argv', () => {
     expect(() => buildClaudeArgs('  ', settings)).toThrow(/empty prompt/);
   });
 
-  it('MCP config holds exactly one server: stephen = this node + dist/cli.js serve', async () => {
+  it('the announce tool is covered by --allowedTools mcp__stephen (no extra allow rule needed)', () => {
+    // Claude Code rule `mcp__<server>` allows every tool of that server, mcp__stephen__announce included.
+    const allowed = flagValue(buildClaudeArgs('play lo-fi', settings), '--allowedTools')!.split(',');
+    expect(allowed).toEqual(['mcp__stephen']);
+    expect(allowed.some((rule) => 'mcp__stephen__announce' === rule || 'mcp__stephen__announce'.startsWith(`${rule}__`))).toBe(true);
+    expect(DISALLOWED_TOOLS.some((t) => /announce/i.test(t))).toBe(false);
+  });
+
+  it('MCP config holds exactly one server: stephen = this node + dist/cli.js serve --confirm dialog --voice', async () => {
     expect(mcpConfig('/usr/local/bin/node', '/opt/stephen/dist/cli.js')).toEqual({
-      mcpServers: { stephen: { command: '/usr/local/bin/node', args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog'] } },
+      mcpServers: { stephen: { command: '/usr/local/bin/node', args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice'] } },
     });
     expect(stephenCliPath()).toMatch(/[/\\]dist[/\\]cli\.js$/);
     const file = await writeMcpConfig(join(tmp, 'voice'), '/n', '/c.js');
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ mcpServers: { stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'dialog'] } } });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ mcpServers: { stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'dialog', '--voice'] } } });
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(statSync(join(tmp, 'voice')).mode & 0o777).toBe(0o700);
   });
@@ -125,7 +138,7 @@ describe('claude argv', () => {
     const file = await writeMcpConfig(dir, '/n', '/c.js');
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(file, 'utf8')).mcpServers).toEqual({ stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'dialog'] } });
+    expect(JSON.parse(readFileSync(file, 'utf8')).mcpServers).toEqual({ stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'dialog', '--voice'] } });
     expect(readdirSync(dir)).toEqual(['mcp-config.json']);
   });
 

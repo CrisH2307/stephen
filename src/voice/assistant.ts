@@ -17,16 +17,33 @@ export interface AssistantOptions {
   speak: boolean;
   status: (line: string) => void;
   now?: () => number;
+  /** Phase changes (the listener mirrors them in the menu bar). */
+  onPhase?: (p: Phase) => void;
+  /**
+   * Asked once the reply is ready: true = the Mac is playing sound (music or a video Claude just started), so the
+   * reply is printed and only the done chime plays. Absent (no helper): always speak.
+   */
+  soundPlaying?: () => Promise<boolean>;
 }
 
 export class Assistant {
-  private phaseNow: Phase = 'idle';
+  private phaseValue: Phase = 'idle';
   private speech: SpeakHandle | null = null;
   private cancelled = false;
   constructor(private readonly o: AssistantOptions) {}
 
   get phase(): Phase {
-    return this.phaseNow;
+    return this.phaseValue;
+  }
+
+  private set phaseNow(p: Phase) {
+    if (p === this.phaseValue) return;
+    this.phaseValue = p;
+    this.o.onPhase?.(p);
+  }
+
+  private get phaseNow(): Phase {
+    return this.phaseValue;
   }
 
   async handle(text: string): Promise<CommandResult> {
@@ -50,7 +67,20 @@ export class Assistant {
       const raw = out.kind === 'ok' ? out.text : out.message;
       const spoken = stripForSpeech(raw) || (out.kind === 'ok' ? 'Done.' : 'Something went wrong.');
       this.o.status(out.kind === 'ok' ? `Stephen: ${spoken}` : `Problem: ${spoken}`);
-      if (this.o.speak) {
+      let speak = this.o.speak;
+      if (speak && this.o.soundPlaying) {
+        let playing = false;
+        try {
+          playing = await this.o.soundPlaying();
+        } catch {
+          // unknown → speak, as without the helper
+        }
+        if (playing) {
+          speak = false;
+          this.o.status('Sound is playing — reply shown here instead of spoken.');
+        }
+      }
+      if (speak && !this.cancelled) {
         this.phaseNow = 'speaking';
         this.speech = this.o.speaker.speak(spoken);
         await this.speech.done;

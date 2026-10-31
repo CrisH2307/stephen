@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | voice-setup | zen-launch | install-zen-launcher | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { runListen, runVoiceSetup } from './voice/index.js';
+import type { ServerDepsWithVoice } from './voice/announce.js';
+import { voiceOutputChecks } from './voice/tts/doctor.js';
+import { parseTtsConfig, runVoiceKey } from './voice/tts/index.js';
+import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
+import { helperDoctorChecks } from './helper/doctor.js';
+import { runInstallHelper } from './helper/install.js';
 import { existsSync } from 'node:fs';
 import { access, constants, mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configFilePath, legacyHomeNotice, loadConfig, resolveStephenHome } from './config.js';
+import { configFilePath, legacyHomeNotice, loadConfig, resolveStephenHome, type HubConfig } from './config.js';
 import { createBrowserManager } from './drivers/index.js';
 import { securePrivateDirs } from './drivers/util.js';
 import {
@@ -46,7 +52,7 @@ const HELP = `stephen ${packageVersion()} — lets Claude use your Mac's browser
 
 Usage:
   stephen [serve]        Run the MCP server on stdio (what Claude Code starts; tools are mcp__stephen__*)
-  stephen doctor         Check this Mac's setup and print fixes
+  stephen doctor         Check this Mac's setup and print fixes (--network: also check the ElevenLabs account)
   stephen selftest       Prove each browser works end to end, safely (temporary agent profile,
                          local test pages only; closes what it opened). Options:
                          --browser chrome|zen|all (default all)  --keep-open  --json
@@ -54,12 +60,18 @@ Usage:
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
   stephen voice-setup    Download and check the local wake-word and speech models (once)
+  stephen voice-setup --tts kokoro
+                         Download the local Kokoro voice (~103 MB; used when ElevenLabs is unavailable)
+  stephen voice-key set|status|delete
+                         Store / show (last 4 chars) / remove your ElevenLabs API key in the macOS Keychain
   stephen zen-launch     Open your everyday Zen with Stephen access (remote control on), then exit.
                          --quit-running  ask a normally-open Zen to quit (like ⌘Q) and reopen it
                          --json          machine-readable result
                          Exit code: 0 ready, 2 you need to do something, 1 error
   stephen install-zen-launcher [--dry-run]
                          Create "~/Applications/${ZEN_LAUNCHER_APP_NAME}.app" (runs zen-launch; put it in your Dock)
+  stephen install-helper [--dry-run]
+                         Build "~/Applications/Stephen Helper.app" (Fn+Option push-to-talk, Esc; needs Xcode tools)
   stephen help | --help  This help
   stephen --version      Print the version
 
@@ -76,6 +88,7 @@ async function serve(argv: string[] = []): Promise<void> {
   const opts = parseServeArgs(argv);
   if ('error' in opts) throw new Error(opts.error);
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
+  if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
   // Profiles, state and saved page output are private to this user (mode 0700).
   try {
     await securePrivateDirs(cfg);
@@ -83,7 +96,8 @@ async function serve(argv: string[] = []): Promise<void> {
     console.error(`[stephen] could not secure ${cfg.home}: ${errorMessage(e)}`);
   }
   const manager = createBrowserManager(cfg);
-  await serveStdio({ cfg, manager, engine: pageEngine, safetyFactory: createSafety });
+  const deps: ServerDepsWithVoice = { cfg, manager, engine: pageEngine, safetyFactory: createSafety, ...(opts.voice ? { voice: {} } : {}) };
+  await serveStdio(deps);
 }
 
 // ───────────────────────────── doctor ─────────────────────────────
@@ -129,7 +143,7 @@ async function writable(dir: string): Promise<string | null> {
   }
 }
 
-async function doctor(): Promise<number> {
+async function doctor(network = false): Promise<number> {
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
 
@@ -271,8 +285,12 @@ async function doctor(): Promise<number> {
       });
     }
 
+    for (const c of await helperDoctorChecks(cfg.home)) add(c);
+
     add({ ok: true, info: true, label: 'Audit log', detail: cfg.auditLogPath });
     add({ ok: true, info: true, label: 'Saved output', detail: cfg.output.saveDir });
+    for (const c of await voiceOutputChecks({ home: cfg.home, rawVoice: (cfg as Partial<HubConfig>).voice ?? {}, network })) add(c);
+
     add({ ok: true, info: true, label: 'Modes', detail: `chrome: ${cfg.chrome.mode} · zen: ${cfg.zen.mode} · default browser: ${cfg.defaultBrowser} · confirm: ${cfg.safety.confirm}` });
   }
 
@@ -377,7 +395,7 @@ async function main(argv: string[]): Promise<number> {
       await serve(rest);
       return -1; // keep running
     case 'doctor':
-      return doctor();
+      return doctor(rest.includes('--network'));
     case 'selftest':
       return selftest(rest);
     case 'install':
@@ -386,10 +404,14 @@ async function main(argv: string[]): Promise<number> {
       return zenLaunch(rest);
     case 'install-zen-launcher':
       return installLauncher(rest);
+    case 'install-helper':
+      return runInstallHelper(rest);
     case 'listen':
       return runListen(rest);
     case 'voice-setup':
-      return runVoiceSetup(rest);
+      return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : runVoiceSetup(rest);
+    case 'voice-key':
+      return runVoiceKey(rest, { ttsConfig: () => parseTtsConfig(loadConfig().voice) });
     case 'help':
     case '--help':
     case '-h':

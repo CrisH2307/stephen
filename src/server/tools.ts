@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { registerDesktopTools } from '../desktop/index.js';
+import { registerAnnounceTool } from '../voice/announce.js';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
 import type { McpServer, ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -1173,6 +1174,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
 
   // ═════════════════════════════ desktop (Stephen) ═════════════════════════════
   registerDesktopTools(mcp, hub, names);
+  // Voice output (`serve --voice` only): announce before playing sound.
+  registerAnnounceTool(mcp, hub, names);
 
   return names;
 }

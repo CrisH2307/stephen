@@ -19,6 +19,7 @@ describe('parseVoiceConfig', () => {
         maxTurns: 15,
         followUpWindowSec: null, // ignored in phase 1: every command is a fresh session
         cooldownSec: 20,
+        wakeWord: true,
         speak: true,
         voice: null,
         rate: null,
@@ -111,6 +112,14 @@ describe('parseListenArgs', () => {
     expect(parseListenArgs(['--wav', 'a.wav'])).toMatchObject({ wav: 'a.wav' });
     expect(parseListenArgs(['--setup'])).toMatchObject({ setup: true });
     expect(parseListenArgs(['-h'])).toMatchObject({ help: true });
+    expect(parseListenArgs([])).toMatchObject({ pttOnly: false, noHelper: false });
+    expect(parseListenArgs(['--ptt-only'])).toMatchObject({ pttOnly: true, noHelper: false });
+    expect(parseListenArgs(['--no-helper'])).toMatchObject({ pttOnly: false, noHelper: true });
+  });
+
+  it('voice.wakeWord: false is accepted (push-to-talk only); non-booleans are not', () => {
+    expect(parseVoiceConfig({ wakeWord: false }).wakeWord).toBe(false);
+    expect(() => parseVoiceConfig({ wakeWord: 'no' })).toThrow(/voice.wakeWord/);
   });
 
   it('reports errors', () => {
@@ -119,5 +128,8 @@ describe('parseListenArgs', () => {
     expect(parseListenArgs(['--bogus'])).toEqual({ error: 'Unknown option "--bogus"' });
     expect(parseListenArgs(['--once=1'])).toEqual({ error: '--once takes no value' });
     expect(parseListenArgs(['--text', 'x', '--wav', 'y.wav'])).toEqual({ error: '--text and --wav cannot be combined' });
+    expect(parseListenArgs(['--ptt-only', '--no-helper'])).toEqual({ error: '--ptt-only needs Stephen Helper, so it cannot be combined with --no-helper' });
+    expect(parseListenArgs(['--ptt-only', '--wav', 'a.wav'])).toMatchObject({ error: expect.stringMatching(/--ptt-only cannot be combined with --wav/) });
+    expect(parseListenArgs(['--no-helper=1'])).toEqual({ error: '--no-helper takes no value' });
   });
 });

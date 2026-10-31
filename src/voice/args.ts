@@ -11,11 +11,15 @@ export const LISTEN_USAGE = `stephen listen [options]   "Hey Stephen" voice list
   --setup                Download the speech models and exit (same as \`stephen voice-setup\`)
   --no-speak             Print replies instead of speaking them
   --no-chimes            No Tink/Pop sounds
+  --ptt-only             Push-to-talk only: no wake word (needs Stephen Helper; same as voice.wakeWord false)
+  --no-helper            Don't use Stephen Helper (no push-to-talk; the wake-word cooldown applies)
   -h, --help             This help
 
-Say "Hey Stephen, open YouTube". Say "Stephen stop" (or press Ctrl-C) to cancel.
-Each command is a fresh conversation. After a command the wake word rests for voice.cooldownSec (20 s);
-press Enter to re-arm sooner.
+Say "Hey Stephen, open YouTube", or hold Fn+Option while you speak (push-to-talk, with Stephen Helper:
+\`stephen install-helper\`). Say "Stephen stop", press Esc (helper) or Ctrl-C to cancel.
+Each command is a fresh conversation. With the helper, "Hey Stephen" is ignored only while the Mac plays
+sound, and replies stay quiet while it does. Without it, the wake word rests for voice.cooldownSec (20 s)
+after a command; press Enter to re-arm sooner.
 Config: the "voice" section of config.json — see docs/VOICE.md.`;
 
 export interface ListenArgs {
@@ -28,11 +32,13 @@ export interface ListenArgs {
   setup: boolean;
   speak: boolean | null;
   chimes: boolean | null;
+  pttOnly: boolean;
+  noHelper: boolean;
   help: boolean;
 }
 
 export function parseListenArgs(argv: readonly string[]): ListenArgs | { error: string } {
-  const a: ListenArgs = { once: false, text: null, dryRun: false, device: null, listDevices: false, wav: null, setup: false, speak: null, chimes: null, help: false };
+  const a: ListenArgs = { once: false, text: null, dryRun: false, device: null, listDevices: false, wav: null, setup: false, speak: null, chimes: null, pttOnly: false, noHelper: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
@@ -53,6 +59,8 @@ export function parseListenArgs(argv: readonly string[]): ListenArgs | { error: 
       case '--setup':
       case '--no-speak':
       case '--no-chimes':
+      case '--ptt-only':
+      case '--no-helper':
       case '--help':
       case '-h': {
         const bad = flag();
@@ -63,6 +71,8 @@ export function parseListenArgs(argv: readonly string[]): ListenArgs | { error: 
         else if (name === '--setup') a.setup = true;
         else if (name === '--no-speak') a.speak = false;
         else if (name === '--no-chimes') a.chimes = false;
+        else if (name === '--ptt-only') a.pttOnly = true;
+        else if (name === '--no-helper') a.noHelper = true;
         else a.help = true;
         break;
       }
@@ -82,5 +92,7 @@ export function parseListenArgs(argv: readonly string[]): ListenArgs | { error: 
     }
   }
   if (a.text !== null && a.wav !== null) return { error: '--text and --wav cannot be combined' };
+  if (a.pttOnly && a.noHelper) return { error: '--ptt-only needs Stephen Helper, so it cannot be combined with --no-helper' };
+  if (a.pttOnly && a.wav !== null) return { error: '--ptt-only cannot be combined with --wav (push-to-talk needs the keyboard)' };
   return a;
 }

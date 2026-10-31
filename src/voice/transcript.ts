@@ -69,6 +69,36 @@ export function findWakePhrase(words: readonly string[], wakePhrase: string, sea
   return -1;
 }
 
+/**
+ * Undo Whisper's repetition loop. On short clips without the wake phrase (push-to-talk "Open YouTube.") whisper-tiny
+ * often returns the phrase over and over ("open youtube open youtube open youtube … open"). A run of the same
+ * 2+ word phrase (twice or more) or of one word (three times or more) becomes one copy; a dangling start of the
+ * phrase at the very end ("… open") is dropped. "very very" and normal sentences are left alone.
+ */
+export function collapseRepeats(words: readonly string[]): string[] {
+  const out: string[] = [];
+  const same = (a: number, b: number, k: number) => {
+    for (let j = 0; j < k; j++) if (words[a + j] !== words[b + j]) return false;
+    return true;
+  };
+  let i = 0;
+  while (i < words.length) {
+    let done = false;
+    for (let k = 1; k <= Math.floor((words.length - i) / 2) && !done; k++) {
+      let r = 1;
+      while (i + (r + 1) * k <= words.length && same(i, i + r * k, k)) r++;
+      if (r < (k === 1 ? 3 : 2)) continue;
+      out.push(...words.slice(i, i + k));
+      i += r * k;
+      const rest = words.length - i;
+      if (rest > 0 && rest < k && same(i, i - k, rest)) i = words.length; // trailing partial copy
+      done = true;
+    }
+    if (!done) out.push(words[i++]!);
+  }
+  return out;
+}
+
 export interface NormalizedTranscript {
   /** The command, e.g. "open youtube" (may be empty). */
   text: string;
@@ -90,7 +120,7 @@ export function normalizeTranscript(raw: string, wakePhrase: string): Normalized
     hadWake = true;
     words = words.slice(end);
   }
-  return { text: words.join(' '), hadWake };
+  return { text: collapseRepeats(words).join(' '), hadWake };
 }
 
 /** Typed commands (`--text`): keep punctuation (URLs!), but one line, trimmed, never option-looking. */
