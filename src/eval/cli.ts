@@ -1,7 +1,7 @@
 /** `stephen eval [--only <text>] [--jobs N] [--model M] [--timeout S]` — see run.ts. */
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
-import { probeClaudeFlags, stephenCliBuilt, stephenCliPath, type SpawnFn } from '../voice/claude.js';
+import { probeClaudeFlags, resolvePersonaFile, stephenCliBuilt, stephenCliPath, type ClaudeFlagProbe, type SpawnFn } from '../voice/claude.js';
 import { parseVoiceConfig, resolveClaudeModel } from '../voice/config.js';
 import { EVAL_CASES, type EvalCase } from './cases.js';
 import { formatSummary, runEval } from './run.js';
@@ -90,8 +90,9 @@ export async function runEvalCli(argv: string[], e: EvalEnv = {}): Promise<numbe
     return 1;
   }
   let unsupported: ReadonlySet<string> | undefined;
+  let probe: ClaudeFlagProbe | null = null;
   if (!e.noProbe) {
-    const probe = await probeClaudeFlags(voice.claudePath);
+    probe = await probeClaudeFlags(voice.claudePath);
     if (probe && !probe.ok) {
       err(`Your Claude Code is too old for Stephen's voice lock-down (missing ${probe.missing.join(', ')}). Update it (claude update).`);
       return 1;
@@ -109,6 +110,7 @@ export async function runEvalCli(argv: string[], e: EvalEnv = {}): Promise<numbe
     nodePath: process.execPath,
     cliPath,
     unsupportedOptionalFlags: unsupported,
+    personaFile: resolvePersonaFile(voice.personaFile, probe),
     timeoutMs: a.timeoutSec * 1000,
     jobs: a.jobs,
     spawn: e.spawn,

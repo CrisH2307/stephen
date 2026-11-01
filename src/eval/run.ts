@@ -1,6 +1,6 @@
 /**
  * `stephen eval`: run the one-shot eval set through the REAL `claude -p` with the REAL voice lock-down and persona
- * (buildClaudeArgs, with EVAL_ABOUT_ME), but with Stephen's tools served by `serve --dry-run` — every tool call is
+ * (buildClaudeArgs, with EVAL_ABOUT_ME and EVAL_MEMORY), but with Stephen's tools served by `serve --dry-run` — every tool call is
  * recorded and answered with a fake result; nothing happens on the Mac. Each case is scored (score.ts), a table is
  * printed, and the report is saved to <home>/eval/<stamp>/report.json so later changes can be compared.
  *
@@ -8,9 +8,9 @@
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ClaudeRunner, type ClaudeOutcome, type SpawnFn } from '../voice/claude.js';
+import { ClaudeRunner, PERSONA_FILE, type ClaudeOutcome, type SpawnFn } from '../voice/claude.js';
 import type { AboutMe } from '../voice/config.js';
-import { EVAL_ABOUT_ME, type EvalCase } from './cases.js';
+import { EVAL_ABOUT_ME, EVAL_MEMORY, type EvalCase } from './cases.js';
 import { readDryCalls, type DryCall } from './dry-server.js';
 import { scoreRun, type Score } from './score.js';
 
@@ -30,6 +30,10 @@ export interface EvalOptions {
   /** Cases run at the same time. Default 2, at most 4. */
   jobs?: number;
   aboutMe?: AboutMe;
+  /** The memory sent with every case. Default EVAL_MEMORY. */
+  memory?: readonly string[];
+  /** Persona in a per-case file (`--append-system-prompt-file`) instead of argv, as the listener does (resolvePersonaFile). */
+  personaFile?: boolean;
   spawn?: SpawnFn;
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
@@ -58,9 +62,10 @@ export interface EvalReport {
   file: string;
 }
 
-/** MCP config for one case: only Stephen's dry-run server, recording into `record`. */
-export function evalMcpConfig(nodePath: string, cliPath: string, record: string) {
-  return { mcpServers: { stephen: { command: nodePath, args: [cliPath, 'serve', '--dry-run', '--record', record] } } };
+/** MCP config for one case: only Stephen's dry-run server, recording into `record` (pages say `fakePage`'s text). */
+export function evalMcpConfig(nodePath: string, cliPath: string, record: string, fakePage?: string) {
+  const args = [cliPath, 'serve', '--dry-run', '--record', record, ...(fakePage ? ['--fake-page', fakePage] : [])];
+  return { mcpServers: { stephen: { command: nodePath, args } } };
 }
 
 /** "2026-10-31T21-05-09" (file-name safe). */
@@ -74,7 +79,12 @@ async function runCase(k: EvalCase, dir: string, o: EvalOptions): Promise<CaseRe
   await mkdir(cwd, { recursive: true, mode: 0o700 });
   const record = join(caseDir, 'calls.jsonl');
   const mcpConfigPath = join(caseDir, 'mcp-config.json');
-  await writeFile(mcpConfigPath, JSON.stringify(evalMcpConfig(o.nodePath, o.cliPath, record), null, 2) + '\n', { mode: 0o600 });
+  let fakePage: string | undefined;
+  if (k.page !== undefined) {
+    fakePage = join(caseDir, 'page.txt');
+    await writeFile(fakePage, k.page, { mode: 0o600 });
+  }
+  await writeFile(mcpConfigPath, JSON.stringify(evalMcpConfig(o.nodePath, o.cliPath, record, fakePage), null, 2) + '\n', { mode: 0o600 });
   const runner = new ClaudeRunner({
     claudePath: o.claudePath,
     maxTurns: o.maxTurns,
@@ -82,6 +92,8 @@ async function runCase(k: EvalCase, dir: string, o: EvalOptions): Promise<CaseRe
     mcpConfigPath,
     followUps: false, // every case is a fresh one-shot command (and nothing is saved)
     aboutMe: o.aboutMe ?? EVAL_ABOUT_ME,
+    memory: () => o.memory ?? EVAL_MEMORY,
+    personaFile: o.personaFile ? join(caseDir, PERSONA_FILE) : null,
     unsupportedOptionalFlags: o.unsupportedOptionalFlags,
     cwd,
     env: o.env,

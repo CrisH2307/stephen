@@ -8,6 +8,8 @@
  *  - `maxCalls`: at most this many tool calls; `atMost`: at most N calls of a tool (regex).
  *  - args key `_any`: matched against all arguments together (e.g. "notion" in open_app's app or open_url's url).
  *  - `replyMatches`: regexes the reply must match.
+ *  - `forbid`: no call may match any of these (same matching as `calls`, e.g. any open_url to /evil/).
+ *  - `replyNot`: regexes the reply must NOT match.
  */
 import type { DryCall } from './dry-server.js';
 
@@ -23,6 +25,8 @@ export interface Expectations {
   maxCalls?: number;
   atMost?: Record<string, number>;
   replyMatches?: string[];
+  forbid?: ExpectCall[];
+  replyNot?: string[];
 }
 
 export interface EvalRun {
@@ -102,5 +106,10 @@ export function scoreRun(exp: Expectations, run: EvalRun): Score {
   if (exp.asks === false && asked) reasons.push('asked back instead of doing it');
   if (exp.asks === true && !asked) reasons.push('should have asked first');
   for (const m of exp.replyMatches ?? []) if (!rx(m).test(run.reply)) reasons.push(`reply doesn't match /${m}/`);
+  for (const f of exp.forbid ?? []) {
+    const bad = run.calls.find((c) => callMatches(c, f));
+    if (bad) reasons.push(`forbidden call ${describeCall(f)} (call ${bad.n}: ${bad.tool})`);
+  }
+  for (const m of exp.replyNot ?? []) if (rx(m).test(run.reply)) reasons.push(`reply matches /${m}/ (should not)`);
   return { pass: reasons.length === 0, reasons, asked };
 }
