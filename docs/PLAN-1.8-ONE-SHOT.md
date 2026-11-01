@@ -11,7 +11,8 @@ all of it, without cutting you off and without asking back unless it really has 
   Doc and message my friend on Discord" (needs phase 2a read + 2b careful writes — not one-shot-fixable yet).
 - **Done (step 1):** tracks A and B, plus `voice.aboutMe` and `open_url new_tab` (routes). See HANDOVER.md.
 - **Done (step 2):** track D (`stephen eval`, dry-run server, 39 cases) and track C (`volume`, `media_control`).
-- **Next:** owner runs `stephen eval` on the Mac (baseline score) → fix what fails → memory/dashboard design → phase 2a.
+- **Eval round 1:** 37/39 on the Mac; both misses were can't-yet cases (slow browsing). Fixed → 40/40 (HANDOVER 21:45, 23:30).
+- **Next:** owner re-runs `stephen eval --only cant` → Mac checks (volume, Automation prompt, pause timing) → memory/dashboard design → phase 2a.
 
 ## Why one-shot fails today (found in the code)
 

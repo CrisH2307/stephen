@@ -148,3 +148,18 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   which really starts the dry-run server. C `volume` + `media_control` (src/desktop/sound.ts; fixed JXA, argv only;
   Spotify/Music only if running; YouTube → browser tools). Mac-only: JXA setVolume, Automation prompt. Owner next:
   `npm run build && node dist/cli.js eval` and send the summary; then try "turn it down and play the next song".
+- 2026-10-31 21:45 — Eval round 1 on the owner's Mac: **37/39** (sonnet, median 4.5 s; report
+  ~/.browser-hub/eval/2026-11-01T01-27-16). Both failures were can't-yet cases (`cant-discord-msg`, `cant-canvas-doc`):
+  Stephen browsed Discord/Canvas for 11–12 calls (~16 s) and then replied honestly in words the scorer didn't accept.
+  Fixes, each tested in test/eval/cant-yet.test.ts (replays the two real runs): (1) `CANT` regex in cases.ts also
+  accepts couldn't/didn't send/…/yet; (2) can't-yet cases allow at most 3 calls (`CANT_MAX_CALLS`), so slow browsing
+  fails the eval; (3) dry-run snapshot/read_text return a loaded page (the old "still loading" made the model poll);
+  (4) persona: can't-yet parts are said right away, no browsing/reading/screenshots to try anyway (one open is OK);
+  "don't give up early" now only covers things Stephen can do. New case `cant-owner-canvas-doc-discord` (the owner's
+  own request from PLAN-1.8) → 40 cases. Owner next: `npm run build && node dist/cli.js eval --only cant`.
+- 2026-10-31 23:30 — Validated with real `claude -p` (sonnet) in the cloud workspace (claude CLI works there; it uses
+  the cloud plan, not the Mac's). Round 2: 3/4 cant — the owner's own request still browsed Canvas (6 calls) because
+  "reading the user's accounts" was too abstract. Persona now names them ("Canvas assignments, emails, Notion pages,
+  calendar, chats"); test in cant-yet.test.ts. Then `--only cant` 4/4 twice, and the **full eval 40/40**. Synced to the
+  Mac (owner had committed 1.8 as desktop/evel/test; this fix is uncommitted). Design note: reading those accounts
+  stays can't-yet on purpose until phase 2a (APIs/connectors + `--assume-private-read`), not by screen-reading.

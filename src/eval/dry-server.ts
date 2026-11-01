@@ -53,10 +53,13 @@ export function fakeResult(tool: string, args: Record<string, unknown>, n: numbe
       return text('No tabs Stephen has opened yet.');
     case 'tab_open':
       return text(`Opened tab ${tab}: ${str(args.url)}`);
+    // A loaded but unremarkable page. (It used to say "still loading" every time, which made the model poll
+    // snapshot/read_text 6–10 times — an eval artifact, not real behaviour.)
     case 'snapshot':
     case 'read_text':
+      return text('Page loaded. Main heading: "Home". Nothing else on the page stands out.');
     case 'find':
-      return text('The page is still loading; nothing to show yet.');
+      return text('No matching element on the page.');
     default:
       return text('Done.');
   }

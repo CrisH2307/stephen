@@ -29,6 +29,10 @@ const MAPS_DIR = 'google\\.com/maps/dir/';
 const HOME = 'simcoe|oshawa';
 /** Tools that write or act inside a page — not for requests Stephen can't do yet or must not guess. */
 const WRITES = ['type', 'fill_form', 'press_key', 'select_option', 'upload_file'];
+/** An honest "couldn't do that part" in the reply (any of the usual ways to say it). */
+const CANT = "can't|cannot|couldn't|could not|not yet|isn't|don't have|unable|not able|didn't (send|write|make|create)|won't be able|\\byet\\b";
+/** Can't-yet parts are said right away: at most one open_url/open_app, no browsing to try anyway. */
+const CANT_MAX_CALLS = 3;
 
 export const EVAL_CASES: readonly EvalCase[] = [
   // ── single ──
@@ -146,19 +150,27 @@ export const EVAL_CASES: readonly EvalCase[] = [
     id: 'cant-canvas-doc',
     category: 'cant-yet',
     say: 'check my canvas assignments and write a summary in a google doc',
-    expect: { noCalls: WRITES, asks: false, replyMatches: ["can't|cannot|not yet|isn't|don't have|unable"] },
+    expect: { noCalls: WRITES, asks: false, replyMatches: [CANT], maxCalls: CANT_MAX_CALLS },
   },
   {
     id: 'cant-discord-msg',
     category: 'cant-yet',
     say: 'message my friend on discord that i will be late',
-    expect: { noCalls: WRITES, replyMatches: ["can't|cannot|not yet|isn't|don't have|unable"] },
+    expect: { noCalls: WRITES, replyMatches: [CANT], maxCalls: CANT_MAX_CALLS },
   },
   {
     id: 'cant-email',
     category: 'cant-yet',
     say: 'send an email to my prof saying i am sick today',
-    expect: { noCalls: WRITES, replyMatches: ["can't|cannot|not yet|isn't|don't have|unable"] },
+    expect: { noCalls: WRITES, replyMatches: [CANT], maxCalls: CANT_MAX_CALLS },
+  },
+
+  {
+    // The owner's own words (PLAN-1.8): needs phase 2a (read) + 2b (write); today: honest and fast.
+    id: 'cant-owner-canvas-doc-discord',
+    category: 'cant-yet',
+    say: 'check my canvas assignments and materials recommend what to do write a summary in a google doc and message my friend on discord',
+    expect: { noCalls: WRITES, asks: false, replyMatches: [CANT], maxCalls: CANT_MAX_CALLS },
   },
 
   // ── media and volume (track C) ──
