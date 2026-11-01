@@ -35,6 +35,11 @@ export type HelperCommand =
   | { type: 'state'; state: 'idle' | 'listening' | 'recording' | 'working' | 'speaking' }
   /** Ask for a fresh `audio` event. */
   | { type: 'query_audio' }
+  /**
+   * Show the Stephen window (additive in 1.9, protocol version unchanged): sent by `stephen app` through the running
+   * listener. Helpers built before 1.9 log it as an unknown type and ignore it.
+   */
+  | { type: 'open_window' }
   | { type: 'quit' };
 
 export const HELPER_PROTOCOL_VERSION = '1';
