@@ -81,7 +81,7 @@ describe('registration', () => {
     );
     const names: string[] = [];
     registerDesktopTools(mcp, hub, names, standardMac().deps());
-    expect(names).toEqual(['open_app', 'open_url', 'play_media', 'desktop_status']);
+    expect(names).toEqual(['open_app', 'open_url', 'play_media', 'media_control', 'volume', 'desktop_status']);
     const d = new Desktop(hub, standardMac().deps(), parseDesktopConfig({}));
     expect(textOf(await d.openApp('music', intent))).toBe(`Opened com.apple.Music.${nameBlock('Music')}`);
   });

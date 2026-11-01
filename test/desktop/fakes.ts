@@ -9,6 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { loadConfig, type UserConfig } from '../../src/config.js';
+import { PLAYERS_JXA, VOLUME_JXA } from '../../src/desktop/sound.js';
 import type { DesktopDeps, DirEntry } from '../../src/desktop/system.js';
 import { plistString } from '../../src/drivers/macos.js';
 import { SafetyGate } from '../../src/safety/gate.js';
@@ -99,6 +100,11 @@ export class FakeMac {
   readonly codesignFails = new Map<string, string>();
   /** play_media's YouTube search (never the network). */
   readonly yt = new FakeFetch();
+  /** volume tool (VOLUME_JXA): the simulated output volume. */
+  volumeState = { volume: 50, muted: false };
+  /** media_control (PLAYERS_JXA): simulated players; `playersFail` = stderr of a failing action (e.g. Automation denied). */
+  players: Record<'Spotify' | 'Music', { running: boolean; state?: string }> = { Spotify: { running: false }, Music: { running: false } };
+  playersFail: string | null = null;
 
   constructor() {
     for (const d of ['/Applications', '/System/Applications', '/System/Applications/Utilities', '/Applications/Utilities', `${HOME}/Applications`]) {
@@ -162,6 +168,12 @@ export class FakeMac {
       }
       case '/usr/bin/osascript':
         if (this.osascriptFails) throw fail('execution error: -2700');
+        if (args[3] === VOLUME_JXA) return { stdout: `${this.fakeVolume(args[4]!, Number(args[5]))}\n`, stderr: '' };
+        if (args[3] === PLAYERS_JXA) {
+          if (args[4] === 'status') return { stdout: `${JSON.stringify(this.players)}\n`, stderr: '' };
+          if (this.playersFail) throw fail(this.playersFail);
+          return { stdout: `${this.fakePlayer(args[4]!, args[5]!)}\n`, stderr: '' };
+        }
         return { stdout: `${this.statusRaw ?? JSON.stringify(this.status)}\n`, stderr: '' };
       case '/usr/sbin/ioreg':
         if (this.ioreg === null) throw fail('ioreg: failed');
@@ -173,6 +185,26 @@ export class FakeMac {
         throw fail(`unexpected binary ${file}`);
     }
   };
+
+  private fakeVolume(action: string, n: number): string {
+    const v = this.volumeState;
+    if (action === 'set') Object.assign(v, { volume: n, muted: false });
+    else if (action === 'up') Object.assign(v, { volume: Math.min(100, v.volume + n), muted: false });
+    else if (action === 'down') v.volume = Math.max(0, v.volume - n);
+    else if (action === 'mute') v.muted = true;
+    else if (action === 'unmute') v.muted = false;
+    else throw new Error('bad action');
+    return JSON.stringify(v);
+  }
+
+  private fakePlayer(action: string, name: string): string {
+    const p = this.players[name as 'Spotify' | 'Music'];
+    if (!p?.running) throw new Error('not running');
+    if (action === 'play') p.state = 'playing';
+    else if (action === 'pause') p.state = 'paused';
+    else if (action === 'toggle') p.state = p.state === 'playing' ? 'paused' : 'playing';
+    return JSON.stringify({ state: p.state ?? 'unknown' });
+  }
 
   deps(): DesktopDeps {
     return {

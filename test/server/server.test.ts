@@ -36,6 +36,8 @@ const EXPECTED_TOOLS = [
   'open_app',
   'open_url',
   'play_media',
+  'media_control',
+  'volume',
   'desktop_status',
 ];
 
