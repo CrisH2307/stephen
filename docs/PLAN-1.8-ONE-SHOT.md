@@ -12,7 +12,7 @@ all of it, without cutting you off and without asking back unless it really has 
 - **Done (step 1):** tracks A and B, plus `voice.aboutMe` and `open_url new_tab` (routes). See HANDOVER.md.
 - **Done (step 2):** track D (`stephen eval`, dry-run server, 39 cases) and track C (`volume`, `media_control`).
 - **Eval round 1:** 37/39 on the Mac; both misses were can't-yet cases (slow browsing). Fixed → 40/40 (HANDOVER 21:45, 23:30).
-- **Next:** Mac checks (volume, Automation prompt, pause timing) → owner answers PLAN-1.9 §12 → build 1.9 (docs/PLAN-1.9-MEMORY-DASHBOARD.md) or phase 2a first.
+- **Next:** 1.9 built (HANDOVER 13:30) → owner compiles the helper + tries memory and the app → security review #5 → phase 2a.
 
 ## Why one-shot fails today (found in the code)
 

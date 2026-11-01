@@ -171,3 +171,27 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   `--system-prompt-snapshot` defaults on (so a memory change must end the conversation) and
   `--append-system-prompt-file` exists but only in the `--bare` help line (needs a real probe). Still pending from the
   owner: task 2 Mac checks (volume, Spotify/Music Automation prompt, pause timing) and answers to PLAN-1.9 §12.
+- 2026-11-01 13:30 — **Phase 1.9 built (except the security review).** Owner answers (PLAN-1.9 §12): wake-word
+  remember asks in a dialog, Fn+Option stays the trusted backup; history default 1 day (trial, up to 30); "remember X
+  and play Y" is split deterministically; **native app instead of a browser dashboard** (§13: Stephen window in
+  Stephen Helper.app over `<home>/run/app.sock`); task 2 = YouTube Music first. Work split by Jev (all "large → opus"
+  except two "self") across 8 subagent branches, merged and checked by the lead:
+  - `src/memory/` store (0600, lock, caps, secret refusal: secret words, lock/login codes, 6+ digit runs; course codes
+    and years save), intent parser (anchored remember/forget/list, split), `stephen memory`, boundary test (Claude-
+    reachable code can't import src/memory or src/app; no memory-like tool).
+  - Persona: `<user_memory>` block framed as data + "you can't save memories" line; persona moved to
+    `--append-system-prompt-file` (`voice.personaFile` auto|on|off; 2.1.316 reads it, checked with a real call).
+  - `stephen listen`: memory router before Claude (0 claude spawns for memory commands), split, wake dialog,
+    any change ends the follow-up conversation (system-prompt snapshot), history per command
+    (`src/history/`, `stephen history`), `serve --tool-log` (tool names only).
+  - App: `src/app/` app.sock server (protocol v1, fixture test/fixtures/app-protocol-v1.jsonl), `stephen app`;
+    Swift `helper/AppClient.swift`, `helper/AppWindow.swift` (Chat/Memory/History/Settings/Audit), menu "Open
+    Stephen…", `open_window`; install argv adds `-framework SwiftUI`. **Never compiled** (no swiftc in the cloud).
+  - `media_control`: YouTube Music tab first (Space / j / k or the player buttons, through the gate), then YouTube,
+    then Spotify/Music. play_media no longer presses `k` on YouTube Music (it's "previous" there).
+  - Eval: memory (3) and inject (3) categories; `--fake-page`; scorer `forbid` / `replyNot`. Real claude (sonnet, cloud):
+    mem 3/3, inject 3/3 twice.
+  Full suite green: 2473 passed, 11 skipped (cloud). Owner next: `npm install && npm run build && node dist/cli.js install-helper`
+  (Swift compile; send errors if any), then `stephen listen`, "remember my gym is goodlife on king st",
+  `stephen app`, `node dist/cli.js eval`. Open: independent security review #5 (agent usage limit hit; after reset),
+  then phase 2a.

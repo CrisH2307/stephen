@@ -1,6 +1,6 @@
 # Phase 1.9: memory + chat dashboard (design)
 
-Status: design only, 2026-11-01. Not built yet. Seed: `docs/PLAN-1.8-ONE-SHOT.md` "After 1.8". The seed put memory
+Status: built 2026-11-01 (HANDOVER 13:30); security review #5 pending; Swift window not yet compiled on the Mac. Seed: `docs/PLAN-1.8-ONE-SHOT.md` "After 1.8". The seed put memory
 in phase 3; this design builds it now on `claude -p` and keeps it ready for the Agent SDK (section 8).
 Drafted by an Opus planning agent from the code, checked against `claude --help` 2.1.316 (section 3 facts verified).
 
@@ -225,10 +225,76 @@ formats stay the same.
 
 Steps 1 to 6 (memory by voice) are useful on their own; 7 to 14 (history + dashboard) can follow; 15 to 16 close it.
 
-## 12. Open questions for the owner
+## 12. Owner answers (2026-11-01) and the changes they make
 
-1. Wake-word "remember" asks in a macOS dialog? **Default: yes** for wake word, never for Fn+Option or dashboard.
-2. History on by default, how long? **Default: on, 30 days.**
-3. "Remember X and play Y" in one breath: save the whole line and do nothing else, or split? **Default: save the
-   whole line, say "say other requests separately"** (splitting is a guess; no guesses in the security path).
-4. Browser for the dashboard? **Default: Safari** (Stephen can't control it); Zen works too, loopback block still protects it.
+1. **Wake-word remember asks in a dialog: yes.** Fn+Option stays the trusted backup path (no dialog).
+2. **History: start small.** Default `history.retentionDays` = **1** (a one-day trial); the owner raises it to 30 once
+   the size is known. Allowed range 0 to 30.
+3. **"Remember X and play Y": split it.** Deterministic split, no guessing by Claude: in a remember command, the tail
+   is cut at the first ` and ` / ` and then ` / ` then ` / ` and also ` that is followed by a command verb from a fixed
+   list (play, open, put, turn, set, pause, skip, start, launch, show, find, check, go, search, mute). X is saved,
+   "play Y" goes to Claude as a normal command, and the reply says what was saved. Safe because the split only runs
+   on the owner's own transcript, and the part sent to Claude still has no write path to memory. Rare misplits
+   ("remember I play guitar and open mic is friday") are fixed in the dashboard.
+4. **App, not a browser page** (owner: "stick to the application"). See section 13: it **replaces section 6** (no
+   HTTP server, no token, no CSP/Host checks, no loopback block, no run.lock or CommandStack across processes).
+5. **Task 2 (from 1.8): YouTube Music first.** `media_control` controls a YouTube Music tab in Zen through the
+   browser gate; Spotify / Apple Music come later. `volume` unchanged.
+
+Build order (owner): finish 1.9, then phase 2a.
+
+## 13. Revision 2: the Stephen app (replaces section 6 and subtasks 7, 11 to 14, 17)
+
+**Why an app.** Stephen Helper.app is already native Swift (built by `stephen install-helper` with `swiftc`, see
+`helper/main.swift`) and already talks to `stephen listen` over a private Unix socket. A window inside it gives
+Chat / Memory / History / Settings / Audit with no web server, so the browser threats in section 7 (CSRF, DNS
+rebinding, XSS, token leaks, Claude driving the dashboard tab) are gone by construction. SwiftUI `Text` renders plain
+text only. Typed chat runs inside the `stephen listen` process, in the same queue as voice, so there is no
+cross-process lock.
+
+**Shape**
+- `stephen listen` (Node) is the server: it creates `<home>/run/app.sock` (dir 0700, socket 0600, removed on exit;
+  a stale socket is replaced only if nothing answers). The helper app connects as a client when its window opens.
+- The frozen helper protocol (`src/helper/protocol.ts`, `helper.sock`, 4 KiB lines) stays for keys and audio, with
+  one additive node to helper command: `{type:"open_window"}` (unknown types are ignored, so old helpers are fine).
+- `stephen app` opens the window: sends `open_window` through the running listener, else
+  `open -a "Stephen Helper.app" --args --home <home> --open-window`. The menu-bar menu gets "Open Stephen…".
+- Who can use `app.sock`: same-user processes only (file perms). That is the same trust as `memory.json` itself
+  (a same-user process could edit the file directly), so it matches the existing threat model (ROADMAP #5).
+  Claude can't reach it: voice runs only have Stephen's MCP tools (no shell, no files), and a boundary test fails if
+  `src/server/**`, `src/safety/**`, `src/desktop/**`, `src/drivers/**`, `src/page/**` import `src/app`.
+
+**app.sock protocol v1** (newline-delimited JSON, UTF-8, one object per line, max 256 KiB per line; unknown types
+ignored; every request has a client `id` echoed in the response; errors are `{id, type:"error", message}`)
+
+| Request (app to node) | Response / events (node to app) |
+|---|---|
+| `{id,type:"hello",version:"1"}` | `{id,type:"hello",version:"1",listening:bool,model:string}` |
+| `{id,type:"chat.send",text}` (≤ 2000 chars) | `{id,type:"chat.accepted",entryId}` now; later push `{type:"chat.done",entryId,reply,outcome,tools:[name],ms}`; `{id,type:"error",message:"busy"}` if a command is running |
+| `{id,type:"chat.stop"}` | `{id,type:"ok"}` (same as Esc) |
+| `{id,type:"history.list",before?,limit?}` (limit ≤ 100) | `{id,type:"history",entries:[…section 2 history entry…]}` |
+| `{id,type:"history.clear"}` | `{id,type:"ok"}` |
+| `{id,type:"memory.list"}` | `{id,type:"memory",items:[{id,text,source,createdAt,updatedAt}]}` |
+| `{id,type:"memory.add",text}` / `memory.update {memId,text}` / `memory.forget {memId}` / `memory.clear` | `{id,type:"memory",items}` or `{id,type:"error",message}` (refusal reason, e.g. looks like a secret); any change ends the conversation (section 3) |
+| `{id,type:"settings.get"}` | `{id,type:"settings",config:{…read-only resolved voice/memory/history…},configPath}` |
+| `{id,type:"audit.recent",limit?}` (≤ 200) | `{id,type:"audit",entries:[…]}` |
+| (push) | `{type:"state",state:"idle"\|"listening"\|"recording"\|"working"\|"speaking"}`, `{type:"heard",text,source}` for voice commands so the chat shows them live |
+
+App-typed text uses source `"app"`, trusted like Fn+Option (direct memory save, no dialog). Replies to typed chat are
+shown, not spoken (setting `app.speakReplies`, default false).
+
+**The window (SwiftUI in an NSWindow via NSHostingView; built with the existing swiftc command plus
+`-framework SwiftUI`)**: sidebar Chat / Memory / History / Settings / Audit. Chat: bubbles (said / reply, tool names
+small), text field + Send, Stop while working, live state dot. Memory: list with edit / forget / add, "forget all"
+asks first. History: by day, clear. Settings: read-only, "Open config file" button (`NSWorkspace.open`). Audit:
+latest entries. If `stephen listen` isn't running: "Stephen isn't listening. Run `stephen listen`." with retry.
+
+**Subtasks (replace 7 and 11 to 14, 17)**
+- **A1 app socket server** (`src/app/server.ts`, `src/app/protocol.ts`, wired in `src/voice/index.ts` runListen):
+  protocol above, caps, perms, stale-socket handling, typed chat into the Assistant queue, `open_window` command,
+  `stephen app` CLI. Tests: protocol table, size caps, perms 0600/0700, busy, memory change ends conversation,
+  boundary scan for `src/app`.
+- **A2 Swift window** (`helper/AppWindow.swift`, `helper/AppClient.swift`, menu item, `--open-window`,
+  `open_window` handling, `src/helper/install.ts` adds the new files and `-framework SwiftUI`). Verified only on the
+  Mac (`stephen install-helper`); cloud tests cover the install argv and a protocol fixture shared with A1.
+- Section 11 subtasks kept: 1 to 6, 8 to 10, 15, 16. Dropped: 7 (loopback block, no page to protect), 11 to 14, 17.

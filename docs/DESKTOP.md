@@ -183,16 +183,34 @@ For one-shot requests like "turn it down and play the next song" (`src/desktop/s
 
 - `volume`: `set` (level 0–100, required), `up` / `down` (step, default 10), `mute`, `unmute`. Standard Additions
   `setVolume`; no app is touched.
-- `media_control`: `play`, `pause`, `toggle`, `next`, `previous` for **Spotify** or **Apple Music** — only if that
-  app is already running (never launched). Without `player`: the one that is playing; `pause` never picks a paused
-  one. Nothing to control → it says so and points the model to the browser tools for a YouTube tab
-  (`tabs_list` → `press_key k` / `Shift+N`), so pages are still only reached through the browser gate.
+- `media_control`: `play`, `pause`, `toggle`, `next`, `previous`. Without `player` it picks, in order
+  (`src/desktop/media-tab.ts`, PLAN-1.9 12.5 "YouTube Music first"):
+  1. a **YouTube Music** tab (any `music.youtube.com` page), 2. a **YouTube** watch tab, in the browsers Stephen is
+     attached to or can attach to without starting anything (same `tryAttach` rules as play_media: Zen attach-only
+     on demand, Chrome only if already connected, never in agent mode); current / most recently used tab first;
+  3. **Spotify** or **Apple Music**, only if that app is already running (never launched). `pause` never picks a
+     paused one (a paused YouTube Music tab falls through to a playing app, else "already paused").
+  A named `player` ("Spotify"/"Music") goes straight to that app. On a tab, the player is read with the page engine
+  (gated read); play/pause/toggle click the player's own Play/Pause button when exactly one is found, else press
+  the shortcut; next/previous press the shortcut, or click the one Next/Previous button when focus is in a text
+  field. Every click and key goes through `hub.action` (gate, rate limit, focus/identity re-check, audit). The tab
+  is not brought to the front. Results say what happened ("Paused YouTube Music (tab z2).", "No YouTube Music tab
+  is open ...").
+  Shortcuts used: YouTube Music `Space` (play/pause; only when nothing has focus), `j` next, `k` previous;
+  YouTube `k`, `Shift+N`, `Shift+P`.
 - Both run fixed JXA scripts (`osascript -l JavaScript -e <script> <argv…>`): the validated action/number/player
   reach the script as `run(argv)` strings, never as script text. Refused while the Mac is locked, counted by the
   shared rate limit, audited (with the resulting volume / player state).
 - **Mac-only checks pending:** the JXA `setVolume(null, {outputVolume, outputMuted})` call, and the Automation
   prompt the first time Stephen controls Spotify / Music ("osascript wants to control Spotify" — allow it; if
   denied, System Settings → Privacy & Security → Automation).
+- **Mac-only checks pending (YouTube Music):** press `?` on music.youtube.com and confirm `j` = next song, `k` =
+  previous song, `Space` = play/pause (from third-party write-ups, medium confidence); the player-bar button names
+  (expected exactly "Play" / "Pause" / "Next" / "Previous"; if a shelf arrow is also named "Next" the button is
+  treated as ambiguous and the key is used); that keys and clicks reach a background tab in Zen (WebDriver BiDi)
+  and Chrome; and on youtube.com that `Shift+P` goes back in a playlist. Because `k` on music.youtube.com is
+  previous track, play_media's `ensurePlaying` never presses it there: it clicks the Play button, or reports that
+  none was found.
 
 ### `desktop_status {}` (read-only)
 

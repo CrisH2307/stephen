@@ -42,7 +42,7 @@ First tasks for the new chat:
 - [ ] Persona: how to summarize email/to-dos by voice; privacy rules above.
 - [ ] Independent security review (prompt injection via email content is the main new risk).
 
-## Phase 1.9 — memory + chat dashboard (designed, not built)
+## Phase 1.9 — memory + Stephen app (built 2026-11-01; review #5 pending)
 See docs/PLAN-1.9-MEMORY-DASHBOARD.md. Memory only from the owner's own "remember …"; local history; `stephen dashboard` on 127.0.0.1.
 
 ## Phase 3 — follow-ups and speed

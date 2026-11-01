@@ -12,6 +12,9 @@ It also shows Stephen's state in the menu bar: ○ idle · ● listening · red 
 ◐ working · 🔈 speaking. A `!` after the glyph means Input Monitoring is not granted (or the helper hit an error;
 open its menu to see which).
 
+It also hosts the **Stephen window** (Chat / Memory / History / Settings / Audit), see
+[Stephen window](#stephen-window).
+
 It does **not** use the microphone (that stays with `stephen listen`) and never sees what you type (see
 [Privacy](#privacy)).
 
@@ -28,8 +31,9 @@ What it does (every program runs with an argv array, no shell):
 
 1. Finds `swiftc` with `xcrun --find swiftc` (and the SDK with `xcrun --sdk macosx --show-sdk-path`), else `swiftc`
    on PATH. If neither exists it says to run `xcode-select --install`.
-2. Compiles `helper/Core.swift` + `helper/main.swift` in a temporary folder:
-   `swiftc -O -swift-version 5 [-sdk …] -o "Stephen Helper" Core.swift main.swift -framework AppKit -framework CoreAudio -framework CoreGraphics`
+2. Compiles `helper/Core.swift`, `helper/AppClient.swift`, `helper/AppWindow.swift` and `helper/main.swift` in a
+   temporary folder:
+   `swiftc -O -swift-version 5 [-sdk …] -o "Stephen Helper" Core.swift AppClient.swift AppWindow.swift main.swift -framework AppKit -framework CoreAudio -framework CoreGraphics -framework SwiftUI`
 3. Assembles `~/Applications/Stephen Helper.app/Contents/{MacOS/Stephen Helper, Info.plist}` (`LSUIElement`,
    bundle id `dev.stephen.helper`) and signs it ad hoc:
    `codesign --force --sign - --identifier dev.stephen.helper "…/Stephen Helper.app"`.
@@ -67,6 +71,10 @@ again (or turn it off and on).
 | `<stephen home>/logs/helper.log` | its log (rotated at 1 MB) |
 | `helper/Core.swift` | platform-neutral core: push-to-talk logic, JSON framing, socket server |
 | `helper/main.swift` | macOS layer: menu bar, event tap, CoreAudio |
+| `helper/AppClient.swift` | Stephen window: `app.sock` client and window model (macOS only) |
+| `helper/AppWindow.swift` | Stephen window: SwiftUI views in one reused `NSWindow` (macOS only) |
+| `<stephen home>/run/app.sock` | created by `stephen listen`; the window connects to it (same user only) |
+| `test/fixtures/app-protocol-v1.jsonl` | example lines for every `app.sock` message (shared by the Node and Swift sides) |
 | `src/helper/protocol.ts` | the wire contract (frozen); `src/helper/client.ts` is the Node side |
 
 `<stephen home>` is `~/.stephen` (or what `STEPHEN_HOME` / config say; `stephen listen` passes it with `--home`).
@@ -87,6 +95,43 @@ again (or turn it off and on).
 - Quit from the menu, by `{"type":"quit"}`, or `killall "Stephen Helper"`; it removes its socket. A stale socket
   from a crash is replaced on the next start; a live one is never stolen.
 
+## Stephen window
+
+A native window inside Stephen Helper.app for typing to Stephen and looking after memory and history. It talks to
+`stephen listen` over `<stephen home>/run/app.sock` (protocol v1: docs/PLAN-1.9-MEMORY-DASHBOARD.md section 13;
+example lines in `test/fixtures/app-protocol-v1.jsonl`). No web server, no browser tab.
+
+**Open it** from the menu-bar menu (**Open Stephen…**), with `stephen app`, or by starting the helper with
+`--open-window` (`open -a ~/Applications/"Stephen Helper.app" --args --home ~/.stephen --open-window`; only works when
+the helper is not already running, because `open` does not pass arguments to a running app). `stephen app` sends
+`{"type":"open_window"}` over `helper.sock`; helpers built before 1.9 ignore it. There is one window; opening it
+again brings the same one to the front. Size and position are remembered.
+
+| Tab | Shows |
+|---|---|
+| **Chat** | Your typed commands and Stephen's replies as bubbles (tool names in small print under a reply), plus voice commands live as you say them. Type and press Return or **Send**; **Stop** appears while a command runs (same as Esc). The dot in the header is Stephen's state (grey idle, green listening, red recording, orange working, blue speaking). Typed replies are shown, not spoken. |
+| **Memory** | What Stephen remembers: add, edit, forget one, or **Forget all…** (asks first). Refusals (for example secret-looking text) are shown as they come from `stephen listen`. Any change starts a fresh conversation with the next command. |
+| **History** | Recent commands grouped by day, with **Load older** and **Clear history…** (asks first). |
+| **Settings** | The resolved voice / memory / history settings, read-only, and **Open config file** (opens the `.json` file in its default app). |
+| **Audit** | The latest browser actions from the audit log. |
+
+If `stephen listen` isn't running the window says *Stephen isn't listening. Run `stephen listen`.* with **Retry**;
+while the window is open it also retries every 3 s by itself. Closing the window disconnects; the helper keeps
+running in the menu bar. All text is shown as plain text (no Markdown or links are rendered).
+
+**After `stephen install-helper`, check on the Mac:**
+
+1. The build succeeds (the window code is SwiftUI; if `swiftc` fails, the error and the full command are printed).
+2. The menu has **Open Stephen…**; clicking it brings a "Stephen" window to the front.
+3. Without `stephen listen`: the offline message and **Retry**. Start `stephen listen`: within about 3 s the header
+   shows the state and the model.
+4. Chat: type a command, see your bubble, **Stop** while it runs, then the reply with tool names. Hold Fn+Option and
+   say something: it appears in the chat.
+5. Memory: add, edit, forget and **Forget all…** (with its confirmation). History shows today's commands; Settings
+   opens the config file; Audit lists entries.
+6. Cmd+C / Cmd+V / Cmd+A work in the text fields and Cmd+W closes the window. Close and reopen: same size and place.
+7. Push-to-talk, Esc and the menu-bar glyph still work as before.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -99,6 +144,8 @@ again (or turn it off and on).
 | `install-helper`: no Swift compiler | `xcode-select --install`, then run it again. With full Xcode, `sudo xcode-select -s /Applications/Xcode.app` if `xcrun` points elsewhere. |
 | "already exists and was not made by Stephen" | Something else is at `~/Applications/Stephen Helper.app`; move it away. |
 | Two `stephen listen` running | They take turns stealing the helper connection. Run one. |
+| Stephen window says "Stephen isn't listening" | Start `stephen listen` (it creates `<stephen home>/run/app.sock`). If it is running, check that the helper and the listener use the same home folder (`helper.log` shows the socket path the window uses). |
+| `install-helper` fails in `AppWindow.swift` / `AppClient.swift` | An SDK difference in the SwiftUI window code. The error lines name the API; the rest of the helper is unchanged. |
 
 ## Privacy
 
@@ -114,4 +161,6 @@ No Mac is needed for most of it: `helper/Core.swift` builds on Linux too. `test/
 with the harness in `test/helper/swift/main.swift` and drives the real socket server and push-to-talk logic through
 `HelperClient`, using the same scenarios as the TypeScript model in `test/helper/ptt-model.ts`. It runs when
 `swiftc` is on PATH or `STEPHEN_TEST_SWIFTC` points at a compiler; on macOS it also compiles the full app.
-The AppKit / CGEventTap / CoreAudio layer (`helper/main.swift`) can only be built and tried on a Mac.
+The AppKit / CGEventTap / CoreAudio layer (`helper/main.swift`) and the Stephen window (`AppClient.swift`,
+`AppWindow.swift`) can only be built and tried on a Mac; `test/helper/app-protocol.test.ts` checks the shared
+protocol fixture and does source-level checks on the window code (every message type handled, plain text only).

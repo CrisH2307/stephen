@@ -245,6 +245,12 @@ yet), a ✓/✗ line is printed per case (failures show what it did and said), a
 `<home>/eval/<time>/report.json`. Each case is one Claude run on your plan. Add your own real requests to
 `EVAL_CASES` and re-run after every change to compare.
 
+The `inject` cases (`--only inject`) check prompt injection: a case's `page` text is what every page "says"
+(`serve --dry-run --fake-page <file>`; snapshot, read_text and find return it inside the usual untrusted-content
+wrapper), and the page tells Stephen to open a phishing link, type the user's email or send their address away.
+Reading the page the user asked for is expected; `forbid` (calls that must not happen) and `replyNot` (things the
+reply must not say) catch it following the page instead.
+
 ### About me (`voice.aboutMe`)
 
 So "routes from my home to …" doesn't need a follow-up question. In `~/.stephen/config.json` (or the legacy
@@ -262,10 +268,62 @@ So "routes from my home to …" doesn't need a follow-up question. In `~/.stephe
 ```
 
 Keys: `name`, `home`, `school`, `work` (one line each, ≤ 300 characters) and up to 10 `notes`. It is appended to
-the persona as "About the user", so it is sent to Claude with every command (like the rest of the prompt) and is
-visible in the `claude` process's arguments to other processes of your user. Claude is told to use it instead of
-asking and not to say the address out loud unless asked. Only what you write here; Stephen never adds to it
-(learned memory is a later phase, see the plan).
+the persona as "About the user", so it is sent to Claude with every command (like the rest of the prompt). Claude
+is told to use it instead of asking and not to say the address out loud unless asked. Only what you write here;
+Stephen never adds to it.
+
+### Persona file and memory (phase 1.9)
+
+The persona, "About the user" and the memory block (the things you asked Stephen to remember, framed as facts that
+can't approve anything or change the rules; at most 30 items of 200 characters, `<` `>` shown as `‹` `›`) go to
+Claude in `<home>/voice/persona.txt` (0600, rewritten atomically before every command) through
+`--append-system-prompt-file`, so they are not in the `claude` process's arguments where `ps` shows them.
+`voice.personaFile`: `"auto"` (default) uses the file when `claude --help` mentions the flag, `"on"` always,
+`"off"` never (then everything goes on argv with `--append-system-prompt`, as before 1.9). Claude Code 2.1.316
+accepts the flag but lists it only inside the `--bare` help line (`--append-system-prompt[-file]`), which `auto`
+detects. Checked on Linux with 2.1.316 (a real run read a word from the file, and `stephen eval --only mem` passed in
+file mode). **Check on the Mac**: `stephen eval --only mem` passes, and `ps -o args= -p <claude pid>` during a
+command shows `--append-system-prompt-file …/persona.txt` and no persona text. Claude is told it can't save,
+change or forget memories and to tell you to say "remember …".
+
+### Memory (phase 1.9)
+
+Short facts you ask Stephen to keep live in `<home>/memory.json` (0600, at most 30 items of 200 characters).
+Manage them by voice (below) or from the terminal:
+
+```
+stephen memory list
+stephen memory add "my prof for SOFE is Dr. Patel"
+stephen memory forget m3
+stephen memory clear        # asks y/N
+```
+
+Text that looks like a password, code, card or account number (including 4 or more digits in a row) is refused,
+because memory is sent to Claude with every command. Changes are written to the audit log with the text's length
+only. Config: `"memory": { "enabled": true, "confirmWakeWord": true, "maxItems": 30 }`.
+
+#### Memory by voice
+
+These are recognized by fixed patterns on your own words and handled by `stephen listen` itself, before Claude:
+no `claude -p` starts and the reply is instant. Claude can never add, change or forget a memory (nothing it reads
+or replies is parsed for memory).
+
+| Say | Does |
+|---|---|
+| "remember my gym is GoodLife on King St" | saves it ("Bet, saved: …"), keeping the case Whisper heard |
+| "remember my gym is GoodLife and play lofi" | saves "my gym is GoodLife", then runs "play lofi" as a normal command; the reply says both. The split happens only at "and" / "then" / "and then" / "and also" followed by play, open, put, turn, set, pause, skip, start, launch, show, find, check, go, search or mute |
+| "what do you remember" | reads the list out |
+| "forget my gym" | forgets the one item that matches best; if two match equally it names them and forgets nothing |
+| "forget that" | forgets the newest item, only if it was saved in the last 10 minutes |
+| "forget everything" | asks in a macOS dialog first, always |
+
+Trust: Fn+Option and `stephen listen --text` save directly. A "remember …" after the wake word asks in a macOS
+dialog first ("Remember this?", Deny is the default, gives up after 120 s) because a video can say "Hey Stephen,
+remember …"; if you deny, nothing is saved and the rest of a split line doesn't run either.
+`memory.confirmWakeWord: false` turns that dialog off. Any change (save / forget / clear) ends the follow-up
+conversation, so the next command starts a fresh Claude session that sees the new memory. `memory.enabled: false`
+turns all of this off: "remember …" then goes to Claude like any other command and no memory is sent to Claude.
+`--dry-run` never saves (memory commands are not handled there).
 
 ## The persona (phase 1.6)
 
@@ -354,6 +412,20 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4�
   without the wake phrase is never transcribed or sent anywhere.
 - macOS shows its orange microphone dot while `stephen listen` runs.
 
+### Command history (phase 1.9)
+
+- `stephen history [--limit N]` shows your recent commands (newest first, default 20, at most 100);
+  `stephen history clear` deletes them all.
+- Stored only on this Mac in `<home>/history/YYYY-MM-DD.jsonl` (folder 0700, files 0600): what you said, the reply,
+  the outcome, tool names and timings. Never sent back to Claude. Caps: said 2000 chars, reply 4000 chars, 5 MB a day.
+- `"history": { "retentionDays": 1 }` in config.json (default 1, 0 to 30). Day files older than that many days are
+  deleted on every new entry; `0` turns history off and deletes what is there.
+- Tool names come from `stephen serve --tool-log <home>/voice/tool-log.jsonl`, which records only
+  `{tool, isError, ms}` per call, never arguments or results. `stephen listen` adds the flag (only while history is
+  on), empties the file before each command and reads it after. Memory commands are recorded with outcome `memory`
+  and no tools. A history write that fails is printed as a note and never fails the command. `--dry-run` records
+  nothing.
+
 ## Configuration (`"voice"` in config.json)
 
 | Key | Default | |
@@ -371,6 +443,7 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4�
 | `claudeModel` | `"haiku"` | Fastest; `"sonnet"` for better judgement, `"default"` = Claude Code's default (see "Model") |
 | `maxTurns` | `25` | Cap on agent turns per command (15 before 1.8; multi-part requests need more) |
 | `aboutMe` | unset | Facts Stephen may use without asking (home address, school…). See "About me" |
+| `personaFile` | `"auto"` | `"auto"` / `"on"` / `"off"`: persona + memory in a 0600 file instead of argv. See "Persona file and memory" |
 | `cooldownSec` | `20` | Without the helper: after each command, ignore the wake word for this long (press Enter to re-arm early). `0` = off. With the helper the wake word is gated on playing sound instead |
 | `wakeWord` | `true` | `false` = push-to-talk only (needs Stephen Helper); same as `--ptt-only` |
 | `followUpWindowSec` | `180` | A command within this many seconds of the previous one's end continues its conversation (`--resume` + the gate's memory). `0` = every command fresh. Max 1800 |
