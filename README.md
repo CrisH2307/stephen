@@ -2,7 +2,7 @@
 
 Stephen lets Claude use your Mac's browsers  and, step by step, your desktop  by voice or from Claude Code. Say "Hey Stephen, open YouTube", or ask Claude Code to read a page, fill a form or click through a web app, and Claude does it in your Zen or Chrome while a safety layer stops anything risky until you OK it. Stephen is the app; the AI behind it is Claude.
 
-Stephen (formerly **browser-hub**) is a small local program (an [MCP server](https://modelcontextprotocol.io) named `stephen`; its tools appear to Claude as `mcp__stephen__*`) that Claude Code starts in the background. It talks to:
+Stephen is a small local program (an [MCP server](https://modelcontextprotocol.io) named `stephen`; its tools appear to Claude as `mcp__stephen__*`) that Claude Code starts in the background. It talks to:
 
 - **Chrome** over the Chrome DevTools Protocol  by default your **real, logged-in Chrome**, after you allow it once.
 - **Zen** over WebDriver BiDi  by default **the Zen windows you already have open** (signed in to your accounts), once you open Zen through the small **"Zen for Stephen"** app. Stephen never opens a Zen of its own unless you ask for the separate agent profile.
