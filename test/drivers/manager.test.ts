@@ -135,6 +135,21 @@ describe('BrowserManager', () => {
     expect((await m.listTabs('chrome')).find((t) => t.current)?.id).toBe('c1');
   });
 
+  it('listTabs reports how recently each tab was used (for tab reuse)', async () => {
+    const { m, chrome } = setup();
+    await m.connect('chrome');
+    chrome.browser!.addPage('https://a/');
+    chrome.browser!.addPage('https://b/');
+    chrome.browser!.addPage('https://c/');
+    await m.listTabs('chrome');
+    await m.getPage('c3');
+    await m.focusTab('c1');
+    const tabs = await m.listTabs('chrome');
+    const used = Object.fromEntries(tabs.map((t) => [t.id, t.lastUsed]));
+    expect(used.c2).toBeUndefined();
+    expect(used.c1!).toBeGreaterThan(used.c3!);
+  });
+
   it('rejects unknown and malformed tab ids', async () => {
     const { m } = setup();
     await expectTabNotFound(m.getPage('z9'), 'z9');

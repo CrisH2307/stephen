@@ -17,7 +17,8 @@ export const LISTEN_USAGE = `stephen listen [options]   "Hey Stephen" voice list
 
 Say "Hey Stephen, open YouTube", or hold Fn+Option while you speak (push-to-talk, with Stephen Helper:
 \`stephen install-helper\`). Say "Stephen stop", press Esc (helper) or Ctrl-C to cancel.
-Each command is a fresh conversation. With the helper, "Hey Stephen" is ignored only while the Mac plays
+A command within voice.followUpWindowSec (180 s) of the last one continues the conversation ("what about by
+car?"); Esc or "Stephen stop" starts a fresh one. With the helper, "Hey Stephen" is ignored only while the Mac plays
 sound, and replies stay quiet while it does. Without it, the wake word rests for voice.cooldownSec (20 s)
 after a command; press Enter to re-arm sooner.
 Config: the "voice" section of config.json — see docs/VOICE.md.`;

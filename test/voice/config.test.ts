@@ -19,7 +19,7 @@ describe('parseVoiceConfig', () => {
         claudePath: 'claude',
         claudeModel: 'sonnet',
         maxTurns: 15,
-        followUpWindowSec: null, // ignored in phase 1: every command is a fresh session
+        followUpWindowSec: 180, // follow-ups: commands within 180 s of the last one's end continue its conversation
         cooldownSec: 20,
         wakeWord: true,
         speak: true,
@@ -71,8 +71,10 @@ describe('parseVoiceConfig', () => {
     expect(c.asrModel).toBe('moonshine-base');
     expect(c.voice).toBe('Samantha (Enhanced)');
     expect(c.silenceSec).toBe(0.8);
-    expect(c.followUpWindowSec).toBe(0); // still accepted (old configs keep loading), but ignored
+    expect(c.followUpWindowSec).toBe(0); // 0 = every command fresh
     expect(parseVoiceConfig({ followUpWindowSec: 120 }).followUpWindowSec).toBe(120);
+    expect(parseVoiceConfig({ followUpWindowSec: 1800 }).followUpWindowSec).toBe(1800);
+    expect(parseVoiceConfig({ followUpWindowSec: null }).followUpWindowSec).toBe(180);
     expect(parseVoiceConfig({ cooldownSec: 0 }).cooldownSec).toBe(0);
     expect(parseVoiceConfig({ cooldownSec: 45.5 }).cooldownSec).toBe(45.5);
     expect(parseVoiceConfig({ device: 2 }).device).toBe(2);
@@ -98,6 +100,8 @@ describe('parseVoiceConfig', () => {
     [{ maxTurns: 0 }, /voice.maxTurns/],
     [{ maxTurns: 2.5 }, /voice.maxTurns/],
     [{ followUpWindowSec: -1 }, /voice.followUpWindowSec/],
+    [{ followUpWindowSec: 1801 }, /voice.followUpWindowSec/],
+    [{ followUpWindowSec: 2.5 }, /voice.followUpWindowSec/],
     [{ cooldownSec: -1 }, /voice.cooldownSec/],
     [{ cooldownSec: 601 }, /voice.cooldownSec/],
     [{ cooldownSec: '20' }, /voice.cooldownSec/],

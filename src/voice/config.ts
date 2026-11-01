@@ -92,11 +92,11 @@ const VoiceConfigSchema = z
     claudeModel: claudeModel.nullish(),
     maxTurns: z.number().int().min(1).max(100).default(15),
     /**
-     * IGNORED in phase 1 (still accepted so an existing config.json keeps working): every voice command starts
-     * a fresh Claude session. Resuming would keep Claude's memory of earlier commands while the new Stephen
-     * server's safety gate starts with no memory of private reads or approvals. Follow-ups return in phase 3.
+     * Follow-ups: a command that starts within this many seconds of the previous command's end continues its
+     * conversation (Claude `--resume` + the safety gate's memory via `serve --session-state`; see
+     * src/voice/conversation.ts). 0 = every command starts fresh. Default 180, at most 1800.
      */
-    followUpWindowSec: z.number().int().min(0).max(3600).nullish(),
+    followUpWindowSec: z.number().int().min(0).max(1800).default(180),
     /**
      * After every command, the wake word is ignored for this many seconds (a page or video Stephen just opened
      * may say "Hey Stephen…"). Press Enter in the listener's terminal to re-arm early. 0 = no cooldown.
@@ -136,7 +136,7 @@ const VoiceConfigSchema = z
 
 export type VoiceConfig = Omit<
   z.output<typeof VoiceConfigSchema>,
-  'device' | 'claudeModel' | 'voice' | 'rate' | 'followUpWindowSec' | 'wakePhrase' | 'wakePhrases' | 'asrModel'
+  'device' | 'claudeModel' | 'voice' | 'rate' | 'wakePhrase' | 'wakePhrases' | 'asrModel'
 > & {
   /** All wake phrases (deduplicated, ≥ 1). */
   wakePhrases: string[];
@@ -145,8 +145,6 @@ export type VoiceConfig = Omit<
   /** The configured speech-to-text model, or null = the default (see resolveAsrModel in models.ts). */
   asrModel: AsrModelId | null;
   device: number | string | null;
-  /** Set only when config.json has it; ignored in phase 1 (runListen prints a note). */
-  followUpWindowSec: number | null;
   /** `--model` value; null = no flag (config "default"). */
   claudeModel: string | null;
   voice: string | null;
@@ -189,6 +187,5 @@ export function parseVoiceConfig(raw: unknown): VoiceConfig {
     claudeModel: resolveClaudeModel(r.data.claudeModel),
     voice: r.data.voice ?? null,
     rate: r.data.rate ?? null,
-    followUpWindowSec: r.data.followUpWindowSec ?? null,
   };
 }

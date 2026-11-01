@@ -127,17 +127,22 @@ describe('allow / block lists', () => {
 
 describe('desktop config', () => {
   it('defaults, and null means default', () => {
-    expect(parseDesktopConfig(undefined)).toEqual({ enabled: true, allowedApps: [], blockedApps: [] });
-    expect(parseDesktopConfig({ enabled: null, allowedApps: null })).toEqual({ enabled: true, allowedApps: [], blockedApps: [] });
+    expect(parseDesktopConfig(undefined)).toEqual({ enabled: true, allowedApps: [], blockedApps: [], reuseTabs: 'site' });
+    expect(parseDesktopConfig({ enabled: null, allowedApps: null })).toEqual({ enabled: true, allowedApps: [], blockedApps: [], reuseTabs: 'site' });
     expect(parseDesktopConfig({ enabled: false, allowedApps: [' Steam '], blockedApps: ['com.apple.Music'] })).toEqual({
       enabled: false,
       allowedApps: ['Steam'],
       blockedApps: ['com.apple.Music'],
+      reuseTabs: 'site',
     });
+    expect(parseDesktopConfig({ reuseTabs: 'never' }).reuseTabs).toBe('never');
+    expect(parseDesktopConfig({ reuseTabs: 'exact' }).reuseTabs).toBe('exact');
+    expect(parseDesktopConfig({ reuseTabs: null }).reuseTabs).toBe('site');
   });
 
   it('rejects unknown keys and bad values with clear messages', () => {
-    expect(() => parseDesktopConfig({ allowApps: ['x'] })).toThrow(/unknown key "desktop.allowApps" \(allowed: enabled, allowedApps, blockedApps\)/);
+    expect(() => parseDesktopConfig({ allowApps: ['x'] })).toThrow(/unknown key "desktop.allowApps" \(allowed: enabled, allowedApps, blockedApps, reuseTabs\)/);
+    expect(() => parseDesktopConfig({ reuseTabs: 'always' })).toThrow(/"desktop.reuseTabs": must be "site", "exact" or "never"/);
     expect(() => parseDesktopConfig({ enabled: 'yes' })).toThrow(/"desktop.enabled": must be true or false/);
     expect(() => parseDesktopConfig({ allowedApps: 'Steam' })).toThrow(/"desktop.allowedApps": must be a list of app names or bundle ids/);
     expect(() => parseDesktopConfig({ blockedApps: [''] })).toThrow(/"desktop.blockedApps.0": entries must be non-empty/);

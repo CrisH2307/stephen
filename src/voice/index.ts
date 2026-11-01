@@ -26,6 +26,7 @@ import {
   type SpawnFn,
   probeClaudeFlags,
 } from './claude.js';
+import { Conversation, ConversationRunner } from './conversation.js';
 import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
@@ -76,6 +77,8 @@ export interface ListenEnv {
    * there is none. Default: the real client from src/helper/client.ts, loaded lazily (missing → null).
    */
   helper?: (home: string) => Promise<HelperLink | null> | HelperLink | null;
+  /** Clock for the follow-up window (tests). */
+  now?: () => number;
 }
 
 /** Start the helper link; null when unavailable (never throws). */
@@ -102,11 +105,6 @@ export function watchEnterKey(onEnter: () => void): () => void {
     stdin.pause(); // let the process exit once listening ends
   };
 }
-
-export const FOLLOW_UP_IGNORED_NOTE =
-  'Note: "voice.followUpWindowSec" is ignored in phase 1 — every voice command starts a fresh Claude session, ' +
-  "because each one also starts a fresh Stephen server whose safety checks don't remember the earlier commands. " +
-  'Follow-ups return in phase 3 (see docs/VOICE.md). You can remove the setting.';
 
 function spotterOptions(cfg: VoiceConfig, workDir: string) {
   return {
@@ -213,7 +211,6 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const loaded = loadVoice(env, err);
   if (!loaded) return 2;
   const { home } = loaded;
-  if (loaded.cfg.followUpWindowSec !== null) err(FOLLOW_UP_IGNORED_NOTE);
   const cfg: VoiceConfig = {
     ...loaded.cfg,
     device: args.device ?? loaded.cfg.device,
@@ -237,8 +234,18 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const workDir = join(voiceDir, 'workdir');
   await mkdir(workDir, { recursive: true, mode: 0o700 });
   const cliPath = env.cliPath ?? stephenCliPath();
-  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath);
-  const settings: ClaudeSettings = { claudePath: cfg.claudePath, maxTurns: cfg.maxTurns, model: cfg.claudeModel, mcpConfigPath };
+  // Follow-ups: one constant gate-state path for every server (the Conversation deletes it when a conversation ends).
+  const conversation = new Conversation({ dir: voiceDir, windowSec: cfg.followUpWindowSec, log: err, now: env.now });
+  const sessionStatePath = conversation.enabled ? conversation.statePath : null;
+  if (!conversation.enabled) conversation.end(); // window 0: no leftovers from an earlier setting
+  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath);
+  const settings: ClaudeSettings = {
+    claudePath: cfg.claudePath,
+    maxTurns: cfg.maxTurns,
+    model: cfg.claudeModel,
+    mcpConfigPath,
+    followUps: conversation.enabled,
+  };
   // Check once that this Claude Code knows our lock-down flags: required ones missing → refuse (update Claude Code);
   // optional ones (--no-chrome, --no-session-persistence) missing → leave them out instead of failing every command.
   if (!args.dryRun && !env.spawn) {
@@ -252,13 +259,14 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       err(`Note: this Claude Code doesn't know ${[...probe.unsupportedOptional].join(', ')}; running without them (update Claude Code for the faster lock-down).`);
     }
   }
-  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath))}`);
+  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath, sessionStatePath))}`);
   else if (!stephenCliBuilt(cliPath)) err(`Note: ${cliPath} does not exist yet — run \`npm run build\` first, or Claude can't start Stephen's tools.`);
 
   const claude = args.dryRun
     ? null
     : new ClaudeRunner({ ...settings, cwd: workDir, env: env.env, spawn: env.spawn, killGraceMs: env.killGraceMs, onTiming: (t) => out(formatTiming(t)) });
-  const runner: CommandRunner = claude ?? new DryRunRunner(settings, out);
+  // Dry runs never resume (nothing ran before them); real runs continue a conversation inside the follow-up window.
+  const runner: CommandRunner = claude ? new ConversationRunner(claude, conversation) : new DryRunRunner(settings, out);
   const speak = cfg.speak && !args.dryRun;
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts). Tests inject env.speaker.
   let speaker: Speaker = silentSpeaker;

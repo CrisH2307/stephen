@@ -13,6 +13,8 @@
  *    With Stephen Helper connected there is no fixed cooldown: the wake word is ignored only while the Mac is
  *    playing sound (the helper's `audio.playing`), which is exactly when a page or video could be talking.
  *  - The stop phrase ("stephen stop") cancels the running command or the spoken reply, at any time.
+ *  - Follow-ups (src/voice/conversation.ts): any cancel, Esc or the stop phrase — even when idle — also ends the
+ *    conversation, so the next command starts a fresh Claude session with a fresh safety gate.
  *  - Push-to-talk (helper: hold Fn+Option) needs no wake word: pressing it cancels whatever is running, records
  *    until release (≥ PTT_MIN_HOLD_MS, at most PTT_MAX_HOLD_MS) and sends the transcript. Esc cancels like
  *    "stephen stop". `voice.wakeWord: false` turns the wake word off (push-to-talk only).
@@ -191,8 +193,13 @@ export class Listener {
     void this.d.source.stop();
   }
 
-  /** Cancel the current command (Ctrl-C / stop phrase / Esc). Returns false when there was nothing to cancel. */
+  /**
+   * Cancel the current command (Ctrl-C / stop phrase / Esc / push-to-talk / wake-word barge-in). Returns false when
+   * there was nothing to cancel. Always ends the follow-up conversation: the next command starts a fresh Claude
+   * session with a fresh gate.
+   */
   cancel(reason: string): boolean {
+    this.d.assistant.endConversation();
     if (this.state === 'capturing' || this.state === 'recording') {
       this.d.status(`Cancelled (${reason}).`);
       this.toListening();
@@ -243,7 +250,8 @@ export class Listener {
     const hit = this.d.spotter.accept(frame);
     switch (this.state) {
       case 'listening':
-        if (hit?.id === 'WAKE') this.onWake(hit);
+        if (hit?.id === 'STOP') this.d.assistant.endConversation(); // "Stephen stop" when idle: forget the conversation
+        else if (hit?.id === 'WAKE') this.onWake(hit);
         else this.maybeRecycleSpotter(frame.length);
         this.tickCooldown(frame.length);
         break;
@@ -349,8 +357,9 @@ export class Listener {
       h.on('ptt_down', () => this.onPttDown()),
       h.on('ptt_up', (e) => ((e as { aborted?: boolean }).aborted ? this.abortPtt() : this.onPttUp(e.heldMs))),
       h.on('esc', () => {
-        // Same path as "stephen stop"; nothing happens when idle.
+        // Same path as "stephen stop"; when idle it only ends the follow-up conversation.
         if (this.state !== 'listening') this.cancel('Esc');
+        else this.d.assistant.endConversation();
       }),
     );
   }
@@ -527,6 +536,7 @@ export class Listener {
     // "Stephen, stop" whose STOP the spotter missed: the bare "Stephen" started a capture of… "stop".
     const stop = this.o.stopPhrase ? normalizeTranscript(raw, [this.o.stopPhrase], { anchored: true }) : null;
     if (stop?.hadWake && !stop.text) {
+      this.d.assistant.endConversation();
       this.d.status(`Heard "${this.o.stopPhrase}" — nothing to stop.`);
       return null;
     }

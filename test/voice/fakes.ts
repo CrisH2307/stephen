@@ -83,6 +83,9 @@ export class FakeTranscriber implements Transcriber {
 export class FakeRunner implements CommandRunner {
   readonly prompts: string[] = [];
   cancels = 0;
+  /** endConversation() calls (Esc / "Stephen stop" / cancel end the follow-up conversation). */
+  conversationEnds = 0;
+  commandEnds = 0;
   private release: ((o: ClaudeOutcome) => void) | null = null;
   constructor(private readonly hold = false) {}
   get pending() {
@@ -102,6 +105,12 @@ export class FakeRunner implements CommandRunner {
     this.release?.({ kind: 'cancelled' });
     this.release = null;
     return true;
+  }
+  endConversation() {
+    this.conversationEnds++;
+  }
+  commandEnded() {
+    this.commandEnds++;
   }
 }
 

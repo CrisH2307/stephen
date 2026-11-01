@@ -51,6 +51,9 @@ describe('claude argv', () => {
       "Before doing anything that will play sound (music, a video, a podcast), first call the announce tool with a short line saying what you're about to play (≤ 12 words), then do it.",
     );
     expect(persona).toContain('After starting playback, your final reply should be very short.');
+    expect(persona).toContain(
+      "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, ask briefly.",
+    );
     expect(a).not.toContain('--resume');
     expect(a).not.toContain('--model');
     expect(a).not.toContain('--dangerously-skip-permissions');
@@ -86,7 +89,30 @@ describe('claude argv', () => {
       '--model',
       'sonnet',
     ]);
-    expect([...LOCKDOWN_ARGS]).toEqual(['--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', '', '--no-chrome', '--no-session-persistence']);
+    expect([...LOCKDOWN_ARGS]).toEqual(['--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', '', '--no-chrome']);
+  });
+
+  it('follow-ups on: no --no-session-persistence (a resumed session must be saved); --resume <id> only when given', () => {
+    const on = { ...settings, model: 'sonnet', followUps: true };
+    const fresh = buildClaudeArgs('open youtube', on);
+    const off = buildClaudeArgs('open youtube', { ...settings, model: 'sonnet' });
+    expect(fresh).not.toContain('--no-session-persistence');
+    expect(fresh).not.toContain('--resume');
+    expect(off.filter((x) => x !== '--no-session-persistence')).toEqual(fresh); // the only difference
+    const resumed = buildClaudeArgs('what about by car', on, { resume: '3f2a9c1e-0b7d-4e8a-9f00-1234567890ab' });
+    expect(resumed.slice(0, 6)).toEqual(['-p', 'what about by car', '--output-format', 'json', '--resume', '3f2a9c1e-0b7d-4e8a-9f00-1234567890ab']);
+    expect(resumed.filter((x, i) => !(x === '--resume' || resumed[i - 1] === '--resume'))).toEqual(buildClaudeArgs('what about by car', on));
+    expect(buildClaudeArgs('x', on, { resume: null })).not.toContain('--resume');
+    // the --no-session-persistence probe still drops it when this claude lacks it
+    expect(buildClaudeArgs('x', { ...settings, unsupportedOptionalFlags: new Set(['--no-session-persistence']) })).not.toContain('--no-session-persistence');
+  });
+
+  it('--resume: refused without follow-ups, and only for a plain session id (never option-looking)', () => {
+    expect(() => buildClaudeArgs('x', settings, { resume: 'sess-1' })).toThrow(/needs follow-ups/);
+    const on = { ...settings, followUps: true };
+    for (const bad of ['-p', '--dangerously-skip-permissions', '', 'a b', 'a/b', '../x', 'x'.repeat(129), 'sess\n1']) {
+      expect(() => buildClaudeArgs('x', on, { resume: bad }), JSON.stringify(bad)).toThrow();
+    }
   });
 
   it('every variadic flag is followed by another option, so nothing swallows a value it shouldn’t', () => {

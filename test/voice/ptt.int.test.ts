@@ -63,7 +63,7 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
     const helper = opts.helper === undefined ? new FakeHelper() : opts.helper;
     let helperCalls = 0;
     const env: ListenEnv = {
-      loadConfig: () => ({ home: join(tmp, 'home'), voice: { claudePath: fakeClaudePath(), ...opts.voice } }),
+      loadConfig: () => ({ home: join(tmp, 'homes', name), voice: { claudePath: fakeClaudePath(), ...opts.voice } }),
       modelsRoot: root,
       engines: async () => engines,
       speaker,
@@ -101,9 +101,17 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
     expect(await runListen([], { ...h.env, source: pttSource(h, fixture(file)) })).toBe(0);
     expect(h.transcripts).toHaveLength(1);
     const runs = readFakeLog(h.log);
-    const mcpPath = join(tmp, 'home', 'voice', 'mcp-config.json');
-    expect(runs.map((r) => r.argv)).toEqual([buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: mcpPath })]);
-    expect(JSON.parse(readFileSync(mcpPath, 'utf8')).mcpServers.stephen.args).toEqual(['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice']);
+    const mcpPath = join(tmp, 'homes', file, 'voice', 'mcp-config.json');
+    expect(runs.map((r) => r.argv)).toEqual([buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: mcpPath, followUps: true })]);
+    expect(JSON.parse(readFileSync(mcpPath, 'utf8')).mcpServers.stephen.args).toEqual([
+      '/opt/stephen/dist/cli.js',
+      'serve',
+      '--confirm',
+      'dialog',
+      '--voice',
+      '--session-state',
+      join(tmp, 'homes', file, 'voice', 'conversation-state.json'),
+    ]);
     expect(h.speaker.said).toEqual(['Done! I opened YouTube for "open youtube".']);
     expect(h.chimes.played).toEqual(['wake', 'done']);
     expect(h.helper!.states).toEqual(['listening', 'recording', 'working', 'speaking', 'listening', 'idle']);

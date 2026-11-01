@@ -66,12 +66,13 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
 
   function harness(name: string, extraEnv: Record<string, string> = {}, voice: Record<string, unknown> = {}) {
     const log = join(tmp, `${name}.log`);
+    const home = join(tmp, 'homes', name); // one home per test: follow-ups never cross tests
     const speaker = new RecordingSpeaker();
     const chimes = new RecordingChimes();
     const out: string[] = [];
     const transcripts: { raw: string; command: string; ms: number }[] = [];
     const env: ListenEnv = {
-      loadConfig: () => ({ home: join(tmp, 'home'), voice: { claudePath: fakeClaudePath(), ...voice } }),
+      loadConfig: () => ({ home, voice: { claudePath: fakeClaudePath(), ...voice } }),
       modelsRoot: root,
       engines: sharedEngines,
       speaker,
@@ -85,7 +86,7 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
       killGraceMs: 500,
       helper: () => null, // no Stephen Helper: the wake-word cooldown applies (see ptt.int.test.ts for the helper)
     };
-    return { env, log, speaker, chimes, out, transcripts };
+    return { env, log, home, speaker, chimes, out, transcripts };
   }
 
   // The phase-1 clips (wake-variants.int.test.ts covers the newer ones with the default model).
@@ -115,8 +116,8 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     expect(wakes).toBe(1);
     expect(tr!.command).toBe(want);
     expect(runs).toHaveLength(1);
-    const mcpPath = join(tmp, 'home', 'voice', 'mcp-config.json');
-    expect(runs[0]!.argv).toEqual(buildClaudeArgs(want!, { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: mcpPath }));
+    const mcpPath = join(h.home, 'voice', 'mcp-config.json');
+    expect(runs[0]!.argv).toEqual(buildClaudeArgs(want!, { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: mcpPath, followUps: true }));
     expect(h.speaker.said).toEqual([`Done! I opened YouTube for "${want}".`]);
     expect(h.chimes.played).toEqual(['wake', 'done']);
     expect(h.out).toContain(`Heard: "${want}"`);
@@ -174,13 +175,28 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     expect(h.out.some((l) => l.startsWith('Ignored "hey stephen" — the wake word is paused'))).toBe(true);
   });
 
-  it('cooldownSec 0: the next command is a FRESH session (never --resume)', async () => {
-    const h = harness('fresh', {}, { cooldownSec: 0 });
+  it('followUpWindowSec 0 (cooldownSec 0): the next command is a FRESH session (never --resume)', async () => {
+    const h = harness('fresh', {}, { cooldownSec: 0, followUpWindowSec: 0 });
     engines.spotter.restart();
     expect(await runListen([], { ...h.env, source: backToBack(h) })).toBe(0);
     const runs = readFakeLog(h.log);
     expect(runs.map((r) => r.argv[1])).toEqual(['open youtube', "what's on my screen"]);
-    for (const r of runs) expect(r.argv).not.toContain('--resume');
+    for (const r of runs) {
+      expect(r.argv).not.toContain('--resume');
+      expect(r.argv).toContain('--no-session-persistence');
+    }
+  });
+
+  it('default follow-up window (cooldownSec 0): the next command resumes the first one\'s session', async () => {
+    const h = harness('followup', {}, { cooldownSec: 0 });
+    engines.spotter.restart();
+    expect(await runListen([], { ...h.env, source: backToBack(h) })).toBe(0);
+    const runs = readFakeLog(h.log);
+    expect(runs.map((r) => r.argv[1])).toEqual(['open youtube', "what's on my screen"]);
+    expect(runs[0]!.argv).not.toContain('--resume');
+    expect(runs[1]!.argv.slice(runs[1]!.argv.indexOf('--resume'), runs[1]!.argv.indexOf('--resume') + 2)).toEqual(['--resume', 'sess-1']);
+    for (const r of runs) expect(r.argv).not.toContain('--no-session-persistence');
+    expect(h.out).toContain('Working… (follow-up)');
   });
 
   it('"Stephen stop" during a long-running command kills claude and its child process group', async () => {

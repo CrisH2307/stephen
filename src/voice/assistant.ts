@@ -5,6 +5,12 @@ import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './s
 export interface CommandRunner {
   run(prompt: string): Promise<ClaudeOutcome>;
   cancel(): boolean;
+  /** Follow-ups (ConversationRunner): decide whether the next run resumes the conversation. */
+  followUp?(): boolean;
+  /** Esc / "Stephen stop" / any cancel: end the conversation (the next command starts fresh). */
+  endConversation?(): void;
+  /** The reply is out (spoken or shown): the follow-up window counts from now. */
+  commandEnded?(): void;
 }
 
 export type Phase = 'idle' | 'running' | 'speaking';
@@ -51,7 +57,13 @@ export class Assistant {
     const t0 = now();
     this.cancelled = false;
     this.phaseNow = 'running';
-    this.o.status('Working…');
+    let followUp = false;
+    try {
+      followUp = this.o.runner.followUp?.() ?? false;
+    } catch {
+      // run() reports it
+    }
+    this.o.status(followUp ? 'Working… (follow-up)' : 'Working…');
     let out: ClaudeOutcome;
     try {
       out = await this.o.runner.run(text);
@@ -87,12 +99,18 @@ export class Assistant {
         this.speech = null;
       }
       this.o.chimes.play('done');
+      if (out.kind === 'ok' && !this.cancelled) this.o.runner.commandEnded?.();
       const secs = ((now() - t0) / 1000).toFixed(1);
       this.o.status(this.cancelled ? 'Stopped.' : `Done (${secs} s)`);
       return out.kind === 'ok' ? 'ok' : 'error';
     } finally {
       this.phaseNow = 'idle';
     }
+  }
+
+  /** End the follow-up conversation: the next command starts a fresh Claude session with a fresh gate. */
+  endConversation(): void {
+    this.o.runner.endConversation?.();
   }
 
   /** Stop whatever is happening: kill the Claude run, or cut the spoken reply short. */

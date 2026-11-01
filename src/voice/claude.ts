@@ -1,8 +1,8 @@
 /**
- * Runs Claude Code headless (`claude -p`) with ONLY Stephen's MCP server and NO built-in tools. Every voice
- * command is a fresh session (see buildClaudeArgs for why there is no `--resume` in phase 1). Always spawned
- * with an argv array (never a shell), in its own process group so a cancel kills Claude and the
- * `stephen serve` child it started.
+ * Runs Claude Code headless (`claude -p`) with ONLY Stephen's MCP server and NO built-in tools. A follow-up
+ * command resumes the previous command's Claude session, and then the gate's memory is carried too (see
+ * buildClaudeArgs and src/voice/conversation.ts). Always spawned with an argv array (never a shell), in its own
+ * process group so a cancel kills Claude and the `stephen serve` child it started.
  */
 import { randomBytes } from 'node:crypto';
 import { constants as fsConstants, existsSync } from 'node:fs';
@@ -52,6 +52,8 @@ export const STEPHEN_PERSONA = [
   'The request below came from speech recognition on the Mac, so it may contain mistakes, especially in the names of songs, artists, people and places. ' +
     'Work out what the user most likely meant (for example "one car away from charlie pool" is One Call Away by Charlie Puth) and use the corrected names in your tool calls. ' +
     "If you really can't tell, say in one short line that you didn't catch it.",
+  // Follow-ups: the listener resumes the conversation for commands that come soon after the last one.
+  "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, ask briefly.",
   'Act only through the Stephen tools (mcp__stephen__*). Do exactly what was asked and nothing more.',
   // (2)+(3) One fast call for media; never hand-search and click.
   `To play a song, video or podcast: call announce with a short line (like "${PERSONA_ANNOUNCE_EXAMPLES[0]}"), then call play_media ONCE with the corrected title and artist. Don't open a search page and click results yourself.`,
@@ -76,7 +78,24 @@ export interface ClaudeSettings {
   mcpConfigPath: string;
   /** Optional lock-down flags this `claude` doesn't know (from probeClaudeFlags); they are left out. */
   unsupportedOptionalFlags?: ReadonlySet<string>;
+  /**
+   * Follow-ups are on (voice.followUpWindowSec > 0): sessions are saved so the next command can `--resume`
+   * them, so `--no-session-persistence` is left out. Off (default): every run is fresh and nothing is saved.
+   */
+  followUps?: boolean;
 }
+
+/** Per-run options for buildClaudeArgs. */
+export interface RunOptions {
+  /** Session id to resume (the previous command's, from its JSON result). */
+  resume?: string | null;
+}
+
+/** A Claude session id we pass back to `--resume`: never option-looking, no separators. */
+export const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+/** Saves nothing to disk; only passed when follow-ups are off (a resumed session must have been saved). */
+export const NO_SESSION_PERSISTENCE = '--no-session-persistence';
 
 /**
  * The flags that lock a headless run down to Stephen's tools. Checked against Claude Code 2.1.314 (`claude
@@ -92,34 +111,54 @@ export interface ClaudeSettings {
  *  - `--no-chrome`: no Claude in Chrome integration. `--strict-mcp-config` does NOT remove it: with the extension
  *    enabled, Claude Code 2.1.316 still gave the voice session 22 mcp__claude-in-chrome__* tools (denied by
  *    dontAsk, but listed — and ~45 % of every model request: 75 KB → 42 KB per turn without them).
- *  - `--no-session-persistence`: voice sessions are never resumed (see buildClaudeArgs), so they are not saved to disk.
+ * Plus `--no-session-persistence` (NO_SESSION_PERSISTENCE) when follow-ups are off (voice.followUpWindowSec 0):
+ * those sessions are never resumed, so they are not saved to disk. With follow-ups on it must be left out, because
+ * `--resume` needs the previous session saved.
  * `--mcp-config`, `--tools`, `--allowedTools` and `--disallowedTools` are variadic, so each is followed by another option,
  * and the prompt sits right after `-p`. The empty values are real empty-string argv elements (no shell).
  */
-export const LOCKDOWN_ARGS = ['--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', '', '--no-chrome', '--no-session-persistence'] as const;
+export const LOCKDOWN_ARGS = ['--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', '', '--no-chrome'] as const;
 
 /**
  * The full argv (after the executable) for one headless run. Pure; unit-tested.
  *
- * There is deliberately NO `--resume`: every voice command starts a fresh Claude session. Each `claude -p`
- * starts a new `stephen serve`, and the safety gate's memory (private-page reads that taint later sends,
- * first-destination approvals, the rate limit) lives in that server process. Resuming would keep Claude's
- * memory of earlier commands — private page text, injected instructions — while the gate forgot what it had
- * seen, so data read in one command could leave in the next with no prompt. Follow-ups come back in phase 3,
- * when one long-lived Agent SDK session talks to one long-lived Stephen server.
+ * INVARIANT: Claude's memory and the safety gate's memory live and die together.
+ *
+ * Each `claude -p` starts a NEW `stephen serve`, and the gate's memory — the private pages read (their taint makes
+ * later sends to other sites ask) and the hosts the user approved after that — lives in that server process.
+ * `--resume` keeps Claude's memory of earlier commands: private page text, and any instructions injected into it.
+ * Resuming while the new server forgot what the old one had seen let data read in command 1 leave in command 2
+ * with no prompt (docs/REVIEW-3.md finding 1). So:
+ *  - `--resume <id>` is passed only inside a conversation (src/voice/conversation.ts: a command within
+ *    voice.followUpWindowSec of the previous one's end, after a run that finished OK and was not stopped), and
+ *  - every server of that conversation is started with `serve --session-state <home>/voice/conversation-state.json`
+ *    (mcpConfig): it imports the previous servers' private reads and approvals, and writes each change to that file
+ *    BEFORE the page text or the approved action goes back to Claude (src/safety/session-state.ts).
+ *  - Whenever a conversation ends (window expired, error, cancel, Esc, "Stephen stop") the listener deletes the
+ *    state file AND forgets the session id before the next run, so a fresh Claude never meets old taint it can't
+ *    see, and a resumed Claude never meets a gate that forgot.
+ * With voice.followUpWindowSec 0 there is no `--resume`, no state file, and `--no-session-persistence` (as before).
+ * The rate limiter is per server process either way.
  */
-export function buildClaudeArgs(prompt: string, s: ClaudeSettings): string[] {
+export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptions = {}): string[] {
   if (!prompt.trim()) throw new Error('empty prompt');
   // The prompt goes right after -p, so it can never be read as an option or swallowed by a variadic flag.
   const safePrompt = prompt.startsWith('-') ? ` ${prompt}` : prompt;
+  if (run.resume !== undefined && run.resume !== null) {
+    if (!s.followUps) throw new Error('--resume needs follow-ups (voice.followUpWindowSec > 0)');
+    if (!SESSION_ID_RE.test(run.resume)) throw new Error('invalid session id');
+  }
+  const lockdown: string[] = [...LOCKDOWN_ARGS];
+  if (!s.followUps) lockdown.push(NO_SESSION_PERSISTENCE);
   const args = [
     '-p',
     safePrompt,
     '--output-format',
     'json',
+    ...(run.resume ? ['--resume', run.resume] : []),
     '--mcp-config',
     s.mcpConfigPath,
-    ...LOCKDOWN_ARGS.filter((a) => !s.unsupportedOptionalFlags?.has(a)),
+    ...lockdown.filter((a) => !s.unsupportedOptionalFlags?.has(a)),
     '--allowedTools',
     ALLOWED_TOOLS.join(','),
     '--disallowedTools',
@@ -141,11 +180,20 @@ export function stephenCliPath(): string {
   return resolve(pkgDir, '..', 'dist', 'cli.js');
 }
 
-/** The MCP config: exactly one server, Stephen, started with this Node binary. */
-export function mcpConfig(nodePath: string = process.execPath, cliPath: string = stephenCliPath()): { mcpServers: Record<string, { command: string; args: string[] }> } {
+/**
+ * The MCP config: exactly one server, Stephen, started with this Node binary. With follow-ups on, `sessionStatePath`
+ * (always <home>/voice/conversation-state.json — a constant the listener deletes when a conversation ends) makes
+ * every server of a conversation share the gate's memory (see buildClaudeArgs).
+ */
+export function mcpConfig(
+  nodePath: string = process.execPath,
+  cliPath: string = stephenCliPath(),
+  sessionStatePath: string | null = null,
+): { mcpServers: Record<string, { command: string; args: string[] }> } {
   // --confirm dialog: nobody watches a headless chat, so confirmations must be macOS dialogs (see cli.ts parseServeArgs).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
-  return { mcpServers: { [MCP_SERVER_NAME]: { command: nodePath, args: [cliPath, 'serve', '--confirm', 'dialog', '--voice'] } } };
+  const args = [cliPath, 'serve', '--confirm', 'dialog', '--voice', ...(sessionStatePath ? ['--session-state', sessionStatePath] : [])];
+  return { mcpServers: { [MCP_SERVER_NAME]: { command: nodePath, args } } };
 }
 
 export const MCP_CONFIG_FILE = 'mcp-config.json';
@@ -156,7 +204,7 @@ export const MCP_CONFIG_FILE = 'mcp-config.json';
  * rename() replaces a symlink at the destination instead of writing through it, so a planted link can't
  * redirect the write. A destination that is a directory is refused.
  */
-export async function writeMcpConfig(dir: string, nodePath?: string, cliPath?: string): Promise<string> {
+export async function writeMcpConfig(dir: string, nodePath?: string, cliPath?: string, sessionStatePath: string | null = null): Promise<string> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const st = await lstat(dir);
   if (!st.isDirectory()) throw new Error(`${dir} must be a real folder (not a file or a symlink)`);
@@ -168,7 +216,7 @@ export async function writeMcpConfig(dir: string, nodePath?: string, cliPath?: s
   const fh = await open(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
   try {
     try {
-      await fh.writeFile(JSON.stringify(mcpConfig(nodePath, cliPath), null, 2) + '\n');
+      await fh.writeFile(JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath), null, 2) + '\n');
       await fh.chmod(0o600); // exactly 0600, whatever the umask
       await fh.sync();
     } finally {
@@ -237,7 +285,7 @@ export function parseClaudeOutput(stdout: string, exitCode: number | null, stder
     const why = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? `exit code ${exitCode}`;
     return { kind: 'error', message: `Claude Code didn't return a result (${why.slice(0, 300)}).`, sessionId: null };
   }
-  const sessionId = typeof res.session_id === 'string' && /^[\w-]{1,128}$/.test(res.session_id) ? res.session_id : null;
+  const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
     const msg = ERROR_TEXT[res.subtype ?? ''] ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
@@ -310,9 +358,9 @@ export class ClaudeRunner {
   private killTimer: NodeJS.Timeout | null = null;
   constructor(private readonly o: RunnerOptions) {}
 
-  /** argv for the next run: always a fresh session (never `--resume`; see buildClaudeArgs). */
-  nextArgs(prompt: string): string[] {
-    return buildClaudeArgs(prompt, this.o);
+  /** argv for a run: fresh, or `--resume <id>` inside a follow-up conversation (see buildClaudeArgs). */
+  nextArgs(prompt: string, run: RunOptions = {}): string[] {
+    return buildClaudeArgs(prompt, this.o, run);
   }
 
   get running(): boolean {
@@ -323,9 +371,9 @@ export class ClaudeRunner {
     return this.child?.pid ?? null;
   }
 
-  async run(prompt: string): Promise<ClaudeOutcome> {
+  async run(prompt: string, run: RunOptions = {}): Promise<ClaudeOutcome> {
     if (this.child) throw new Error('a command is already running');
-    const args = this.nextArgs(prompt);
+    const args = this.nextArgs(prompt, run);
     this.cancelled = false;
     const spawnFn: SpawnFn = this.o.spawn ?? ((c, a, opts) => spawn(c, a as string[], opts));
     const now = this.o.now ?? Date.now;
@@ -409,7 +457,7 @@ export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 /** Lock-down flags without which Stephen refuses to run a voice command (they keep built-in tools and user settings out). */
 export const REQUIRED_CLAUDE_FLAGS = ['--strict-mcp-config', '--tools', '--permission-mode', '--setting-sources', '--allowedTools', '--disallowedTools', '--append-system-prompt', '--mcp-config', '--output-format'] as const; // --max-turns works but is not listed in --help, so it isn't probed
 /** Nice-to-have flags: dropped (with a note) if this `claude` doesn't know them. Older versions lack them. */
-export const OPTIONAL_CLAUDE_FLAGS = ['--no-chrome', '--no-session-persistence'] as const;
+export const OPTIONAL_CLAUDE_FLAGS = ['--no-chrome', NO_SESSION_PERSISTENCE] as const;
 
 export type ClaudeFlagProbe = { ok: true; unsupportedOptional: Set<string> } | { ok: false; missing: string[] };
 

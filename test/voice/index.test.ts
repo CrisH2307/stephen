@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { buildClaudeArgs } from '../../src/voice/claude.js';
 import { PTT_NEEDS_HELPER } from '../../src/voice/helper-link.js';
-import { FOLLOW_UP_IGNORED_NOTE, runListen, runVoiceSetup, type ListenEnv } from '../../src/voice/index.js';
+import { runListen, runVoiceSetup, type ListenEnv } from '../../src/voice/index.js';
 import { symlinkSync } from 'node:fs';
 import { ASR_ARCHIVES, KWS_MODEL, VAD_MODEL } from '../../src/voice/models.js';
 import { FakeHelper } from './fakes.js';
@@ -13,13 +13,13 @@ import { fakeClaudePath, fakeInstall, prepareKwsModel, readFakeLog, RecordingChi
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-listen-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function env(voice: Record<string, unknown> = {}, extra: Partial<ListenEnv> = {}) {
+function env(voice: Record<string, unknown> = {}, extra: Partial<ListenEnv> = {}, home = join(tmp, 'home')) {
   const out: string[] = [];
   const err: string[] = [];
   const speaker = new RecordingSpeaker();
   const chimes = new RecordingChimes();
   const e: ListenEnv = {
-    loadConfig: () => ({ home: join(tmp, 'home'), voice }),
+    loadConfig: () => ({ home, voice }),
     out: (l) => out.push(l),
     err: (l) => err.push(l),
     speaker,
@@ -38,24 +38,76 @@ describe('stephen listen --text', () => {
     const line = t.out.find((l) => l.startsWith('claude argv (dry run): '))!;
     const argv = JSON.parse(line.slice(line.indexOf('['))) as string[];
     const mcpPath = join(tmp, 'home', 'voice', 'mcp-config.json');
-    expect(argv).toEqual(['/usr/local/bin/claude', ...buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 8, model: 'sonnet', mcpConfigPath: mcpPath })]);
-    expect(JSON.parse(readFileSync(mcpPath, 'utf8'))).toEqual({ mcpServers: { stephen: { command: process.execPath, args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice'] } } });
+    expect(argv).toEqual(['/usr/local/bin/claude', ...buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 8, model: 'sonnet', mcpConfigPath: mcpPath, followUps: true })]);
+    expect(JSON.parse(readFileSync(mcpPath, 'utf8'))).toEqual({
+      mcpServers: {
+        stephen: {
+          command: process.execPath,
+          args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice', '--session-state', join(tmp, 'home', 'voice', 'conversation-state.json')],
+        },
+      },
+    });
     expect(t.out[0]).toMatch(/^MCP config \(.*mcp-config\.json\): \{"mcpServers":\{"stephen":/);
     expect(t.speaker.said).toEqual([]); // dry run never speaks
     expect(t.chimes.played).toEqual([]);
   });
 
-  it('voice.followUpWindowSec still loads but is reported as ignored; --text never resumes', async () => {
+  it('follow-ups (fake claude + --text): within the window the 2nd command resumes the 1st session; after it, fresh', async () => {
+    const home = join(tmp, 'home-followup');
     const log = join(tmp, 'followup.log');
-    const t = env({ claudePath: fakeClaudePath(), followUpWindowSec: 120 }, { env: { ...process.env, FAKE_CLAUDE_LOG: log } });
-    expect(await runListen(['--text', 'open youtube'], t.e)).toBe(0);
-    expect(await runListen(['--text', 'now search for lo-fi'], t.e)).toBe(0);
-    expect(t.err.filter((l) => l === FOLLOW_UP_IGNORED_NOTE)).toHaveLength(2);
-    expect(FOLLOW_UP_IGNORED_NOTE).toMatch(/ignored in phase 1/);
-    expect(readFakeLog(log).map((r) => r.argv.includes('--resume'))).toEqual([false, false]);
-    const quiet = env({ claudePath: fakeClaudePath() }, { env: { ...process.env, FAKE_CLAUDE_LOG: join(tmp, 'quiet.log') } });
-    await runListen(['--text', 'x'], quiet.e);
-    expect(quiet.err.filter((l) => /followUpWindowSec/.test(l))).toEqual([]);
+    let clock = 1_000_000;
+    const t = env({ claudePath: fakeClaudePath() }, { env: { ...process.env, FAKE_CLAUDE_LOG: log }, now: () => clock }, home);
+    const statePath = join(home, 'voice', 'conversation-state.json');
+    const resumeOf = (argv: string[]) => (argv.includes('--resume') ? argv[argv.indexOf('--resume') + 1] : null);
+
+    expect(await runListen(['--text', 'how long from my house to tmu station downtown'], t.e)).toBe(0);
+    clock += 179_000; // 179 s after the first command ended: still the same conversation (default window 180 s)
+    expect(await runListen(['--text', 'what about by car'], t.e)).toBe(0);
+    let runs = readFakeLog(log);
+    expect(resumeOf(runs[0]!.argv)).toBeNull();
+    expect(resumeOf(runs[1]!.argv)).toBe('sess-1'); // the session_id of the first (fake) result
+    expect(t.out).toContain('Working… (follow-up)');
+    for (const r of runs) expect(r.argv).not.toContain('--no-session-persistence');
+    const mcp = JSON.parse(readFileSync(join(home, 'voice', 'mcp-config.json'), 'utf8'));
+    expect(mcp.mcpServers.stephen.args.slice(-2)).toEqual(['--session-state', statePath]);
+
+    // A server of this conversation left gate state behind; once the window expires it must be gone.
+    writeFileSync(statePath, '{"version":1,"privateReads":[],"trustedHosts":[]}\n', { mode: 0o600 });
+    clock += 181_000; // past the window
+    expect(await runListen(['--text', 'and by bike'], t.e)).toBe(0);
+    runs = readFakeLog(log);
+    expect(resumeOf(runs[2]!.argv)).toBeNull();
+    expect(existsSync(statePath)).toBe(false);
+    expect(t.out.filter((l) => l === 'Working… (follow-up)')).toHaveLength(1);
+  });
+
+  it('follow-ups: an errored run ends the conversation; window 0 behaves exactly like before', async () => {
+    const home = join(tmp, 'home-followup-err');
+    const log = join(tmp, 'followup-err.log');
+    const statePath = join(home, 'voice', 'conversation-state.json');
+    const ok = env({ claudePath: fakeClaudePath() }, { env: { ...process.env, FAKE_CLAUDE_LOG: log } }, home);
+    const bad = env({ claudePath: fakeClaudePath() }, { env: { ...process.env, FAKE_CLAUDE_LOG: log, FAKE_CLAUDE_MODE: 'error' } }, home);
+    expect(await runListen(['--text', 'one'], ok.e)).toBe(0);
+    expect(await runListen(['--text', 'two'], bad.e)).toBe(1); // resumes sess-1, but errors
+    writeFileSync(statePath, '{}', { mode: 0o600 });
+    expect(await runListen(['--text', 'three'], ok.e)).toBe(0);
+    const runs = readFakeLog(log);
+    expect(runs.map((r) => r.argv.includes('--resume'))).toEqual([false, true, false]);
+    expect(existsSync(statePath)).toBe(false);
+
+    const zlog = join(tmp, 'followup-zero.log');
+    const zhome = join(tmp, 'home-followup-zero');
+    const zero = env({ claudePath: fakeClaudePath(), followUpWindowSec: 0 }, { env: { ...process.env, FAKE_CLAUDE_LOG: zlog } }, zhome);
+    expect(await runListen(['--text', 'open youtube'], zero.e)).toBe(0);
+    expect(await runListen(['--text', 'now search for lo-fi'], zero.e)).toBe(0);
+    const zmcp = join(zhome, 'voice', 'mcp-config.json');
+    expect(readFakeLog(zlog).map((r) => r.argv)).toEqual([
+      buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: zmcp }),
+      buildClaudeArgs('now search for lo-fi', { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: zmcp }),
+    ]);
+    expect(JSON.parse(readFileSync(zmcp, 'utf8')).mcpServers.stephen.args).toEqual(['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice']);
+    expect(zero.out).not.toContain('Working… (follow-up)');
+    expect(existsSync(join(zhome, 'voice', 'conversation.json'))).toBe(false);
   });
 
   it('--text runs (fake) Claude and speaks the cleaned-up reply', async () => {
@@ -64,6 +116,7 @@ describe('stephen listen --text', () => {
     expect(await runListen(['--text', 'open youtube'], t.e)).toBe(0);
     const runs = readFakeLog(log);
     expect(runs).toHaveLength(1);
+    expect(runs[0]!.argv).not.toContain('--resume'); // the first command of a conversation
     expect(runs[0]!.argv.slice(0, 2)).toEqual(['-p', 'open youtube']);
     expect(runs[0]!.cwd).toBe(join(tmp, 'home', 'voice', 'workdir'));
     expect(t.speaker.said).toEqual(['Done! I opened YouTube for "open youtube".']);
