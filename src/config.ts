@@ -27,6 +27,12 @@ export type HubConfig = ResolvedConfig & {
   desktop: Record<string, unknown>;
   /** Raw "voice" section of config.json ({} if absent); src/voice validates and applies defaults. */
   voice: Record<string, unknown>;
+  /** Raw "memory" section of config.json ({} if absent); src/memory/config.ts validates and applies defaults. */
+  memory: Record<string, unknown>;
+  /** Raw "history" section of config.json ({} if absent); src/history/config.ts validates and applies defaults. */
+  history?: Record<string, unknown>;
+  /** Raw "app" section of config.json ({} if absent); src/app/config.ts validates and applies defaults. */
+  app?: Record<string, unknown>;
 };
 
 type BaseUserConfig = {
@@ -126,6 +132,12 @@ const UserConfigSchema = z.strictObject({
   desktop: z.record(z.string(), z.unknown()).nullish(),
   /** "Hey Stephen" voice listener — validated by src/voice. */
   voice: z.record(z.string(), z.unknown()).nullish(),
+  /** Saved memories ("remember …") — validated by src/memory/config.ts. */
+  memory: z.record(z.string(), z.unknown()).nullish(),
+  /** Command history (retention): validated by src/history/config.ts. */
+  history: z.record(z.string(), z.unknown()).nullish(),
+  /** The Stephen window's socket (app.sock): validated by src/app/config.ts. */
+  app: z.record(z.string(), z.unknown()).nullish(),
 });
 
 type ParsedUserConfig = z.infer<typeof UserConfigSchema>;
@@ -313,6 +325,9 @@ export function loadConfig(overrides?: UserConfig, env: NodeJS.ProcessEnv = proc
     stateDir: hp(top.stateDir, join(home, 'state')),
     desktop: { ...((file as { desktop?: Record<string, unknown> | null }).desktop ?? {}), ...((over as { desktop?: Record<string, unknown> | null }).desktop ?? {}) },
     voice: { ...((file as { voice?: Record<string, unknown> | null }).voice ?? {}), ...((over as { voice?: Record<string, unknown> | null }).voice ?? {}) },
+    memory: { ...((file as { memory?: Record<string, unknown> | null }).memory ?? {}), ...((over as { memory?: Record<string, unknown> | null }).memory ?? {}) },
+    history: { ...(file.history ?? {}), ...(over.history ?? {}) },
+    app: { ...(file.app ?? {}), ...(over.app ?? {}) },
   };
 }
 

@@ -168,6 +168,7 @@ export function buildSelftestConfig(user: ResolvedConfig, browser: BrowserName, 
     // Desktop actions and the voice listener are not exercised by the browser selftest.
     desktop: {},
     voice: {},
+    memory: {},
   };
 }
 

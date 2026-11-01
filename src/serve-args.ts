@@ -12,23 +12,32 @@
  * (src/safety/session-state.ts). Only an absolute path directly inside `<stephen home>/voice/` is accepted
  * (checked with lstat/realpath; see checkSessionStatePath). The flag can only ADD remembered taint, never remove it.
  *
+ * `serve --tool-log <file>`: append `{tool,isError,ms}` for every tool call to <file> (never arguments or results), so
+ * the listener can show tool names in the history (src/server/tool-log.ts). Same path rule as --session-state, but
+ * a `.jsonl` file (see checkToolLogPath). It records only; it changes no tool's behaviour.
+ *
  * `serve --dry-run --record <file>`: `stephen eval` only. The same tools, but every call is appended to <file> and
  * answered with a fake result — nothing acts (src/eval/dry-server.ts). Both flags are required together, and no
  * other flag may be combined with them, so a dry-run server can never be mistaken for, or mixed into, a real one.
+ * `--fake-page <file>` (absolute path) only goes with --dry-run: the page-reading tools answer with that file's text
+ * (the prompt-injection eval cases).
  */
 import { isAbsolute } from 'node:path';
 import { checkSessionStatePath } from './safety/session-state.js';
+import { checkToolLogPath } from './server/tool-log.js';
 
 export interface ServeArgs {
   confirm?: 'dialog' | 'deny';
   voice?: true;
   sessionState?: string;
-  /** --dry-run --record <file>: absolute path of the call log. */
-  dryRun?: { record: string };
+  /** --tool-log <file>: absolute path directly inside <home>/voice/. */
+  toolLog?: string;
+  /** --dry-run --record <file>: absolute path of the call log; --fake-page <file>: what the pages "say". */
+  dryRun?: { record: string; fakePage?: string };
 }
 
 export interface ServeArgsContext {
-  /** Stephen's home (loadConfig().home); required for --session-state. */
+  /** Stephen's home (loadConfig().home); required for --session-state and --tool-log. */
   home?: string;
 }
 
@@ -36,6 +45,7 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
   const out: ServeArgs = {};
   let dry = false;
   let record: string | undefined;
+  let fakePage: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     const v = a === '--confirm' ? argv[++i] : a.startsWith('--confirm=') ? a.slice('--confirm='.length) : undefined;
@@ -52,6 +62,14 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
       const r = checkSessionStatePath(p, ctx.home);
       if ('error' in r) return r;
       out.sessionState = r.path;
+    } else if (a === '--tool-log' || a.startsWith('--tool-log=')) {
+      if (out.toolLog !== undefined) return { error: '--tool-log given twice' };
+      const p = a === '--tool-log' ? argv[++i] : a.slice('--tool-log='.length);
+      if (p === undefined) return { error: '--tool-log needs a file path' };
+      if (!ctx.home) return { error: "--tool-log: Stephen's home folder is unknown" };
+      const r = checkToolLogPath(p, ctx.home);
+      if ('error' in r) return r;
+      out.toolLog = r.path;
     } else if (a === '--dry-run') {
       if (dry) return { error: '--dry-run given twice' };
       dry = true;
@@ -60,12 +78,18 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
       const p = a === '--record' ? argv[++i] : a.slice('--record='.length);
       if (!p || !isAbsolute(p)) return { error: '--record needs an absolute file path' };
       record = p;
+    } else if (a === '--fake-page' || a.startsWith('--fake-page=')) {
+      if (fakePage !== undefined) return { error: '--fake-page given twice' };
+      const p = a === '--fake-page' ? argv[++i] : a.slice('--fake-page='.length);
+      if (!p || !isAbsolute(p)) return { error: '--fake-page needs an absolute file path' };
+      fakePage = p;
     } else return { error: `Unknown option "${a}" for serve.` };
   }
+  if (fakePage !== undefined && !dry) return { error: '--fake-page only goes with --dry-run' };
   if (dry || record !== undefined) {
     if (!dry || record === undefined) return { error: '--dry-run and --record <file> go together' };
-    if (out.confirm || out.voice || out.sessionState) return { error: '--dry-run cannot be combined with other serve options' };
-    out.dryRun = { record };
+    if (out.confirm || out.voice || out.sessionState || out.toolLog) return { error: '--dry-run cannot be combined with other serve options' };
+    out.dryRun = { record, ...(fakePage !== undefined ? { fakePage } : {}) };
   }
   return out;
 }

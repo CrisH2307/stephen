@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { withSessionState } from './safety/session-state.js';
 import { runListen, runVoiceSetup } from './voice/index.js';
@@ -61,6 +61,11 @@ Usage:
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
   stephen eval           score one-shot voice requests with a dry-run of Stephen's tools (--only routes, --jobs 2)
+  stephen memory list | add "<text>" | forget <id> | clear
+                         What you asked Stephen to remember ("remember …"); clear asks first
+  stephen history [--limit N] | clear
+                         Show your recent commands (kept on this Mac only), or delete them
+  stephen app            Open the Stephen window (chat, memory, history, settings, audit) in Stephen Helper
   stephen voice-setup    Download and check the local wake-word and speech models (once)
   stephen voice-setup --tts kokoro
                          Download the local Kokoro voice (~103 MB; used when ElevenLabs is unavailable)
@@ -91,10 +96,11 @@ async function serve(argv: string[] = []): Promise<void> {
   if ('error' in opts) throw new Error(opts.error);
   if (opts.dryRun) {
     // stephen eval: same tools, nothing acts (src/eval/dry-server.ts). No home dirs touched, no browser, no audit.
-    const { buildDryRunServer, fileRecorder } = await import('./eval/dry-server.js');
+    const { buildDryRunServer, fileRecorder, readFakePage } = await import('./eval/dry-server.js');
     const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
     const deps: ServerDepsWithVoice = { cfg, manager: createBrowserManager(cfg), engine: pageEngine, safetyFactory: createSafety, voice: {} };
-    const { server } = buildDryRunServer(deps, packageVersion(), fileRecorder(opts.dryRun.record));
+    const page = opts.dryRun.fakePage !== undefined ? readFakePage(opts.dryRun.fakePage) : undefined;
+    const { server } = buildDryRunServer(deps, packageVersion(), fileRecorder(opts.dryRun.record), page !== undefined ? { page } : {});
     const bye = () => process.exit(0);
     process.stdin.once('end', bye);
     process.stdin.once('close', bye);
@@ -114,7 +120,14 @@ async function serve(argv: string[] = []): Promise<void> {
   const manager = createBrowserManager(cfg);
   // --session-state: the gate's memory follows the voice conversation (imported now if present, saved on change).
   const safetyFactory = opts.sessionState ? withSessionState(createSafety, opts.sessionState) : createSafety;
-  const deps: ServerDepsWithVoice = { cfg, manager, engine: pageEngine, safetyFactory, ...(opts.voice ? { voice: {} } : {}) };
+  const deps: ServerDepsWithVoice = {
+    cfg,
+    manager,
+    engine: pageEngine,
+    safetyFactory,
+    ...(opts.voice ? { voice: {} } : {}),
+    ...(opts.toolLog ? { toolLog: opts.toolLog } : {}),
+  };
   await serveStdio(deps);
 }
 
@@ -428,6 +441,12 @@ async function main(argv: string[]): Promise<number> {
       return runListen(rest);
     case 'eval':
       return (await import('./eval/cli.js')).runEvalCli(rest);
+    case 'memory':
+      return (await import('./memory/cli.js')).runMemoryCli(rest);
+    case 'history':
+      return (await import('./history/cli.js')).runHistoryCli(rest);
+    case 'app':
+      return (await import('./app/cli.js')).runAppCli(rest);
     case 'voice-setup':
       return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : runVoiceSetup(rest);
     case 'voice-key':
