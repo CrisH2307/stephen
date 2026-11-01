@@ -12,7 +12,7 @@ all of it, without cutting you off and without asking back unless it really has 
 - **Done (step 1):** tracks A and B, plus `voice.aboutMe` and `open_url new_tab` (routes). See HANDOVER.md.
 - **Done (step 2):** track D (`stephen eval`, dry-run server, 39 cases) and track C (`volume`, `media_control`).
 - **Eval round 1:** 37/39 on the Mac; both misses were can't-yet cases (slow browsing). Fixed → 40/40 (HANDOVER 21:45, 23:30).
-- **Next:** owner re-runs `stephen eval --only cant` → Mac checks (volume, Automation prompt, pause timing) → memory/dashboard design → phase 2a.
+- **Next:** Mac checks (volume, Automation prompt, pause timing) → owner answers PLAN-1.9 §12 → build 1.9 (docs/PLAN-1.9-MEMORY-DASHBOARD.md) or phase 2a first.
 
 ## Why one-shot fails today (found in the code)
 
@@ -69,7 +69,7 @@ Order: D first (baseline numbers) → A + B in parallel → re-run D → C → i
 
 ## After 1.8: memory + chat dashboard (design only for now)
 
-**Memory (phase 3, with the long-lived Agent SDK session):**
+**Memory (designed: docs/PLAN-1.9-MEMORY-DASHBOARD.md):**
 1. *History:* every command (what you said, reply, tools used, time) saved locally in `~/.stephen/history/`
    (0600, auto-deleted after N days, `stephen history clear`).
 2. *Facts about you:* "Stephen, remember my prof is Dr. X" → saved to `~/.stephen/memory.json`, shown to Claude in

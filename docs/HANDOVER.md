@@ -163,3 +163,11 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   calendar, chats"); test in cant-yet.test.ts. Then `--only cant` 4/4 twice, and the **full eval 40/40**. Synced to the
   Mac (owner had committed 1.8 as desktop/evel/test; this fix is uncommitted). Design note: reading those accounts
   stays can't-yet on purpose until phase 2a (APIs/connectors + `--assume-private-read`), not by screen-reading.
+- 2026-11-01 09:30 — Owner: `eval --only cant` 4/4 on the Mac; committed as `eval` (3d00bed). Jev key replaced and
+  working (sized this task "large → opus"). Task 3 done as **design only**: docs/PLAN-1.9-MEMORY-DASHBOARD.md (memory
+  only from the owner's own "remember …", routed by deterministic code before Claude, no memory tool, import-boundary
+  tests; history 0600 + retention; `stephen dashboard` on 127.0.0.1 with fragment token, Host/Origin checks, strict CSP,
+  loopback blocked in `serve --voice`; 16 subtasks; 4 open questions with defaults). Verified in `claude --help` 2.1.316:
+  `--system-prompt-snapshot` defaults on (so a memory change must end the conversation) and
+  `--append-system-prompt-file` exists but only in the `--bare` help line (needs a real probe). Still pending from the
+  owner: task 2 Mac checks (volume, Spotify/Music Automation prompt, pause timing) and answers to PLAN-1.9 §12.
