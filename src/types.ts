@@ -104,6 +104,8 @@ export interface TabInfo {
   url: string;
   /** True for the tab Stephen considers current for that browser (last opened/focused/used). */
   current: boolean;
+  /** Recency of use (higher = more recently current); absent for tabs Stephen has not used yet. */
+  lastUsed?: number;
 }
 
 /** Owns drivers + tab registry. Implementation: src/drivers/manager.ts (BrowserManager). */

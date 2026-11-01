@@ -2,6 +2,7 @@
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
 // Commands: serve (default) | doctor | selftest | install [--run] | listen | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
+import { withSessionState } from './safety/session-state.js';
 import { runListen, runVoiceSetup } from './voice/index.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
@@ -85,7 +86,7 @@ async function serve(argv: string[] = []): Promise<void> {
   console.info = console.error.bind(console);
   console.debug = console.error.bind(console);
   const cfg = loadConfig();
-  const opts = parseServeArgs(argv);
+  const opts = parseServeArgs(argv, { home: cfg.home });
   if ('error' in opts) throw new Error(opts.error);
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
   if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
@@ -96,7 +97,9 @@ async function serve(argv: string[] = []): Promise<void> {
     console.error(`[stephen] could not secure ${cfg.home}: ${errorMessage(e)}`);
   }
   const manager = createBrowserManager(cfg);
-  const deps: ServerDepsWithVoice = { cfg, manager, engine: pageEngine, safetyFactory: createSafety, ...(opts.voice ? { voice: {} } : {}) };
+  // --session-state: the gate's memory follows the voice conversation (imported now if present, saved on change).
+  const safetyFactory = opts.sessionState ? withSessionState(createSafety, opts.sessionState) : createSafety;
+  const deps: ServerDepsWithVoice = { cfg, manager, engine: pageEngine, safetyFactory, ...(opts.voice ? { voice: {} } : {}) };
   await serveStdio(deps);
 }
 

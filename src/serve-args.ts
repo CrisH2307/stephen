@@ -6,13 +6,26 @@
  *
  * `serve --voice`: the voice listener's server — also registers the `announce` tool (speak a short line before
  * playing sound). It takes no value and grants nothing beyond that tool.
+ *
+ * `serve --session-state <file>`: the voice listener's follow-up conversations. The gate's private reads and
+ * approved hosts are loaded from and saved to this file, so they last exactly as long as Claude's conversation
+ * (src/safety/session-state.ts). Only an absolute path directly inside `<stephen home>/voice/` is accepted
+ * (checked with lstat/realpath; see checkSessionStatePath). The flag can only ADD remembered taint, never remove it.
  */
+import { checkSessionStatePath } from './safety/session-state.js';
+
 export interface ServeArgs {
   confirm?: 'dialog' | 'deny';
   voice?: true;
+  sessionState?: string;
 }
 
-export function parseServeArgs(argv: string[]): ServeArgs | { error: string } {
+export interface ServeArgsContext {
+  /** Stephen's home (loadConfig().home); required for --session-state. */
+  home?: string;
+}
+
+export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): ServeArgs | { error: string } {
   const out: ServeArgs = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -22,7 +35,15 @@ export function parseServeArgs(argv: string[]): ServeArgs | { error: string } {
       out.confirm = v;
     } else if (a === '--voice') out.voice = true;
     else if (a.startsWith('--voice=')) return { error: '--voice takes no value' };
-    else return { error: `Unknown option "${a}" for serve.` };
+    else if (a === '--session-state' || a.startsWith('--session-state=')) {
+      if (out.sessionState !== undefined) return { error: '--session-state given twice' };
+      const p = a === '--session-state' ? argv[++i] : a.slice('--session-state='.length);
+      if (p === undefined) return { error: '--session-state needs a file path' };
+      if (!ctx.home) return { error: "--session-state: Stephen's home folder is unknown" };
+      const r = checkSessionStatePath(p, ctx.home);
+      if ('error' in r) return r;
+      out.sessionState = r.path;
+    } else return { error: `Unknown option "${a}" for serve.` };
   }
   return out;
 }
