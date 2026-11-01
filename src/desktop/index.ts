@@ -33,11 +33,12 @@ import { readBundleId, resolveApp } from './resolve.js';
 import { BIN, defaultDesktopDeps, execErrorText, queryStatus, verifyCodeSignature, type DesktopDeps, type DesktopStatus } from './system.js';
 import { parseOpenUrl, redirectSignals, UrlDenied, type ParsedOpenUrl, type RedirectSignal } from './url.js';
 import { MediaPlayer } from './play.js';
+import { controlPlayer, MEDIA_ACTIONS, pickPlayer, PLAYERS, playersStatus, setVolume, VOLUME_ACTIONS, type MediaAction, type Player, type VolumeAction } from './sound.js';
 
 export { parseDesktopConfig, type DesktopConfig } from './config.js';
 export type { DesktopDeps, DesktopFs, ExecFileFn, ExecResult } from './system.js';
 
-export const DESKTOP_TOOLS = ['open_app', 'open_url', 'play_media', 'desktop_status'] as const;
+export const DESKTOP_TOOLS = ['open_app', 'open_url', 'play_media', 'media_control', 'volume', 'desktop_status'] as const;
 
 /**
  * How openParsed opened a page: a tab in the attached browser (`how`: a new one, or an existing one reused —
@@ -147,6 +148,34 @@ export function registerDesktopTools(mcp: McpServer, hub: Hub, names: string[], 
     },
     ACT,
     async ({ query, service, browser, intent }) => player.play(query, service ?? 'youtube', browser, intent),
+  );
+
+  tool(
+    'media_control',
+    'Play, pause or skip music',
+    'Play / pause / toggle / next / previous for Spotify or Apple Music when that app is already running (it never opens one). ' +
+      'Without `player` it controls the one that is playing (for "pause", only a playing one). ' +
+      'For a YouTube video Stephen opened in the browser, use the browser tools instead: tabs_list, then press_key "k" (play/pause) or "Shift+N" (next) on that tab. Refused while the Mac is locked.',
+    {
+      action: z.enum(MEDIA_ACTIONS).describe('play, pause, toggle (play/pause), next or previous.'),
+      player: z.enum(PLAYERS).optional().describe('"Spotify" or "Music" (Apple Music). Leave out to use the one that is playing.'),
+      intent: intentArg,
+    },
+    ACT,
+    async ({ action, player, intent }) => desktop.mediaControl(action, player, intent),
+  );
+
+  tool(
+    'volume',
+    'Change the volume',
+    "Changes the Mac's output volume: set to a level (0–100), up or down by a step (default 10), mute or unmute. Refused while the Mac is locked.",
+    {
+      action: z.enum(VOLUME_ACTIONS).describe('set, up, down, mute or unmute.'),
+      level: z.number().int().min(0).max(100).optional().describe('For set: the level 0–100 (required). For up/down: the step (default 10).'),
+      intent: intentArg,
+    },
+    ACT,
+    async ({ action, level, intent }) => desktop.volume(action, level, intent),
   );
 
   tool(
@@ -303,6 +332,67 @@ export class Desktop {
     await this.audit({ tool, args: { ...args, rule: v.rule, wasRunning }, risk: 'low', verdict: v.verdict, confirmation, outcome: 'ok', intent: why });
     const asked = confirmation === 'approved' ? ' (the user approved it)' : '';
     return okResult(wasRunning ? `${id} was already running — brought it to the front${asked}.${named}` : `Opened ${id}${asked}.${named}`);
+  }
+
+  // ───────────────────────────── volume / media_control ─────────────────────────────
+
+  /** Rate limit (shared with every other action) and the gate's decision entry, for controls with no URL or app. */
+  private async rateLimited(tool: string, intent: string, args: Record<string, unknown>): Promise<void> {
+    const g = await this.hub.safety().gate.check(this.rateRequest(tool, intent));
+    if (!g.allowed) {
+      await this.audit({ tool, args, verdict: 'deny', outcome: 'denied', error: g.decision.reason, intent: clean(intent, 200) });
+      throw new NoticeError(`Not done: ${g.decision.reason}`);
+    }
+  }
+
+  async volume(action: VolumeAction, level: number | undefined, intent: string): Promise<CallToolResult> {
+    this.requireMac();
+    const tool = 'volume';
+    const args: Record<string, unknown> = { action, ...(level !== undefined ? { level } : {}) };
+    if (action === 'set' && level === undefined) throw new NoticeError('volume set needs a level from 0 to 100 (for example 30). Nothing was changed.');
+    await this.assertUnlocked(tool, intent, args);
+    await this.rateLimited(tool, intent, args);
+    try {
+      const st = await setVolume(this.deps, action, level);
+      await this.audit({ tool, args: { ...args, result: st }, outcome: 'ok', intent: clean(intent, 200) });
+      const now = st.muted ? 'muted' : st.volume !== null ? `at ${st.volume}%` : 'changed';
+      return okResult(`Volume is now ${now}.`);
+    } catch (e) {
+      const msg = execErrorText(e) || errorMessage(e);
+      await this.audit({ tool, args, outcome: 'error', error: msg, intent: clean(intent, 200) });
+      throw new NoticeError(`Couldn't change the volume (${clean(msg, 200)}).`);
+    }
+  }
+
+  async mediaControl(action: MediaAction, player: Player | undefined, intent: string): Promise<CallToolResult> {
+    this.requireMac();
+    const tool = 'media_control';
+    const args: Record<string, unknown> = { action, ...(player ? { player } : {}) };
+    await this.assertUnlocked(tool, intent, args);
+    const st = await playersStatus(this.deps);
+    const target = pickPlayer(st, action, player);
+    if (!target) {
+      await this.audit({ tool, args: { ...args, players: st }, outcome: 'error', error: 'no player to control', intent: clean(intent, 200) });
+      const which = player ? `${player} isn't running` : action === 'pause' ? 'nothing is playing in Spotify or Music' : "Spotify and Music aren't running";
+      return okResult(
+        `Nothing done: ${which}. If a YouTube video is playing in the browser, use tabs_list and then press_key "k" (play/pause) or "Shift+N" (next) on that tab. ` +
+          'To start new music, use play_media.',
+      );
+    }
+    await this.rateLimited(tool, intent, { ...args, player: target });
+    try {
+      const state = await controlPlayer(this.deps, action, target);
+      await this.audit({ tool, args: { ...args, player: target, state }, outcome: 'ok', intent: clean(intent, 200) });
+      const label = target === 'Music' ? 'Apple Music' : 'Spotify';
+      return okResult(`${label}: ${action === 'toggle' ? 'play/pause' : action} done${state !== 'unknown' ? ` (now ${state})` : ''}.`);
+    } catch (e) {
+      const msg = execErrorText(e) || errorMessage(e);
+      await this.audit({ tool, args: { ...args, player: target }, outcome: 'error', error: msg, intent: clean(intent, 200) });
+      const perm = /not authori[sz]ed|-1743|not allowed/i.test(msg)
+        ? ' macOS has not allowed Stephen to control it: System Settings → Privacy & Security → Automation.'
+        : '';
+      throw new NoticeError(`Couldn't control ${target} (${clean(msg, 200)}).${perm}`);
+    }
   }
 
   // ───────────────────────────── open_url ─────────────────────────────
