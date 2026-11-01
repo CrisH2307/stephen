@@ -18,6 +18,7 @@ import type {
 } from '../types.js';
 import { countsTowardRateLimit, isSecretField } from './classify.js';
 import { buildPrompt, describeAction, type PromptContext, redactValue } from './confirm.js';
+import { normalizeHost } from './domains.js';
 import { describeSources, taintScope } from './egress.js';
 import {
   compileLists,
@@ -38,6 +39,62 @@ import { clean, digest, redactUrl } from './text.js';
 export const MAX_PRIVATE_SCOPES = 256;
 /** Hosts the user approved for interaction after a private read; the oldest approval is dropped beyond this (it asks again). */
 export const MAX_TRUSTED_HOSTS = 256;
+
+/**
+ * The part of the gate's memory that must live exactly as long as Claude's memory of the conversation
+ * (`serve --session-state`, see src/safety/session-state.ts): the private reads (cross-site taint) and the hosts
+ * the user approved after them. Both lists are oldest first. The rate limiter is NOT part of it.
+ */
+export interface GateState {
+  version: 1;
+  privateReads: PrivateRead[];
+  trustedHosts: string[];
+}
+
+export const GATE_STATE_VERSION = 1;
+/** Imported timestamps may be at most this far in the future (clock adjustments), never more. */
+export const GATE_STATE_MAX_SKEW_MS = 5 * 60_000;
+/** A canonical host name, exactly as the policy stores it (lower case, WHATWG-normalized, no port). */
+const isHost = (h: unknown): h is string => typeof h === 'string' && h.length > 0 && h.length <= 255 && normalizeHost(h) === h;
+const MAX_SCOPE_LEN = 2048;
+
+/**
+ * Check an imported gate state: exact shape (no unknown keys), the caps, hosts that look like hosts, scopes that
+ * belong to their host, unique entries and sane timestamps (positive, not in the future). Pure.
+ */
+export function validateGateState(raw: unknown, now: number): GateState | { error: string } {
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!isObj(raw)) return { error: 'not an object' };
+  const keys = Object.keys(raw).sort().join(',');
+  if (keys !== 'privateReads,trustedHosts,version') return { error: `unexpected keys (${keys.slice(0, 100)})` };
+  if (raw.version !== GATE_STATE_VERSION) return { error: 'unknown version' };
+  const reads = raw.privateReads;
+  const hosts = raw.trustedHosts;
+  if (!Array.isArray(reads) || !Array.isArray(hosts)) return { error: 'privateReads and trustedHosts must be lists' };
+  if (reads.length > MAX_PRIVATE_SCOPES) return { error: `more than ${MAX_PRIVATE_SCOPES} private reads` };
+  if (hosts.length > MAX_TRUSTED_HOSTS) return { error: `more than ${MAX_TRUSTED_HOSTS} trusted hosts` };
+  const out: GateState = { version: 1, privateReads: [], trustedHosts: [] };
+  const scopes = new Set<string>();
+  for (const r of reads) {
+    if (!isObj(r) || Object.keys(r).sort().join(',') !== 'at,host,scope') return { error: 'a private read has the wrong shape' };
+    const { host, scope, at } = r;
+    if (!isHost(host)) return { error: 'a private read has a bad host' };
+    if (typeof scope !== 'string' || scope.length > MAX_SCOPE_LEN || /[\s\u0000-\u001f\u007f]/.test(scope)) return { error: 'a private read has a bad scope' };
+    if (scope !== host && !scope.startsWith(`${host}/`)) return { error: 'a private read scope does not belong to its host' };
+    if (typeof at !== 'number' || !Number.isSafeInteger(at) || at <= 0 || at > now + GATE_STATE_MAX_SKEW_MS) return { error: 'a private read has a bad timestamp' };
+    if (scopes.has(scope)) return { error: 'duplicate private read scope' };
+    scopes.add(scope);
+    out.privateReads.push({ host, scope, at });
+  }
+  const seen = new Set<string>();
+  for (const h of hosts) {
+    if (!isHost(h)) return { error: 'a trusted host is not a host name' };
+    if (seen.has(h)) return { error: 'duplicate trusted host' };
+    seen.add(h);
+    out.trustedHosts.push(h);
+  }
+  return out;
+}
 
 export interface SafetyGateOptions {
   safety: ResolvedConfig['safety'];
@@ -84,6 +141,8 @@ export class SafetyGate implements ISafetyGate {
   private mutationTimes: number[] = [];
   private readonly privateReads = new Map<string, PrivateRead>();
   private readonly trustedHosts = new Set<string>();
+  /** Called synchronously after the private reads or trusted hosts changed (session-state persistence). */
+  private stateListener: ((state: GateState) => void) | null = null;
 
   constructor(opts: SafetyGateOptions) {
     this.safety = opts.safety;
@@ -141,6 +200,7 @@ export class SafetyGate implements ISafetyGate {
   noteRead(url: string): void {
     const r = privateReadOf(url, this.lists, this.now());
     if (!r) return;
+    const known = this.privateReads.has(r.scope);
     this.privateReads.delete(r.scope); // re-insert so Map order = least recently read first
     this.privateReads.set(r.scope, r);
     while (this.privateReads.size > MAX_PRIVATE_SCOPES) {
@@ -148,6 +208,48 @@ export class SafetyGate implements ISafetyGate {
       if (oldest === undefined) break;
       this.privateReads.delete(oldest);
     }
+    // A new scope must be on disk BEFORE the caller hands the page text to the model (the listener throws if it
+    // can't be). A re-read of a known scope changes nothing the policy looks at, so it isn't written again.
+    if (!known) this.stateChanged();
+  }
+
+  /** The private reads and trusted hosts, oldest first (see GateState). */
+  exportState(): GateState {
+    return {
+      version: 1,
+      privateReads: [...this.privateReads.values()].map((r) => ({ host: r.host, scope: r.scope, at: r.at })),
+      trustedHosts: [...this.trustedHosts],
+    };
+  }
+
+  /**
+   * Add a saved state (validated with validateGateState; nothing changes when it is invalid). Imported entries
+   * count as older than this gate's own; the caps still apply. Never removes taint or approvals already held.
+   */
+  importState(raw: unknown): { ok: true } | { ok: false; error: string } {
+    const v = validateGateState(raw, this.now());
+    if ('error' in v) return { ok: false, error: v.error };
+    const ownReads = [...this.privateReads.values()];
+    const ownHosts = [...this.trustedHosts];
+    this.privateReads.clear();
+    this.trustedHosts.clear();
+    for (const r of [...v.privateReads.filter((x) => !ownReads.some((o) => o.scope === x.scope)), ...ownReads]) this.privateReads.set(r.scope, r);
+    for (const h of [...v.trustedHosts.filter((x) => !ownHosts.includes(x)), ...ownHosts]) this.trustedHosts.add(h);
+    while (this.privateReads.size > MAX_PRIVATE_SCOPES) this.privateReads.delete(this.privateReads.keys().next().value!);
+    while (this.trustedHosts.size > MAX_TRUSTED_HOSTS) this.trustedHosts.delete(this.trustedHosts.values().next().value!);
+    return { ok: true };
+  }
+
+  /**
+   * Called synchronously with the new state after every change to the private reads or trusted hosts. If it
+   * throws, the error propagates out of noteRead / check (fail closed: the read or action does not complete).
+   */
+  onStateChange(fn: ((state: GateState) => void) | null): void {
+    this.stateListener = fn;
+  }
+
+  private stateChanged(): void {
+    this.stateListener?.(this.exportState());
   }
 
   /** Hosts whose private content was read this session (for status/debugging). */
@@ -208,6 +310,7 @@ export class SafetyGate implements ISafetyGate {
         if (oldest === undefined) break;
         this.trustedHosts.delete(oldest);
       }
+      this.stateChanged();
     }
     if (allowed && countsTowardRateLimit(req.kind)) this.mutationTimes.push(this.now());
     if (allowed && req.kind === 'read') this.noteRead(req.pageUrl);

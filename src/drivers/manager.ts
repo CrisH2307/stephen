@@ -33,6 +33,8 @@ interface TabRegistry {
   byId: Map<TabId, Page>;
   byPage: Map<Page, TabId>;
   current: TabId | null;
+  /** When each tab was last current (a counter, higher = more recent): tab reuse prefers the most recent. */
+  used: Map<TabId, number>;
   /** Tabs Stephen opened itself (openTab). Every other tab is the user's (review #2 finding 11). */
   opened: Set<TabId>;
   /** The Browser instance the registered pages belong to. */
@@ -47,6 +49,7 @@ export class BrowserManager implements IBrowserManager {
   readonly #inflight = new Map<BrowserName, { mode: ProfileMode; promise: Promise<Browser> }>();
   readonly #pagesTimeoutMs: number;
   readonly #closeWaitMs: number;
+  #useSeq = 0;
 
   constructor(cfg: ResolvedConfig, drivers: Record<BrowserName, BrowserDriver>, opts: BrowserManagerOptions = {}) {
     this.#cfg = cfg;
@@ -58,6 +61,7 @@ export class BrowserManager implements IBrowserManager {
       byId: new Map(),
       byPage: new Map(),
       current: null,
+      used: new Map(),
       opened: new Set(),
       browser: null,
       unhook: null,
@@ -119,7 +123,8 @@ export class BrowserManager implements IBrowserManager {
       const titles = await mapLimit(pages, TITLE_CONCURRENCY, (p) => titleOf(p));
       pages.forEach((p, i) => {
         const id = ids[i]!;
-        out.push({ id, browser: name, title: titles[i] ?? '', url: p.url(), current: reg.current === id });
+        const lastUsed = reg.used.get(id);
+        out.push({ id, browser: name, title: titles[i] ?? '', url: p.url(), current: reg.current === id, ...(lastUsed !== undefined ? { lastUsed } : {}) });
       });
     }
     return out;
@@ -129,7 +134,7 @@ export class BrowserManager implements IBrowserManager {
     const b = this.#sync(browser) ?? (await this.connect(browser));
     const page = await b.newPage();
     const id = this.#register(browser, page);
-    this.#tabs[browser].current = id;
+    this.#setCurrent(browser, id);
     this.#tabs[browser].opened.add(id);
     return { id, page };
   }
@@ -152,14 +157,14 @@ export class BrowserManager implements IBrowserManager {
       if (page) this.#unregister(name, tab);
       throw new HubError('TAB_NOT_FOUND', `Tab ${tab} is closed or unknown. Use tabs_list.`);
     }
-    reg.current = tab;
+    this.#setCurrent(name, tab);
     return page;
   }
 
   async focusTab(tab: TabId): Promise<void> {
     const page = await this.getPage(tab);
     await page.bringToFront();
-    this.#tabs[browserOfTab(tab)].current = tab;
+    this.#setCurrent(browserOfTab(tab), tab);
   }
 
   /**
@@ -213,6 +218,12 @@ export class BrowserManager implements IBrowserManager {
 
   // ───────────── registry internals ─────────────
 
+  #setCurrent(name: BrowserName, tab: TabId): void {
+    const reg = this.#tabs[name];
+    reg.current = tab;
+    reg.used.set(tab, ++this.#useSeq);
+  }
+
   /** Align the registry with the driver's live Browser; returns it (or null if not connected). */
   #sync(name: BrowserName): Browser | null {
     const b = this.#drivers[name].current();
@@ -259,6 +270,7 @@ export class BrowserManager implements IBrowserManager {
     reg.browser = null;
     reg.byId.clear();
     reg.byPage.clear();
+    reg.used.clear();
     reg.opened.clear();
     reg.current = null;
   }
@@ -282,6 +294,7 @@ export class BrowserManager implements IBrowserManager {
     const page = reg.byId.get(id);
     reg.byId.delete(id);
     if (page) reg.byPage.delete(page);
+    reg.used.delete(id);
     reg.opened.delete(id);
     if (reg.current === id) reg.current = null;
   }
