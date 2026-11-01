@@ -139,3 +139,12 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   test/voice/oneshot.test.ts (+ reuse.test.ts new_tab). Owner to do: add `voice.aboutMe` to ~/.browser-hub/config.json,
   `npm run build`, try "routes from my home to two stations". Not yet: the eval harness (`stephen eval`, plan track D),
   media/volume tools (track C), anything that writes (Docs, Discord) — phase 2b+.
+- 2026-10-31 21:30 — Phase 1.8 step 2 (owner: "separate mini subtasks"). D1 `serve --dry-run --record <abs file>`
+  (src/eval/dry-server.ts: the real registerTools through a shim that drops every real handler; calls appended as
+  JSONL, neutral fake results; flag pair can't be combined with any other serve flag). D2 `src/eval/cases.ts`
+  (39 cases: single, misheard, multi, routes, vague, cant-yet, careful, media; EVAL_ABOUT_ME) + `score.ts`.
+  D3 `stephen eval [--only x] [--jobs N] [--model m] [--timeout s]` (src/eval/run.ts, cli.ts): real `claude -p`
+  argv/persona, dry-run tools, report in <home>/eval/<stamp>/report.json; tested with test/eval/fake-claude-eval.mjs
+  which really starts the dry-run server. C `volume` + `media_control` (src/desktop/sound.ts; fixed JXA, argv only;
+  Spotify/Music only if running; YouTube → browser tools). Mac-only: JXA setVolume, Automation prompt. Owner next:
+  `npm run build && node dist/cli.js eval` and send the summary; then try "turn it down and play the next song".

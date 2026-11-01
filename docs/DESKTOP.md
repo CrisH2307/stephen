@@ -177,6 +177,23 @@ play_media needs no browser connection for the lookup, and one model turn.
 Not verifiable here (the cloud box can't reach YouTube): the real `ytInitialData` shape today (tests use
 synthetic fixtures built from it), the consent redirect in the EU, and YouTube's player button labels.
 
+### `volume {action, level?, intent}` and `media_control {action, player?, intent}` (1.8)
+
+For one-shot requests like "turn it down and play the next song" (`src/desktop/sound.ts`).
+
+- `volume`: `set` (level 0–100, required), `up` / `down` (step, default 10), `mute`, `unmute`. Standard Additions
+  `setVolume`; no app is touched.
+- `media_control`: `play`, `pause`, `toggle`, `next`, `previous` for **Spotify** or **Apple Music** — only if that
+  app is already running (never launched). Without `player`: the one that is playing; `pause` never picks a paused
+  one. Nothing to control → it says so and points the model to the browser tools for a YouTube tab
+  (`tabs_list` → `press_key k` / `Shift+N`), so pages are still only reached through the browser gate.
+- Both run fixed JXA scripts (`osascript -l JavaScript -e <script> <argv…>`): the validated action/number/player
+  reach the script as `run(argv)` strings, never as script text. Refused while the Mac is locked, counted by the
+  shared rate limit, audited (with the resulting volume / player state).
+- **Mac-only checks pending:** the JXA `setVolume(null, {outputVolume, outputMuted})` call, and the Automation
+  prompt the first time Stephen controls Spotify / Music ("osascript wants to control Spotify" — allow it; if
+  denied, System Settings → Privacy & Security → Automation).
+
 ### `desktop_status {}` (read-only)
 
 Reports:

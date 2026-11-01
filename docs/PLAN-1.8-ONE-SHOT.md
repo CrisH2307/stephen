@@ -10,7 +10,8 @@ all of it, without cutting you off and without asking back unless it really has 
   and asked back); "check my Canvas assignments and materials, recommend what to do, write a summary in a Google
   Doc and message my friend on Discord" (needs phase 2a read + 2b careful writes — not one-shot-fixable yet).
 - **Done (step 1):** tracks A and B, plus `voice.aboutMe` and `open_url new_tab` (routes). See HANDOVER.md.
-- **Next:** track D (eval) → track C (media/volume) → memory/dashboard design → phase 2a.
+- **Done (step 2):** track D (`stephen eval`, dry-run server, 39 cases) and track C (`volume`, `media_control`).
+- **Next:** owner runs `stephen eval` on the Mac (baseline score) → fix what fails → memory/dashboard design → phase 2a.
 
 ## Why one-shot fails today (found in the code)
 

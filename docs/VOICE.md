@@ -226,6 +226,25 @@ Say the whole request once; Stephen should do all of it. Plan and reasons: docs/
   (`https://www.google.com/maps/dir/?api=1&origin=…&destination=…&travelmode=transit`); several routes in one
   request open in separate tabs (`open_url new_tab: true`); vague places ("two stations") are a best guess.
 
+- **Media and volume.** "pause", "next song", "turn it up/down", "mute" → `media_control` / `volume`
+  (docs/DESKTOP.md).
+
+### Measuring it: `stephen eval`
+
+```
+node dist/cli.js eval                 # all cases (~40, 2 at a time; a few minutes)
+node dist/cli.js eval --only routes   # just one category or case id
+```
+
+Runs each request in `src/eval/cases.ts` through the real `claude -p` with Stephen's exact voice lock-down and
+persona (with a made-up "about me": 100 Simcoe St N, Oshawa), but Stephen's tools are served by
+`serve --dry-run --record` (`src/eval/dry-server.ts`): same tool names and schemas, every call recorded, a neutral
+fake result back — **nothing opens, plays or changes on the Mac**. Each case is scored (`src/eval/score.ts`: the
+right tool calls in order, no asking back when a guess is fine, no typing into pages for things Stephen can't do
+yet), a ✓/✗ line is printed per case (failures show what it did and said), and the report is saved to
+`<home>/eval/<time>/report.json`. Each case is one Claude run on your plan. Add your own real requests to
+`EVAL_CASES` and re-run after every change to compare.
+
 ### About me (`voice.aboutMe`)
 
 So "routes from my home to …" doesn't need a follow-up question. In `~/.stephen/config.json` (or the legacy
