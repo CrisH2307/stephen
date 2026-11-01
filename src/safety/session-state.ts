@@ -56,13 +56,25 @@ const myUid = (): number | null => (typeof process.getuid === 'function' ? proce
  * `<real home>/voice`; an existing file there must be a regular file, not a symlink. Returns the path or an error.
  */
 export function checkSessionStatePath(p: string, home: string): { path: string } | { error: string } {
-  const bad = (why: string) => ({ error: `--session-state ${why}` });
+  return checkVoiceFilePath(p, home, { flag: '--session-state', name: NAME_RE, nameHint: 'a .json file' });
+}
+
+/**
+ * The rules of checkSessionStatePath for any serve flag that names a private file in `<home>/voice/`
+ * (`--session-state`, `--tool-log`). `name` is the allowed file-name pattern; errors start with `flag`.
+ */
+export function checkVoiceFilePath(
+  p: string,
+  home: string,
+  opts: { flag: string; name: RegExp; nameHint: string },
+): { path: string } | { error: string } {
+  const bad = (why: string) => ({ error: `${opts.flag} ${why}` });
   if (typeof p !== 'string' || p === '' || p.includes('\0')) return bad('needs a file path');
   if (!isAbsolute(p)) return bad('must be an absolute path');
   if (normalize(p) !== p || p.endsWith('/')) return bad('must be a normalized path (no "..", "." or "//")');
   const dir = sessionStateDir(home);
   if (dirname(p) !== dir) return bad(`must be a file directly inside ${dir}/`);
-  if (!NAME_RE.test(basename(p))) return bad('must name a .json file (letters, digits, ".", "_", "-")');
+  if (!opts.name.test(basename(p))) return bad(`must name ${opts.nameHint} (letters, digits, ".", "_", "-")`);
   let st;
   try {
     st = lstatSync(dir);
