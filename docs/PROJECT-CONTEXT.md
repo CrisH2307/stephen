@@ -18,17 +18,26 @@ wants a handover doc kept current. Casual tone is fine.
 ## Where the code is and how to work on it
 - **Source of truth:** the owner's Mac, `~/Documents/SoftwareProject/brower-hub/browser-hub` (branch `main`),
   pushed by the owner to **github.com/CrisH2307/browser_hub**. The owner commits/pushes; ask before committing.
-- **New chat workflow:**
-  1. Get the code: clone the GitHub repo into the cloud workspace (attach the repo), or read it from the Mac via
-     the desktop app's device tools (ask the owner to link this chat in the Claude desktop app and grant the folder).
-  2. Build and test in the **cloud workspace** (Linux): `npm ci && npm run build && npx vitest run` (~4 min; real
-     Chromium via @sparticuz/chromium, real sherpa-onnx models download on first run). ~1990 tests, all green.
-  3. Sync back to the Mac: `git archive` zip → SendUserFile → device_commit_files to
-     `~/Documents/SoftwareProject/brower-hub/stephen.zip` → in device_bash unzip to `$HOME/stageN` and
-     `rsync -rc --exclude node_modules --exclude dist --exclude .git` over the repo. **First** check for owner edits
-     (`rsync -rcn` against the previous stage, or `git status` on the Mac) and merge them in.
-  4. **Never** run `npm install` in the device shell (it's a Linux VM; it would put Linux binaries in the Mac's
-     node_modules). The owner runs `npm install && npm run build` in VS Code's terminal.
+- **New chat workflow** (updated 2026-11-01):
+  1. Get the code from the Mac (the desktop app links the chat; grant `~/Documents/SoftwareProject/brower-hub`):
+     in device_bash `tar --exclude=node_modules --exclude=dist --exclude=.git -czf ../stephen-base.tgz browser-hub`
+     from the `brower-hub` folder → device_stage_files → untar in the cloud workspace, `git init` + commit as a base.
+  2. Build and test in the **cloud workspace** (Linux): `npm ci && npm run build && npx vitest run` (~8 min; real
+     Chromium, sherpa-onnx models download on first run). **~2473 passed, 11 skipped**, all green.
+  3. The real `claude` CLI works in the cloud workspace, so `node dist/cli.js eval [--only x] --model sonnet --jobs 4`
+     runs the real one-shot eval there (cloud plan; dry-run tools). Last full run: 46/46.
+  4. Sync back: **first** check the Mac has no owner edits (compare its files with your base snapshot, e.g.
+     `rsync -rcn` against the untarred base, or `git status`/`git log` on the Mac; merge any edits). Then tar the
+     changed files → device_commit_files to `brower-hub/stephen-<name>.tgz` → in device_bash
+     `tar --overwrite -xzf ../stephen-<name>.tgz` (or `rsync -rc --inplace`) inside the repo. Plain `tar -x` fails:
+     deleting files on the Mac is disabled, and tar unlinks before writing. Verify with `cmp` / `git diff --stat`.
+  5. **Never** run `npm install` in the device shell (it's a Linux VM; it would put Linux binaries in the Mac's
+     node_modules). The owner runs `npm install && npm run build` in VS Code's terminal. Swift can't be compiled in
+     the cloud: the owner runs `node dist/cli.js install-helper` (a rebuild drops Input Monitoring; re-enable it).
+  6. Parallel work: git worktrees in the cloud copy (symlink node_modules; add it to `.git/info/exclude`), one
+     subagent per worktree, the lead merges and runs the full suite. The owner's Jev router lives on the Mac at
+     `~/.config/jev` (`cd "$HOME/mnt/jev" && JEV_DIR="$PWD" python3 jev_router.py route --test "<task>"`) and sizes a
+     task to haiku / sonnet / opus / fable; the owner wants it used to pick subagent models.
 - **Logs on the Mac:** `~/.browser-hub/` (legacy home still in use): `audit.log` (every action), `state/zen.json`,
   `state/zen-real.log`, `logs/helper.log`. Ask for folder access to read them when debugging.
 - The helper app is in the owner's Dock at `~/Applications/Stephen Helper.app`; rebuild with
@@ -50,4 +59,4 @@ node dist/cli.js voice-setup          # speech models
 Open Zen with **"Zen for Stephen"** (Dock) so Stephen can control it.
 
 ## Next step
-See `docs/ROADMAP.md` → phase 2a "read my stuff" (Gmail, Canvas, Notion, Calendar, Maps), read-only first.
+Independent security review #5 of phase 1.9 (docs/PLAN-1.9-MEMORY-DASHBOARD.md), then `docs/ROADMAP.md` → phase 2a "read my stuff" (Gmail, Canvas, Notion, Calendar, Maps), read-only first.

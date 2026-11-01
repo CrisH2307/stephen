@@ -73,3 +73,9 @@ describe('voice.claudeModel', () => {
     expect(a).not.toContain('--model');
   });
 });
+
+describe('STEPHEN_PERSONA: unknown names are treated as misheard (eval mis-lofi, 2026-11-01)', () => {
+  it('prefers the closest well-known name over searching the words as heard', () => {
+    expect(STEPHEN_PERSONA).toMatch(/it was probably misheard: use the closest well-known one that sounds alike instead of searching the words as heard/);
+  });
+});

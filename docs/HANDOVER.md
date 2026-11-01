@@ -195,3 +195,10 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   (Swift compile; send errors if any), then `stephen listen`, "remember my gym is goodlife on king st",
   `stephen app`, `node dist/cli.js eval`. Open: independent security review #5 (agent usage limit hit; after reset),
   then phase 2a.
+- 2026-11-01 15:20 — Owner's Mac: rebuilt helper compiled and runs (the Stephen window opened via `stephen app`),
+  but helper.log says "Input Monitoring not granted yet" (a rebuilt binary loses the permission), so Fn+Option sent
+  nothing; the wake word was ignored because the helper reported sound playing (fail-closed sound gate, by design).
+  Fix is on the owner's side: re-enable Stephen Helper in Privacy & Security → Input Monitoring, quit the helper from
+  the menu bar, restart `stephen listen`. Eval on the Mac 45/46 (mis-lofi: "low fly girl" searched as heard): persona
+  now says an unknown name was probably misheard → use the closest well-known one. Cloud: `--only mis` 6/6 ×3,
+  full eval 46/46.
