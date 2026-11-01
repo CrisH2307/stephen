@@ -55,9 +55,9 @@ a Swift menu-bar app (can't be built or tested in CI; phase 2 owns microphone/Ac
 | Locked screen | All actions refused |
 | No shell | Everything via `execFile` with argv arrays (`open -b`, `osascript -l JavaScript` with fixed scripts) |
 | Rate limit + audit | Shared with the browser gate; every desktop action audited |
-| Voice | While Claude is acting, the wake word **cancels** the run (never starts a new one); while Stephen is speaking it is ignored; for `voice.cooldownSec` (20 s) after each command it is ignored (Enter re-arms), because a page or video Stephen opened may say "Hey Stephen". This does not stop a video that talks later; see docs/VOICE.md. A spoken "yes" is never a confirmation (risky actions use the macOS dialog); "Stephen stop" or Ctrl-C cancels the running command |
+| Voice | While Claude is acting, the wake word **cancels** the run (never starts a new one); while Stephen is speaking it is ignored; for `voice.cooldownSec` (20 s) after each command it is ignored (Enter re-arms), because a page or video Stephen opened may say "Hey Stephen". This does not stop a video that talks later; see docs/VOICE.md. A spoken "yes" is never a confirmation (risky actions use the macOS dialog); "Stephen stop", Esc or Ctrl-C cancels the running command and ends the follow-up conversation |
 | Claude headless | `--tools ""` (no built-in tools at all), `--permission-mode dontAsk`, `--setting-sources ""` (the user's/project's settings.json can't widen it), `--strict-mcp-config`, only `mcp__stephen__*` allowed, Bash/Edit/Write/WebFetch etc. also disallowed as a second layer, `--max-turns` cap |
-| One command = one session | No `--resume` in phase 1: each command starts a new Stephen server, so the gate's memory (private reads, approvals, rate limit) would reset while Claude's memory carried over. Follow-ups return in phase 3 (one long-lived session + one long-lived server) |
+| Follow-ups: memories live and die together | A command within `voice.followUpWindowSec` (180 s) of the previous one's end `--resume`s its Claude session, and every server of that conversation runs with `serve --session-state <home>/voice/conversation-state.json`: it imports the earlier servers' private reads and approved hosts and writes each change (atomic, 0600) before the data or approved action reaches Claude. Window expired, error, cancel, Esc or "Stephen stop" → the listener deletes the state file and the session id before the next run. So Claude never remembers what the gate forgot (review #3 finding 1). The rate limit stays per command. `followUpWindowSec: 0` = every command fresh |
 
 ## Workstreams (parallel worktrees)
 
@@ -74,5 +74,5 @@ Hook points already on `main`: `registerDesktopTools(mcp, hub, names)` (end of `
 - **Phase 2:** signed Swift menu-bar app (owns Microphone / Accessibility / Input Monitoring), swallowed stop key,
   click/type in approved apps (tiers like Claude's own computer use: browsers view-only, terminals blocked),
   secure-input and frontmost-app checks before every input.
-- **Phase 3:** Agent SDK + API key, one long-lived session talking to one long-lived Stephen server (so voice
-  follow-ups can return with the safety gate's memory intact), `onElicitation` → spoken/visual confirmation UI.
+- **Phase 3:** Agent SDK + API key, one long-lived session talking to one long-lived Stephen server (no per-command
+  start-up; the gate's memory then needs no state file), `onElicitation` → spoken/visual confirmation UI.

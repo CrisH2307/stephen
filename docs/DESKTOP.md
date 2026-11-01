@@ -70,7 +70,8 @@ URLs never open in any other app.
    (deny), sensitive domains (ask), the cross-site rules after a private read (first-destination and
    cross-site-navigate ask), the shared rate limit, the shared confirmer, and the audit log.
 3. **Opening it.**
-   - If Stephen is **already attached** to that browser (`manager.status()` says connected), it opens a
+   - If Stephen is **already attached** to that browser (`manager.status()` says connected), it reuses a
+     tab that already has this page or site (see "Tab reuse" below), else it opens a
      new tab and loads the page through the same code path as `tab_open` (`hub.perform`, with the
      landing check, page facts and audit). It returns the tab id, so Claude can keep working in the tab.
      Nothing is connected or launched just for this.
@@ -145,7 +146,7 @@ The model calls `announce`, then `play_media {query: "One Call Away Charlie Puth
    or `outcome: error` with the reason).
 4. **Open `https://www.youtube.com/watch?v=<id>`** (`https://music.youtube.com/watch?v=<id>` for YouTube Music)
    through `Desktop.openParsed` — **the exact code path of `open_url`**: `gate.check` as `tab_open` (taint and
-   first-destination rules, rate limit, audit), then a new tab in the attached browser (`hub.perform`, landing
+   first-destination rules, rate limit, audit), then the open YouTube tab (tab reuse) or a new tab in the attached browser (`hub.perform`, landing
    check) or `open -a <browser .app> <url>` with the agent-mode / redirector question.
    - **Attached:** Stephen makes sure it plays. It reads the player's Play/Pause button with the page engine
      (`find "pause"` / `find "play"`, gated as reads; YouTube labels it "Pause (k)" / "Play (k)" or
@@ -277,6 +278,27 @@ The policy is evaluated in this order. The first rule that matches wins.
    verify), Claude's stated intent (marked unverified), and how to allow the app permanently. If the
    human declines, or no confirmation channel is available, the app is not opened.
 
+## Tab reuse
+
+Opening a page in an attached browser (`open_url`, `play_media`, `tab_open`) goes through ONE function,
+`openPage` → `findReusableTab` in `src/server/tab-reuse.ts`, so "where are my directions" four times is one
+Google Maps tab, not four.
+
+1. The gate decision for the target URL is made first, exactly as before (`tab_open` request, new tab).
+2. A tab already showing the exact page (the `#fragment` ignored) is **focused, not reloaded**
+   ("Switched to the tab that already had this page (z3)"); audited as `tab_open` with `reused: "focus"`.
+3. Else a tab on the same site — the current tab first, then the most recently used — is **navigated**
+   through `hub.perform` as kind `navigate` (landing check, audit with `reused: "navigate"`, page facts):
+   "Loaded … in your existing Google Maps tab (z1)".
+4. Else a new tab. Tabs with a pending dialog and `chrome:`/`about:`/`file:` (any non-web) tabs are never reused.
+
+"Same site" is `siteKey(url)`: lowercase host without `www.` (IDN as punycode, non-default port kept);
+`m.youtube.com` = `youtube.com` (`music.youtube.com` is separate); hosts that serve several apps on paths add
+the first segment (`google.com/maps` ≠ `google.com/search`, `docs.google.com/document`), `maps.google.com` →
+`google.com/maps`; Notion workspaces → `notion.so` (`*.notion.site` is separate); Canvas → its host.
+`tab_open {new_tab: true}` forces a new tab (only when the user asks for one). `desktop.reuseTabs`:
+`"site"` (default), `"exact"` (only focus the identical page) or `"never"`.
+
 ## Config
 
 In `config.json`, under `desktop` (validated strictly; unknown keys and wrong types are errors that
@@ -287,7 +309,8 @@ stop the server with a clear message):
   "desktop": {
     "enabled": true,
     "allowedApps": ["com.valvesoftware.steam", "Kindle"],
-    "blockedApps": ["Music"]
+    "blockedApps": ["Music"],
+    "reuseTabs": "site"
   }
 }
 ```
@@ -297,6 +320,7 @@ stop the server with a clear message):
 | `enabled` | `true` | `false` registers no desktop tools. |
 | `allowedApps` | `[]` | Extra apps that open without asking. A bundle id matches anywhere; a name must match the bundle's `CFBundleName`/`CFBundleDisplayName` and the app must be in `/Applications` or `/System/Applications`. These never override the hard block. |
 | `blockedApps` | `[]` | Extra apps that are always refused. |
+| `reuseTabs` | `"site"` | Tab reuse for `open_url`, `play_media` and `tab_open`: `"site"`, `"exact"` or `"never"` (see "Tab reuse"). |
 
 `null` for any key means "use the default". Each list holds at most 200 entries.
 

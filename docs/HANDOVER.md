@@ -116,3 +116,15 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
 - 2026-10-31 15:45 — Owner: Stephen works well. Next = phase 2a "read my stuff" (Gmail, Canvas, Notion, Calendar,
   Maps), read-only, recommended via connectors/APIs + `serve --assume-private-read`. Plan in docs/ROADMAP.md.
   Wrapping up this chat; added docs/PROJECT-CONTEXT.md for a new chat / Claude Project.
+- 2026-10-31 — `fix/reuse`: tabs are reused instead of piling up (audit log: 4 Maps tabs, a new Gmail tab per
+  "check my email"). One implementation, `src/server/tab-reuse.ts` (`siteKey`, `findReusableTab`, `openPage`),
+  used by `open_url`, `play_media` (`REUSE_HOSTS`/`findTabOnHosts` removed) and `tab_open` (`new_tab: true` forces
+  a new tab). Exact page → focus (no reload); same site → navigate (kind navigate via hub.perform); gate decision
+  unchanged. Setting `desktop.reuseTabs` = site | exact | never. See DESKTOP.md "Tab reuse".
+- 2026-10-31 17:40 — Merged fix/reuse + fix/followup (2099 tests green). Tab reuse: ONE implementation in
+  `src/server/tab-reuse.ts` (`siteKey`, `findReusableTab`, `openPage`) used by open_url, play_media and tab_open
+  (`new_tab: true` forces a new tab; `desktop.reuseTabs` site|exact|never). Follow-ups: commands within
+  `voice.followUpWindowSec` (180 s) resume the Claude session AND reload the gate's taint/approvals from
+  `<home>/voice/conversation-state.json` (`serve --session-state`), so review #3 finding 1 stays closed; state and
+  session id are deleted when the conversation ends (window, error, cancel, Esc/stop). Open decision: a reused tab is
+  gated as a new tab (target URL), not against the page it replaces.
