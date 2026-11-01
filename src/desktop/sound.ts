@@ -7,8 +7,8 @@
  *  - `volume` changes the Mac's output volume / mute (Standard Additions). No app is touched.
  *  - `media_control` sends play / pause / toggle / next / previous to Spotify or Apple Music — only if that app is
  *    ALREADY running (it never launches one). The first use asks macOS for Automation permission ("osascript wants
- *    to control Spotify"). A YouTube video in the browser is not handled here: Stephen uses the browser tools
- *    (press_key k on that tab), so the browser safety gate stays the only way into a page.
+ *    to control Spotify"). This is media_control's FALLBACK: a YouTube Music or YouTube tab comes first, and is
+ *    controlled in src/desktop/media-tab.ts through the browser safety gate (the only way into a page).
  */
 import { BIN, type DesktopDeps } from './system.js';
 

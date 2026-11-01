@@ -32,7 +32,8 @@ import { parseDesktopConfig, type DesktopConfig } from './config.js';
 import { readBundleId, resolveApp } from './resolve.js';
 import { BIN, defaultDesktopDeps, execErrorText, queryStatus, verifyCodeSignature, type DesktopDeps, type DesktopStatus } from './system.js';
 import { parseOpenUrl, redirectSignals, UrlDenied, type ParsedOpenUrl, type RedirectSignal } from './url.js';
-import { MediaPlayer } from './play.js';
+import { findMediaTabs, MEDIA_SITE_LABEL, TabMediaControl, type MediaTab } from './media-tab.js';
+import { DEFAULT_MEDIA_TIMING, MediaPlayer } from './play.js';
 import { controlPlayer, MEDIA_ACTIONS, pickPlayer, PLAYERS, playersStatus, setVolume, VOLUME_ACTIONS, type MediaAction, type Player, type VolumeAction } from './sound.js';
 
 export { parseDesktopConfig, type DesktopConfig } from './config.js';
@@ -153,12 +154,13 @@ export function registerDesktopTools(mcp: McpServer, hub: Hub, names: string[], 
   tool(
     'media_control',
     'Play, pause or skip music',
-    'Play / pause / toggle / next / previous for Spotify or Apple Music when that app is already running (it never opens one). ' +
-      'Without `player` it controls the one that is playing (for "pause", only a playing one). ' +
-      'For a YouTube video Stephen opened in the browser, use the browser tools instead: tabs_list, then press_key "k" (play/pause) or "Shift+N" (next) on that tab. Refused while the Mac is locked.',
+    'Play / pause / toggle / next / previous for the music that is on, in ONE call. Without `player` it controls, in this order: ' +
+      'the YouTube Music tab in Zen or Chrome, else a YouTube video tab (through the browser safety checks, like play_media), ' +
+      'else Spotify or Apple Music if that app is already running (it never opens one; for "pause", only a playing one). ' +
+      'Use this instead of pressing keys in the tab yourself. It says honestly when there is nothing to control. Refused while the Mac is locked.',
     {
       action: z.enum(MEDIA_ACTIONS).describe('play, pause, toggle (play/pause), next or previous.'),
-      player: z.enum(PLAYERS).optional().describe('"Spotify" or "Music" (Apple Music). Leave out to use the one that is playing.'),
+      player: z.enum(PLAYERS).optional().describe('Only when the user names the app: "Spotify" or "Music" (Apple Music). Leave out for YouTube Music / YouTube / whatever is playing.'),
       intent: intentArg,
     },
     ACT,
@@ -364,20 +366,48 @@ export class Desktop {
     }
   }
 
+  /**
+   * media_control: a YouTube Music tab first, then a YouTube watch tab (src/desktop/media-tab.ts, through the
+   * browser gate), then Spotify / Apple Music by JXA only if running. A named `player` goes straight to that app.
+   */
   async mediaControl(action: MediaAction, player: Player | undefined, intent: string): Promise<CallToolResult> {
     this.requireMac();
     const tool = 'media_control';
     const args: Record<string, unknown> = { action, ...(player ? { player } : {}) };
     await this.assertUnlocked(tool, intent, args);
+
+    let tabNote = '';
+    let pausedTab = '';
+    if (!player) {
+      const t = await this.mediaTabs();
+      const ctl = new TabMediaControl(this.hub, this.deps.mediaTiming?.pollMs ?? DEFAULT_MEDIA_TIMING.pollMs);
+      for (const mt of t.tabs) {
+        let page: Page;
+        try {
+          page = await this.hub.manager.getPage(mt.tab.id);
+        } catch {
+          continue; // closed meanwhile
+        }
+        const o = await ctl.run(mt, page, action, intent);
+        if (o.done) return o.result;
+        pausedTab ||= `${MEDIA_SITE_LABEL[o.site]} is already paused (tab ${o.tab})`;
+      }
+      const def = this.hub.cfg.defaultBrowser;
+      tabNote =
+        pausedTab ||
+        (t.attached.length
+          ? 'No YouTube Music tab is open (and no YouTube video)'
+          : `No YouTube Music tab found: Stephen isn't connected to ${BROWSER_LABEL[def]}, so it can't see its tabs` +
+            (def === 'zen' ? ' (opening Zen with "Zen for Stephen" fixes that)' : ''));
+    }
+
     const st = await playersStatus(this.deps);
     const target = pickPlayer(st, action, player);
     if (!target) {
-      await this.audit({ tool, args: { ...args, players: st }, outcome: 'error', error: 'no player to control', intent: clean(intent, 200) });
-      const which = player ? `${player} isn't running` : action === 'pause' ? 'nothing is playing in Spotify or Music' : "Spotify and Music aren't running";
-      return okResult(
-        `Nothing done: ${which}. If a YouTube video is playing in the browser, use tabs_list and then press_key "k" (play/pause) or "Shift+N" (next) on that tab. ` +
-          'To start new music, use play_media.',
-      );
+      await this.audit({ tool, args: { ...args, players: st, ...(tabNote ? { tabs: tabNote } : {}) }, outcome: 'error', error: 'no player to control', intent: clean(intent, 200) });
+      if (player) return okResult(`Nothing done: ${player} isn't running. To start new music, use play_media.`);
+      const which = action === 'pause' ? 'nothing is playing in Spotify or Music' : "Spotify and Music aren't running";
+      return okResult(`Nothing done: ${tabNote}, and ${which}.${pausedTab ? '' : ' To start new music, use play_media.'}`);
     }
     await this.rateLimited(tool, intent, { ...args, player: target });
     try {
@@ -393,6 +423,20 @@ export class Desktop {
         : '';
       throw new NoticeError(`Couldn't control ${target} (${clean(msg, 200)}).${perm}`);
     }
+  }
+
+  /**
+   * The YouTube Music / YouTube tabs of the browsers Stephen is attached to or can attach to without starting
+   * anything (tryAttach: same rules as open_url / play_media), the default browser first.
+   */
+  async mediaTabs(): Promise<{ attached: BrowserName[]; tabs: MediaTab[] }> {
+    const def = this.hub.cfg.defaultBrowser;
+    const attached: BrowserName[] = [];
+    for (const b of [def, def === 'zen' ? 'chrome' : 'zen'] as const) {
+      if (await this.tryAttach(b)) attached.push(b);
+    }
+    const tabs = await findMediaTabs(this.hub.manager, attached, (t) => this.hub.dialogs.get(t) !== undefined);
+    return { attached, tabs };
   }
 
   // ───────────────────────────── open_url ─────────────────────────────
