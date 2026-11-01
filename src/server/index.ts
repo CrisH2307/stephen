@@ -7,6 +7,7 @@ import type { ElicitFn } from '../safety/index.js';
 import type { Confirmer, IBrowserManager, PageEngine, ResolvedConfig } from '../types.js';
 import { Hub } from './hub.js';
 import { SERVER_INSTRUCTIONS } from './instructions.js';
+import { fileToolLogger, withToolLog } from './tool-log.js';
 import { registerTools } from './tools.js';
 import { log, withTimeout } from './util.js';
 
@@ -28,6 +29,8 @@ export interface ServerDeps {
   orphanWaitMs?: number;
   /** Upper bound for one page action. Default ACTION_TIMEOUT_MS (45 s); tests shorten it. */
   actionTimeoutMs?: number;
+  /** `serve --tool-log <file>`: append `{tool,isError,ms}` per call (never arguments or results; see tool-log.ts). */
+  toolLog?: string;
 }
 
 /**
@@ -53,7 +56,7 @@ export function buildServer(deps: ServerDeps): McpServer {
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
   const hub = new Hub(deps, mcp);
-  registerTools(mcp, hub);
+  registerTools(deps.toolLog ? withToolLog(mcp, fileToolLogger(deps.toolLog)) : mcp, hub);
   return mcp;
 }
 
