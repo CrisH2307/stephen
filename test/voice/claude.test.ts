@@ -45,14 +45,14 @@ describe('claude argv', () => {
     expect(persona).toMatch(/only through the Stephen tools/);
     expect(persona).toMatch(/prefer open_url/);
     expect(persona).toMatch(/never try to work around a refusal/);
-    expect(persona).toMatch(/ONE short spoken sentence/);
+    expect(persona).toMatch(/one or two short spoken sentences that cover every part/);
     // Speak first, then act (the announce tool exists because the server is started with `serve --voice`).
     expect(persona).toContain(
       "Before doing anything that will play sound (music, a video, a podcast), first call the announce tool with a short line saying what you're about to play (≤ 12 words), then do it.",
     );
     expect(persona).toContain('After starting playback, your final reply should be very short.');
     expect(persona).toContain(
-      "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, ask briefly.",
+      "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, make your best guess.",
     );
     expect(a).not.toContain('--resume');
     expect(a).not.toContain('--model');

@@ -105,6 +105,40 @@ describe('open_url reuses tabs', () => {
     expect(textOf(r)).toMatch(/blocked list/);
     expect(tab.gotoCalls).toEqual([]);
   });
+
+  it('new_tab: true keeps several pages of one site side by side ("routes from my home to two stations")', async () => {
+    const h = await attached();
+    const home = '123 Example St, Oshawa, ON';
+    const route = (to: string) => `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(home)}&destination=${encodeURIComponent(to)}&travelmode=transit`;
+    const a = await h.call('open_url', { url: route('Oshawa GO Station'), new_tab: true, intent });
+    const b = await h.call('open_url', { url: route('Whitby GO Station'), new_tab: true, intent });
+    expect(a.isError, textOf(a)).toBeFalsy();
+    expect(b.isError, textOf(b)).toBeFalsy();
+    expect([...h.manager.pages.keys()]).toEqual(['z1', 'z2']);
+    expect(h.manager.pages.get('z1')!.gotoCalls.map((c) => c[0])).toEqual([route('Oshawa GO Station')]);
+    expect(h.manager.pages.get('z2')!.gotoCalls.map((c) => c[0])).toEqual([route('Whitby GO Station')]);
+    expect(textOf(b)).toMatch(/^Opened a new Zen tab and loaded/);
+    // still gated: both went through the gate as tab_open and were audited
+    // each route: one gate decision (tab "new") + one audited open in its own tab
+    const opens = h.audit.entries.filter((e) => e.tool === 'open_url' && e.outcome === 'ok');
+    expect(opens.map((e) => e.tab)).toEqual(['new', 'z1', 'new', 'z2']);
+    expect(opens.every((e) => e.kind === 'tab_open')).toBe(true);
+  });
+
+  it('without new_tab the default reuse still applies (a third route replaces the Maps tab it finds)', async () => {
+    const h = await attached();
+    await h.call('open_url', { url: dirs('A'), new_tab: true, intent });
+    await h.call('open_url', { url: dirs('B'), new_tab: true, intent });
+    await h.call('open_url', { url: dirs('C'), intent });
+    expect([...h.manager.pages.keys()]).toEqual(['z1', 'z2']);
+  });
+
+  it('new_tab: true does not get around the gate: a blocked site is still refused', async () => {
+    const h = await attached({ overrides: { safety: { blockedDomains: ['evil.example'] } } });
+    const r = await h.call('open_url', { url: 'https://evil.example/', new_tab: true, intent });
+    expect(r.isError).toBe(true);
+    expect([...h.manager.pages.keys()]).toEqual([]);
+  });
 });
 
 describe('play_media still reuses the YouTube tab and presses play', () => {

@@ -102,8 +102,8 @@ describe('stephen listen --text', () => {
     expect(await runListen(['--text', 'now search for lo-fi'], zero.e)).toBe(0);
     const zmcp = join(zhome, 'voice', 'mcp-config.json');
     expect(readFakeLog(zlog).map((r) => r.argv)).toEqual([
-      buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: zmcp }),
-      buildClaudeArgs('now search for lo-fi', { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: zmcp }),
+      buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: zmcp }),
+      buildClaudeArgs('now search for lo-fi', { claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: zmcp }),
     ]);
     expect(JSON.parse(readFileSync(zmcp, 'utf8')).mcpServers.stephen.args).toEqual(['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice']);
     expect(zero.out).not.toContain('Working… (follow-up)');

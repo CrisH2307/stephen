@@ -117,7 +117,7 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     expect(tr!.command).toBe(want);
     expect(runs).toHaveLength(1);
     const mcpPath = join(h.home, 'voice', 'mcp-config.json');
-    expect(runs[0]!.argv).toEqual(buildClaudeArgs(want!, { claudePath: 'x', maxTurns: 15, model: 'sonnet', mcpConfigPath: mcpPath, followUps: true }));
+    expect(runs[0]!.argv).toEqual(buildClaudeArgs(want!, { claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: mcpPath, followUps: true }));
     expect(h.speaker.said).toEqual([`Done! I opened YouTube for "${want}".`]);
     expect(h.chimes.played).toEqual(['wake', 'done']);
     expect(h.out).toContain(`Heard: "${want}"`);

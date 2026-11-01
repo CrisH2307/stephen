@@ -30,7 +30,7 @@ describe('STEPHEN_PERSONA (phase 1.6)', () => {
     expect(STEPHEN_PERSONA).toMatch(/Never say "certainly" or "I'd be happy to"/);
     expect(STEPHEN_PERSONA).toMatch(/never mock or roast the user/);
     expect(STEPHEN_PERSONA).toMatch(/Anything about safety .* plainly and seriously, without slang/);
-    expect(STEPHEN_PERSONA).toMatch(/ONE short spoken sentence: plain words, no markdown, no lists, no links, no emoji/);
+    expect(STEPHEN_PERSONA).toMatch(/one or two short spoken sentences that cover every part: .* Plain words, no markdown, no lists, no links, no emoji/);
   });
 
   it('keeps the lock-down rules', () => {

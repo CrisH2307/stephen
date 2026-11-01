@@ -18,7 +18,7 @@ describe('parseVoiceConfig', () => {
         verifyWake: true,
         claudePath: 'claude',
         claudeModel: 'sonnet',
-        maxTurns: 15,
+        maxTurns: 25,
         followUpWindowSec: 180, // follow-ups: commands within 180 s of the last one's end continue its conversation
         cooldownSec: 20,
         wakeWord: true,
@@ -27,7 +27,9 @@ describe('parseVoiceConfig', () => {
         rate: null,
         chimes: true,
         silenceSec: 0.8,
-        maxCommandSec: 12,
+        longSilenceSec: 1.5,
+        continueSec: 4,
+        maxCommandSec: 25,
         noSpeechTimeoutSec: 5,
       });
     }
