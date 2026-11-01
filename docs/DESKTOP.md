@@ -55,7 +55,10 @@ Spotify
 Errors from `open` (whose stderr quotes the path) are wrapped too, and an app without a readable bundle
 id is described by the query, not by its file name.
 
-### `open_url {url, browser?, intent}`
+### `open_url {url, browser?, new_tab?, intent}`
+
+`new_tab: true` (1.8) opens a new tab instead of reusing one on the same site — for several pages of one site
+side by side (two Google Maps routes in one request) or when the user asks for a new tab. Same gate, same audit.
 
 Opens a web page in Zen or Chrome. The default browser is `defaultBrowser` from config. In phase 1,
 URLs never open in any other app.

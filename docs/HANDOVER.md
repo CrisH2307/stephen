@@ -128,3 +128,14 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   `<home>/voice/conversation-state.json` (`serve --session-state`), so review #3 finding 1 stays closed; state and
   session id are deleted when the conversation ends (window, error, cancel, Esc/stop). Open decision: a reused tab is
   gated as a new tab (target URL), not against the page it replaces.
+- 2026-10-31 20:45 — Phase 1.8 step 1 "one shot" small fixes (plan: docs/PLAN-1.8-ONE-SHOT.md; owner: prefers
+  Fn+Option, wants best guesses over questions, fix small things first). Listener: `longSilenceSec` 1.5 (after
+  2.5 s of talking a thinking pause no longer ends the command), `continueSec` 4 (a transcript ending in "and/then/um…"
+  keeps listening once and joins the parts; audio said during transcription kept from the ring), `maxCommandSec`
+  12 → 25. Persona: do every part in one run, best guess over asking (say what was picked), name the part it can't
+  do, reply covers every part, one announce per request, Google Maps directions via open_url. `voice.aboutMe`
+  (name/home/school/work/notes, owner-written only) appended to the persona so "from my home" needs no question.
+  `open_url new_tab: true` (several routes side by side; same gate). `maxTurns` 15 → 25. Tests:
+  test/voice/oneshot.test.ts (+ reuse.test.ts new_tab). Owner to do: add `voice.aboutMe` to ~/.browser-hub/config.json,
+  `npm run build`, try "routes from my home to two stations". Not yet: the eval harness (`stephen eval`, plan track D),
+  media/volume tools (track C), anything that writes (Docs, Discord) — phase 2b+.

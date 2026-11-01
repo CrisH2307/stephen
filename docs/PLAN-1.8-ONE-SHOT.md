@@ -4,6 +4,14 @@ Owner goal: say the whole thing once ("Hey Stephen, open my Notion to-dos and pu
 all of it, without cutting you off and without asking back unless it really has to. Follow-ups stay as they are
 (they work). Memory + a chat dashboard come later (bottom of this file).
 
+## Status
+- 2026-10-31: owner answers — mostly Fn+Option (both used); best guess preferred over asking; fix small things
+  first, then build new. Example asks: "routes from my home to two stations" (Stephen didn't know the home address
+  and asked back); "check my Canvas assignments and materials, recommend what to do, write a summary in a Google
+  Doc and message my friend on Discord" (needs phase 2a read + 2b careful writes — not one-shot-fixable yet).
+- **Done (step 1):** tracks A and B, plus `voice.aboutMe` and `open_url new_tab` (routes). See HANDOVER.md.
+- **Next:** track D (eval) → track C (media/volume) → memory/dashboard design → phase 2a.
+
 ## Why one-shot fails today (found in the code)
 
 | # | Where | What happens |

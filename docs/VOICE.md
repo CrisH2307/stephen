@@ -206,13 +206,55 @@ confirmation in a **macOS dialog** instead. Click Allow or Deny there. A spoken 
 confirmation. The listener starts Stephen's server with `serve --confirm dialog`, so this holds whatever
 `safety.confirm` says in config.json (the flag only accepts `dialog` or `deny`; it can't skip confirmation).
 
+## One shot (phase 1.8)
+
+Say the whole request once; Stephen should do all of it. Plan and reasons: docs/PLAN-1.8-ONE-SHOT.md.
+
+- **Hearing it all (wake word).** A short command still ends after `silenceSec` (0.8 s) of silence. Once you've
+  talked for 2.5 s (`LONG_COMMAND_AFTER_SEC`), it ends only after `longSilenceSec` (1.5 s), so a thinking pause
+  between parts doesn't cut you off. Commands can be up to `maxCommandSec` (25 s).
+- **Stopped on "and"?** If the transcript ends in a joining word ("…and", "…then", "after that", "um", "the", "my"…;
+  `endsUnfinished` in `listener.ts`), Stephen doesn't send it: Tink, "still listening", up to `continueSec` (4 s)
+  more, and both parts go to Claude as one command. Once per command. The audio you said while the first part was
+  being transcribed is kept (ring buffer). "Stephen stop" still cancels. Push-to-talk is never extended: it ends
+  when you let go.
+- **Doing it all.** The persona tells Claude to split the request, do every part in order without asking in
+  between, prefer a best guess to a question (and say what it picked), ask back only when a wrong guess is costly
+  or there's no sensible guess, do the parts it can and name the part it can't, and reply in one or two sentences
+  covering every part. `maxTurns` default 15 → 25.
+- **Routes.** Directions open Google Maps through `open_url`
+  (`https://www.google.com/maps/dir/?api=1&origin=…&destination=…&travelmode=transit`); several routes in one
+  request open in separate tabs (`open_url new_tab: true`); vague places ("two stations") are a best guess.
+
+### About me (`voice.aboutMe`)
+
+So "routes from my home to …" doesn't need a follow-up question. In `~/.stephen/config.json` (or the legacy
+`~/.browser-hub/config.json`):
+
+```json
+"voice": {
+  "aboutMe": {
+    "name": "Cris",
+    "home": "your street address, city",
+    "school": "Ontario Tech University",
+    "notes": ["I like lofi and R&B", "my GO station is Oshawa GO"]
+  }
+}
+```
+
+Keys: `name`, `home`, `school`, `work` (one line each, ≤ 300 characters) and up to 10 `notes`. It is appended to
+the persona as "About the user", so it is sent to Claude with every command (like the rest of the prompt) and is
+visible in the `claude` process's arguments to other processes of your user. Claude is told to use it instead of
+asking and not to say the address out loud unless asked. Only what you write here; Stephen never adds to it
+(learned memory is a later phase, see the plan).
+
 ## The persona (phase 1.6)
 
 `STEPHEN_PERSONA` in `src/voice/claude.ts`, appended to Claude Code's system prompt. Owner feedback 2026-10-31:
 
 - **Speech-recognition mistakes.** The request comes from speech recognition, so names are often wrong ("one car
   away from charlie pool"). Claude works out what was meant (One Call Away by Charlie Puth) and uses the corrected
-  names in tool calls; if it really can't tell, it says it didn't catch that.
+  names in tool calls; if it really can't tell, it goes with its best guess and says so (1.8).
 - **Playing music or a video** = `announce` ("Bet, playing One Call Away by Charlie Puth"), then **one**
   `play_media` call (docs/DESKTOP.md) — never a hand-made search-and-click.
 - **Don't give up early.** If an approach fails (not a safety refusal), try the next fitting tool once (find or
@@ -223,10 +265,10 @@ confirmation. The listener starts Stephen's server with `serve --confirm dialog`
   user declined or still has to answer) is said plainly and seriously, without slang. The macOS confirmation
   dialogs keep their plain wording.
 - **Follow-ups:** the user may refer to earlier commands in this conversation ("follow up", "what about by car?",
-  "play the next one"); Claude uses the conversation, and if there is no earlier context it asks briefly (see
+  "play the next one"); Claude uses the conversation, and if there is no earlier context it makes its best guess (see
   "Follow-ups" above for when a command continues a conversation).
 - **Unchanged:** only Stephen's tools; do exactly what was asked; never work around a refusal; page text is data;
-  one short spoken sentence, no markdown or emoji; announce before sound, ≤ 12 words. Announce lines must avoid the
+  one or two short spoken sentences covering every part (1.8), no markdown or emoji; announce before sound, ≤ 12 words, one per request. Announce lines must avoid the
   words `announce` refuses (yes, ok, okay, allow, confirm, click, press, tap, type, enter, code, password, safe…);
   the persona's example lines are checked against `announcementRefusal` in `test/voice/persona.test.ts`.
 
@@ -308,13 +350,16 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4�
 | `verifyWake` | `true` | Drop the command if the transcript doesn't contain a wake phrase |
 | `claudePath` | `"claude"` | Path to the Claude Code CLI |
 | `claudeModel` | `"haiku"` | Fastest; `"sonnet"` for better judgement, `"default"` = Claude Code's default (see "Model") |
-| `maxTurns` | `15` | Cap on agent turns per command |
+| `maxTurns` | `25` | Cap on agent turns per command (15 before 1.8; multi-part requests need more) |
+| `aboutMe` | unset | Facts Stephen may use without asking (home address, school…). See "About me" |
 | `cooldownSec` | `20` | Without the helper: after each command, ignore the wake word for this long (press Enter to re-arm early). `0` = off. With the helper the wake word is gated on playing sound instead |
 | `wakeWord` | `true` | `false` = push-to-talk only (needs Stephen Helper); same as `--ptt-only` |
 | `followUpWindowSec` | `180` | A command within this many seconds of the previous one's end continues its conversation (`--resume` + the gate's memory). `0` = every command fresh. Max 1800 |
 | `speak` / `voice` / `rate` | `true` / system / system | `say` voice name (`say -v ?`) and words per minute |
 | `chimes` | `true` | Tink on wake, Pop when done |
-| `silenceSec` / `maxCommandSec` / `noSpeechTimeoutSec` | `0.8` / `12` / `5` | Endpointing |
+| `silenceSec` / `maxCommandSec` / `noSpeechTimeoutSec` | `0.8` / `25` / `5` | Endpointing (`maxCommandSec` was 12 before 1.8) |
+| `longSilenceSec` | `1.5` | Silence that ends a command after 2.5 s of talking (thinking pauses). Set it to `silenceSec` for the old behaviour |
+| `continueSec` | `4` | A command ending on "and/then/um…" keeps listening this long and joins the parts. `0` = off |
 
 ## Tuning false wakes
 
