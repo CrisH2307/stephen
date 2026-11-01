@@ -20,11 +20,12 @@ import type { HubConfig } from '../config.js';
 import { errorMessage } from '../errors.js';
 import { wrapUntrusted } from '../safety/index.js';
 import { clean, redactUrl } from '../safety/text.js';
-import { NAV_TIMEOUT_MS, type Hub } from '../server/hub.js';
+import type { Hub } from '../server/hub.js';
+import { openPage, TabOpenFailed, type OpenedPage } from '../server/tab-reuse.js';
 import type { ServerDeps } from '../server/index.js';
 import { NoticeError, okResult, safeUrl, toErrorResult } from '../server/util.js';
 import type { Page } from 'puppeteer-core';
-import type { ActionRequest, AuditEntry, BrowserName, ConfirmOutcome, ConfirmPrompt, GateResult } from '../types.js';
+import type { ActionRequest, AuditEntry, BrowserName, ConfirmOutcome, ConfirmPrompt } from '../types.js';
 import { appVerdict, hardBlockCategory, type AppVerdict, type ResolvedApp } from './apps.js';
 import { BROWSER_LABEL, browserAppCandidates, findBrowserApp } from './browsers.js';
 import { parseDesktopConfig, type DesktopConfig } from './config.js';
@@ -38,9 +39,12 @@ export type { DesktopDeps, DesktopFs, ExecFileFn, ExecResult } from './system.js
 
 export const DESKTOP_TOOLS = ['open_app', 'open_url', 'play_media', 'desktop_status'] as const;
 
-/** How openParsed opened a page: a new tab in the attached browser, or the user's normal window via `open -a`. */
+/**
+ * How openParsed opened a page: a tab in the attached browser (`how`: a new one, or an existing one reused —
+ * focused or navigated, see src/server/tab-reuse.ts), or the user's normal window via `open -a`.
+ */
 export type OpenOutcome =
-  | { via: 'tab'; id: string; page: Page; res: CallToolResult }
+  | { via: 'tab'; id: string; page: Page; how: OpenedPage['how']; res: CallToolResult }
   | { via: 'everyday'; fallbackNote: string };
 /** At most this many running app names in desktop_status. */
 export const MAX_RUNNING_APPS = 40;
@@ -112,7 +116,7 @@ export function registerDesktopTools(mcp: McpServer, hub: Hub, names: string[], 
     'Opens a web page in Zen or Chrome on the user\'s Mac — the way to do "open YouTube" (url https://www.youtube.com). Prefer this over open_app for anything that is a website. ' +
       'Only https:// pages open directly; http:// asks the user; every other kind of link (file:, mailto:, tel:, app links such as zoommtg: or vscode:, javascript:…) is refused. ' +
       'The browser safety checks of tab_open apply (blocked sites are refused, sensitive sites and some links after reading private pages ask the user). ' +
-      'If Stephen is already attached to that browser, the page opens in a new tab and you get its tab id to keep working with the browser tools; otherwise it opens in the user\'s normal browser window (no tab id), and the user is asked first if they chose a separate agent profile or if the link may forward to another site (redirectors, a URL inside the URL). ' +
+      'If Stephen is already attached to that browser, the page opens in a tab — the one that already shows it or is on the same site (Google Maps, Gmail, Notion, Canvas, YouTube…) is reused, else a new one — and you get its tab id to keep working with the browser tools; otherwise it opens in the user\'s normal browser window (no tab id), and the user is asked first if they chose a separate agent profile or if the link may forward to another site (redirectors, a URL inside the URL). ' +
       'There is no clicking or typing on the desktop yet. Refused while the Mac is locked.',
     {
       url: z.string().trim().min(1).max(4096).describe('Full address, e.g. "https://www.youtube.com" (a bare host such as "youtube.com" gets https://).'),
@@ -333,7 +337,8 @@ export class Desktop {
 
   /**
    * The one way desktop tools open a web page (open_url and play_media): http:// asks first, then the browser
-   * safety gate exactly as tab_open uses it, then a new tab in the attached browser (landing check, page facts),
+   * safety gate exactly as tab_open uses it, then the attached browser through openPage (reuses a tab with this
+   * page or site per desktop.reuseTabs, else a new tab; landing check, page facts),
    * or else `open -a <browser.app> <url>` in the user's normal window (with the agent-mode / redirector question).
    * The caller has checked that the screen is unlocked.
    */
@@ -342,7 +347,6 @@ export class Desktop {
     parsed: ParsedOpenUrl,
     browser: BrowserName,
     intent: string,
-    opts: { reuseTabOnHosts?: readonly string[] } = {},
   ): Promise<OpenOutcome> {
     const why = clean(intent, 200);
     const { href, host } = parsed;
@@ -369,22 +373,31 @@ export class Desktop {
     const label = BROWSER_LABEL[browser];
     const attached = await this.tryAttach(browser);
     let fallbackNote = '';
-    if (attached && opts.reuseTabOnHosts?.length) {
-      // Reuse a tab already on this site (e.g. the YouTube tab the user has open) instead of piling up new tabs.
-      const reused = await this.findTabOnHosts(browser, opts.reuseTabOnHosts);
-      if (reused) {
-        return { via: 'tab', id: reused.id, page: reused.page, res: await this.loadInExistingTab(tool, browser, reused.id, reused.page, href, intent, g) };
-      }
-    }
     if (attached) {
-      let tab: { id: string; page: Page } | null = null;
+      // Reuse a tab that already has this page or site (src/server/tab-reuse.ts) instead of piling up new tabs.
       try {
-        tab = await this.hub.manager.openTab(browser);
-      } catch {
+        const o = await openPage(this.hub, {
+          tool,
+          browser,
+          href,
+          intent,
+          g,
+          reuse: this.dcfg.reuseTabs,
+          auditArgs: { url: auditUrl, via: 'attached browser' },
+          newTabDone: () => `Opened a new ${label} tab and loaded ${href}`,
+        });
+        if (!o.res.isError && safeUrl(o.page) !== '') {
+          o.res.content.push({
+            type: 'text',
+            text: `Tab id: ${o.id}${o.how === 'new' ? '' : ' (reused)'} — keep working in it with the browser tools (snapshot, find, click…).`,
+          });
+        }
+        return { via: 'tab', id: o.id, page: o.page, how: o.how, res: o.res };
+      } catch (e) {
+        if (!(e instanceof TabOpenFailed)) throw e;
         // The browser went away since status(): open it the normal way instead (the gate already approved).
         fallbackNote = ` (Stephen's connection to ${label} was lost, so it was opened in the normal window)`;
       }
-      if (tab) return { via: 'tab', id: tab.id, page: tab.page, res: await this.loadInNewTab(tool, browser, tab.id, tab.page, href, intent, g) };
     }
 
     const appPath = await findBrowserApp(this.deps, this.hub.cfg, browser);
@@ -458,88 +471,6 @@ export class Desktop {
     } finally {
       clearTimeout(timer);
     }
-  }
-
-  /** The most recently used tab of `browser` whose host is one of `hosts` (exact match), or null. */
-  private async findTabOnHosts(browser: BrowserName, hosts: readonly string[]): Promise<{ id: string; page: Page } | null> {
-    try {
-      const tabs = await this.hub.manager.listTabs(browser);
-      const match = [...tabs].sort((a, b) => Number(b.current) - Number(a.current)).find((t) => {
-        try {
-          return hosts.includes(new URL(t.url).host);
-        } catch {
-          return false;
-        }
-      });
-      if (!match) return null;
-      return { id: match.id, page: await this.hub.manager.getPage(match.id) };
-    } catch {
-      return null;
-    }
-  }
-
-  /** Load `href` in an existing tab (brought to front), through hub.perform like loadInNewTab. */
-  private async loadInExistingTab(tool: string, browser: BrowserName, id: string, page: Page, href: string, intent: string, g: GateResult): Promise<CallToolResult> {
-    this.hub.dialogs.attach(page, id);
-    const before = safeUrl(page);
-    try {
-      await this.hub.manager.focusTab(id);
-    } catch {
-      // not fatal: the page still loads
-    }
-    const res = await this.hub.withTab(id, 'write', () =>
-      this.hub.perform(
-        {
-          tool,
-          kind: 'navigate',
-          tab: id,
-          page,
-          intent,
-          targetUrl: href,
-          auditArgs: { url: redactUrl(href), via: 'attached browser (reused tab)' },
-          run: async () => {
-            const r = await page.goto(href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
-            if (r && !r.ok()) return `(HTTP ${r.status()})`;
-          },
-          done: `Loaded ${href} in the ${BROWSER_LABEL[browser]} tab that was already on this site`,
-          timeoutMs: NAV_TIMEOUT_MS + 5000,
-        },
-        g,
-        before || 'about:blank',
-      ),
-    );
-    if (!res.isError) res.content.push({ type: 'text', text: `Tab id: ${id} (reused).` });
-    return res;
-  }
-
-  /** Same path as tab_open: a new tab in the attached browser, loaded through hub.perform (audit, landing check, page facts). */
-  private async loadInNewTab(tool: string, browser: BrowserName, id: string, page: Page, href: string, intent: string, g: GateResult): Promise<CallToolResult> {
-    this.hub.dialogs.attach(page, id);
-    const res = await this.hub.withTab(id, 'write', () =>
-      this.hub.perform(
-        {
-          tool,
-          kind: 'tab_open',
-          tab: id,
-          page,
-          intent,
-          targetUrl: href,
-          auditArgs: { url: redactUrl(href), via: 'attached browser' },
-          run: async () => {
-            const r = await page.goto(href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
-            if (r && !r.ok()) return `(HTTP ${r.status()})`;
-          },
-          done: `Opened a new ${BROWSER_LABEL[browser]} tab and loaded ${href}`,
-          timeoutMs: NAV_TIMEOUT_MS + 5000,
-        },
-        g,
-        'about:blank',
-      ),
-    );
-    if (!res.isError && safeUrl(page) !== '') {
-      res.content.push({ type: 'text', text: `Tab id: ${id} — keep working in it with the browser tools (snapshot, find, click…).` });
-    }
-    return res;
   }
 
   // ───────────────────────────── desktop_status ─────────────────────────────

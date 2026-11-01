@@ -1,7 +1,7 @@
 /**
  * The "desktop" section of config.json (src/config.ts passes it through raw; it is validated here).
  *
- *   "desktop": { "enabled": true, "allowedApps": ["Steam", "com.valvesoftware.steam"], "blockedApps": ["Music"] }
+ *   "desktop": { "enabled": true, "allowedApps": ["Steam", "com.valvesoftware.steam"], "blockedApps": ["Music"], "reuseTabs": "site" }
  *
  * `null` for a key means "use the default", like everywhere else in config.json.
  */
@@ -15,7 +15,16 @@ export interface DesktopConfig {
   allowedApps: string[];
   /** Extra apps (display names or bundle ids) that are always refused. */
   blockedApps: string[];
+  /**
+   * Opening a page in an attached browser (open_url, play_media, tab_open) reuses a tab instead of adding one:
+   * "site" (default) = a tab with the same page is focused, else a tab on the same site is navigated;
+   * "exact" = only a tab already showing that exact page is focused; "never" = always a new tab.
+   */
+  reuseTabs: ReuseTabs;
 }
+
+export const REUSE_TABS = ['site', 'exact', 'never'] as const;
+export type ReuseTabs = (typeof REUSE_TABS)[number];
 
 export const MAX_APP_ENTRIES = 200;
 
@@ -36,6 +45,7 @@ const DesktopConfigSchema = z.strictObject({
   enabled: z.boolean({ error: 'must be true or false' }).nullish(),
   allowedApps: appList,
   blockedApps: appList,
+  reuseTabs: z.enum(REUSE_TABS, { error: 'must be "site", "exact" or "never"' }).nullish(),
 });
 
 /** Validate the raw `desktop` section and apply defaults. Throws HubError('INVALID_ARG') with every problem listed. */
@@ -46,7 +56,7 @@ export function parseDesktopConfig(raw: unknown): DesktopConfig {
       .map((i) => {
         const key = ['desktop', ...i.path.map(String)].join('.');
         if (i.code === 'unrecognized_keys') {
-          return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"desktop.${k}"`).join(', ')} (allowed: enabled, allowedApps, blockedApps)`;
+          return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"desktop.${k}"`).join(', ')} (allowed: enabled, allowedApps, blockedApps, reuseTabs)`;
         }
         return `"${key}": ${i.message}`;
       })
@@ -58,5 +68,6 @@ export function parseDesktopConfig(raw: unknown): DesktopConfig {
     enabled: d.enabled ?? true,
     allowedApps: [...(d.allowedApps ?? [])],
     blockedApps: [...(d.blockedApps ?? [])],
+    reuseTabs: d.reuseTabs ?? 'site',
   };
 }
