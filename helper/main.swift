@@ -1,6 +1,6 @@
 // Stephen Helper — macOS menu-bar agent (LSUIElement). Built by `stephen install-helper`:
-//   swiftc -O -swift-version 5 -o "Stephen Helper" Core.swift main.swift \
-//     -framework AppKit -framework CoreAudio -framework CoreGraphics
+//   swiftc -O -swift-version 5 -o "Stephen Helper" Core.swift AppClient.swift AppWindow.swift main.swift \
+//     -framework AppKit -framework CoreAudio -framework CoreGraphics -framework SwiftUI
 //
 // It owns the Input Monitoring permission (a listen-only CGEventTap for Fn+Option and Esc), watches whether the
 // default output device is playing (CoreAudio), shows Stephen's state in the menu bar, and talks to
@@ -8,7 +8,12 @@
 // and never sees what you type: only modifier-key state and Esc key-downs reach it from the tap.
 //
 // Threading: everything here runs on the main thread (event tap on the main run loop, CoreAudio listeners and
-// timers on the main queue). Only StatusMenu is @MainActor; it is reached through MainActor.assumeIsolated.
+// timers on the main queue). Only StatusMenu and AppWindowController are @MainActor; they are reached through
+// MainActor.assumeIsolated.
+//
+// The Stephen window (AppWindow.swift, AppClient.swift) opens from the menu ("Open Stephen…"), from the launch
+// argument --open-window, or from the `open_window` command on helper.sock. It talks to `stephen listen` over
+// <home>/run/app.sock; nothing above (tap, audio, helper.sock) depends on it.
 
 import AppKit
 import CoreAudio
@@ -252,9 +257,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private var problem: String?
   private let checkPermission: () -> Bool
   private let quitAction: () -> Void
+  private let openWindowAction: @MainActor () -> Void
 
-  init(checkPermission: @escaping () -> Bool, quit: @escaping () -> Void) {
+  init(checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void, quit: @escaping () -> Void) {
     self.checkPermission = checkPermission
+    openWindowAction = openWindow
     quitAction = quit
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     header = NSMenuItem(title: "Stephen Helper", action: nil, keyEquivalent: "")
@@ -269,6 +276,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     permission.action = #selector(openSettings(_:))
     permission.isEnabled = true
     menu.addItem(permission)
+    let openItem = NSMenuItem(title: "Open Stephen…", action: #selector(openWindowClicked(_:)), keyEquivalent: "")
+    openItem.target = self
+    openItem.isEnabled = true
+    menu.addItem(openItem)
     menu.addItem(NSMenuItem.separator())
     let quitItem = NSMenuItem(title: "Quit", action: #selector(quitClicked(_:)), keyEquivalent: "q")
     quitItem.target = self
@@ -305,6 +316,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     if let url = URL(string: INPUT_MONITORING_SETTINGS_URL) { _ = NSWorkspace.shared.open(url) }
   }
 
+  @objc func openWindowClicked(_ sender: Any?) {
+    openWindowAction()
+  }
+
   @objc func quitClicked(_ sender: Any?) {
     quitAction()
   }
@@ -334,6 +349,17 @@ let core = HelperCore(socketPath: home + "/run/helper.sock", log: log)
 let audioWatcher = AudioWatcher(log: log)
 let keyTap = KeyTap(core: core, log: log)
 var statusMenu: StatusMenu? = nil
+var appWindow: AppWindowController? = nil
+
+/** Show the Stephen window (created on first use, then reused). */
+@MainActor
+func showStephenWindow() {
+  if appWindow == nil {
+    appWindow = AppWindowController(socketPath: home + "/run/app.sock", log: log)
+    log("Stephen window: talking to \(home)/run/app.sock")
+  }
+  appWindow?.show()
+}
 
 func shutdownAndExit(_ code: Int32) {
   keyTap.remove()
@@ -347,6 +373,7 @@ func shutdownAndExit(_ code: Int32) {
 core.readAudio = { audioWatcher.isPlaying() }
 core.onUIState = { s in MainActor.assumeIsolated { statusMenu?.setState(s) } }
 core.onQuit = { shutdownAndExit(0) }
+core.onOpenWindow = { MainActor.assumeIsolated { showStephenWindow() } }
 audioWatcher.onChange = { playing in core.handleAudio(playing: playing) }
 
 // SIGTERM/SIGINT (e.g. `killall "Stephen Helper"`): remove the socket before exiting.
@@ -378,7 +405,9 @@ watchdog.setEventHandler {
 MainActor.assumeIsolated {
   let app = NSApplication.shared
   app.setActivationPolicy(.accessory)
-  statusMenu = StatusMenu(checkPermission: { CGPreflightListenEventAccess() }, quit: { shutdownAndExit(0) })
+  statusMenu = StatusMenu(
+    checkPermission: { CGPreflightListenEventAccess() }, openWindow: { showStephenWindow() },
+    quit: { shutdownAndExit(0) })
 
   var granted = CGPreflightListenEventAccess()
   if !granted {
@@ -399,5 +428,9 @@ MainActor.assumeIsolated {
   audioWatcher.start()
   if granted && !keyTap.install() { log("event tap could not be created even though Input Monitoring is granted") }
   watchdog.resume()
+  if CommandLine.arguments.contains("--open-window") {
+    // After the run loop starts, so activation and the window happen in a launched app.
+    DispatchQueue.main.async { MainActor.assumeIsolated { showStephenWindow() } }
+  }
   app.run()
 }

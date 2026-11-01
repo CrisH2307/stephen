@@ -127,6 +127,8 @@ enum HelperCommandIn: Equatable {
   case state(UIState)
   case queryAudio
   case quit
+  /** Show the Stephen window (additive: older helpers log it as an unknown type and ignore it). */
+  case openWindow
   /** Valid JSON object with an unknown `type` (ignored, per the protocol). */
   case unknown(type: String)
   /** Not a JSON object, no string `type`, or a known type with bad fields. */
@@ -144,6 +146,7 @@ func parseCommand(_ line: String) -> HelperCommandIn {
     return .state(st)
   case "query_audio": return .queryAudio
   case "quit": return .quit
+  case "open_window": return .openWindow
   default: return .unknown(type: type)
   }
 }
@@ -773,6 +776,8 @@ final class HelperCore {
   var readAudio: () -> Bool? = { nil }
   var onUIState: (UIState) -> Void = { _ in }
   var onQuit: () -> Void = {}
+  /** `open_window` from the client (main queue). */
+  var onOpenWindow: () -> Void = {}
   var log: (String) -> Void
 
   init(socketPath: String, maxHoldMs: Int64 = PTT_MAX_HOLD_MS, log: @escaping (String) -> Void) {
@@ -831,6 +836,9 @@ final class HelperCore {
     case .quit:
       log("quit requested by client")
       onQuit()
+    case .openWindow:
+      log("open_window requested by client")
+      onOpenWindow()
     case let .unknown(type): log("ignored unknown command type \(jsonString(type))")
     case let .invalid(reason): log("ignored malformed command: \(reason)")
     }
