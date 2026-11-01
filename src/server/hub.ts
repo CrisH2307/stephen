@@ -77,6 +77,8 @@ export interface ActionSpec {
   run: () => Promise<string | void>;
   /** Past-tense, server-authored description WITHOUT page text, e.g. 'Clicked z1:e4'. */
   done: string;
+  /** `done` already names the tab: don't append " in <tab>" to it. */
+  doneNamesTab?: boolean;
   /** Page-derived facts about the outcome, shown inside the untrusted block (may be filled by run()). */
   facts?: string[];
   includeSnapshot?: boolean;
@@ -659,7 +661,7 @@ export class Hub {
     const urlAfter = safeUrl(page);
     if (r.dialog) {
       await this.audit({ ...base, urlAfter, outcome: 'ok', args: { ...(spec.auditArgs ?? {}), dialogOpened: r.dialog.type } });
-      return okResult(this.dialogNotice(tab, r.dialog, `${spec.done} in ${tab}`));
+      return okResult(this.dialogNotice(tab, r.dialog, `${spec.done}${spec.doneNamesTab ? '' : ` in ${tab}`}`));
     }
     await this.audit({ ...base, urlAfter, outcome: 'ok' });
     const detail = r.value ? ` ${r.value}` : '';
@@ -668,7 +670,7 @@ export class Hub {
       this.noteShown(urlBefore, spec.element.frameUrl);
       facts.unshift(`${spec.kind === 'press' ? 'focused element' : 'element'}: ${elementLabel(spec.element)}`);
     }
-    return okResult(await this.outcomeText(tab, page, `${spec.done} in ${tab}${detail}`, urlBefore, spec.includeSnapshot, facts));
+    return okResult(await this.outcomeText(tab, page, `${spec.done}${spec.doneNamesTab ? '' : ` in ${tab}`}${detail}`, urlBefore, spec.includeSnapshot, facts));
   }
 
   /**

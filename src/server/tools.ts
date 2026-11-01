@@ -15,6 +15,7 @@ import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
 import type { ActionKind, ActionRequest, AuditEntry, BrowserName, ElementInfo, GateResult, TabInfo } from '../types.js';
 import { decideConnect, switchPrompt } from './connect.js';
+import { openPage, reuseModeOf, TabOpenFailed } from './tab-reuse.js';
 import { CLOSE_TIMEOUT_MS, NAV_TIMEOUT_MS, pageFacts, type Hub } from './hub.js';
 import {
 
@@ -151,6 +152,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
   }
 
   const gate = () => hub.safety().gate;
+  /** desktop.reuseTabs — the same setting open_url and play_media use. */
+  const reuseTabs = reuseModeOf(cfg);
 
   /**
    * Tab list for the model. Titles and URLs are page-controlled, so the list is wrapped as untrusted;
@@ -291,15 +294,19 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
   tool(
     'tab_open',
     'Open a tab',
-    'Opens a new tab in Zen or Chrome (default: the configured default browser), optionally loading a URL (https:// is added if missing). Returns the new tab id and the loaded page title/URL. Navigating to sensitive sites (banking, account security…) may ask the user first; blocked sites are refused.',
+    'Opens a page in Zen or Chrome (default: the configured default browser), optionally loading a URL (https:// is added if missing). ' +
+      'If a tab already shows that page, Stephen switches to it (no reload); if a tab is already on that site (Gmail, Google Maps, Notion, Canvas…), the page loads in that tab instead of piling up a new one. ' +
+      'Pass new_tab: true only when the user explicitly asks for a new tab. Returns the tab id and the loaded page title/URL. ' +
+      'Navigating to sensitive sites (banking, account security…) may ask the user first; blocked sites are refused.',
     {
       browser: browserArg.optional().describe('Which browser; defaults to the configured default browser.'),
       url: z.string().optional().describe('URL to load, e.g. "gmail.com" or "https://calendar.google.com".'),
+      new_tab: z.boolean().optional().describe('true = always open a NEW tab (only when the user asks for one). Default: reuse a tab that already has this page or site.'),
       intent: intentArg,
       include_snapshot: includeSnapshotArg,
     },
     ACT,
-    async ({ browser: b, url, intent, include_snapshot }) => {
+    async ({ browser: b, url, new_tab, intent, include_snapshot }) => {
       const browser: BrowserName = b ?? cfg.defaultBrowser;
       const target = url ? normalizeUrl(url) : undefined;
       const req: ActionRequest = {
@@ -313,31 +320,31 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
       };
       const g = await gate().check(req);
       if (!g.allowed) throw hub.denied(g, 'about:blank');
-      const { id, page } = await manager.openTab(browser);
-      hub.dialogs.attach(page, id);
-      return hub.withTab(id, 'write', async () => {
-        if (!target) {
+      if (!target) {
+        const { id, page } = await manager.openTab(browser);
+        hub.dialogs.attach(page, id);
+        return hub.withTab(id, 'write', async () => {
           await hub.audit({ ...hub.auditBase({ tool: 'tab_open', kind: 'tab_open', tab: id, intent }, g, 'about:blank'), urlAfter: safeUrl(page), outcome: 'ok' });
           return okResult(`Opened new blank tab ${id} in ${browser}.`);
-        }
-        return hub.perform(
-          {
-            tool: 'tab_open',
-            kind: 'tab_open',
-            tab: id,
-            page,
-            intent,
-            targetUrl: target,
-            auditArgs: { url: target },
-            run: () => goto(page, target),
-            done: `Opened ${id} in ${browser} and loaded ${target}`,
-            includeSnapshot: include_snapshot,
-            timeoutMs: NAV_TIMEOUT_MS + 5000,
-          },
+        });
+      }
+      try {
+        const o = await openPage(hub, {
+          tool: 'tab_open',
+          browser,
+          href: target,
+          intent,
           g,
-          'about:blank',
-        );
-      });
+          reuse: reuseTabs,
+          newTab: new_tab === true,
+          auditArgs: { url: target },
+          newTabDone: (id) => `Opened ${id} in ${browser} and loaded ${target}`,
+          includeSnapshot: include_snapshot,
+        });
+        return o.res;
+      } catch (e) {
+        throw e instanceof TabOpenFailed ? e.cause : e;
+      }
     },
   );
 
