@@ -9,9 +9,20 @@
 import { createTts } from './tts/index.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { loadConfig } from '../config.js';
+import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
+import { AppServer, listenerQueue } from '../app/server.js';
+import { appSettings } from '../app/settings.js';
+import { configFilePath, loadConfig } from '../config.js';
+import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
+import { HistoryStore } from '../history/store.js';
+import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
+import { MemoryStore } from '../memory/store.js';
+import { AuditLog } from '../safety/audit.js';
+import { DialogConfirmer } from '../safety/confirm.js';
+import { toolLogPath } from '../server/tool-log.js';
+import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
-import { Assistant, type CommandRunner } from './assistant.js';
+import { Assistant, type CommandReport, type CommandRunner } from './assistant.js';
 import { MicrophoneSource, listInputDevices, resolveDeviceIndex, wavFileSource, type AudioSource } from './audio.js';
 import {
   ClaudeRunner,
@@ -24,13 +35,18 @@ import {
   type ClaudeOutcome,
   type ClaudeSettings,
   type SpawnFn,
+  type ClaudeFlagProbe,
+  PERSONA_FILE,
   probeClaudeFlags,
+  resolvePersonaFile,
 } from './claude.js';
+import { ToolLogRunner, historyRecorder } from './command-log.js';
 import { Conversation, ConversationRunner } from './conversation.js';
 import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
+import { MemoryRouter } from './memory-router.js';
 import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelPaths } from './models.js';
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
@@ -49,7 +65,16 @@ export interface Engines {
 
 /** Everything runListen touches outside itself — injectable for tests. */
 export interface ListenEnv {
-  loadConfig?: () => { home: string; voice: Record<string, unknown> };
+  loadConfig?: () => {
+    home: string;
+    voice: Record<string, unknown>;
+    memory?: Record<string, unknown>;
+    history?: Record<string, unknown>;
+    app?: Record<string, unknown>;
+    auditLogPath?: string;
+  };
+  /** Shown in the Stephen window's Settings (default: configFilePath()). */
+  configPath?: string;
   out?: (line: string) => void;
   err?: (line: string) => void;
   speaker?: Speaker;
@@ -79,7 +104,14 @@ export interface ListenEnv {
   helper?: (home: string) => Promise<HelperLink | null> | HelperLink | null;
   /** Clock for the follow-up window (tests). */
   now?: () => number;
+  /** Asks before a wake-word "remember …" and "forget everything" (default: a macOS dialog, Deny default, 120 s). */
+  confirmer?: Confirmer;
+  /** Clock for memory and history (tests). */
+  date?: () => Date;
 }
+
+/** How long the memory dialogs wait before they count as Deny. */
+export const MEMORY_DIALOG_TIMEOUT_SEC = 120;
 
 /** Start the helper link; null when unavailable (never throws). */
 async function connectHelper(env: ListenEnv, home: string): Promise<{ bridge: HelperBridge } | { reason: string }> {
@@ -140,12 +172,29 @@ class DryRunRunner implements CommandRunner {
   }
 }
 
-function loadVoice(env: ListenEnv, err: (l: string) => void): { home: string; cfg: VoiceConfig } | null {
+interface LoadedVoice {
+  home: string;
+  cfg: VoiceConfig;
+  memory: MemoryConfig;
+  history: HistoryConfig;
+  app: AppConfig;
+  auditLogPath: string | null;
+}
+
+function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null {
   try {
     const c = (env.loadConfig ?? loadConfig)();
-    return { home: c.home, cfg: parseVoiceConfig(c.voice) };
+    return {
+      home: c.home,
+      cfg: parseVoiceConfig(c.voice),
+      memory: parseMemoryConfig(c.memory),
+      history: parseHistoryConfig(c.history),
+      app: parseAppConfig(c.app),
+      auditLogPath: c.auditLogPath ?? null,
+    };
   } catch (e) {
-    err(e instanceof VoiceConfigError ? e.message : `Config: ${(e as Error).message}`);
+    const known = e instanceof VoiceConfigError || e instanceof MemoryConfigError || e instanceof HistoryConfigError || e instanceof AppConfigError;
+    err(known ? (e as Error).message : `Config: ${(e as Error).message}`);
     return null;
   }
 }
@@ -238,7 +287,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const conversation = new Conversation({ dir: voiceDir, windowSec: cfg.followUpWindowSec, log: err, now: env.now });
   const sessionStatePath = conversation.enabled ? conversation.statePath : null;
   if (!conversation.enabled) conversation.end(); // window 0: no leftovers from an earlier setting
-  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath);
+  // History: one entry per command; the tool log (names only) is only written when history is on.
+  const history = new HistoryStore({ home, retentionDays: loaded.history.retentionDays, now: env.date });
+  const toolLog = history.enabled ? toolLogPath(home) : null;
+  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog);
   const settings: ClaudeSettings = {
     claudePath: cfg.claudePath,
     maxTurns: cfg.maxTurns,
@@ -249,8 +301,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   };
   // Check once that this Claude Code knows our lock-down flags: required ones missing → refuse (update Claude Code);
   // optional ones (--no-chrome, --no-session-persistence) missing → leave them out instead of failing every command.
+  let probe: ClaudeFlagProbe | null = null;
   if (!args.dryRun && !env.spawn) {
-    const probe = await probeClaudeFlags(cfg.claudePath);
+    probe = await probeClaudeFlags(cfg.claudePath);
     if (probe && !probe.ok) {
       err(`Your Claude Code is too old for Stephen's voice lock-down (missing ${probe.missing.join(', ')}). Update it (claude update) and try again.`);
       return 1;
@@ -260,14 +313,48 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       err(`Note: this Claude Code doesn't know ${[...probe.unsupportedOptional].join(', ')}; running without them (update Claude Code for the faster lock-down).`);
     }
   }
-  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath, sessionStatePath))}`);
+  // Persona (+ aboutMe + memory) in a 0600 file instead of argv when this Claude Code takes the flag (voice.personaFile).
+  if (resolvePersonaFile(cfg.personaFile, probe)) settings.personaFile = join(voiceDir, PERSONA_FILE);
+  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath, sessionStatePath, toolLog))}`);
   else if (!stephenCliBuilt(cliPath)) err(`Note: ${cliPath} does not exist yet — run \`npm run build\` first, or Claude can't start Stephen's tools.`);
 
+  // Memory (memory.enabled): "remember …" / "forget …" are handled before Claude, and the saved texts reach Claude
+  // through the persona, read fresh before every run.
+  const audit = loaded.auditLogPath ? new AuditLog({ path: loaded.auditLogPath }) : null;
+  const memoryStore = loaded.memory.enabled
+    ? new MemoryStore({ home, maxItems: loaded.memory.maxItems, audit: audit ?? undefined, now: env.date })
+    : null;
+  // A dry run changes nothing: no memory commands (they would save), no history.
+  const memoryRouter = memoryStore && !args.dryRun
+    ? new MemoryRouter({
+        store: memoryStore,
+        confirmWakeWord: loaded.memory.confirmWakeWord,
+        confirmer: env.confirmer ?? new DialogConfirmer({ timeoutSec: MEMORY_DIALOG_TIMEOUT_SEC }),
+        now: env.date,
+        log: err,
+      })
+    : null;
   const claude = args.dryRun
     ? null
-    : new ClaudeRunner({ ...settings, cwd: workDir, env: env.env, spawn: env.spawn, killGraceMs: env.killGraceMs, onTiming: (t) => out(formatTiming(t)) });
+    : new ClaudeRunner({
+        ...settings,
+        cwd: workDir,
+        env: env.env,
+        spawn: env.spawn,
+        killGraceMs: env.killGraceMs,
+        onTiming: (t) => out(formatTiming(t)),
+        memory: memoryStore ? () => memoryStore.listSync().map((i) => i.text) : undefined,
+      });
   // Dry runs never resume (nothing ran before them); real runs continue a conversation inside the follow-up window.
-  const runner: CommandRunner = claude ? new ConversationRunner(claude, conversation) : new DryRunRunner(settings, out);
+  const toolRunner = claude && toolLog ? new ToolLogRunner(new ConversationRunner(claude, conversation), toolLog, err) : null;
+  const runner: CommandRunner = toolRunner ?? (claude ? new ConversationRunner(claude, conversation) : new DryRunRunner(settings, out));
+  const recordHistory = args.dryRun ? undefined : historyRecorder(history, toolRunner ? () => toolRunner.tools() : null, err);
+  // The Stephen window (app.sock): started once the listener exists; until then (and with --text) it stays null.
+  let app: AppServer | null = null;
+  const onDone = (r: CommandReport) => {
+    recordHistory?.(r);
+    app?.commandDone(r, r.ranClaude && toolRunner ? toolRunner.tools().map((t) => t.tool) : []);
+  };
   const speak = cfg.speak && !args.dryRun;
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts). Tests inject env.speaker.
   let speaker: Speaker = silentSpeaker;
@@ -280,7 +367,50 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     }
   }
   const chimes = cfg.chimes && !args.dryRun ? (env.chimes ?? new AfplayChimes()) : silentChimes;
-  const makeAssistant = (bridge: HelperBridge | null) => new Assistant({ runner, speaker, chimes, speak, status: out, ...assistantHooks(bridge) });
+  const makeAssistant = (bridge: HelperBridge | null) => {
+    const hooks = assistantHooks(bridge);
+    return new Assistant({
+      runner,
+      speaker,
+      chimes,
+      speak,
+      status: out,
+      memory: memoryRouter,
+      onDone,
+      onStart: (c) => app?.heard(c.said, c.source),
+      ...hooks,
+      onPhase: (p) => {
+        hooks.onPhase?.(p);
+        if (p === 'running') app?.setState('working');
+        else if (p === 'speaking') app?.setState('speaking');
+      },
+    });
+  };
+  const configPath = env.configPath ?? configFilePath(env.env ?? process.env);
+  /** Serve <home>/run/app.sock for the Stephen window; null (with a note) when that isn't possible. */
+  const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null): Promise<AppServer | null> => {
+    const server = new AppServer({
+      home,
+      queue: listenerQueue(l, a),
+      listening: () => true,
+      model: cfg.claudeModel ?? 'default',
+      memory: memoryStore,
+      endConversation: () => a.endConversation(),
+      history,
+      audit,
+      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
+      speakReplies: loaded.app.speakReplies && speak,
+      openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
+      log: err,
+    });
+    try {
+      await server.start();
+    } catch (e) {
+      err(`Note: the Stephen window can't connect to this listener (${(e as Error).message}).`);
+      return null;
+    }
+    return server;
+  };
   let assistant = makeAssistant(null);
   let bridge: HelperBridge | null = null;
   let listener: Listener | null = null;
@@ -301,7 +431,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       process.exit(130);
     }
   };
-  const onExit = () => claude?.killNow();
+  const onExit = () => {
+    claude?.killNow();
+    app?.closeSync();
+  };
   const signals = env.signals ?? true;
   if (signals) {
     process.on('SIGINT', onSigint);
@@ -315,7 +448,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         return 2;
       }
       out(`Heard: "${text}"`);
-      const r = await assistant.handle(text);
+      const r = await assistant.handle(text, { source: 'cli', raw: text });
       return r === 'ok' ? 0 : 1;
     }
 
@@ -373,17 +506,20 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         cooldownSec: cfg.cooldownSec,
         wakeWord,
       },
-      { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge },
+      { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
     );
+    if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
     const keys = env.keys ?? (signals ? watchEnterKey : null);
-    const live = listener;
-    const unwatch = keys ? keys(() => void live.rearm()) : () => undefined;
+    const current = listener;
+    const unwatch = keys ? keys(() => void current.rearm()) : () => undefined;
     try {
       return await listener.run();
     } finally {
       unwatch();
     }
   } finally {
+    await app?.close();
+    app = null;
     bridge?.close();
     if (signals) {
       process.off('SIGINT', onSigint);

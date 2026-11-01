@@ -21,7 +21,7 @@
  *  - Nothing spoken is ever a confirmation: risky actions are confirmed in a macOS dialog by the MCP server.
  */
 import { PTT_MAX_HOLD_MS, PTT_MIN_HOLD_MS } from '../helper/protocol.js';
-import type { Assistant, CommandResult } from './assistant.js';
+import type { Assistant, CommandReport, CommandResult } from './assistant.js';
 import type { AudioSource } from './audio.js';
 import type { KeywordHit, Spotter, Transcriber, Vad } from './engine.js';
 import type { HelperBridge, MenuState } from './helper-link.js';
@@ -77,6 +77,8 @@ export interface ListenerDeps {
   helper?: HelperBridge | null;
   /** Called with each transcript (raw + normalized) — for tests and benchmarks. */
   onTranscript?: (raw: string, command: string, ms: number) => void;
+  /** Every listener state change (the same states as the menu bar; the Stephen app shows them). */
+  onState?: (s: MenuState) => void;
 }
 
 /** Audio kept from before the keyword's first token (KWS token times lag the speech a little). */
@@ -146,6 +148,8 @@ export class Listener {
   private captureEndSample = 0;
   /** Continuation: the first, unfinished part (already transcribed and wake-checked). */
   private prefix: string | null = null;
+  /** The first part's raw transcript (original case, for memory text). */
+  private prefixRaw = '';
   private sinceRecycleSec = 0;
   private task: Promise<void> = Promise.resolve();
   private cancelToken: Token = { cancelled: false, reachedClaude: false };
@@ -178,6 +182,11 @@ export class Listener {
     return this.state === 'busy';
   }
 
+  /** Waiting for the wake word or Fn+Option: nothing running, nobody talking (submit() would start). */
+  get idle(): boolean {
+    return this.state === 'listening' && !this.exitRequested;
+  }
+
   /** True while the post-command cooldown ignores the wake word. */
   get coolingDown(): boolean {
     return this.cooldownLeftSec > 0;
@@ -198,6 +207,7 @@ export class Listener {
 
   private menu(s: MenuState): void {
     this.d.helper?.setState(s);
+    this.d.onState?.(s);
   }
 
   /** The "ready" line printed whenever Stephen is idle again. */
@@ -217,6 +227,33 @@ export class Listener {
     this.cooldownLeftSec = 0;
     if (this.state === 'listening' && this.wakeOn) this.d.status(`Re-armed — listening for "${this.o.wakePhrase}"…`);
     return true;
+  }
+
+  /**
+   * Run a typed command (the Stephen app's chat) in the same queue as voice commands: it counts as busy, so the wake
+   * word can only cancel it, Esc / "stephen stop" / Fn+Option cancel it, and push-to-talk waits for it. `run` starts
+   * the command (assistant.command(...)). Returns null, without running anything, when Stephen is not idle (a command
+   * is running or being spoken, or the user is talking).
+   */
+  submit(run: () => Promise<CommandReport>): Promise<CommandReport> | null {
+    if (!this.idle || this.d.assistant.busy) return null;
+    this.state = 'busy';
+    this.menu('working');
+    const token: Token = (this.cancelToken = { cancelled: false, reachedClaude: true });
+    const report = this.task.then(run);
+    this.task = report.then(
+      () => undefined,
+      (e: unknown) => this.d.status(`Problem: ${(e as Error).message}`),
+    ).then(() => {
+      this.lastCommandEndMs = Date.now();
+      if (this.cancelToken !== token || this.state !== 'busy') return; // a push-to-talk press took over
+      this.toListening();
+      // Typed commands can open pages and videos too: same cooldown as a voice command that reached Claude.
+      const cooldown = this.wakeOn && !this.helperUp ? (this.o.cooldownSec ?? 0) : 0;
+      if (cooldown > 0) this.cooldownLeftSec = cooldown;
+      this.d.status(this.readyLine());
+    });
+    return report;
   }
 
   /** Ask the loop to finish (Ctrl-C when idle). */
@@ -387,8 +424,9 @@ export class Listener {
    * The transcript ended mid-sentence ("open notion and"): listen again for up to continueSec, starting with the
    * audio said while the first part was being transcribed (from the ring), and send both parts joined.
    */
-  private beginContinuation(prefix: string): void {
+  private beginContinuation(prefix: string, prefixRaw: string): void {
     this.prefix = prefix;
+    this.prefixRaw = prefixRaw;
     const gapSec = Math.min((this.totalSamples - this.captureEndSample) / SAMPLE_RATE, RING_SEC);
     this.capture = gapSec > 0 ? [this.ring.last(gapSec).slice()] : [];
     this.capturedSec = 0;
@@ -525,12 +563,12 @@ export class Listener {
     const audio = concatSamples(this.capture);
     this.capture = [];
     this.captureEndSample = this.totalSamples;
-    const prefix = this.prefix;
+    const prefix = this.prefix === null ? null : { text: this.prefix, raw: this.prefixRaw };
     this.prefix = null;
     this.startProcessing(audio, false, prefix);
   }
 
-  private startProcessing(audio: Float32Array, ptt: boolean, prefix: string | null = null): void {
+  private startProcessing(audio: Float32Array, ptt: boolean, prefix: { text: string; raw: string } | null = null): void {
     this.state = 'busy';
     this.menu('working');
     if (ptt) this.d.spotter.restart(); // "hey stephen" said while holding the keys must not cancel this command
@@ -550,7 +588,7 @@ export class Listener {
       .then((r) => {
         if (typeof r === 'object' && r !== null) {
           // Unfinished sentence: keep listening (unless cancelled or a push-to-talk press took over meanwhile).
-          if (this.cancelToken === token && this.state === 'busy' && !this.exitRequested) this.beginContinuation(r.prefix);
+          if (this.cancelToken === token && this.state === 'busy' && !this.exitRequested) this.beginContinuation(r.prefix, r.raw);
           return;
         }
         if (r) this.results.push(r);
@@ -588,8 +626,9 @@ export class Listener {
     ptt: boolean,
     wake: { anchored: boolean; strict: boolean },
     previous: Promise<void>,
-    prefix: string | null = null,
-  ): Promise<CommandResult | null | { prefix: string }> {
+    first: { text: string; raw: string } | null = null,
+  ): Promise<CommandResult | null | { prefix: string; raw: string }> {
+    const prefix = first?.text ?? null;
     this.d.status('Transcribing…');
     const t0 = Date.now();
     const raw = await this.d.transcriber.transcribe(audio);
@@ -617,7 +656,7 @@ export class Listener {
     }
     // Stopped mid-sentence ("open notion and…"): listen a bit more, once, instead of sending half a request.
     if (!ptt && prefix === null && (this.o.continueSec ?? 0) > 0 && text && endsUnfinished(text)) {
-      return { prefix: text };
+      return { prefix: text, raw };
     }
     if (!text) {
       this.d.status("Didn't hear a command.");
@@ -631,6 +670,8 @@ export class Listener {
     }
     this.d.status(`Heard: "${text}"`);
     token.reachedClaude = true;
-    return this.d.assistant.handle(text);
+    // The source decides memory trust: Fn+Option is a key audio can't press; the wake word can come from a video.
+    const fullRaw = first ? `${first.raw} ${raw}` : raw;
+    return this.d.assistant.handle(text, { source: ptt ? 'voice-ptt' : 'voice-wake', raw: fullRaw });
   }
 }

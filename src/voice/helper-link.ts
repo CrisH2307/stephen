@@ -98,6 +98,13 @@ export class HelperBridge {
     return this.lastState;
   }
 
+  /** Ask the helper to show the Stephen window (`stephen app` through app.sock). false when not connected. */
+  openWindow(): boolean {
+    if (!this.connected) return false;
+    this.link.send({ type: 'open_window' });
+    return true;
+  }
+
   /**
    * Is the Mac playing sound right now? Sends `query_audio` and waits up to `waitMs` for the answer, else uses the
    * last known value. Without a connected helper: false (callers then behave as before the helper existed).

@@ -118,6 +118,12 @@ const VoiceConfigSchema = z
      */
     aboutMe: AboutMeSchema.optional(),
     /**
+     * How the persona (with aboutMe and memory) reaches Claude. "auto" (default): in a 0600 file
+     * (<home>/voice/persona.txt, `--append-system-prompt-file`) when `claude --help` mentions that flag, else on argv
+     * (`--append-system-prompt`, visible in `ps`). "on": always the file. "off": always argv. See docs/VOICE.md "Memory".
+     */
+    personaFile: z.enum(['auto', 'on', 'off']).default('auto'),
+    /**
      * Follow-ups: a command that starts within this many seconds of the previous command's end continues its
      * conversation (Claude `--resume` + the safety gate's memory via `serve --session-state`; see
      * src/voice/conversation.ts). 0 = every command starts fresh. Default 180, at most 1800.
