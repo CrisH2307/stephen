@@ -115,6 +115,19 @@ describe('play_media — resolved server-side', () => {
     expect(p.state).toBe('playing');
   });
 
+  it('attached, paused on YouTube Music: clicks Play, never presses "k" (that is "previous track" there)', async () => {
+    const h = await setupDesktop();
+    h.manager.connected.zen = true;
+    const p = player(h, 'paused');
+    h.engine.describe.mockImplementation(async (_p: Page, ref: string) =>
+      element(ref, { role: 'button', name: 'Play', text: null, frameUrl: 'https://music.youtube.com/watch?v=BxuY9FET9Y4' }),
+    );
+    await h.call('play_media', { query: 'One Call Away', service: 'youtube_music', intent });
+    expect(h.engine.pressKey).not.toHaveBeenCalled();
+    expect(h.engine.click.mock.calls.map((c) => c[1])).toEqual(['z1:e7']);
+    expect(p.state).toBe('playing');
+  });
+
   it("attached, player never shows up: says so instead of pressing anything", async () => {
     const h = await setupDesktop();
     h.manager.connected.zen = true;

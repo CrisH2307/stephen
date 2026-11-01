@@ -3,12 +3,14 @@
  * compiler lookup and the actionable "xcode-select --install" error, the argv arrays, the app bundle layout,
  * refusing to replace an app Stephen did not make, --dry-run, and the doctor checks.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { helperDoctorChecks, type HelperDoctorDeps } from '../../src/helper/doctor.js';
 import {
+  HELPER_FRAMEWORKS,
+  HELPER_SOURCES,
   type InstallHelperDeps,
   codesignArgs,
   findSwiftCompiler,
@@ -70,7 +72,7 @@ function plan() {
 describe('install-helper', () => {
   it('ships the Swift sources and the Info.plist template (LSUIElement, bundle id)', () => {
     const src = helperSourceDir();
-    for (const f of ['Core.swift', 'main.swift', 'Info.plist']) expect(existsSync(join(src, f)), f).toBe(true);
+    for (const f of ['Core.swift', 'AppClient.swift', 'AppWindow.swift', 'main.swift', 'Info.plist']) expect(existsSync(join(src, f)), f).toBe(true);
     const plist = renderInfoPlist(readFileSync(join(src, 'Info.plist'), 'utf8'), '1.2.3');
     expect(plist).toContain('<key>LSUIElement</key>\n\t<true/>');
     expect(plist).toContain(`<string>${HELPER_BUNDLE_ID}</string>`);
@@ -83,11 +85,22 @@ describe('install-helper', () => {
 
   it('builds the swiftc and codesign argv (no shell)', () => {
     expect(swiftcArgs('/src', '/tmp/x/Stephen Helper', '/SDK')).toEqual([
-      '-O', '-swift-version', '5', '-sdk', '/SDK', '-o', '/tmp/x/Stephen Helper', '/src/Core.swift', '/src/main.swift',
-      '-framework', 'AppKit', '-framework', 'CoreAudio', '-framework', 'CoreGraphics',
+      '-O', '-swift-version', '5', '-sdk', '/SDK', '-o', '/tmp/x/Stephen Helper',
+      '/src/Core.swift', '/src/AppClient.swift', '/src/AppWindow.swift', '/src/main.swift',
+      '-framework', 'AppKit', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'SwiftUI',
     ]);
     expect(swiftcArgs('/src', '/o', null)).not.toContain('-sdk');
     expect(codesignArgs('/A/Stephen Helper.app')).toEqual(['--force', '--sign', '-', '--identifier', 'dev.stephen.helper', '/A/Stephen Helper.app']);
+  });
+
+  it('compiles every helper/*.swift file (the Stephen window included) and links SwiftUI', () => {
+    const swift = readdirSync(helperSourceDir()).filter((f) => f.endsWith('.swift')).sort();
+    expect([...HELPER_SOURCES].sort()).toEqual(swift);
+    expect(HELPER_SOURCES.at(-1)).toBe('main.swift');
+    expect(HELPER_FRAMEWORKS).toContain('SwiftUI');
+    const args = swiftcArgs('/src', '/o', null);
+    expect(args.indexOf('/src/AppWindow.swift')).toBeGreaterThan(args.indexOf('-o'));
+    expect(args.slice(-2)).toEqual(['-framework', 'SwiftUI']);
   });
 
   it('finds swiftc with xcrun, falls back to PATH, else explains', async () => {

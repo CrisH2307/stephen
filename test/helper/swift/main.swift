@@ -5,7 +5,7 @@
 //
 // stdin (one per line):  flags [fn] [opt] [cmd] [ctrl] [shift] | key <code> [repeat] | audio 0|1 | perm 0|1
 //                        | interrupt | exit
-// stdout:                ready | ui <state> | quit | error <message>
+// stdout:                ready | ui <state> | quit | open_window | error <message>
 // args:                  --socket <path> [--max-hold-ms <n>]
 
 #if canImport(Darwin)
@@ -35,6 +35,7 @@ let core = HelperCore(socketPath: socketPath, maxHoldMs: maxHold, log: { msg in
 })
 core.readAudio = { simulatedAudio }
 core.onUIState = { s in print("ui \(s.rawValue)") }
+core.onOpenWindow = { print("open_window") }
 /** exit() would wait for the stdin reader thread's lock on stdin; flush and leave directly. */
 func leave(_ code: Int32) -> Never {
   fflush(stdout)

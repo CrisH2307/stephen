@@ -8,6 +8,8 @@
 //   FAKE_CLAUDE_MODE=hang-stubborn like hang, but ignore SIGTERM (exercises the SIGKILL escalation)
 //   FAKE_CLAUDE_MODE=error         print an error_max_turns result
 //   FAKE_CLAUDE_MODE=garbage       print non-JSON and exit 1
+// FAKE_CLAUDE_TOOLS=open_url,announce: act like the Stephen server logging those tool calls to the `--tool-log` file
+// named in the --mcp-config file (any mode except hang/garbage).
 // FAKE_CLAUDE_STARTUP_MS / FAKE_CLAUDE_DURATION_MS / FAKE_CLAUDE_API_MS (ok mode): wait start-up + duration ms, and
 // report duration_ms / duration_api_ms like the real result JSON (timing tests).
 import { spawn } from 'node:child_process';
@@ -29,6 +31,15 @@ const at = (flag) => {
   const i = argv.indexOf(flag);
   return i >= 0 ? argv[i + 1] : undefined;
 };
+
+if (process.env.FAKE_CLAUDE_TOOLS && mode !== 'hang' && mode !== 'hang-stubborn' && mode !== 'garbage') {
+  const cfg = JSON.parse(readFileSync(at('--mcp-config'), 'utf8'));
+  const serveArgs = cfg.mcpServers.stephen.args;
+  const i = serveArgs.indexOf('--tool-log');
+  if (i >= 0) {
+    for (const tool of process.env.FAKE_CLAUDE_TOOLS.split(',')) appendFileSync(serveArgs[i + 1], JSON.stringify({ tool, isError: false, ms: 5 }) + '\n');
+  }
+}
 
 if (mode === 'hang' || mode === 'hang-stubborn') {
   const child = spawn('sleep', ['60'], { stdio: 'ignore' });

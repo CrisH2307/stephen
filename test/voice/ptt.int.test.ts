@@ -109,6 +109,8 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
       '--confirm',
       'dialog',
       '--voice',
+      '--tool-log',
+      join(tmp, 'homes', file, 'voice', 'tool-log.jsonl'),
       '--session-state',
       join(tmp, 'homes', file, 'voice', 'conversation-state.json'),
     ]);

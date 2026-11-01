@@ -180,6 +180,16 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     expect(h.stderr.join('')).toContain('dropped an over-long line');
   });
 
+  it('open_window (additive command) reaches the platform layer', async () => {
+    const sock = mk();
+    const h = await start(sock);
+    const c = client(sock);
+    await c.start();
+    c.send({ type: 'open_window' });
+    await until(() => h.lines.includes('open_window'), 3000, 'open_window');
+    expect(h.stderr.join('')).not.toContain('ignored unknown command type "open_window"');
+  });
+
   it('audio is pushed on change only; a permission change re-sends hello', async () => {
     const sock = mk();
     const h = await start(sock);

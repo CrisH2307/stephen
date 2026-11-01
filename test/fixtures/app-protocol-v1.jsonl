@@ -1,0 +1,46 @@
+{"from":"app","kind":"request","msg":{"id":"a1","type":"hello","version":"1"}}
+{"from":"node","kind":"response","msg":{"id":"a1","type":"hello","version":"1","listening":true,"model":"sonnet"}}
+{"from":"app","kind":"request","msg":{"id":"a2","type":"chat.send","text":"what's the weather in Toronto"}}
+{"from":"node","kind":"response","msg":{"id":"a2","type":"chat.accepted","entryId":"h-20261101-0007"}}
+{"from":"node","kind":"push","msg":{"type":"state","state":"working"}}
+{"from":"app","kind":"request","msg":{"id":"a3","type":"chat.send","text":"open my calendar"}}
+{"from":"node","kind":"response","msg":{"id":"a3","type":"error","message":"busy"}}
+{"from":"node","kind":"push","msg":{"type":"chat.done","entryId":"h-20261101-0007","reply":"It's 8 degrees and cloudy in Toronto.","outcome":"ok","tools":["web_search","read_page"],"ms":4210}}
+{"from":"node","kind":"push","msg":{"type":"state","state":"idle"}}
+{"from":"app","kind":"request","msg":{"id":"a4","type":"chat.stop"}}
+{"from":"node","kind":"response","msg":{"id":"a4","type":"ok"}}
+{"from":"node","kind":"push","msg":{"type":"state","state":"listening"}}
+{"from":"node","kind":"push","msg":{"type":"state","state":"recording"}}
+{"from":"node","kind":"push","msg":{"type":"heard","text":"play some lo-fi on youtube music","source":"voice-ptt"}}
+{"from":"node","kind":"push","msg":{"type":"state","state":"speaking"}}
+{"from":"node","kind":"push","msg":{"type":"chat.done","entryId":"h-20261101-0008","reply":"","outcome":"cancelled","tools":[],"ms":900}}
+{"from":"app","kind":"request","msg":{"id":"a5","type":"history.list","limit":50}}
+{"from":"node","kind":"response","msg":{"id":"a5","type":"history","entries":[{"id":"h-20261101-0007","ts":"2026-11-01T14:03:22.123Z","source":"app","said":"what's the weather in Toronto","reply":"It's 8 degrees and cloudy in Toronto.","outcome":"ok","tools":[{"tool":"web_search","isError":false,"ms":1800},{"tool":"read_page","isError":false,"ms":950}],"followUp":false,"ms":4210,"turns":3},{"id":"h-20261101-0006","ts":"2026-11-01T09:12:05.000Z","source":"voice-ptt","said":"remember my prof for sofe 3980 is dr patel","reply":"Saved: my prof for sofe 3980 is dr patel","outcome":"memory","tools":[],"followUp":false,"ms":40,"turns":0}]}}
+{"from":"app","kind":"request","msg":{"id":"a6","type":"history.list","before":"2026-11-01T09:12:05.000Z","limit":50}}
+{"from":"node","kind":"response","msg":{"id":"a6","type":"history","entries":[]}}
+{"from":"app","kind":"request","msg":{"id":"a7","type":"history.clear"}}
+{"from":"node","kind":"response","msg":{"id":"a7","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a8","type":"memory.list"}}
+{"from":"node","kind":"response","msg":{"id":"a8","type":"memory","items":[{"id":"m7","text":"my prof for sofe 3980 is dr patel","source":"voice-ptt","createdAt":"2026-11-01T09:12:05.000Z","updatedAt":"2026-11-01T09:12:05.000Z"}]}}
+{"from":"app","kind":"request","msg":{"id":"a9","type":"memory.add","text":"I take the 7:40 GO train on weekdays"}}
+{"from":"node","kind":"response","msg":{"id":"a9","type":"memory","items":[{"id":"m7","text":"my prof for sofe 3980 is dr patel","source":"voice-ptt","createdAt":"2026-11-01T09:12:05.000Z","updatedAt":"2026-11-01T09:12:05.000Z"},{"id":"m8","text":"I take the 7:40 GO train on weekdays","source":"app","createdAt":"2026-11-01T15:00:00.000Z","updatedAt":"2026-11-01T15:00:00.000Z"}]}}
+{"from":"app","kind":"request","msg":{"id":"a10","type":"memory.add","text":"my bank pin is 4821"}}
+{"from":"node","kind":"response","msg":{"id":"a10","type":"error","message":"I don't save passwords, codes or card numbers."}}
+{"from":"app","kind":"request","msg":{"id":"a11","type":"memory.update","memId":"m8","text":"I take the 7:50 GO train on weekdays"}}
+{"from":"node","kind":"response","msg":{"id":"a11","type":"memory","items":[{"id":"m7","text":"my prof for sofe 3980 is dr patel","source":"voice-ptt","createdAt":"2026-11-01T09:12:05.000Z","updatedAt":"2026-11-01T09:12:05.000Z"},{"id":"m8","text":"I take the 7:50 GO train on weekdays","source":"app","createdAt":"2026-11-01T15:00:00.000Z","updatedAt":"2026-11-01T15:02:10.000Z"}]}}
+{"from":"app","kind":"request","msg":{"id":"a12","type":"memory.forget","memId":"m7"}}
+{"from":"node","kind":"response","msg":{"id":"a12","type":"memory","items":[{"id":"m8","text":"I take the 7:50 GO train on weekdays","source":"app","createdAt":"2026-11-01T15:00:00.000Z","updatedAt":"2026-11-01T15:02:10.000Z"}]}}
+{"from":"app","kind":"request","msg":{"id":"a13","type":"memory.forget","memId":"m99"}}
+{"from":"node","kind":"response","msg":{"id":"a13","type":"error","message":"That memory doesn't exist any more."}}
+{"from":"app","kind":"request","msg":{"id":"a14","type":"memory.clear"}}
+{"from":"node","kind":"response","msg":{"id":"a14","type":"memory","items":[]}}
+{"from":"app","kind":"request","msg":{"id":"a15","type":"settings.get"}}
+{"from":"node","kind":"response","msg":{"id":"a15","type":"settings","config":{"voice":{"model":"sonnet","wakeWord":true,"aboutMe":"I study software engineering in Toronto."},"memory":{"enabled":true,"maxItems":30},"history":{"enabled":true,"retentionDays":1},"app":{"speakReplies":false}},"configPath":"/Users/cris/.stephen/config.json"}}
+{"from":"app","kind":"request","msg":{"id":"a16","type":"audit.recent","limit":100}}
+{"from":"node","kind":"response","msg":{"id":"a16","type":"audit","entries":[{"ts":"2026-11-01T14:03:20.500Z","tool":"read_page","browser":"zen","kind":"read","urlBefore":"https://weather.gc.ca/","outcome":"ok"},{"ts":"2026-11-01T13:10:02.000Z","tool":"click","browser":"zen","kind":"click","element":"button \"Send\"","verdict":"confirm","outcome":"denied","intent":"send the email"}]}}
+{"from":"app","kind":"request","msg":{"id":"a17","type":"settings.get"}}
+{"from":"node","kind":"response","msg":{"id":"a17","type":"error","message":"could not read the config"}}
+{"from":"app","kind":"request","msg":{"id":"a18","type":"window.open"}}
+{"from":"node","kind":"response","msg":{"id":"a18","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a19","type":"window.open"}}
+{"from":"node","kind":"response","msg":{"id":"a19","type":"error","message":"Stephen Helper isn't connected to stephen listen"}}

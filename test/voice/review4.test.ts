@@ -31,11 +31,11 @@ import { buildClaudeArgs, checkClaudeFlags } from '../../src/voice/claude.js';
 describe('claude flag probe (owner may run an older Claude Code)', () => {
   const base = 'Usage: claude [options]\n  -p, --print\n --strict-mcp-config --tools <t> --permission-mode <m> --setting-sources <s> --allowedTools --disallowedTools --append-system-prompt --mcp-config <c> --output-format <f>';
   it('all present', () => {
-    expect(checkClaudeFlags(`${base}\n  --no-chrome  x\n  --no-session-persistence y`)).toEqual({ ok: true, unsupportedOptional: new Set() });
+    expect(checkClaudeFlags(`${base}\n  --no-chrome  x\n  --no-session-persistence y`)).toEqual({ ok: true, unsupportedOptional: new Set(), personaFile: false });
   });
   it('optional missing → dropped from argv, required kept', () => {
     const p = checkClaudeFlags(base);
-    expect(p).toEqual({ ok: true, unsupportedOptional: new Set(['--no-chrome', '--no-session-persistence']) });
+    expect(p).toEqual({ ok: true, unsupportedOptional: new Set(['--no-chrome', '--no-session-persistence']), personaFile: false });
     const args = buildClaudeArgs('open youtube', { claudePath: 'claude', maxTurns: 5, model: null, mcpConfigPath: '/m.json', unsupportedOptionalFlags: (p as { unsupportedOptional: Set<string> }).unsupportedOptional });
     expect(args).not.toContain('--no-chrome');
     expect(args).toContain('--setting-sources');
@@ -45,7 +45,7 @@ describe('claude flag probe (owner may run an older Claude Code)', () => {
     expect(checkClaudeFlags(base.replace('--setting-sources <s>', ''))).toEqual({ ok: false, missing: ['--setting-sources'] });
   });
   it('text that is not Claude Code help (a wrapper or test double) is never refused', () => {
-    expect(checkClaudeFlags('{"result":"ok"}')).toEqual({ ok: true, unsupportedOptional: new Set() });
+    expect(checkClaudeFlags('{"result":"ok"}')).toEqual({ ok: true, unsupportedOptional: new Set(), personaFile: false });
   });
   it('--chrome alone does not count as --no-chrome', () => {
     const p = checkClaudeFlags(`${base}\n  --chrome  Enable`);

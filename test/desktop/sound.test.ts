@@ -116,12 +116,12 @@ describe('media_control tool', () => {
     expect(h.audit.entries.at(-1)).toMatchObject({ tool: 'media_control', outcome: 'ok', args: { action: 'next', player: 'Music' } });
   });
 
-  it('pause with nothing playing: does nothing and points to the browser tools for YouTube', async () => {
+  it('pause with nothing playing (and no browser attached): does nothing and says why', async () => {
     const h = await setupDesktop();
     h.mac.players = { Spotify: { running: true, state: 'paused' }, Music: { running: false } };
     const r = await h.call('media_control', { action: 'pause', intent });
     expect(r.isError).toBeFalsy();
-    expect(textOf(r)).toMatch(/^Nothing done: nothing is playing in Spotify or Music\. If a YouTube video is playing in the browser, use tabs_list and then press_key "k"/);
+    expect(textOf(r)).toMatch(/^Nothing done: No YouTube Music tab found: Stephen isn't connected to Zen.*, and nothing is playing in Spotify or Music\. To start new music, use play_media\.$/);
     expect(osa(h, PLAYERS_JXA).map((c) => c.args[4])).toEqual(['status']);
   });
 

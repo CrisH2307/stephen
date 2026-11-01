@@ -3,7 +3,7 @@
 // Like the real thing it reads --mcp-config, starts that MCP server (Stephen's `serve --dry-run --record …`) over
 // stdio, and calls tools on it; WHICH tools come from $FAKE_EVAL_SCRIPT (JSON: { "<prompt>": { calls: [{tool, args}],
 // reply, mode? } }). mode "hang" = never answer (timeout tests), "error" = an error_max_turns result.
-// Every run's argv is appended to $FAKE_EVAL_LOG.
+// Every run's argv is appended to $FAKE_EVAL_LOG; with $FAKE_EVAL_RESULTS, every tool result's text is appended there.
 import { appendFileSync, readFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -28,7 +28,8 @@ if (plan.mode === 'hang') {
 } else {
   let turns = 1;
   for (const c of plan.calls) {
-    await client.callTool({ name: c.tool, arguments: c.args ?? {} });
+    const r = await client.callTool({ name: c.tool, arguments: c.args ?? {} });
+    if (process.env.FAKE_EVAL_RESULTS) appendFileSync(process.env.FAKE_EVAL_RESULTS, JSON.stringify({ prompt, tool: c.tool, text: r.content?.[0]?.text ?? '' }) + '\n');
     turns++;
   }
   await client.close();

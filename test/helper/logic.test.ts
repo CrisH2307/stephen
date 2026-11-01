@@ -81,5 +81,6 @@ describe('parseHelperLine', () => {
   it('encodes commands as one JSON line', () => {
     expect(encodeCommand({ type: 'state', state: 'recording' })).toBe('{"type":"state","state":"recording"}\n');
     expect(encodeCommand({ type: 'query_audio' })).toBe('{"type":"query_audio"}\n');
+    expect(encodeCommand({ type: 'open_window' })).toBe('{"type":"open_window"}\n');
   });
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -43,13 +43,31 @@ describe('stephen listen --text', () => {
       mcpServers: {
         stephen: {
           command: process.execPath,
-          args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice', '--session-state', join(tmp, 'home', 'voice', 'conversation-state.json')],
+          args: [
+            '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice',
+            '--tool-log', join(tmp, 'home', 'voice', 'tool-log.jsonl'),
+            '--session-state', join(tmp, 'home', 'voice', 'conversation-state.json'),
+          ],
         },
       },
     });
     expect(t.out[0]).toMatch(/^MCP config \(.*mcp-config\.json\): \{"mcpServers":\{"stephen":/);
     expect(t.speaker.said).toEqual([]); // dry run never speaks
     expect(t.chimes.played).toEqual([]);
+  });
+
+  it('voice.personaFile "on": the persona goes to <home>/voice/persona.txt (0600) and argv only has its path', async () => {
+    const home = join(tmp, 'home-persona');
+    const log = join(tmp, 'persona.log');
+    const t = env({ claudePath: fakeClaudePath(), personaFile: 'on', aboutMe: { home: '1 Secret Rd' } }, { env: { ...process.env, FAKE_CLAUDE_LOG: log } }, home);
+    expect(await runListen(['--text', 'open youtube'], t.e)).toBe(0);
+    const [run] = readFakeLog(log);
+    const file = join(home, 'voice', 'persona.txt');
+    expect(run!.argv[run!.argv.indexOf('--append-system-prompt-file') + 1]).toBe(file);
+    expect(run!.argv).not.toContain('--append-system-prompt');
+    expect(run!.argv.join(' ')).not.toContain('Secret Rd');
+    expect(readFileSync(file, 'utf8')).toContain('Home address: 1 Secret Rd.');
+    expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('follow-ups (fake claude + --text): within the window the 2nd command resumes the 1st session; after it, fresh', async () => {
@@ -105,7 +123,9 @@ describe('stephen listen --text', () => {
       buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: zmcp }),
       buildClaudeArgs('now search for lo-fi', { claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: zmcp }),
     ]);
-    expect(JSON.parse(readFileSync(zmcp, 'utf8')).mcpServers.stephen.args).toEqual(['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice']);
+    expect(JSON.parse(readFileSync(zmcp, 'utf8')).mcpServers.stephen.args).toEqual([
+      '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice', '--tool-log', join(zhome, 'voice', 'tool-log.jsonl'),
+    ]);
     expect(zero.out).not.toContain('Working… (follow-up)');
     expect(existsSync(join(zhome, 'voice', 'conversation.json'))).toBe(false);
   });

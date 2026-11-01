@@ -74,6 +74,9 @@ describe('loadConfig', () => {
       stateDir: join(home, 'state'),
       desktop: {},
       voice: {},
+      memory: {},
+      history: {},
+      app: {},
     });
   });
 
