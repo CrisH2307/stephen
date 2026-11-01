@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { withSessionState } from './safety/session-state.js';
 import { runListen, runVoiceSetup } from './voice/index.js';
@@ -60,6 +60,7 @@ Usage:
   stephen install        Print the "claude mcp add" command for this install
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
+  stephen eval           score one-shot voice requests with a dry-run of Stephen's tools (--only routes, --jobs 2)
   stephen voice-setup    Download and check the local wake-word and speech models (once)
   stephen voice-setup --tts kokoro
                          Download the local Kokoro voice (~103 MB; used when ElevenLabs is unavailable)
@@ -88,6 +89,20 @@ async function serve(argv: string[] = []): Promise<void> {
   const cfg = loadConfig();
   const opts = parseServeArgs(argv, { home: cfg.home });
   if ('error' in opts) throw new Error(opts.error);
+  if (opts.dryRun) {
+    // stephen eval: same tools, nothing acts (src/eval/dry-server.ts). No home dirs touched, no browser, no audit.
+    const { buildDryRunServer, fileRecorder } = await import('./eval/dry-server.js');
+    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+    const deps: ServerDepsWithVoice = { cfg, manager: createBrowserManager(cfg), engine: pageEngine, safetyFactory: createSafety, voice: {} };
+    const { server } = buildDryRunServer(deps, packageVersion(), fileRecorder(opts.dryRun.record));
+    const bye = () => process.exit(0);
+    process.stdin.once('end', bye);
+    process.stdin.once('close', bye);
+    process.once('SIGTERM', bye);
+    process.once('SIGINT', bye);
+    await server.connect(new StdioServerTransport());
+    return;
+  }
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
   if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
   // Profiles, state and saved page output are private to this user (mode 0700).
@@ -411,6 +426,8 @@ async function main(argv: string[]): Promise<number> {
       return runInstallHelper(rest);
     case 'listen':
       return runListen(rest);
+    case 'eval':
+      return (await import('./eval/cli.js')).runEvalCli(rest);
     case 'voice-setup':
       return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : runVoiceSetup(rest);
     case 'voice-key':
