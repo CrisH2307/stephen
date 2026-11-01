@@ -117,14 +117,19 @@ export function registerDesktopTools(mcp: McpServer, hub: Hub, names: string[], 
       'Only https:// pages open directly; http:// asks the user; every other kind of link (file:, mailto:, tel:, app links such as zoommtg: or vscode:, javascript:…) is refused. ' +
       'The browser safety checks of tab_open apply (blocked sites are refused, sensitive sites and some links after reading private pages ask the user). ' +
       'If Stephen is already attached to that browser, the page opens in a tab — the one that already shows it or is on the same site (Google Maps, Gmail, Notion, Canvas, YouTube…) is reused, else a new one — and you get its tab id to keep working with the browser tools; otherwise it opens in the user\'s normal browser window (no tab id), and the user is asked first if they chose a separate agent profile or if the link may forward to another site (redirectors, a URL inside the URL). ' +
+      'Pass new_tab: true when one request opens several pages of the same site that should stay side by side (e.g. two Google Maps routes), or when the user asks for a new tab. ' +
       'There is no clicking or typing on the desktop yet. Refused while the Mac is locked.',
     {
       url: z.string().trim().min(1).max(4096).describe('Full address, e.g. "https://www.youtube.com" (a bare host such as "youtube.com" gets https://).'),
       browser: z.enum(['zen', 'chrome']).optional().describe('Which browser; defaults to the configured default browser.'),
+      new_tab: z
+        .boolean()
+        .optional()
+        .describe('true = open in a NEW tab instead of reusing a tab on the same site (several pages of one site side by side, or the user asked for a new tab).'),
       intent: intentArg,
     },
     ACT,
-    async ({ url, browser, intent }) => desktop.openUrl(url, browser, intent),
+    async ({ url, browser, new_tab, intent }) => desktop.openUrl(url, browser, intent, new_tab === true),
   );
 
   const player = new MediaPlayer(hub, desktop);
@@ -302,7 +307,7 @@ export class Desktop {
 
   // ───────────────────────────── open_url ─────────────────────────────
 
-  async openUrl(input: string, browserArg: BrowserName | undefined, intent: string): Promise<CallToolResult> {
+  async openUrl(input: string, browserArg: BrowserName | undefined, intent: string, newTab = false): Promise<CallToolResult> {
     this.requireMac();
     const tool = 'open_url';
     const why = clean(intent, 200);
@@ -326,7 +331,7 @@ export class Desktop {
       throw e;
     }
     await this.assertUnlocked(tool, intent, { url: redactUrl(parsed.href) });
-    const o = await this.openParsed(tool, parsed, browser, intent);
+    const o = await this.openParsed(tool, parsed, browser, intent, newTab);
     if (o.via === 'tab') return o.res;
     const label = BROWSER_LABEL[browser];
     return okResult(
@@ -347,6 +352,8 @@ export class Desktop {
     parsed: ParsedOpenUrl,
     browser: BrowserName,
     intent: string,
+    /** true = never reuse a tab for this page (open_url new_tab). */
+    newTab = false,
   ): Promise<OpenOutcome> {
     const why = clean(intent, 200);
     const { href, host } = parsed;
@@ -382,7 +389,7 @@ export class Desktop {
           href,
           intent,
           g,
-          reuse: this.dcfg.reuseTabs,
+          reuse: newTab ? 'never' : this.dcfg.reuseTabs,
           auditArgs: { url: auditUrl, via: 'attached browser' },
           newTabDone: () => `Opened a new ${label} tab and loaded ${href}`,
         });

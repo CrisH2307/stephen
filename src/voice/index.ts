@@ -245,6 +245,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     model: cfg.claudeModel,
     mcpConfigPath,
     followUps: conversation.enabled,
+    aboutMe: cfg.aboutMe ?? null,
   };
   // Check once that this Claude Code knows our lock-down flags: required ones missing → refuse (update Claude Code);
   // optional ones (--no-chrome, --no-session-persistence) missing → leave them out instead of failing every command.
@@ -363,6 +364,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         wakePhrases: cfg.wakePhrases,
         stopPhrase: cfg.stopPhrase,
         silenceSec: cfg.silenceSec,
+        longSilenceSec: cfg.longSilenceSec,
+        continueSec: cfg.continueSec,
         maxCommandSec: cfg.maxCommandSec,
         noSpeechTimeoutSec: cfg.noSpeechTimeoutSec,
         verifyWake: cfg.verifyWake,

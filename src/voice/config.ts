@@ -62,6 +62,26 @@ export function resolveClaudeModel(v: string | null | undefined): string | null 
   return v.toLowerCase() === 'default' ? null : v;
 }
 
+/** One "about me" value: a single line, printable, short. */
+const aboutValue = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .refine((v) => !/[\u0000-\u001f\u007f]/.test(v), 'must be one line of plain text');
+
+/** voice.aboutMe — facts the user chose to tell Stephen (see aboutMeLines in claude.ts). */
+export const AboutMeSchema = z
+  .strictObject({
+    name: aboutValue.optional(),
+    home: aboutValue.optional(),
+    school: aboutValue.optional(),
+    work: aboutValue.optional(),
+    /** Up to 10 more short facts ("my prof for SOFE 3980 is Dr. X", "I like lofi and R&B"). */
+    notes: z.array(aboutValue).max(10).optional(),
+  });
+export type AboutMe = z.output<typeof AboutMeSchema>;
+
 const VoiceConfigSchema = z
   .strictObject({
     /** Phrases that start a command (any of them). Default: DEFAULT_WAKE_PHRASES. */
@@ -90,7 +110,13 @@ const VoiceConfigSchema = z
      * for Claude Code's own default (no --model flag). See docs/VOICE.md "Model".
      */
     claudeModel: claudeModel.nullish(),
-    maxTurns: z.number().int().min(1).max(100).default(15),
+    /** Model turns per command. 25 leaves room for multi-step requests ("open Notion and play lofi and …"). */
+    maxTurns: z.number().int().min(1).max(100).default(25),
+    /**
+     * Facts about the user that Stephen may use without asking ("routes from my home to Union Station").
+     * Sent to Claude with every command; only what you put here. See docs/VOICE.md "About me".
+     */
+    aboutMe: AboutMeSchema.optional(),
     /**
      * Follow-ups: a command that starts within this many seconds of the previous command's end continues its
      * conversation (Claude `--resume` + the safety gate's memory via `serve --session-state`; see
@@ -116,10 +142,20 @@ const VoiceConfigSchema = z
     rate: z.number().int().min(90).max(720).nullish(),
     /** Tink on wake, Pop when done. */
     chimes: z.boolean().default(true),
-    /** Silence that ends a command. */
+    /** Silence that ends a short command. */
     silenceSec: z.number().min(0.3).max(3).default(0.8),
-    /** Longest command. */
-    maxCommandSec: z.number().min(2).max(60).default(12),
+    /**
+     * Silence that ends a longer command (after ~2.5 s of talking): room for a thinking pause between parts of a
+     * multi-step request. Values below silenceSec act like silenceSec.
+     */
+    longSilenceSec: z.number().min(0.3).max(4).default(1.5),
+    /**
+     * When a command ends on a joining word ("…and", "…then", "um"), keep listening this many more seconds and
+     * join the parts (once). 0 = off. Push-to-talk ends on release and is never extended.
+     */
+    continueSec: z.number().min(0).max(10).default(4),
+    /** Longest wake-word command (whisper hears at most 30 s). */
+    maxCommandSec: z.number().min(2).max(60).default(25),
     /** Give up if nothing is said this long after the wake word. */
     noSpeechTimeoutSec: z.number().min(1).max(30).default(5),
     /** Voice output: `tts` (auto|elevenlabs|kokoro|say), `elevenlabs` {voiceId, modelId, apiKeyFile, timeoutSec}, `kokoro` {speaker, speed}. */
@@ -133,6 +169,7 @@ const VoiceConfigSchema = z
     message: 'the stop phrase must differ from every wake phrase',
     path: ['stopPhrase'],
   });
+
 
 export type VoiceConfig = Omit<
   z.output<typeof VoiceConfigSchema>,

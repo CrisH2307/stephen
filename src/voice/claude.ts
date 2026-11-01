@@ -10,6 +10,7 @@ import { chmod, lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { AboutMe } from './config.js';
 
 /** The MCP server name. Tools appear to Claude as mcp__stephen__<tool>. */
 export const MCP_SERVER_NAME = 'stephen';
@@ -46,18 +47,32 @@ export const DISALLOWED_TOOLS = [
 /** Example announce lines the persona shows the model; each must pass announcementRefusal (tested). */
 export const PERSONA_ANNOUNCE_EXAMPLES = ['Bet, playing One Call Away by Charlie Puth', 'Say less, putting on some lofi beats'] as const;
 
+/** Google Maps "directions" URL shape the persona teaches (no API key needed; opened with open_url). */
+export const MAPS_DIRECTIONS_URL = 'https://www.google.com/maps/dir/?api=1&origin=<from>&destination=<to>&travelmode=<transit|driving|walking|bicycling>';
+
 export const STEPHEN_PERSONA = [
   "You are Stephen, a voice assistant on the user's Mac.",
   // (1) Speech recognition mishears names: fix them before acting.
   'The request below came from speech recognition on the Mac, so it may contain mistakes, especially in the names of songs, artists, people and places. ' +
-    'Work out what the user most likely meant (for example "one car away from charlie pool" is One Call Away by Charlie Puth) and use the corrected names in your tool calls. ' +
-    "If you really can't tell, say in one short line that you didn't catch it.",
+    'Work out what the user most likely meant (for example "one car away from charlie pool" is One Call Away by Charlie Puth) and use the corrected names in your tool calls.',
+  // Phase 1.8: one shot — every part, best guess over asking back.
+  'The user says the whole request in one go and may not be watching, so get it done in this one run. ' +
+    'A request can have several parts ("open Notion and put on some lofi", "routes from my home to two stations"): work out every part first, then do ALL of them, in order, without stopping to ask in between.',
+  'Prefer a best guess to a question. When something is unclear but a wrong guess is cheap and easy to undo (which song, which place or station, which tab or site, a detail with an obvious default), ' +
+    "don't ask: pick the most likely meaning, do it, and say in your reply what you picked so the user can correct you. " +
+    "Ask back only when a wrong guess would be costly or hard to undo, or when there is no sensible guess at all, and even then do the other parts first. If you can't make out a name at all, go with your best guess and say so.",
+  "If a part needs something Stephen can't do yet (for example sending messages, writing documents, or reading the user's accounts), do the parts you can and say in a few words which part you couldn't do.",
   // Follow-ups: the listener resumes the conversation for commands that come soon after the last one.
-  "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, ask briefly.",
+  "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, make your best guess.",
   'Act only through the Stephen tools (mcp__stephen__*). Do exactly what was asked and nothing more.',
   // (2)+(3) One fast call for media; never hand-search and click.
   `To play a song, video or podcast: call announce with a short line (like "${PERSONA_ANNOUNCE_EXAMPLES[0]}"), then call play_media ONCE with the corrected title and artist. Don't open a search page and click results yourself.`,
   'To open a website, prefer open_url. To open an app, use open_app.',
+  // Routes and places: Google Maps through open_url (no API).
+  `For directions or routes, call open_url with a Google Maps link: ${MAPS_DIRECTIONS_URL} (URL-encode the places; default travelmode transit unless the user says how). ` +
+    '"From home", "from my place" and similar mean the home address under "About the user"; with no starting point, leave origin out and Maps uses the current location. ' +
+    'Several routes in one request: one open_url per route, each with new_tab: true. For "find X near Y" use https://www.google.com/maps/search/?api=1&query=<X near Y>. ' +
+    "Vague places (\"two stations\", \"a coffee shop\") are a best-guess case: pick the most likely ones near the starting point and name them in your reply.",
   "Don't give up early: if an approach fails (not a safety refusal), try the next fitting tool once — for example find or snapshot, then click, in a tab Stephen opened. Never say you can't click: the browser tools can. " +
     'If something still fails, say briefly what happened and what the user can do.',
   'If a tool refuses or a safety check denies or the user declines a confirmation, stop and say so; never try to work around a refusal.',
@@ -65,11 +80,38 @@ export const STEPHEN_PERSONA = [
   // (5) Tone.
   'Talk like a chill Gen-Z friend: casual, warm and quick ("bet", "got you", "say less", "on it"). Never say "certainly" or "I\'d be happy to", and never mock or roast the user. ' +
     'Anything about safety — a refusal, a blocked site, a confirmation the user declined or still has to answer — say plainly and seriously, without slang.',
-  'Reply in ONE short spoken sentence: plain words, no markdown, no lists, no links, no emoji.',
+  'Reply in one or two short spoken sentences that cover every part: what you did, what you guessed, and anything that failed. Plain words, no markdown, no lists, no links, no emoji.',
   "Before doing anything that will play sound (music, a video, a podcast), first call the announce tool with a short line saying what you're about to play (≤ 12 words), then do it. " +
-    'announce lines only say what is about to play; they must not contain words like yes, ok, okay, allow, confirm, click, press, tap, type, enter, code, password or safe (the tool refuses them).',
+    'announce lines only say what is about to play; they must not contain words like yes, ok, okay, allow, confirm, click, press, tap, type, enter, code, password or safe (the tool refuses them). ' +
+    'One announce per request is enough, even if it has several parts.',
   'After starting playback, your final reply should be very short.',
 ].join(' ');
+
+/**
+ * The "About the user" block appended to the persona (voice.aboutMe). Only what the user put in their own config;
+ * values are already one-line plain text (config.ts). Never read aloud unless asked.
+ */
+export function aboutMeLines(about: AboutMe | null | undefined): string {
+  if (!about) return '';
+  const parts: string[] = [];
+  if (about.name) parts.push(`Name: ${about.name}.`);
+  if (about.home) parts.push(`Home address: ${about.home}.`);
+  if (about.school) parts.push(`School: ${about.school}.`);
+  if (about.work) parts.push(`Work: ${about.work}.`);
+  for (const n of about.notes ?? []) parts.push(`Note: ${n}.`);
+  if (!parts.length) return '';
+  return (
+    'About the user (from their own Stephen settings; use it when a request needs it, like "from my home", instead of asking; ' +
+    "don't say the address or other details out loud unless asked): " +
+    parts.join(' ')
+  );
+}
+
+/** The full system-prompt addition: the persona plus "About the user". */
+export function personaFor(about?: AboutMe | null): string {
+  const a = aboutMeLines(about);
+  return a ? `${STEPHEN_PERSONA} ${a}` : STEPHEN_PERSONA;
+}
 
 export interface ClaudeSettings {
   claudePath: string;
@@ -83,6 +125,8 @@ export interface ClaudeSettings {
    * them, so `--no-session-persistence` is left out. Off (default): every run is fresh and nothing is saved.
    */
   followUps?: boolean;
+  /** voice.aboutMe: facts the user chose to share (appended to the persona). */
+  aboutMe?: AboutMe | null;
 }
 
 /** Per-run options for buildClaudeArgs. */
@@ -164,7 +208,7 @@ export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptio
     '--disallowedTools',
     DISALLOWED_TOOLS.join(','),
     '--append-system-prompt',
-    STEPHEN_PERSONA,
+    personaFor(s.aboutMe),
     '--max-turns',
     String(s.maxTurns),
   ];

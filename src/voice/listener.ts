@@ -26,7 +26,7 @@ import type { AudioSource } from './audio.js';
 import type { KeywordHit, Spotter, Transcriber, Vad } from './engine.js';
 import type { HelperBridge, MenuState } from './helper-link.js';
 import type { Chimes } from './speech.js';
-import { normalizeTranscript } from './transcript.js';
+import { normalizeTranscript, plainWords } from './transcript.js';
 import { SAMPLE_RATE, concatSamples } from './wav.js';
 
 export interface ListenerOptions {
@@ -37,6 +37,16 @@ export interface ListenerOptions {
   /** The stop phrase: a capture whose transcript is just this is never sent (a bare "Stephen" started it). */
   stopPhrase?: string;
   silenceSec: number;
+  /**
+   * Once the user has talked for LONG_COMMAND_AFTER_SEC, a command ends only after this much silence (≥ silenceSec):
+   * multi-part requests ("open Notion… and then play lofi") have thinking pauses. Default = silenceSec (off).
+   */
+  longSilenceSec?: number;
+  /**
+   * A wake-word command whose transcript ends in a joining word ("…and", "…then", "um") is not sent yet: Stephen
+   * keeps listening for up to this many seconds and joins the two parts (once). 0 = off. Default 0.
+   */
+  continueSec?: number;
   maxCommandSec: number;
   noSpeechTimeoutSec: number;
   verifyWake: boolean;
@@ -86,6 +96,20 @@ const SPOTTER_PRIME_SEC = 2;
 /** Push-to-talk audio kept before the first / after the last frame the VAD calls speech (its detection lags). */
 const PTT_LEAD_SEC = 0.5;
 const PTT_TAIL_SEC = 0.25;
+/** After this much speech in one command, the longer pause (`longSilenceSec`) ends it. */
+export const LONG_COMMAND_AFTER_SEC = 2.5;
+
+/** Words a finished request doesn't end with: the user paused mid-sentence. */
+const JOINING_WORDS = new Set(['and', 'then', 'also', 'plus', 'or', 'but', 'so', 'with', 'to', 'from', 'for', 'um', 'uh', 'erm', 'the', 'a', 'an', 'my', 'of']);
+const JOINING_PAIRS = new Set(['after that', 'and then', 'and also']);
+
+/** True when a (normalized, lower-case) transcript stops mid-sentence: "open notion and", "play um". */
+export function endsUnfinished(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false; // a lone "and" is not a command start worth waiting for
+  const last = words[words.length - 1]!;
+  return JOINING_WORDS.has(last) || JOINING_PAIRS.has(words.slice(-2).join(' '));
+}
 
 /** Last few seconds of audio, for the pre-roll and spotter priming. */
 class Ring {
@@ -114,6 +138,14 @@ export class Listener {
   private capturedSec = 0;
   private speechSec = 0;
   private heardSpeech = false;
+  /** Silence after speech beyond the VAD's own silenceSec (for longSilenceSec). */
+  private extraSilenceSec = 0;
+  /** Samples seen so far (any state), to recover the audio said while an unfinished part was transcribed. */
+  private totalSamples = 0;
+  /** totalSamples when the current capture ended. */
+  private captureEndSample = 0;
+  /** Continuation: the first, unfinished part (already transcribed and wake-checked). */
+  private prefix: string | null = null;
   private sinceRecycleSec = 0;
   private task: Promise<void> = Promise.resolve();
   private cancelToken: Token = { cancelled: false, reachedClaude: false };
@@ -247,6 +279,7 @@ export class Listener {
 
   private onFrame(frame: Float32Array): void {
     this.ring.push(frame);
+    this.totalSamples += frame.length;
     const hit = this.d.spotter.accept(frame);
     switch (this.state) {
       case 'listening':
@@ -343,9 +376,31 @@ export class Listener {
     this.capturedSec = 0;
     this.speechSec = 0;
     this.heardSpeech = false;
+    this.extraSilenceSec = 0;
+    this.prefix = null;
     this.d.vad.reset();
     this.state = 'capturing';
     this.menu('recording');
+  }
+
+  /**
+   * The transcript ended mid-sentence ("open notion and"): listen again for up to continueSec, starting with the
+   * audio said while the first part was being transcribed (from the ring), and send both parts joined.
+   */
+  private beginContinuation(prefix: string): void {
+    this.prefix = prefix;
+    const gapSec = Math.min((this.totalSamples - this.captureEndSample) / SAMPLE_RATE, RING_SEC);
+    this.capture = gapSec > 0 ? [this.ring.last(gapSec).slice()] : [];
+    this.capturedSec = 0;
+    this.speechSec = 0;
+    this.heardSpeech = false;
+    this.extraSilenceSec = 0;
+    this.d.vad.reset();
+    if (gapSec > 0) this.d.vad.accept(this.capture[0]!);
+    this.state = 'capturing';
+    this.menu('recording');
+    this.d.chimes.play('wake');
+    this.d.status(`Heard "${prefix}" — still listening…`);
   }
 
   // ───────────────────────────── helper: push-to-talk, Esc ─────────────────────────────
@@ -445,13 +500,20 @@ export class Listener {
     this.d.vad.accept(frame);
     if (this.d.vad.speaking()) {
       this.speechSec += dt;
+      this.extraSilenceSec = 0;
       if (this.speechSec >= MIN_COMMAND_SPEECH_SEC) this.heardSpeech = true;
     } else if (this.heardSpeech) {
-      return this.finishCapture(); // speech, then `silenceSec` of silence: end of command
+      // speech, then `silenceSec` of silence (the VAD's own hangover): end of command — or, after a long
+      // request, wait up to longSilenceSec in total (a thinking pause between parts).
+      const long = this.o.longSilenceSec ?? this.o.silenceSec;
+      const need = this.speechSec >= LONG_COMMAND_AFTER_SEC ? Math.max(0, long - this.o.silenceSec) : 0;
+      this.extraSilenceSec += dt;
+      if (this.extraSilenceSec >= need) return this.finishCapture();
     } else {
       this.speechSec = 0; // a blip, not a command
     }
-    if (!this.heardSpeech && this.capturedSec >= this.o.noSpeechTimeoutSec) {
+    const noSpeechSec = this.prefix !== null ? Math.min(this.o.noSpeechTimeoutSec, this.o.continueSec ?? 0) : this.o.noSpeechTimeoutSec;
+    if (!this.heardSpeech && this.capturedSec >= noSpeechSec) {
       // The wake phrase might have run straight into a short command that ended before we started listening
       // for it; transcribe what we have — verifyWake/normalization decide whether it was a command.
       return this.finishCapture();
@@ -462,10 +524,13 @@ export class Listener {
   private finishCapture(): void {
     const audio = concatSamples(this.capture);
     this.capture = [];
-    this.startProcessing(audio, false);
+    this.captureEndSample = this.totalSamples;
+    const prefix = this.prefix;
+    this.prefix = null;
+    this.startProcessing(audio, false, prefix);
   }
 
-  private startProcessing(audio: Float32Array, ptt: boolean): void {
+  private startProcessing(audio: Float32Array, ptt: boolean, prefix: string | null = null): void {
     this.state = 'busy';
     this.menu('working');
     if (ptt) this.d.spotter.restart(); // "hey stephen" said while holding the keys must not cancel this command
@@ -477,12 +542,17 @@ export class Listener {
     this.bareWake = false;
     // A push-to-talk press may have cancelled a command that is still winding down: run after it.
     const previous = this.task;
-    this.task = this.process(audio, token, ptt, wake, previous)
+    this.task = this.process(audio, token, ptt, wake, previous, prefix)
       .catch((e: unknown): CommandResult => {
         this.d.status(`Problem: ${(e as Error).message}`);
         return 'error';
       })
       .then((r) => {
+        if (typeof r === 'object' && r !== null) {
+          // Unfinished sentence: keep listening (unless cancelled or a push-to-talk press took over meanwhile).
+          if (this.cancelToken === token && this.state === 'busy' && !this.exitRequested) this.beginContinuation(r.prefix);
+          return;
+        }
         if (r) this.results.push(r);
         // A newer push-to-talk press took over: it owns the state now.
         if (token.reachedClaude) this.lastCommandEndMs = Date.now();
@@ -505,6 +575,7 @@ export class Listener {
 
   private toListening(): void {
     this.capture = [];
+    this.prefix = null;
     this.state = 'listening';
     this.sinceRecycleSec = 0;
     this.d.spotter.restart(); // forget whatever was heard while busy
@@ -517,12 +588,16 @@ export class Listener {
     ptt: boolean,
     wake: { anchored: boolean; strict: boolean },
     previous: Promise<void>,
-  ): Promise<CommandResult | null> {
+    prefix: string | null = null,
+  ): Promise<CommandResult | null | { prefix: string }> {
     this.d.status('Transcribing…');
     const t0 = Date.now();
     const raw = await this.d.transcriber.transcribe(audio);
     const ms = Date.now() - t0;
-    const { text, hadWake } = normalizeTranscript(raw, this.o.wakePhrases ?? [this.o.wakePhrase], wake);
+    const norm = normalizeTranscript(raw, this.o.wakePhrases ?? [this.o.wakePhrase], wake);
+    // A continuation carries no wake word (the first part was checked); a repeated "hey stephen" is still stripped.
+    const hadWake = prefix !== null || norm.hadWake;
+    const text = prefix !== null ? [prefix, norm.hadWake ? norm.text : plainWords(raw)].filter(Boolean).join(' ') : norm.text;
     this.d.onTranscript?.(raw, text, ms);
     if (token.cancelled) {
       this.d.status('Cancelled.');
@@ -534,11 +609,15 @@ export class Listener {
       return null;
     }
     // "Stephen, stop" whose STOP the spotter missed: the bare "Stephen" started a capture of… "stop".
-    const stop = this.o.stopPhrase ? normalizeTranscript(raw, [this.o.stopPhrase], { anchored: true }) : null;
+    const stop = this.o.stopPhrase && prefix === null ? normalizeTranscript(raw, [this.o.stopPhrase], { anchored: true }) : null;
     if (stop?.hadWake && !stop.text) {
       this.d.assistant.endConversation();
       this.d.status(`Heard "${this.o.stopPhrase}" — nothing to stop.`);
       return null;
+    }
+    // Stopped mid-sentence ("open notion and…"): listen a bit more, once, instead of sending half a request.
+    if (!ptt && prefix === null && (this.o.continueSec ?? 0) > 0 && text && endsUnfinished(text)) {
+      return { prefix: text };
     }
     if (!text) {
       this.d.status("Didn't hear a command.");
