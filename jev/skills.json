@@ -1,0 +1,277 @@
+{
+  "_note": "One line per skill, as Jev sees it. Exact duplicates (engineering:* vs anthropic-skills:*) are merged; load_as is the name passed to the Skill tool.",
+  "skills": {
+    "file-reading": {
+      "load_as": "file-reading",
+      "line": "Open an uploaded file whose content isn't shown yet; routes by file type (pdf, docx, xlsx, csv, json, images, archives)."
+    },
+    "pdf-reading": {
+      "load_as": "pdf-reading",
+      "line": "Read or extract text, tables, images or form fields from an existing PDF."
+    },
+    "pdf": {
+      "load_as": "anthropic-skills:pdf",
+      "line": "Create, merge, split, rotate, watermark, fill, encrypt or OCR PDF files."
+    },
+    "docx": {
+      "load_as": "anthropic-skills:docx",
+      "line": "Create or edit a Microsoft Word .docx file when Word format is explicitly wanted."
+    },
+    "pptx": {
+      "load_as": "anthropic-skills:pptx",
+      "line": "Create, read or edit a PowerPoint .pptx file when PowerPoint format is explicitly wanted."
+    },
+    "xlsx": {
+      "load_as": "anthropic-skills:xlsx",
+      "line": "Create, clean, edit or convert spreadsheet files (.xlsx, .csv, .tsv)."
+    },
+    "docs": {
+      "load_as": "anthropic-skills:docs",
+      "line": "Create a shareable, editable document (report, proposal, letter, guide, resume) when no file format is named."
+    },
+    "google-workspace": {
+      "load_as": "anthropic-skills:google-workspace",
+      "line": "Create or change a Google Doc, Sheet or Slides file in the user's Google Drive."
+    },
+    "product-self-knowledge": {
+      "load_as": "product-self-knowledge",
+      "line": "Facts about Anthropic products: Claude Code, Claude API, claude.ai plans, pricing and limits."
+    },
+    "frontend-design": {
+      "load_as": "frontend-design",
+      "line": "Visual design direction for a new or reworked web UI: typography, layout, aesthetics."
+    },
+    "typesafe-ai": {
+      "load_as": "typesafe-ai",
+      "line": "Build software features that use TypeSafe/Jev typed judgments (routing, ranking, extraction)."
+    },
+    "jev-sort": {
+      "load_as": "anthropic-skills:jev-sort",
+      "line": "Classify, score or triage a pile of text items using Jev."
+    },
+    "jev-router": {
+      "load_as": "anthropic-skills:jev-router",
+      "line": "Turn the Jev model router on or off, or show its status."
+    },
+    "architecture": {
+      "load_as": "engineering:architecture",
+      "line": "Write or review an architecture decision record (ADR) choosing between technologies."
+    },
+    "system-design": {
+      "load_as": "engineering:system-design",
+      "line": "Design a system, service, API or data model from requirements."
+    },
+    "code-review": {
+      "load_as": "engineering:code-review",
+      "line": "Review a code change, PR or diff for bugs, security and performance."
+    },
+    "debug": {
+      "load_as": "engineering:debug",
+      "line": "Debug an error, stack trace or unexpected behavior: reproduce, isolate, fix."
+    },
+    "testing-strategy": {
+      "load_as": "engineering:testing-strategy",
+      "line": "Plan what tests to write and how to structure test coverage."
+    },
+    "test-driven-development": {
+      "load_as": "anthropic-skills:test-driven-development",
+      "line": "Implement a feature or bugfix test-first: failing test, then code."
+    },
+    "tech-debt": {
+      "load_as": "engineering:tech-debt",
+      "line": "Audit and prioritize technical debt and refactoring work."
+    },
+    "code-structure": {
+      "load_as": "anthropic-skills:code-structure",
+      "line": "Refactor duplicated logic across workflows into shared actions or services."
+    },
+    "documentation": {
+      "load_as": "engineering:documentation",
+      "line": "Write technical documentation: README, API docs, runbook, onboarding guide."
+    },
+    "deploy-checklist": {
+      "load_as": "engineering:deploy-checklist",
+      "line": "Pre-release checklist before deploying to production."
+    },
+    "incident-response": {
+      "load_as": "engineering:incident-response",
+      "line": "Handle a production incident: triage, status updates, postmortem."
+    },
+    "standup": {
+      "load_as": "engineering:standup",
+      "line": "Write a daily standup update from recent work."
+    },
+    "kubernetes-health-check": {
+      "load_as": "anthropic-skills:kubernetes-health-check",
+      "line": "Check Kubernetes cluster health before deploying."
+    },
+    "sql-queries": {
+      "load_as": "anthropic-skills:sql-queries",
+      "line": "Write or optimize SQL queries for a database or data warehouse."
+    },
+    "writing-plans": {
+      "load_as": "anthropic-skills:writing-plans",
+      "line": "Write a step-by-step implementation plan for a coding task before building."
+    },
+    "executing-plans": {
+      "load_as": "anthropic-skills:executing-plans",
+      "line": "Carry out an existing written implementation plan in batches."
+    },
+    "brainstorming": {
+      "load_as": "anthropic-skills:brainstorming",
+      "line": "Explore a raw idea or feature through questions before implementing it."
+    },
+    "dataviz": {
+      "load_as": "dataviz",
+      "line": "Make any chart, graph, plot or dashboard."
+    },
+    "artifact-design": {
+      "load_as": "artifact-design",
+      "line": "Design guidance before building a published web page artifact."
+    },
+    "artifact-diagramming": {
+      "load_as": "artifact-diagramming",
+      "line": "Draw a diagram inside a web page artifact."
+    },
+    "artifact-capabilities": {
+      "load_as": "artifact-capabilities",
+      "line": "Give a web page artifact live data, shared state, storage or forms."
+    },
+    "drawio-reconstruction": {
+      "load_as": "anthropic-skills:drawio-reconstruction",
+      "line": "Turn a diagram image or screenshot into an editable draw.io file."
+    },
+    "figure-designer": {
+      "load_as": "anthropic-skills:figure-designer",
+      "line": "Design the figures for a research paper: motivating example, overview, results plots."
+    },
+    "deep-research": {
+      "load_as": "anthropic-skills:deep-research",
+      "line": "Research a topic across many sources and write a long narrative report."
+    },
+    "last30days": {
+      "load_as": "anthropic-skills:last30days",
+      "line": "What people said about a topic in the last 30 days on Reddit, X, YouTube, HN."
+    },
+    "paper-fit": {
+      "load_as": "anthropic-skills:paper-fit",
+      "line": "Find the right research paper for an assignment or project, then help read and apply it."
+    },
+    "idea-evaluator": {
+      "load_as": "anthropic-skills:idea-evaluator",
+      "line": "Judge whether a research idea is worth pursuing: novelty, feasibility, fatal flaws."
+    },
+    "tech-paper-template": {
+      "load_as": "anthropic-skills:tech-paper-template",
+      "line": "Plan a technical paper's logical skeleton before drafting."
+    },
+    "benchmark-paper-template": {
+      "load_as": "anthropic-skills:benchmark-paper-template",
+      "line": "Structure a benchmark or evaluation paper."
+    },
+    "intro-drafter": {
+      "load_as": "anthropic-skills:intro-drafter",
+      "line": "Draft or restructure a paper's Introduction section."
+    },
+    "paper-writer": {
+      "load_as": "anthropic-skills:paper-writer",
+      "line": "Write paper sections or a full manuscript from the author's notes and results."
+    },
+    "paper-polish": {
+      "load_as": "anthropic-skills:paper-polish",
+      "line": "Polish existing academic prose: grammar, flow, tone, remove overclaiming."
+    },
+    "humanizer": {
+      "load_as": "anthropic-skills:humanizer",
+      "line": "Rewrite text to remove AI-writing tells without changing facts."
+    },
+    "pre-submission-reviewer": {
+      "load_as": "anthropic-skills:pre-submission-reviewer",
+      "line": "Full reviewer-style audit of a paper draft before submission."
+    },
+    "vibe-research-workflow": {
+      "load_as": "anthropic-skills:vibe-research-workflow",
+      "line": "Advice on using AI tools (Cursor, Claude Code, Codex) across a research workflow."
+    },
+    "p2-task": {
+      "load_as": "anthropic-skills:p2-task",
+      "line": "Run one Paper 2 task brief by ID (T0 to T9)."
+    },
+    "lecture-study-notebook": {
+      "load_as": "anthropic-skills:lecture-study-notebook",
+      "line": "Study a course from lecture notes or slides, explained in Vietnamese, in a tabbed HTML notebook."
+    },
+    "job-application-assistant": {
+      "load_as": "anthropic-skills:job-application-assistant",
+      "line": "Job hunting: evaluate a posting, tailor CV, write cover letter, find new postings."
+    },
+    "interview-coach": {
+      "load_as": "anthropic-skills:interview-coach",
+      "line": "Interview practice: mock interviews, answer feedback, story bank."
+    },
+    "prompt-master": {
+      "load_as": "anthropic-skills:prompt-master",
+      "line": "Write or improve a prompt for another AI tool (LLM, Cursor, Midjourney, agents)."
+    },
+    "skill-creator": {
+      "load_as": "anthropic-skills:skill-creator",
+      "line": "Create, edit or evaluate a skill (saved instructions for Claude)."
+    },
+    "writing-skills": {
+      "load_as": "anthropic-skills:writing-skills",
+      "line": "Write a new skill test-first (TDD for process docs)."
+    },
+    "cowork-plugin": {
+      "load_as": "cowork-plugin",
+      "line": "Create a new plugin or customize an installed one."
+    },
+    "setup-claude": {
+      "load_as": "setup-claude",
+      "line": "Guided first-time setup of Claude: role, plugins, connectors."
+    },
+    "explain-usage": {
+      "load_as": "explain-usage",
+      "line": "Explain where this session's tokens went."
+    },
+    "import-memory": {
+      "load_as": "anthropic-skills:import-memory",
+      "line": "Import a memory export from another AI assistant."
+    },
+    "coding-agent-quick-start": {
+      "load_as": "anthropic-skills:coding-agent-quick-start",
+      "line": "Tutorial on agent memory for coding agents."
+    },
+    "memory-management": {
+      "load_as": "productivity:memory-management",
+      "line": "Set up a CLAUDE.md working memory that decodes shorthand and internal terms."
+    },
+    "productivity-start": {
+      "load_as": "productivity:start",
+      "line": "First-time setup of the productivity system and task dashboard."
+    },
+    "task-management": {
+      "load_as": "productivity:task-management",
+      "line": "Add, complete or list tasks in a shared TASKS.md file."
+    },
+    "productivity-update": {
+      "load_as": "productivity:update",
+      "line": "Sync tasks from project trackers, chat and email into TASKS.md."
+    },
+    "morning": {
+      "load_as": "anthropic-skills:morning",
+      "line": "Run or schedule the user's morning brief."
+    },
+    "chrome-browser": {
+      "load_as": "anthropic-skills:chrome-browser",
+      "line": "Websites in the user's own Google Chrome, only when they name Chrome or the Chrome extension."
+    },
+    "built-in-browser": {
+      "load_as": "anthropic-skills:built-in-browser",
+      "line": "Default for any website task (open a site, check a portal, fill a form, 'use your browser'): the desktop app's built-in browser."
+    },
+    "computer-use": {
+      "load_as": "anthropic-skills:computer-use",
+      "line": "Operate desktop apps on the user's computer by screenshots and clicks."
+    }
+  }
+}

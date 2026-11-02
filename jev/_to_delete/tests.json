@@ -1,0 +1,12 @@
+[
+ ["paper-polish", "Polish the related work paragraph in my thesis draft, it sounds too AI and a bit overclaimed"],
+ ["job-application-assistant", "Here's the Shopify SWE intern Summer 2027 posting, should I apply? Tailor my CV if yes"],
+ ["interview-coach", "Run a mock behavioral interview with me for the Microsoft intern role"],
+ ["paper-fit", "Find me a good paper on how LLM coding agents misread requirements, for my ENGR 5570 project"],
+ ["dataviz", "Plot accuracy vs model size from these results as a line chart"],
+ ["debug", "My pytest suite fails with KeyError: 'user_id' only in CI, not locally. Help me find why"],
+ ["code-review", "Review this diff before I merge it into main, check for injection risks"],
+ ["idea-evaluator", "Is using the board game Deception: Murder in Hong Kong as an LLM testbed worth a paper?"],
+ ["last30days", "What are people on Reddit and X saying about Claude Code this month?"],
+ ["none_of_these", "What's the difference between a process and a thread?"]
+]
