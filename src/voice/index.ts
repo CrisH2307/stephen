@@ -37,11 +37,13 @@ import {
   type SpawnFn,
   type ClaudeFlagProbe,
   PERSONA_FILE,
+  removePersonaFile,
   probeClaudeFlags,
   resolvePersonaFile,
 } from './claude.js';
 import { ToolLogRunner, historyRecorder } from './command-log.js';
-import { Conversation, ConversationRunner } from './conversation.js';
+import { Conversation, ConversationRunner, memoryKey } from './conversation.js';
+import { claudeTranscriptDir, purgeTranscripts, removeSessionTranscript } from './transcripts.js';
 import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
@@ -284,11 +286,28 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   await mkdir(workDir, { recursive: true, mode: 0o700 });
   const cliPath = env.cliPath ?? stephenCliPath();
   // Follow-ups: one constant gate-state path for every server (the Conversation deletes it when a conversation ends).
-  const conversation = new Conversation({ dir: voiceDir, windowSec: cfg.followUpWindowSec, log: err, now: env.now });
+  // Claude Code's own transcript of each voice session is deleted when the session is dropped and on history
+  // purge/clear (review 5, R5-1).
+  const transcripts = claudeTranscriptDir(workDir, env.env ?? process.env);
+  const conversation = new Conversation({
+    dir: voiceDir,
+    windowSec: cfg.followUpWindowSec,
+    log: err,
+    now: env.now,
+    onSessionDropped: (id) => void removeSessionTranscript(transcripts, id),
+    // Memory changed anywhere (router, app, `stephen memory`, a hand edit) → don't resume (review 5, R5-2).
+    memoryKey: () => memoryKey(memoryStore ? memoryStore.listSync().map((i) => i.text) : []),
+  });
   const sessionStatePath = conversation.enabled ? conversation.statePath : null;
   if (!conversation.enabled) conversation.end(); // window 0: no leftovers from an earlier setting
   // History: one entry per command; the tool log (names only) is only written when history is on.
-  const history = new HistoryStore({ home, retentionDays: loaded.history.retentionDays, now: env.date });
+  const history = new HistoryStore({
+    home,
+    retentionDays: loaded.history.retentionDays,
+    now: env.date,
+    onPurge: (olderThanMs) => void purgeTranscripts(transcripts, olderThanMs, conversation.current()),
+  });
+  if (!args.dryRun) history.purge(); // drop expired history (and old Claude transcripts) at start, not only on the next command (R5-6)
   const toolLog = history.enabled ? toolLogPath(home) : null;
   const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog);
   const settings: ClaudeSettings = {
@@ -434,6 +453,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const onExit = () => {
     claude?.killNow();
     app?.closeSync();
+    if (settings.personaFile) removePersonaFile(settings.personaFile);
   };
   const signals = env.signals ?? true;
   if (signals) {
@@ -518,6 +538,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       unwatch();
     }
   } finally {
+    if (settings.personaFile) removePersonaFile(settings.personaFile);
     await app?.close();
     app = null;
     bridge?.close();

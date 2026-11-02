@@ -3,7 +3,6 @@
 // Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { withSessionState } from './safety/session-state.js';
-import { runListen, runVoiceSetup } from './voice/index.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
 import { parseTtsConfig, runVoiceKey } from './voice/tts/index.js';
@@ -438,7 +437,8 @@ async function main(argv: string[]): Promise<number> {
     case 'install-helper':
       return runInstallHelper(rest);
     case 'listen':
-      return runListen(rest);
+      // Loaded on demand: `stephen serve` (the process Claude talks to) never loads memory, app or history code.
+      return (await import('./voice/index.js')).runListen(rest);
     case 'eval':
       return (await import('./eval/cli.js')).runEvalCli(rest);
     case 'memory':
@@ -448,7 +448,7 @@ async function main(argv: string[]): Promise<number> {
     case 'app':
       return (await import('./app/cli.js')).runAppCli(rest);
     case 'voice-setup':
-      return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : runVoiceSetup(rest);
+      return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : (await import('./voice/index.js')).runVoiceSetup(rest);
     case 'voice-key':
       return runVoiceKey(rest, { ttsConfig: () => parseTtsConfig(loadConfig().voice) });
     case 'help':

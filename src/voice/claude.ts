@@ -5,7 +5,7 @@
  * process group so a cancel kills Claude and the `stephen serve` child it started.
  */
 import { randomBytes } from 'node:crypto';
-import { constants as fsConstants, existsSync } from 'node:fs';
+import { constants as fsConstants, existsSync, unlinkSync } from 'node:fs';
 import { chmod, lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -341,6 +341,15 @@ export async function writePersonaFile(file: string, text: string): Promise<stri
   return writePrivateFile(dirname(file), basename(file), text);
 }
 
+/** Delete the persona file; a missing file is fine and other errors are ignored (it is rewritten before each run). */
+export function removePersonaFile(file: string): void {
+  try {
+    unlinkSync(file);
+  } catch {
+    /* missing or not deletable: next run overwrites it */
+  }
+}
+
 /** voice.personaFile: "on" / "off" force it; "auto" uses the file when `claude --help` mentions the flag. */
 export type PersonaFileMode = 'auto' | 'on' | 'off';
 
@@ -564,6 +573,9 @@ export class ClaudeRunner {
     // Reap anything left in the group (e.g. the MCP server) once Claude itself has exited.
     if (child.pid) killGroup(child.pid, 'SIGTERM');
     this.child = null;
+    // The persona file (with memory and aboutMe) is only needed while Claude starts: delete it after every run so
+    // forgotten items don't stay on disk until the next command (review 5, R5-3).
+    if (this.o.personaFile) removePersonaFile(this.o.personaFile);
     if (outcome.kind === 'ok' && this.o.onTiming) {
       this.o.onTiming({ wallMs: now() - started, durationMs: outcome.durationMs ?? null, apiMs: outcome.apiMs ?? null, turns: outcome.turns });
     }

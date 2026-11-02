@@ -27,7 +27,12 @@ export interface MemoryRoute {
   changed: boolean;
   /** Split command: run this as a normal Claude command after the reply prefix. */
   rest?: string;
+  /** Store this instead of what was said in history (a refused secret must not be kept; review 5, R5-3). */
+  said?: string;
 }
+
+/** What history keeps for a refused secret memory command. */
+export const REFUSED_SECRET_SAID = 'remember [refused: looks like a secret]';
 
 export interface MemoryRouterOptions {
   store: MemoryStore;
@@ -70,12 +75,14 @@ export class MemoryRouter {
     switch (intent.kind) {
       case 'remember':
         return this.remember(rawTail(raw, intent.text), source, intent.rest !== undefined ? rawTail(raw, intent.rest) : undefined);
+      case 'remember-code':
+        return { reply: MEMORY_MESSAGES.secret, changed: false, said: REFUSED_SECRET_SAID };
       case 'list':
-        return this.list();
+        return this.list(source);
       case 'forget':
-        return this.forget(intent.query);
+        return this.forget(intent.query, source);
       case 'forget-last':
-        return this.forgetLast();
+        return this.forgetLast(source);
       case 'forget-all':
         return this.forgetAll();
     }
@@ -86,43 +93,62 @@ export class MemoryRouter {
     if (source === 'voice-wake' && this.o.confirmWakeWord) {
       const answer = await this.o.confirmer.confirm({
         title: 'Stephen: remember this?',
-        body: `Remember this? "${text}"\n\nYou said "remember …" after the wake word. Allow saves it (it is sent to Claude with every command). Hold Fn+Option to save without this question.`,
+        body:
+          `Remember this? "${text}"` +
+          (rest ? `\n\nAllow also runs: "${rest}"` : '') +
+          `\n\nYou said "remember …" after the wake word. Allow saves it (it is sent to Claude with every command, and read out through your voice service). Hold Fn+Option to save without this question.`,
       });
       // Denied or unanswered: nothing is saved and the rest of the line is not run either (it may not have been you).
       if (answer === 'unavailable') return { reply: "I couldn't ask you to confirm, so I didn't save it. Hold Fn+Option and say it again.", changed: false };
       if (answer !== 'approved') return { reply: "Okay, didn't save it.", changed: false };
     }
     const r = await this.o.store.add(text, source);
-    if (!r.ok) return withRest({ reply: r.message, changed: false });
+    if (!r.ok) return withRest({ reply: r.message, changed: false, ...(r.reason === 'secret' ? { said: REFUSED_SECRET_SAID } : {}) });
     if (r.duplicate) return withRest({ reply: `Already got that one: ${r.item!.text}.`, changed: false });
     return withRest({ reply: `Bet, saved: ${r.item!.text}.`, changed: true });
   }
 
-  private async list(): Promise<MemoryRoute> {
+  /** Wake word with confirmWakeWord on: anyone in the room (or a video) could have said it (review 5, R5-5). */
+  private untrusted(source: CommandSource): boolean {
+    return source === 'voice-wake' && this.o.confirmWakeWord;
+  }
+
+  private async list(source: CommandSource): Promise<MemoryRoute> {
     const items = await this.o.store.list();
     if (!items.length) return { reply: "I don't have anything saved yet. Say \"remember\" and the thing.", changed: false };
     const n = items.length === 1 ? '1 thing' : `${items.length} things`;
+    // After the wake word, say only the count: reading them out would tell whoever is in the room.
+    if (this.untrusted(source)) return { reply: `I remember ${n}. Hold Fn+Option and ask again, or open the Stephen app, to hear them.`, changed: false };
     return { reply: `I remember ${n}: ${quoteList(items)}.`, changed: false };
   }
 
-  private async forget(query: string): Promise<MemoryRoute> {
+  private async forget(query: string, source: CommandSource): Promise<MemoryRoute> {
     const items = await this.o.store.list();
     const m = matchForget(items, query);
     if ('none' in m) return { reply: `I don't have anything about ${query}.`, changed: false };
     if ('tie' in m) {
+      if (this.untrusted(source)) return { reply: `I have ${m.tie.length} things about ${query}. Hold Fn+Option and say it more exactly, or use the Stephen app.`, changed: false };
       return { reply: `I have ${m.tie.length} things about ${query}: ${quoteList(m.tie)}. Say it more exactly, or use the Stephen app.`, changed: false };
     }
-    return this.forgetItem(m.match);
+    return this.forgetItem(m.match, source);
   }
 
-  private async forgetLast(): Promise<MemoryRoute> {
+  private async forgetLast(source: CommandSource): Promise<MemoryRoute> {
     const items = await this.o.store.list();
     const newest = newestWithin(items, (this.o.now ?? (() => new Date()))());
     if (!newest) return { reply: "Nothing new to forget from the last 10 minutes. Say \"forget\" and what it was about.", changed: false };
-    return this.forgetItem(newest);
+    return this.forgetItem(newest, source);
   }
 
-  private async forgetItem(item: MemoryItem): Promise<MemoryRoute> {
+  private async forgetItem(item: MemoryItem, source: CommandSource): Promise<MemoryRoute> {
+    if (this.untrusted(source)) {
+      const answer = await this.o.confirmer.confirm({
+        title: 'Stephen: forget this?',
+        body: `Forget this? "${item.text}"\n\nYou said "forget …" after the wake word. Hold Fn+Option to forget without this question.`,
+      });
+      if (answer === 'unavailable') return { reply: "I couldn't ask you to confirm, so I kept it. Hold Fn+Option and say it again.", changed: false };
+      if (answer !== 'approved') return { reply: 'Okay, kept it.', changed: false };
+    }
     const r = await this.o.store.forget(item.id);
     if (!r.ok) return { reply: r.message, changed: false };
     return { reply: `Done, forgot: ${item.text}.`, changed: true };

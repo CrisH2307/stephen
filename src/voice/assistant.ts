@@ -120,8 +120,9 @@ export class Assistant {
     } catch (e) {
       this.o.status(`Note: could not report the command (${(e as Error).message}).`);
     }
+    let said = text;
     const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms'>): CommandReport => {
-      const full: CommandReport = { ...r, id, source, said: text, ms: Math.max(0, now() - t0) };
+      const full: CommandReport = { ...r, id, source, said, ms: Math.max(0, now() - t0) };
       try {
         this.o.onDone?.(full);
       } catch (e) {
@@ -134,6 +135,7 @@ export class Assistant {
       let prompt = text;
       const route = this.o.memory ? await this.o.memory.route(text, { source, raw: opts.raw }) : null;
       if (route) {
+        if (route.said !== undefined) said = route.said;
         // A memory change ends the conversation BEFORE anything else runs: a resumed session would keep the old
         // system prompt (claude's --system-prompt-snapshot), so the next command must start fresh.
         if (route.changed) this.o.runner.endConversation?.();

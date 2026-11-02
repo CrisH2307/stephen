@@ -12,6 +12,7 @@
  * The session id and end time are kept in `<home>/voice/conversation.json` (0600, atomic), so `stephen listen
  * --text` follow-ups work across processes too.
  */
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { SESSION_STATE_FILE, readPrivateJsonFile, removeSessionStateFile, writePrivateJsonFileSync } from '../safety/session-state.js';
 import type { CommandRunner } from './assistant.js';
@@ -25,7 +26,15 @@ export const MAX_FOLLOW_UP_WINDOW_SEC = 1800;
 interface Saved {
   sessionId: string;
   endedAt: number;
+  /** Hash of the memory list the session's system prompt was built with (review 5, R5-2). */
+  memory?: string;
 }
+
+/** A short stable hash of a memory list (what the persona's <user_memory> block was built from). */
+export function memoryKey(texts: readonly string[]): string {
+  return createHash('sha256').update(JSON.stringify(texts)).digest('hex').slice(0, 32);
+}
+const MEMORY_KEY_RE = /^[0-9a-f]{32}$/;
 
 export interface ConversationOptions {
   /** `<home>/voice`. */
@@ -34,6 +43,17 @@ export interface ConversationOptions {
   windowSec: number;
   now?: () => number;
   log?: (line: string) => void;
+  /**
+   * Called with a session id that will never be resumed again (the conversation ended, or a run returned a new id).
+   * Used to delete Claude Code's transcript of that session (review 5, R5-1). Errors are logged, never thrown.
+   */
+  onSessionDropped?: (sessionId: string) => void;
+  /**
+   * The current memory list's key (memoryKey). Claude Code snapshots the system prompt, so a session built with
+   * other memory must not be resumed: begin() starts fresh when the key changed, whoever changed memory (router,
+   * app, `stephen memory`, a hand edit). Review 5, R5-2.
+   */
+  memoryKey?: () => string;
 }
 
 export class Conversation {
@@ -60,10 +80,13 @@ export class Conversation {
       return null;
     }
     const s = r.state as Partial<Saved> | null;
-    if (!s || typeof s !== 'object' || Array.isArray(s) || Object.keys(s).sort().join(',') !== 'endedAt,sessionId') return null;
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+    const keys = Object.keys(s).sort().join(',');
+    if (keys !== 'endedAt,sessionId' && keys !== 'endedAt,memory,sessionId') return null;
     if (typeof s.sessionId !== 'string' || !SESSION_ID_RE.test(s.sessionId)) return null;
     if (typeof s.endedAt !== 'number' || !Number.isSafeInteger(s.endedAt) || s.endedAt <= 0) return null;
-    return { sessionId: s.sessionId, endedAt: s.endedAt };
+    if (s.memory !== undefined && (typeof s.memory !== 'string' || !MEMORY_KEY_RE.test(s.memory))) return null;
+    return s.memory !== undefined ? { sessionId: s.sessionId, endedAt: s.endedAt, memory: s.memory } : { sessionId: s.sessionId, endedAt: s.endedAt };
   }
 
   /**
@@ -74,23 +97,64 @@ export class Conversation {
     if (this.enabled) {
       const s = this.load();
       const age = s ? this.now() - s.endedAt : -1;
-      if (s && age >= 0 && age <= this.o.windowSec * 1000) return s.sessionId;
+      if (s && age >= 0 && age <= this.o.windowSec * 1000 && this.sameMemory(s)) return s.sessionId;
     }
     this.reset();
     return null;
   }
 
+  /** The memory key right now (taken right before a run, so the saved key matches that run's system prompt). */
+  currentMemoryKey(): string | undefined {
+    if (!this.o.memoryKey) return undefined;
+    try {
+      return this.o.memoryKey();
+    } catch {
+      return 'unreadable';
+    }
+  }
+
+  /** Same memory as when the session was saved? (No memoryKey option → always true.) Unreadable → false. */
+  private sameMemory(s: Saved): boolean {
+    if (!this.o.memoryKey) return true;
+    const now = this.currentMemoryKey();
+    if (s.memory !== now) this.o.log?.('memory changed since the last command — starting a new conversation');
+    return s.memory === now;
+  }
+
+  private saved(sessionId: string, endedAt: number, memory: string | undefined): Saved {
+    return memory !== undefined && MEMORY_KEY_RE.test(memory) ? { sessionId, endedAt, memory } : { sessionId, endedAt };
+  }
+
+  /** The live conversation's session id (null when none). */
+  current(): string | null {
+    return this.enabled ? (this.load()?.sessionId ?? null) : null;
+  }
+
+  private dropped(id: string | null | undefined): void {
+    if (!id || !this.o.onSessionDropped) return;
+    try {
+      this.o.onSessionDropped(id);
+    } catch (e) {
+      this.o.log?.(`could not clean up session ${id} (${(e as Error).message})`);
+    }
+  }
+
   /** Called with every finished run: OK with a session id → remember it (and now as the end); else end the conversation. */
-  finish(out: ClaudeOutcome): void {
+  finish(out: ClaudeOutcome, memory: string | undefined = this.currentMemoryKey()): void {
     if (this.enabled && out.kind === 'ok' && out.sessionId && SESSION_ID_RE.test(out.sessionId)) {
+      const before = this.load()?.sessionId ?? null;
       try {
-        writePrivateJsonFileSync(this.filePath, { sessionId: out.sessionId, endedAt: this.now() } satisfies Saved);
+        writePrivateJsonFileSync(this.filePath, this.saved(out.sessionId, this.now(), memory));
+        if (before !== out.sessionId) this.dropped(before);
         return;
       } catch (e) {
         this.o.log?.(`could not save the conversation (${(e as Error).message}) — the next command starts fresh`);
       }
     }
     this.end();
+    // A failed or cancelled run may still have written a transcript under its own id.
+    const failedId = 'sessionId' in out ? out.sessionId : null;
+    if (failedId && SESSION_ID_RE.test(failedId)) this.dropped(failedId);
   }
 
   /** The command's reply finished (spoken or shown): the window counts from now. No-op if the conversation ended. */
@@ -99,7 +163,7 @@ export class Conversation {
     const s = this.load();
     if (!s) return;
     try {
-      writePrivateJsonFileSync(this.filePath, { sessionId: s.sessionId, endedAt: Math.max(s.endedAt, this.now()) } satisfies Saved);
+      writePrivateJsonFileSync(this.filePath, this.saved(s.sessionId, Math.max(s.endedAt, this.now()), s.memory));
     } catch {
       /* the earlier end time stays: a shorter window, never a longer one */
     }
@@ -116,8 +180,10 @@ export class Conversation {
 
   /** Delete the session id FIRST (so a half-done reset never resumes), then the gate state. Throws on failure. */
   reset(): void {
+    const old = this.load()?.sessionId ?? null;
     removeSessionStateFile(this.filePath);
     removeSessionStateFile(this.statePath);
+    this.dropped(old);
   }
 }
 
@@ -150,6 +216,7 @@ export class ConversationRunner implements CommandRunner {
   async run(prompt: string): Promise<ClaudeOutcome> {
     const resume = this.plan !== undefined ? this.plan : this.conversation.begin();
     this.plan = undefined;
+    const memory = this.conversation.currentMemoryKey();
     let out: ClaudeOutcome;
     try {
       out = await this.inner.run(prompt, resume ? { resume } : {});
@@ -157,7 +224,7 @@ export class ConversationRunner implements CommandRunner {
       this.conversation.end();
       throw e;
     }
-    this.conversation.finish(out);
+    this.conversation.finish(out, memory);
     return out;
   }
 
