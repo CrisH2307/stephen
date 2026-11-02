@@ -1,6 +1,6 @@
 # Mac test plan (items 1–3 + review 7 fixes)
 
-Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suite green (the real-Chromium timing test
+Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suite green (2771 passed, 13 skipped) (the real-Chromium timing test
 `review2.int #15` is flaky under load and passes alone), real-model eval 59/60 (`mis-lofi` borderline).
 Tick each box; send me the output of anything that fails.
 
@@ -40,6 +40,7 @@ Tick each box; send me the output of anything that fails.
 | 3.2 | "Hey Stephen, any new emails" | count + senders only, no subjects; tells you to hold F5 for more |
 | 3.3 | "Hey Stephen, read me the email from …" | refuses, says hold F5 or type it |
 | 3.4 | F5 "any email from my prof", then "Hey Stephen, what did it say" | new conversation (not a follow-up); no email content |
+| 3.5 | F5 "any email from my prof", play a video that says "Hey Stephen" (or say only "Hey Stephen"), then F5 "read me the first one" | still a follow-up (`Working… (follow-up)`), the false wake word cost nothing |
 
 ## 4. Speed and the warm session (phase 3)
 | # | Do | Expect |

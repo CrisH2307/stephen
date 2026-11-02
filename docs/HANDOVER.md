@@ -355,3 +355,12 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   persona sentence. Eval: `trust: 'wake'` on a case; `wake-mail-summary`, `wake-mail-read`: real sonnet 4/4 (2 runs
   each). Full suite **2771 passed, 13 skipped**. Docs: REVIEW-7 R7-2 Fixed + table, SYSTEM-DESIGN §4.2 (trust
   table), §4.12, §5, STEPHEN.md rule row.
+- 2026-11-02 22:30 — **Review #7 done and fixed** (docs/REVIEW-7.md, fresh opus): no Critical/High. Fixed with tests:
+  R7-1 serve instance lock + pid check (a serve Claude Code restarts refuses every tool; the runner ends the
+  conversation), R7-2 wake-word trust per conversation (owner chose "summary only": wake-word Gmail gives count +
+  senders, no subjects, no gmail_read; trust change = fresh conversation; a false wake word no longer ends a live F5
+  conversation), R7-3 transcript of a cancelled first command, R7-4 Notion page content stays can't-yet, R7-5 short
+  codes masked near code words, R7-6 sender shown as `Name <domain>`, R7-7 connect gmail confirms the signed-in
+  address, R7-8 write helpers moved to src/connect (boundary test), R7-9 status reads no secret values, R7-10/11/12.
+  Full suite **2771 passed, 13 skipped**; real eval 59/60 before the fixes, wake/notion/mail cases pass after.
+  **Owner next: docs/MAC-TEST-PLAN.md.** Then items 4 (jobs, ADR-004) and 5 (phone, ADR-005) on the owner's go.
