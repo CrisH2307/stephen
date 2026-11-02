@@ -21,12 +21,18 @@
  * that lock already taken is a restart by Claude Code and refuses every tool call (src/server/instance.ts). The id is
  * a name, not a path, so the flag can only switch tools off.
  *
+ * `serve --trust wake`: the voice listener's wake-word conversation (docs/REVIEW-7.md R7-2; anyone in the room or a
+ * video can say the wake word). Email gives only who and when: gmail_search lists a count and each message's sender
+ * name, domain and date (no subject, no snippet), and gmail_read refuses without a request. `wake` is the only value
+ * (a trusted conversation has no flag), so the flag can only take reads away. It may go with `--dry-run` (the eval).
+ *
  * `serve --assume-private-read`: the gate starts as if private data had already been read (phase 2a), so the
  * cross-site egress rules apply from the first action. Takes no value; it can only make the gate stricter.
  *
  * `serve --dry-run --record <file>`: `stephen eval` only. The same tools, but every call is appended to <file> and
  * answered with a fake result — nothing acts (src/eval/dry-server.ts). Both flags are required together, and no
- * other flag may be combined with them, so a dry-run server can never be mistaken for, or mixed into, a real one.
+ * other flag but `--trust wake` may be combined with them, so a dry-run server can never be mistaken for, or mixed
+ * into, a real one.
  * `--fake-page <file>` (absolute path) only goes with --dry-run: the page-reading tools answer with that file's text
  * (the prompt-injection eval cases).
  */
@@ -45,6 +51,8 @@ export interface ServeArgs {
   toolLog?: string;
   /** --instance <id>: 32 hex characters (one serve per id; a second one refuses every call). */
   instance?: string;
+  /** --trust wake: a wake-word conversation (email: who and when only). */
+  trust?: 'wake';
   /** --dry-run --record <file>: absolute path of the call log; --fake-page <file>: what the pages "say". */
   dryRun?: { record: string; fakePage?: string };
 }
@@ -91,6 +99,11 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
       if (id === undefined || !SERVE_INSTANCE_RE.test(id)) return { error: '--instance needs 32 lowercase hex characters' };
       if (!ctx.home) return { error: "--instance: Stephen's home folder is unknown" };
       out.instance = id;
+    } else if (a === '--trust' || a.startsWith('--trust=')) {
+      if (out.trust !== undefined) return { error: '--trust given twice' };
+      const t = a === '--trust' ? argv[++i] : a.slice('--trust='.length);
+      if (t !== 'wake') return { error: '--trust must be "wake"' };
+      out.trust = t;
     } else if (a === '--dry-run') {
       if (dry) return { error: '--dry-run given twice' };
       dry = true;

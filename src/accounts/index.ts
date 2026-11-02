@@ -28,7 +28,7 @@ import { MAX_QUERY_CHARS, MAX_TODOS, NO_TODO_DATABASE, NotionClient, formatSearc
 import { accountBlock, field } from './result.js';
 import { WEATHER_ORIGIN, fetchWeather, formatWeather, type WeatherDay } from './weather.js';
 import { GMAIL_LABEL_RE, lookupGmailToken, lookupSecret, type SecretDeps, type SecretName } from './secrets.js';
-import { GMAIL_ID_RE, GmailAccess, GmailClient, GmailQueryError, MAX_DAYS as GMAIL_MAX_DAYS, MAX_FROM_CHARS, MAX_SEARCH, MAX_SUBJECT_CHARS, buildGmailQuery, formatMessage, formatSearchLine } from './gmail.js';
+import { GMAIL_ID_RE, GmailAccess, GmailClient, GmailQueryError, MAX_DAYS as GMAIL_MAX_DAYS, MAX_FROM_CHARS, MAX_SEARCH, MAX_SUBJECT_CHARS, WAKE_MAIL_FOOTER, WAKE_MAIL_READ_NOTICE, buildGmailQuery, formatMessage, formatSearchLine, formatWakeSearchLine } from './gmail.js';
 
 export const ACCOUNT_TOOLS = ['canvas_due', 'canvas_announcements', 'calendar_events', 'notion_todos', 'notion_search', 'gmail_search', 'gmail_read', 'weather_now'] as const;
 /** gmail_read accepts only ids gmail_search returned in this process; at most this many are kept. */
@@ -236,6 +236,8 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
   // ═════════════════════════════ Gmail (OAuth refresh token in the Keychain, gmail.readonly) ═════════════════════════════
   if (cfg.gmail.enabled) {
     const labels = cfg.gmail.accounts;
+    /** `serve --trust wake` (docs/REVIEW-7.md R7-2): who and when only, no reading. */
+    const wake = hub.deps.trust === 'wake';
     const CONNECT = (label: string) =>
       `The user should run \`stephen connect gmail ${label}\` in Terminal (it opens Google's sign-in once${cfg.gmail.clientId ? '' : '; first set accounts.gmail.clientId in config.json to their Google Cloud OAuth client id'}). Tell them that; do not open the Gmail website instead.`;
     const access = new Map<string, GmailAccess>();
@@ -326,6 +328,14 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         const label = labelOf(account);
         const c = await gmail(label);
         const msgs = await gmailCall(label, () => c.search(q, limit ?? 5));
+        if (wake) {
+          // Wake word (R7-2): a count and who and when, nothing of what the mail says; no ids, so nothing to read.
+          const lines = msgs.map((m) => formatWakeSearchLine(m, tz ? { timeZone: tz } : {}));
+          const unread = msgs.filter((m) => m.labelIds?.includes('UNREAD')).length;
+          hub.safety().gate.notePrivateData('gmail');
+          const header = `Gmail (${label}), newest first: ${lines.length} message${lines.length === 1 ? '' : 's'}${unread ? ` (${unread} unread)` : ''}. After the wake word Stephen gives only the sender and the date.`;
+          return okResult(accountBlock('gmail', header, lines, WAKE_MAIL_FOOTER));
+        }
         const lines = msgs.map((m) => formatSearchLine(m, tz ? { timeZone: tz } : {}));
         hub.safety().gate.notePrivateData('gmail');
         for (const m of msgs) {
@@ -348,6 +358,11 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         id: z.string().regex(GMAIL_ID_RE).describe('The message id from gmail_search.'),
       },
       async ({ account, id }) => {
+        if (wake) {
+          // Wake word (R7-2): refused before any request, so no taint either. The refusal is audited.
+          await hub.audit({ tool: 'gmail_read', args: { trust: 'wake' }, outcome: 'denied', error: 'wake-word conversation: reading an email needs F5 or typed text' });
+          throw new NoticeError(WAKE_MAIL_READ_NOTICE);
+        }
         const label = labelOf(account);
         if (!listed.has(`${label}:${id}`)) throw new NoticeError(`Stephen can only open a message that gmail_search listed${labels.length > 1 ? ` for the account "${label}"` : ''}. Search first, then use one of its ids.`);
         const c = await gmail(label);

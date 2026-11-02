@@ -11,11 +11,16 @@
  *
  * The session id and end time are kept in `<home>/voice/conversation.json` (0600, atomic), so `stephen listen
  * --text` follow-ups work across processes too.
+ *
+ * Trust follows the conversation (docs/REVIEW-7.md R7-2): the file also names the trust the conversation was started
+ * with (`trusted` or `wake`), and a command of another trust never resumes it: it starts a fresh conversation (reset
+ * first). So a wake-word command never sees what an F5 command read, and its words never become turns an F5
+ * conversation inherits. A file without a trust is never resumed.
  */
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { SESSION_STATE_FILE, readPrivateJsonFile, removeSessionStateFile, writePrivateJsonFileSync } from '../safety/session-state.js';
-import type { CommandRunner, RunHooks } from './assistant.js';
+import type { CommandRunner, RunHooks, Trust } from './assistant.js';
 import { SESSION_ID_RE, type ClaudeOutcome, type ClaudeTiming, type RunOptions } from './claude.js';
 import type { WarmProcess } from './warm-claude.js';
 
@@ -29,7 +34,13 @@ interface Saved {
   endedAt: number;
   /** Hash of the memory list the session's system prompt was built with (review 5, R5-2). */
   memory?: string;
+  /** Who the conversation was started by (R7-2): only a command of the same trust resumes it. */
+  trust: Trust;
 }
+
+/** The trust when a caller gives none: the most cautious. */
+const DEFAULT_TRUST: Trust = 'wake';
+const isTrust = (t: unknown): t is Trust => t === 'trusted' || t === 'wake';
 
 /** A short stable hash of a memory list (what the persona's <user_memory> block was built from). */
 export function memoryKey(texts: readonly string[]): string {
@@ -88,33 +99,35 @@ export class Conversation {
     const s = r.state as Partial<Saved> | null;
     if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
     const keys = Object.keys(s).sort().join(',');
-    if (keys !== 'endedAt,sessionId' && keys !== 'endedAt,memory,sessionId') return null;
+    if (keys !== 'endedAt,sessionId,trust' && keys !== 'endedAt,memory,sessionId,trust') return null;
     if (typeof s.sessionId !== 'string' || !SESSION_ID_RE.test(s.sessionId)) return null;
     if (typeof s.endedAt !== 'number' || !Number.isSafeInteger(s.endedAt) || s.endedAt <= 0) return null;
     if (s.memory !== undefined && (typeof s.memory !== 'string' || !MEMORY_KEY_RE.test(s.memory))) return null;
-    return s.memory !== undefined ? { sessionId: s.sessionId, endedAt: s.endedAt, memory: s.memory } : { sessionId: s.sessionId, endedAt: s.endedAt };
+    if (!isTrust(s.trust)) return null;
+    return this.saved(s.sessionId, s.endedAt, s.memory, s.trust);
   }
 
   /**
-   * Called right before a command runs. Returns the session id to resume, or null — and then the conversation is
-   * reset first (state file deleted, session id forgotten). Throws if the reset fails (the command must not run).
+   * Called right before a command of this trust runs. Returns the session id to resume, or null, and then the
+   * conversation is reset first (state file deleted, session id forgotten). Throws if the reset fails (the command
+   * must not run).
    */
-  begin(): string | null {
-    const id = this.peek();
+  begin(trust: Trust = DEFAULT_TRUST): string | null {
+    const id = this.peek(trust);
     if (id !== null) return id;
     this.reset();
     return null;
   }
 
   /**
-   * The session id begin() would resume (inside the window, same memory key, valid file), without changing anything.
-   * The warm runner uses it to decide whether its live process may take the next command.
+   * The session id begin() would resume (inside the window, same memory key, same trust, valid file), without
+   * changing anything. The warm runner uses it to decide whether its live process may take the next command.
    */
-  peek(): string | null {
+  peek(trust: Trust = DEFAULT_TRUST): string | null {
     if (!this.enabled) return null;
     const s = this.load();
     const age = s ? this.now() - s.endedAt : -1;
-    return s && age >= 0 && age <= this.o.windowSec * 1000 && this.sameMemory(s) ? s.sessionId : null;
+    return s && s.trust === trust && age >= 0 && age <= this.o.windowSec * 1000 && this.sameMemory(s) ? s.sessionId : null;
   }
 
   /** The memory key right now (taken right before a run, so the saved key matches that run's system prompt). */
@@ -135,8 +148,8 @@ export class Conversation {
     return s.memory === now;
   }
 
-  private saved(sessionId: string, endedAt: number, memory: string | undefined): Saved {
-    return memory !== undefined && MEMORY_KEY_RE.test(memory) ? { sessionId, endedAt, memory } : { sessionId, endedAt };
+  private saved(sessionId: string, endedAt: number, memory: string | undefined, trust: Trust): Saved {
+    return memory !== undefined && MEMORY_KEY_RE.test(memory) ? { sessionId, endedAt, memory, trust } : { sessionId, endedAt, trust };
   }
 
   /** The live conversation's session id (null when none). */
@@ -159,8 +172,8 @@ export class Conversation {
   }
 
   /** Called with every finished run: OK with a session id → remember it (and now as the end); else end the conversation. */
-  finish(out: ClaudeOutcome, memory: string | undefined = this.currentMemoryKey()): void {
-    if (out.kind === 'ok' && out.sessionId && this.remember(out.sessionId, memory)) return;
+  finish(out: ClaudeOutcome, memory: string | undefined = this.currentMemoryKey(), trust: Trust = DEFAULT_TRUST): void {
+    if (out.kind === 'ok' && out.sessionId && this.remember(out.sessionId, memory, trust)) return;
     this.end();
     // A failed or cancelled run may still have written a transcript under its own id.
     const failedId = 'sessionId' in out ? out.sessionId : null;
@@ -168,15 +181,15 @@ export class Conversation {
   }
 
   /**
-   * Save `sessionId` (ended now, built with memory key `memory`) as the live conversation; a replaced id is dropped.
-   * False when follow-ups are off, the id is invalid or the file can't be written: nothing is reset here, the
-   * caller ends the conversation (the warm runner kills its process first).
+   * Save `sessionId` (ended now, built with memory key `memory`, started with `trust`) as the live conversation; a
+   * replaced id is dropped. False when follow-ups are off, the id is invalid or the file can't be written: nothing is
+   * reset here, the caller ends the conversation (the warm runner kills its process first).
    */
-  remember(sessionId: string, memory: string | undefined): boolean {
+  remember(sessionId: string, memory: string | undefined, trust: Trust = DEFAULT_TRUST): boolean {
     if (!this.enabled || !SESSION_ID_RE.test(sessionId)) return false;
     const before = this.load()?.sessionId ?? null;
     try {
-      writePrivateJsonFileSync(this.filePath, this.saved(sessionId, this.now(), memory));
+      writePrivateJsonFileSync(this.filePath, this.saved(sessionId, this.now(), memory, trust));
     } catch (e) {
       this.o.log?.(`could not save the conversation (${(e as Error).message}) — the next command starts fresh`);
       return false;
@@ -191,7 +204,7 @@ export class Conversation {
     const s = this.load();
     if (!s) return;
     try {
-      writePrivateJsonFileSync(this.filePath, this.saved(s.sessionId, Math.max(s.endedAt, this.now()), s.memory));
+      writePrivateJsonFileSync(this.filePath, this.saved(s.sessionId, Math.max(s.endedAt, this.now()), s.memory, s.trust));
     } catch {
       /* the earlier end time stays: a shorter window, never a longer one */
     }
@@ -223,17 +236,19 @@ export interface ResumableRunner {
 
 /** A CommandRunner that resumes inside a conversation and resets it whenever the conversation ends. */
 export class ConversationRunner implements CommandRunner {
-  /** The decision taken by followUp() for the next run (undefined = not decided yet). */
+  /** The decision taken by followUp() for the next run (undefined = not decided yet), and the trust it was for. */
   private plan: string | null | undefined = undefined;
+  private planTrust: Trust = DEFAULT_TRUST;
   constructor(
     private readonly inner: ResumableRunner,
     readonly conversation: Conversation,
   ) {}
 
-  /** Decide now whether the next run is a follow-up (the Assistant shows "(follow-up)"). */
-  followUp(): boolean {
+  /** Decide now whether the next run (of this trust) is a follow-up (the Assistant shows "(follow-up)"). */
+  followUp(trust: Trust = DEFAULT_TRUST): boolean {
+    this.planTrust = trust;
     try {
-      this.plan = this.conversation.begin();
+      this.plan = this.conversation.begin(trust);
     } catch {
       this.plan = undefined; // run() tries again and reports the error
       return false;
@@ -241,18 +256,20 @@ export class ConversationRunner implements CommandRunner {
     return this.plan !== null;
   }
 
-  async run(prompt: string): Promise<ClaudeOutcome> {
-    const resume = this.plan !== undefined ? this.plan : this.conversation.begin();
+  /** A run never resumes a conversation of another trust (R7-2): begin() resets it and the run starts fresh. */
+  async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
+    const trust = hooks.trust ?? DEFAULT_TRUST;
+    const resume = this.plan !== undefined && this.planTrust === trust ? this.plan : this.conversation.begin(trust);
     this.plan = undefined;
     const memory = this.conversation.currentMemoryKey();
     let out: ClaudeOutcome;
     try {
-      out = await this.inner.run(prompt, resume ? { resume } : {});
+      out = await this.inner.run(prompt, resume ? { resume, trust } : { trust });
     } catch (e) {
       this.conversation.end();
       throw e;
     }
-    this.conversation.finish(out, memory);
+    this.conversation.finish(out, memory, trust);
     return out;
   }
 
@@ -281,8 +298,11 @@ export const MAX_WARM_AGE_MS = MAX_FOLLOW_UP_WINDOW_SEC * 1000;
 
 export interface WarmRunnerOptions {
   conversation: Conversation;
-  /** Start one warm process whose persona is built with the memory as it is now (`memoryKey` = its key). */
-  start: (memoryKey: string | undefined) => WarmProcess;
+  /**
+   * Start one warm process whose persona is built with the memory as it is now (`memoryKey` = its key), for a
+   * conversation of this trust (`wake`: its serve runs with `--trust wake`).
+   */
+  start: (memoryKey: string | undefined, trust: Trust) => WarmProcess;
   /** Called after every OK command with where the time went. */
   onTiming?: (t: ClaudeTiming) => void;
   now?: () => number;
@@ -299,6 +319,8 @@ const CANCELLED: ClaudeOutcome = { kind: 'cancelled' };
  * and the next serve would import that old taint. A conversation ends on:
  *  - the follow-up window running out (a timer after each command and touch(), checked again before a command);
  *  - a memory change (endConversation() from the router, or a memory key that differs from the process's);
+ *  - a command or pre-warm of another trust than the process's (R7-2: a wake-word command never continues an F5
+ *    conversation, nor the other way round; a typed command after a wake-word pre-warm replaces that process);
  *  - a cancel (cancel() / endConversation(): Esc, "Stephen stop", wake word while running, F5 while busy, Ctrl-C);
  *  - any error (an error result, a protocol error, an exit, MCP not connected, a serve that died or was restarted
  *    behind Claude Code's back: docs/REVIEW-7.md R7-1) and a state save that failed;
@@ -327,39 +349,43 @@ export class WarmConversationRunner implements CommandRunner {
     return this.o.conversation;
   }
 
-  /** May the live process take the next command? Pure: nothing is killed or reset here. */
-  private reusable(): boolean {
+  /** May the live process take the next command, of this trust? Pure: nothing is killed or reset here. */
+  private reusable(trust: Trust): boolean {
     const p = this.proc;
-    if (!p || p.exited) return false;
+    if (!p || p.exited || p.trust !== trust) return false;
     const key = this.conversation.currentMemoryKey();
     if (key === 'unreadable' || key !== p.memoryKey) return false;
     const age = this.now() - p.spawnedAt;
     if (this.commands >= MAX_WARM_COMMANDS || age >= MAX_WARM_AGE_MS) return false;
     if (this.commands === 0) return age < PREWARM_UNUSED_MS;
-    return this.sessionId !== null && this.conversation.peek() === this.sessionId;
+    return this.sessionId !== null && this.conversation.peek(trust) === this.sessionId;
   }
 
-  /** The wake word fired or F5 went down: start a process now, unless one that can take the command is up. */
-  prewarm(): void {
+  /**
+   * The wake word fired (`wake`) or F5 went down (`trusted`): start a process of that trust now, unless one that can
+   * take the command is up. A live process of the other trust ends first (kill, wait, reset).
+   */
+  prewarm(trust: Trust = DEFAULT_TRUST): void {
     if (this.busy) return;
-    if (this.proc && this.reusable()) return;
+    if (this.proc && this.reusable(trust)) return;
     if (this.proc) void this.endProcess();
     this.ending = this.ending.then(() => {
       if (this.proc || this.busy) return;
       try {
-        this.spawn();
+        this.spawn(trust);
       } catch (e) {
         this.o.log?.(`could not pre-warm Claude Code (${(e as Error).message})`);
       }
     });
   }
 
-  followUp(): boolean {
-    return this.commands > 0 && this.reusable();
+  followUp(trust: Trust = DEFAULT_TRUST): boolean {
+    return this.commands > 0 && this.reusable(trust);
   }
 
   async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     if (this.busy) throw new Error('a command is already running');
+    const trust = hooks.trust ?? DEFAULT_TRUST;
     this.busy = true;
     this.cancelRequested = false;
     this.clearTimers();
@@ -370,9 +396,10 @@ export class WarmConversationRunner implements CommandRunner {
       for (let attempt = 0; attempt < 2 && !p; attempt++) {
         await this.ending;
         if (this.cancelRequested) return CANCELLED;
-        if (this.proc && !this.reusable()) await this.endProcess();
+        // Another trust, the window ran out, memory changed or a cap: this process can't take it (kill, wait, reset).
+        if (this.proc && !this.reusable(trust)) await this.endProcess();
         if (this.cancelRequested) return CANCELLED;
-        const next = this.proc ?? this.spawn();
+        const next = this.proc ?? this.spawn(trust);
         try {
           await next.ready();
         } catch (e) {
@@ -381,7 +408,7 @@ export class WarmConversationRunner implements CommandRunner {
           return { kind: 'error', message: (e as Error).message, sessionId: null };
         }
         if (this.cancelRequested || this.proc !== next) return CANCELLED;
-        if (this.reusable()) p = next;
+        if (this.reusable(trust)) p = next;
       }
       if (!p) {
         void this.endProcess();
@@ -401,7 +428,7 @@ export class WarmConversationRunner implements CommandRunner {
           warm: { command, leadMs: command === 1 ? t0 - p.spawnedAt : null },
         });
       }
-      const kept = out.kind === 'ok' && this.proc === p && out.sessionId !== null && this.conversation.remember(out.sessionId, p.memoryKey);
+      const kept = out.kind === 'ok' && this.proc === p && out.sessionId !== null && this.conversation.remember(out.sessionId, p.memoryKey, p.trust);
       if (!kept) {
         // An error, window 0, a failed save: the conversation ends (a failed run's own id is dropped too).
         const failedId = out.kind === 'error' ? out.sessionId : null;
@@ -411,7 +438,7 @@ export class WarmConversationRunner implements CommandRunner {
       }
       this.commands = command;
       this.sessionId = out.sessionId;
-      if (!this.reusable()) void this.endProcess(); // a cap was reached
+      if (!this.reusable(trust)) void this.endProcess(); // a cap was reached
       else this.armWindow();
       return out;
     } finally {
@@ -453,9 +480,9 @@ export class WarmConversationRunner implements CommandRunner {
     return this.proc;
   }
 
-  private spawn(): WarmProcess {
+  private spawn(trust: Trust): WarmProcess {
     this.conversation.reset(); // fresh gate, no session id; throws if that fails, and then nothing runs
-    const p = this.o.start(this.conversation.currentMemoryKey());
+    const p = this.o.start(this.conversation.currentMemoryKey(), trust);
     this.proc = p;
     this.commands = 0;
     this.sessionId = null;
@@ -490,7 +517,7 @@ export class WarmConversationRunner implements CommandRunner {
     if (this.windowTimer) clearTimeout(this.windowTimer);
     this.windowTimer = setTimeout(() => {
       this.windowTimer = null;
-      if (!this.busy && this.proc && !this.reusable()) void this.endProcess();
+      if (!this.busy && this.proc && !this.reusable(this.proc.trust)) void this.endProcess();
     }, this.conversation.windowSec * 1000 + 1);
     this.windowTimer.unref?.();
   }

@@ -102,9 +102,9 @@ async function serve(argv: string[] = []): Promise<void> {
     // stephen eval: same tools, nothing acts (src/eval/dry-server.ts). No home dirs touched, no browser, no audit.
     const { buildDryRunServer, fileRecorder, readFakePage } = await import('./eval/dry-server.js');
     const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
-    const deps: ServerDepsWithVoice = { cfg, manager: createBrowserManager(cfg), engine: pageEngine, safetyFactory: createSafety, voice: {} };
+    const deps: ServerDepsWithVoice = { cfg, manager: createBrowserManager(cfg), engine: pageEngine, safetyFactory: createSafety, voice: {}, ...(opts.trust ? { trust: opts.trust } : {}) };
     const page = opts.dryRun.fakePage !== undefined ? readFakePage(opts.dryRun.fakePage) : undefined;
-    const { server } = buildDryRunServer(deps, packageVersion(), fileRecorder(opts.dryRun.record), page !== undefined ? { page } : {});
+    const { server } = buildDryRunServer(deps, packageVersion(), fileRecorder(opts.dryRun.record), { ...(page !== undefined ? { page } : {}), ...(opts.trust ? { trust: opts.trust } : {}) });
     const bye = () => process.exit(0);
     process.stdin.once('end', bye);
     process.stdin.once('close', bye);
@@ -125,6 +125,8 @@ async function serve(argv: string[] = []): Promise<void> {
       setTimeout(() => process.exit(RESTARTED_EXIT_CODE), 250); // let the refusal reach Claude Code first
     };
   }
+  // --trust wake: a wake-word conversation (R7-2). Logged here; each refused email read is in the audit log.
+  if (opts.trust) console.error('[stephen] trust: wake word (email: who and when only; gmail_read refused)');
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
   if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
   // Profiles, state and saved page output are private to this user (mode 0700).
@@ -152,6 +154,7 @@ async function serve(argv: string[] = []): Promise<void> {
     ...(opts.voice ? { voice: {} } : {}),
     ...(opts.toolLog ? { toolLog: opts.toolLog } : {}),
     ...(restarted ? { restarted } : {}),
+    ...(opts.trust ? { trust: opts.trust } : {}),
   };
   await serveStdio(deps);
 }

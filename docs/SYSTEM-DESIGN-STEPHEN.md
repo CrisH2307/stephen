@@ -116,7 +116,18 @@ anchored grammar on the owner's own transcript *before* any model runs (0 model 
 - `forget <query>` scoring: token overlap against stored items. A unique best match is deleted; a tie deletes
   nothing and asks for more detail.
 - Trust levels: push-to-talk and typed text are trusted; the wake word (a video could say it) needs a dialog for
-  remember/forget and only gets a count for "what do you remember".
+  remember/forget and only gets a count for "what do you remember". The same two levels apply to the accounts and
+  to conversations (review 7, R7-2): a conversation has the trust of the command that started it, a command of the
+  other trust always starts a fresh one (§4.12), and a wake-word conversation's serve runs with `serve --trust wake`,
+  where email is "summary only": `gmail_search` gives a count and each message's date and sender name + domain (no
+  subject, snippet or id) with "For subjects or to read an email, hold F5 or type the request.", and `gmail_read` is
+  refused without a request (no taint; the refusal is audited). Canvas, Calendar, Notion and weather are unchanged
+  (the owner's choice).
+
+| Source | Trust | Memory | Timers | Email |
+|---|---|---|---|---|
+| F5 / Fn+Option, typed (`--text`, app chat) | trusted | full | full | full (search with subjects, `gmail_read`) |
+| Wake word | wake | dialog for remember/forget, count only for the list | count only for the list, cancel asks, 5 items at most | who and when only, no `gmail_read` |
 - Memory reaches the model as a framed `<user_memory>` data block (`<`/`>` mapped to look-alikes so it can't close
   the block). Any change ends the follow-up conversation, because Claude snapshots the system prompt. A hash of the
   memory list is stored with the session, so a change from anywhere (CLI, window, hand edit) forces a fresh
@@ -299,8 +310,17 @@ wake word fires or F5 goes down. Recording and speech-to-text take at least 2 s,
   one), and it exits with code 75. The warm runner also checks the lock after each result, so a restart inside a
   command turns that command into an error and ends the conversation. The lock is deleted once the process group is
   gone; locks older than a day (a killed listener) are swept at listener start.
+- **Trust follows the conversation (R7-2).** Each process has a trust: `wake` when the wake word pre-warmed it or a
+  wake-word command started it, `trusted` for F5, typed text and the app chat. Its serve gets `--trust wake` for a
+  wake conversation (written into its MCP config with the instance id). A command of the other trust never goes to
+  it: the process ends (kill, wait, reset) and a fresh one of the new trust takes the command, so a wake-word command
+  never sees what an F5 command read, and a bystander's words never become turns the owner's next F5 command
+  inherits. A typed command after a wake-word pre-warm replaces the pre-warmed process the same way; a wake word during
+  an F5 conversation ends it when it pre-warms. `conversation.json` stores the trust too, so the one-shot runner never
+  uses `--resume` across trust levels.
 - **One process per conversation.** It ends when the follow-up window runs out (a timer, and checked again before a
-  command), memory changes (the router, or a key mismatch from the app, the CLI or a hand edit), on any cancel (Esc,
+  command), memory changes (the router, or a key mismatch from the app, the CLI or a hand edit), a command of the
+  other trust arrives (above), on any cancel (Esc,
   "Stephen stop", the wake word while running, F5 while busy, Ctrl-C), on any error (error result, protocol error,
   exit, MCP not connected), and at the caps: an unused pre-warm after 60 s, 25 commands, 30 minutes, listener exit.
   With `followUpWindowSec: 0` it ends after every command and the next one is pre-warmed again.
@@ -349,7 +369,7 @@ serve) costs about 270 MB and 0.6 % of one core. The Mac numbers are still to be
 |---|---|---|
 | Web page / email / Canvas post | Put text in front of the model | Data framing; no memory tool; taint egress gate; human dialogs; eval injection cases |
 | The model itself (confused or injected) | Call any Stephen tool | Gate on every action; no shell or file tools (`--tools ""`, strict MCP config); no tool takes a URL for account data |
-| Bystander / video saying "Hey Stephen" | Speak commands | Wake-word trust is lower: dialogs for memory changes, counts instead of contents |
+| Bystander / video saying "Hey Stephen" | Speak commands | Wake-word trust is lower: dialogs for memory changes, counts instead of contents for memory and timers, email as who and when only (`serve --trust wake`, no `gmail_read`); a wake-word command never continues an F5 conversation (§4.2, §4.12). Canvas, Calendar, Notion and weather are still read in full (owner's choice) |
 | Other macOS users | Read files | 0700 dirs / 0600 files, `O_NOFOLLOW`, socket peer checks |
 | Same-user malware | Everything the user can | Out of scope (documented). Remaining hardening: helper.sock nonce |
 

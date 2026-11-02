@@ -343,3 +343,15 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   0.1 s, model 8.9 s in 4 turns, …)` (WAV audio runs faster than real time, so the lead is short). Full suite **2660
   passed, 12 skipped**. Docs: SYSTEM-DESIGN §4.12 (new) and §4.1, STEPHEN.md follow-ups row, VOICE.md, ADR-003
   "Implementation". Owner: measure on the Mac, one-shot (`"warm": false`) vs warm, with the `claude:` lines.
+- 2026-11-02: Review 7 R7-2 fixed (owner decision "summary only" for the wake word). Trust follows the conversation:
+  `trusted` (F5 / Fn+Option, typed text, app chat, `--text`) or `wake` (wake word), `trustOf(source)` in
+  `src/voice/assistant.ts`. A command of the other trust always starts a fresh conversation (kill, wait, reset,
+  drop), in the warm runner (the process records its trust; pre-warm spawns one of the trust that pressed it, and a
+  typed command after a wake pre-warm replaces it) and in the one-shot runner (`conversation.json` keeps the trust; no
+  `--resume` across trust levels; an old file without one is never resumed). A wake conversation's serve gets
+  `serve --trust wake` (`src/serve-args.ts`; also with `--dry-run`): `gmail_search` = count + date + sender name and
+  domain only, footer "For subjects or to read an email, hold F5 or type the request."; `gmail_read` refused (no
+  request, no taint, audited). Canvas, Calendar, Notion, weather, briefing, memory and timer rules unchanged. One
+  persona sentence. Eval: `trust: 'wake'` on a case; `wake-mail-summary`, `wake-mail-read`: real sonnet 4/4 (2 runs
+  each). Full suite **2771 passed, 13 skipped**. Docs: REVIEW-7 R7-2 Fixed + table, SYSTEM-DESIGN §4.2 (trust
+  table), §4.12, §5, STEPHEN.md rule row.

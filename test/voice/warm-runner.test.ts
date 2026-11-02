@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Assistant } from '../../src/voice/assistant.js';
+import { Assistant, type Trust } from '../../src/voice/assistant.js';
 import { mcpConfig, writeMcpConfig, type ClaudeOutcome, type ClaudeTiming, type ServeInstance } from '../../src/voice/claude.js';
 import { newServeInstance, pidAlive, serveLockPath } from '../../src/server/instance.js';
 import { removeSessionTranscript } from '../../src/voice/transcripts.js';
@@ -43,6 +43,7 @@ class FakeProc implements WarmProcess {
     readonly id: number,
     readonly memoryKey: string | undefined,
     private readonly w: World,
+    readonly trust: Trust = 'wake',
   ) {}
   ready(): Promise<void> {
     return this.w.ready(this);
@@ -99,8 +100,8 @@ function harness(windowSec = 180) {
   const timings: ClaudeTiming[] = [];
   const runner = new WarmConversationRunner({
     conversation: conv,
-    start: (key) => {
-      const p = new FakeProc(procs.length + 1, key, w);
+    start: (key, trust) => {
+      const p = new FakeProc(procs.length + 1, key, w, trust);
       procs.push(p);
       w.events.push(`spawn:${p.id}`);
       return p;
@@ -429,6 +430,97 @@ describe('WarmConversationRunner (in-memory process, fake timers)', () => {
   });
 });
 
+describe('Trust follows the conversation (review 7, R7-2)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(1_700_000_000_000);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ['trusted', 'wake'],
+    ['wake', 'trusted'],
+  ] as const)('R7-2: a %s conversation, then a %s command: kill → closed → reset, then a fresh process of the new trust', async (first, second) => {
+    const h = harness();
+    await h.runner.run('read me my latest email', { trust: first });
+    h.runner.commandEnded();
+    h.plantState(); // the serve noted a private read
+    expect(JSON.parse(readFileSync(join(h.dir, CONVERSATION_FILE), 'utf8')).trust).toBe(first);
+    expect(h.runner.followUp(first)).toBe(true);
+    expect(h.runner.followUp(second)).toBe(false);
+    await h.runner.run('what did that email say', { trust: second });
+    expectEndedInOrder(h.w.events, 1);
+    expect(h.procs.map((p) => p.trust)).toEqual([first, second]);
+    expect(h.procs.map((p) => p.turns)).toEqual([['read me my latest email'], ['what did that email say']]);
+    expect(h.stateExists()).toBe(false);
+    expect(JSON.parse(readFileSync(join(h.dir, CONVERSATION_FILE), 'utf8')).trust).toBe(second);
+  });
+
+  it('R7-2: same-trust follow-ups still reuse the process (trusted and wake)', async () => {
+    for (const trust of ['trusted', 'wake'] as const) {
+      const h = harness();
+      h.runner.prewarm(trust);
+      await settle();
+      await h.runner.run('one', { trust });
+      h.runner.commandEnded();
+      expect(h.runner.followUp(trust)).toBe(true);
+      await h.runner.run('two', { trust });
+      expect(h.procs).toHaveLength(1);
+      expect(h.procs[0]!.trust).toBe(trust);
+      expect(h.procs[0]!.turns).toEqual(['one', 'two']);
+      expect(h.w.events.filter((e) => e.startsWith('kill'))).toEqual([]);
+    }
+  });
+
+  it('R7-2: a wake-word pre-warm, then a typed command: the pre-warmed process is replaced before sending', async () => {
+    const h = harness();
+    h.runner.prewarm('wake');
+    await settle();
+    expect(h.procs.map((p) => p.trust)).toEqual(['wake']);
+    await h.runner.run('open my gmail', { trust: 'trusted' });
+    expectEndedInOrder(h.w.events, 1);
+    expect(h.procs.map((p) => p.trust)).toEqual(['wake', 'trusted']);
+    expect(h.procs[0]!.turns).toEqual([]); // nothing ever went to the wake-word process
+    expect(h.procs[1]!.turns).toEqual(['open my gmail']);
+  });
+
+  it('R7-2: pre-warm of the other trust ends a live conversation; of the same trust keeps it', async () => {
+    const h = harness();
+    await h.runner.run('one', { trust: 'trusted' });
+    h.runner.commandEnded();
+    h.runner.prewarm('trusted');
+    await settle();
+    expect(h.procs).toHaveLength(1);
+    h.plantState();
+    h.runner.prewarm('wake'); // the wake word fired during an F5 conversation
+    await settle();
+    expectEndedInOrder(h.w.events, 1);
+    expect(h.procs.map((p) => p.trust)).toEqual(['trusted', 'wake']);
+    expect(h.stateExists()).toBe(false);
+  });
+
+  it('R7-2: the Assistant passes the trust of its source (F5, then the wake word: a new process)', async () => {
+    const h = harness();
+    const lines: string[] = [];
+    const a = new Assistant({ runner: h.runner, speaker: new RecordingSpeaker(), chimes: new RecordingChimes(), speak: false, status: (l) => lines.push(l) });
+    a.prewarm('trusted');
+    await settle();
+    await a.handle('any email from my prof', { source: 'voice-ptt' });
+    await a.handle('what did it say', { source: 'voice-ptt' });
+    await a.handle('read it again', { source: 'voice-wake' });
+    await a.handle('and the next one', { source: 'voice-wake' });
+    await a.handle('thanks', { source: 'app' });
+    expect(lines.filter((l) => l.startsWith('Working'))).toEqual(['Working…', 'Working… (follow-up)', 'Working…', 'Working… (follow-up)', 'Working…']);
+    expect(h.procs.map((p) => [p.trust, p.turns])).toEqual([
+      ['trusted', ['any email from my prof', 'what did it say']],
+      ['wake', ['read it again', 'and the next one']],
+      ['trusted', ['thanks']],
+    ]);
+    expectEndedInOrder(h.w.events, 1);
+    expectEndedInOrder(h.w.events, 2);
+  });
+});
+
 // ───────────── with the real fake-claude subprocess ─────────────
 
 /**
@@ -448,10 +540,10 @@ function realHarness(env: (statePath: string) => Record<string, string>, opts: {
   const mcpConfigPath = join(voiceDir, 'mcp.json');
   writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig('/usr/bin/node', '/x/cli.js', conv.statePath, toolLog)));
   const locks: string[] = [];
-  const serveInstance = async (): Promise<ServeInstance> => {
+  const serveInstance = async (trust: Trust): Promise<ServeInstance> => {
     const id = newServeInstance();
     locks.push(serveLockPath(home, id));
-    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, '/usr/bin/node', '/x/cli.js', conv.statePath, toolLog, id) };
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, '/usr/bin/node', '/x/cli.js', conv.statePath, toolLog, id, trust) };
   };
   const o: WarmClaudeOptions = {
     claudePath: fakeClaudePath(),
@@ -466,7 +558,7 @@ function realHarness(env: (statePath: string) => Record<string, string>, opts: {
     mcpPollMs: 20,
     ...(opts.instance ? { serveInstance } : {}),
   };
-  const runner = new WarmConversationRunner({ conversation: conv, start: (key) => new WarmClaude(o, key, []) });
+  const runner = new WarmConversationRunner({ conversation: conv, start: (key, trust) => new WarmClaude(o, key, [], trust) });
   const procs = (): { claude: number; child: number } => JSON.parse(readFileSync(pids, 'utf8'));
   const transcriptFiles = () => readdirSync(transcripts);
   return { conv, runner, toolLog, procs, spawned: () => existsSync(pids), o, locks, transcriptFiles };
@@ -532,6 +624,19 @@ describe('WarmConversationRunner with the real fake claude', () => {
     expect(h.locks).toHaveLength(2);
     await h.runner.shutdown();
     expect(h.locks.every((l) => !existsSync(l))).toBe(true);
+  });
+
+  it('R7-2: a wake-word conversation\'s serve is started with --trust wake; a trusted one without it', async () => {
+    const h = realHarness(() => ({}), { instance: true });
+    const configArgs = () => (JSON.parse(readFileSync(join(h.conv.statePath, '..', 'mcp-config.json'), 'utf8')).mcpServers.stephen.args as string[]);
+    expect(await h.runner.run('any new emails', { trust: 'wake' })).toMatchObject({ kind: 'ok' });
+    expect(configArgs().join(' ')).toMatch(/ --trust wake /);
+    const first = h.procs().claude;
+    expect(await h.runner.run('read me the email from dr patel', { trust: 'trusted' })).toMatchObject({ kind: 'ok' });
+    expect(configArgs()).not.toContain('--trust');
+    expect(h.procs().claude).not.toBe(first); // a fresh process, not the wake-word one
+    expect(isAlive(first)).toBe(false);
+    await h.runner.shutdown();
   });
 
   it('R7-3: a cancelled first command leaves no transcript (the id came from system/init)', async () => {

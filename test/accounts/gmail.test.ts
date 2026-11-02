@@ -407,6 +407,62 @@ describe('gmail_read over MCP', () => {
   });
 });
 
+describe('serve --trust wake: email is who and when only (review 7, R7-2)', () => {
+  const wakeHarness = () => {
+    seen = [];
+    const sec = keychain();
+    return setup({
+      overrides: { accounts: { timeZone: TZ, gmail: { clientId: CLIENT_ID, accounts: ['personal'] } } } as never,
+      extraDeps: { trust: 'wake', accounts: { secrets: { platform: 'darwin', exec: sec.exec, user: 'tester', envFile: envFile() }, allowLoopbackHttp: true, gmailOrigin: base, googleTokenOrigin: base } },
+    });
+  };
+
+  it('R7-2: gmail_search gives a count, the date and the sender name + domain; no id, subject or snippet; taint armed', async () => {
+    resetToken();
+    gmailReply = inbox();
+    const h = await wakeHarness();
+    const r = await h.call('gmail_search', { from: 'patel' });
+    expect(r.isError).toBeFalsy();
+    const text = textOf(r);
+    expect(text).toMatch(/^Gmail \(personal\), newest first: 2 messages \(1 unread\)\. After the wake word Stephen gives only the sender and the date\./);
+    expect(text).toContain(`<untrusted_account_data source="gmail">\n- ${whenText('2026-11-02T14:14:00.000Z', TZ)} · Dr. A Patel <ontariotechu.ca> · unread\n`);
+    expect(text).toContain('goodlifefitness.com');
+    expect(text).toMatch(/For subjects or to read an email, hold F5 or type the request\.$/);
+    // Nothing of what the mail says: no subject words, no snippet, no ids, no "call gmail_read".
+    expect(text).not.toMatch(/SOFE|midterm|Thursday|UA1350|Your code|verification|482913|18f2a0c4d5e6f701|18f29b7e1a2b3c40|gmail_read/);
+    expect(h.gate.dataReads).toEqual(['gmail']);
+  });
+
+  it('R7-2: gmail_read is refused with the F5 notice: no request, no taint, audited', async () => {
+    resetToken();
+    gmailReply = inbox();
+    const h = await wakeHarness();
+    const r = await h.call('gmail_read', { id: M1.id });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toMatch(/hold F5 or type the request/);
+    expect(seen).toEqual([]);
+    expect(h.gate.dataReads).toEqual([]);
+    expect(h.audit.entries).toContainEqual(expect.objectContaining({ tool: 'gmail_read', outcome: 'denied', args: { trust: 'wake' } }));
+    // Also after a search (its ids are not even shown): still refused, still no message request.
+    await h.call('gmail_search', {});
+    const before = seen.length;
+    expect((await h.call('gmail_read', { id: M1.id })).isError).toBe(true);
+    expect(seen.length).toBe(before);
+    expect(h.gate.dataReads).toEqual(['gmail']);
+  });
+
+  it('R7-2: trusted serve (no flag) is unchanged: subjects, snippets and gmail_read', async () => {
+    resetToken();
+    gmailReply = inbox();
+    const h = await harness();
+    const text = textOf(await h.call('gmail_search', {}));
+    expect(text).toContain('"SOFE 3980U midterm moved"');
+    expect(text).toContain('To read one, call gmail_read with its id.');
+    expect(text).not.toContain('hold F5');
+    expect((await h.call('gmail_read', { id: M1.id })).isError).toBeFalsy();
+  });
+});
+
 describe('stephen accounts lists Gmail labels', () => {
   it('connected or not, and whether the client id is set (never a token)', async () => {
     const { runAccountsCli } = await import('../../src/connect/accounts-cli.js');
