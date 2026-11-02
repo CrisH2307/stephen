@@ -145,10 +145,10 @@ async function keychainFind(service: string, check: (v: string) => string | null
 }
 
 /** A Gmail account label: what `stephen connect gmail <label>` takes and `accounts.gmail.accounts` lists. */
-export const GMAIL_LABEL_RE = /^[a-z0-9-]{1,20}$/;
+export const GMAIL_LABEL_RE = /^[a-z0-9_-]{1,32}$/;
 /** The Keychain service holding that account's refresh token. */
 export const gmailKeychainService = (label: string): string => {
-  if (!GMAIL_LABEL_RE.test(label)) throw new Error('a Gmail account label is 1 to 20 of a-z, 0-9 and -');
+  if (!GMAIL_LABEL_RE.test(label)) throw new Error('a Gmail account label is 1 to 32 of a-z, 0-9, _ and -');
   return `stephen-gmail-${label}`;
 };
 /** What a Google OAuth token looks like (refresh "1//0g…", access "ya29.…"): a token word, nothing else. */

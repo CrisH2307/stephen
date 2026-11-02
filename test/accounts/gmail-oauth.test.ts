@@ -293,7 +293,7 @@ describe('stephen connect gmail <label>', () => {
       opened += 1;
     };
     expect((await run(['connect', 'gmail', 'Personal'], { open })).code).toBe(2);
-    expect((await run(['connect', 'gmail', 'a'.repeat(21)], { open })).code).toBe(2);
+    expect((await run(['connect', 'gmail', 'a'.repeat(33)], { open })).code).toBe(2);
     expect((await run(['connect', 'gmail', '../x'], { open })).code).toBe(2);
     const linux = await run(['connect', 'gmail', 'personal'], { open, platform: 'linux' });
     expect(linux.code).toBe(1);

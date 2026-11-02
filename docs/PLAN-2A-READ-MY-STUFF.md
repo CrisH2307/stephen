@@ -91,15 +91,16 @@ the real Canvas call is checked on the Mac with `node dist/cli.js accounts test 
 2. Google Auth Platform (OAuth consent screen): User type **External**, app name "Stephen", your email as support
    and developer contact. Data access → add the scope `https://www.googleapis.com/auth/gmail.readonly`. Audience →
    **Test users**: add both personal Gmail addresses. While the app is in "Testing", Google expires the refresh token
-   after 7 days (you then run `stephen connect gmail <label>` again). To avoid that, set Publishing status to
-   "In production" without verification: Google then shows an "unverified app" warning at sign-in (Advanced → Go
-   to Stephen), which is fine for an app only you use.
+   after 7 days (you then run `stephen connect gmail <label>` again). **Owner decision (2026-11-02): stay in
+   "Testing" until every Mac test passes**, then switch Publishing status to "In production" without verification
+   (Google then shows an "unverified app" warning at sign-in: Advanced → Go to Stephen; fine for an app only you use).
 3. Clients → Create client → Application type **Desktop app** → name "Stephen". Copy the client id and the client
    secret.
 4. On the Mac: put the id in `~/.stephen/config.json` (or `$STEPHEN_CONFIG`):
    `"accounts": { "gmail": { "clientId": "<id>.apps.googleusercontent.com" } }`. Put the secret in Stephen's `.env`
    (`GOOGLE_OAUTH_CLIENT_SECRET=<secret>`, file mode 600) or the Keychain:
    `security add-generic-password -U -s stephen-google-oauth -a "$USER" -w` (prompts for it, so it stays off argv).
-5. `npm run build`, then `node dist/cli.js connect gmail personal` and `node dist/cli.js connect gmail personal2`
-   (one browser sign-in each; pick the right account). Check with `node dist/cli.js accounts`. Restart Stephen.
+5. `npm run build`, then `node dist/cli.js connect gmail <label>` once per account (one browser sign-in each; pick
+   the right account). **Labels** (owner rule): use the account's name (e.g. `khang`); if two accounts would get the
+   same name, say what each is for: `personal_purpose_school`, `personal_purpose_jobs`. 1 to 32 of a-z, 0-9, `_`, `-`. Check with `node dist/cli.js accounts`. Restart Stephen.
 6. Try "any email from my prof?", "do I have unread emails?", "read me the first one".

@@ -186,7 +186,8 @@ describe('Gmail config', () => {
   it('labels are checked and deduped; clientId must look like an id; no token field', () => {
     expect(parseAccountsConfig({ gmail: { accounts: ['personal', 'personal', 'p2'] } }).gmail.accounts).toEqual(['personal', 'p2']);
     expect(() => parseAccountsConfig({ gmail: { accounts: ['Personal'] } })).toThrow(/label/);
-    expect(() => parseAccountsConfig({ gmail: { accounts: ['a'.repeat(21)] } })).toThrow();
+    expect(() => parseAccountsConfig({ gmail: { accounts: ['a'.repeat(33)] } })).toThrow();
+    expect(parseAccountsConfig({ gmail: { accounts: ['personal_purpose_school', 'personal_purpose_jobs'] } }).gmail.accounts).toEqual(['personal_purpose_school', 'personal_purpose_jobs']);
     expect(() => parseAccountsConfig({ gmail: { clientId: 'x y' } })).toThrow(/client id/);
     expect(() => parseAccountsConfig({ gmail: { refreshToken: REFRESH } })).toThrow();
   });

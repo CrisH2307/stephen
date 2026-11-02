@@ -38,7 +38,7 @@ const schema = z
     gmail: service
       .extend({
         clientId: z.string().regex(/^[A-Za-z0-9._-]{1,200}$/, 'must look like a Google OAuth client id').optional(),
-        accounts: z.array(z.string().regex(GMAIL_LABEL_RE, 'a label is 1 to 20 of a-z, 0-9 and -')).max(10).default([]),
+        accounts: z.array(z.string().regex(GMAIL_LABEL_RE, 'a label is 1 to 32 of a-z, 0-9, _ and -')).max(10).default([]),
       })
       .strict()
       .default({ enabled: true, accounts: [] }),

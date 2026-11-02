@@ -193,7 +193,7 @@ export async function runConnectCli(cmd: 'connect' | 'disconnect', argv: string[
   }
   const label = argv[1]!;
   if (!GMAIL_LABEL_RE.test(label)) {
-    err('The label is 1 to 20 of a-z, 0-9 and - (for example personal or personal2).');
+    err("The label is 1 to 32 of a-z, 0-9, _ and - (use the account's name, e.g. khang; if two share a name, say what each is for, e.g. personal_purpose_school and personal_purpose_jobs).");
     return 2;
   }
   const secrets = e.secrets ?? {};
