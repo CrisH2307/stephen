@@ -181,6 +181,23 @@ Google Calendar's secret iCal feed is read with one GET and parsed locally:
 - The feed address is itself a secret (its path holds the key), so the client pins the origin and error messages
   never include the path.
 
+### 4.8 Timers and reminders (deterministic, like memory)
+
+"Set a timer for 10 minutes", "remind me at 5:30 pm to call mom", "remind me to stretch in an hour", "what timers do I
+have", "cancel the reminder about laundry". They are handled before Claude by a small grammar: number words, compound
+durations ("an hour and a half"), clock times that pick the next future match ("5" at 2 pm means 5 pm; "1" means 1 am
+tomorrow), and the time at the start or end of the sentence. Claude has no timer tool, so a page can't plant text
+that Stephen will later say aloud. Items live in a 0600 file. One `setTimeout` is armed for the earliest item.
+Alerts wait for the listener to be idle and are spoken as a busy phase, so they can't land in a recording. Items that
+came due while Stephen was off fire once (marked late); anything more than 12 h late is dropped. Wake-word commands
+get lower trust: lists give only a count, cancelling asks, and at most 5 wake-word items.
+
+### 4.9 Bounded work on hostile input
+
+Anything a stranger can write (calendar invites, Canvas posts) is parsed with linear-time patterns, cut before
+cleaning, and expanded with hard iteration caps. Review 6 measured a 2 MB `<<<…` title at ~40 minutes with the old
+tag regex and 13 s for 50 spam invites; both now finish in milliseconds.
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |

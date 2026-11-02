@@ -262,3 +262,15 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   (fixed a 1-in-1000 flake in audit.test.ts: a timestamp ending in 999). Owner: add GOOGLE_CALENDAR_ICS to .env, run
   `npm run build`, `node dist/cli.js accounts test canvas` and `… test calendar`, then try "what's due this week" and
   "what's on my calendar today". Next: Notion (NOTION_API integration token), then Gmail (OAuth, personal accounts).
+- 2026-11-02 00:10 — Owner: Notion/Gmail later; "move on". Done: (1) user-facing "Hold Fn+Option" → "Hold F5" (docs/
+  doctor/install say "F5 or Fn+Option"). (2) **Timers and reminders** (src/timers/: intent.ts grammar, store.ts 0600
+  `<home>/timers.json` + scheduler, router.ts replies, notify.ts osascript argv notification), routed before Claude in
+  Assistant (`timers` option), fired only while `stephen listen` runs; persona says Claude can't set them; boundary
+  `src/timers/` vs CLAUDE_REACHABLE; eval case `timer-no-time`. Time-zone math moved to src/util/zone.ts.
+  (3) **Security review #6** (fresh opus; docs/REVIEW-6.md): no Critical/High. Fixed R6-2…R6-10 with tests
+  (test/accounts/review6.test.ts): linear HTML stripping + input cut, zone formatter cache, RRULE skip-ahead + BYDAY
+  dedupe + iteration/feed caps, wake-word timer trust (count-only list, cancel dialog, 5-item cap), alerts through
+  listener.submit/Assistant.announce, secret value checks + fixed network error words, `*.stephen.invalid` blocked,
+  more link/code shapes cleaned, account env names stripped from claude's env, .env parser fixes. R6-1 not an issue
+  (Mac .gitignore has .env). Full eval before the review fixes: 52/53 (mis-lofi borderline). Owner's Mac already has
+  commits through calendar ("src"); timers + review-6 fixes are new and uncommitted.
