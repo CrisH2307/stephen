@@ -323,6 +323,11 @@ export interface ISafetyGate {
   evaluate(req: ActionRequest): PolicyDecision;
   /** Record that content from `url` was read (snapshot/read_text/find/screenshot) — feeds cross-site typing rule. */
   noteRead(url: string): void;
+  /**
+   * Record that private data from one of Stephen's own tools (canvas, gmail, notion, calendar, or "private" for
+   * `serve --assume-private-read`) is about to reach the model: arms the cross-site taint like noteRead.
+   */
+  notePrivateData(source: 'canvas' | 'gmail' | 'notion' | 'calendar' | 'private'): void;
   /** True if a field must never be typed into / revealed (password, OTP, payment…). */
   isSecretField(el: ElementInfo): boolean;
   /**

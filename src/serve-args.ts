@@ -16,6 +16,9 @@
  * the listener can show tool names in the history (src/server/tool-log.ts). Same path rule as --session-state, but
  * a `.jsonl` file (see checkToolLogPath). It records only; it changes no tool's behaviour.
  *
+ * `serve --assume-private-read`: the gate starts as if private data had already been read (phase 2a), so the
+ * cross-site egress rules apply from the first action. Takes no value; it can only make the gate stricter.
+ *
  * `serve --dry-run --record <file>`: `stephen eval` only. The same tools, but every call is appended to <file> and
  * answered with a fake result — nothing acts (src/eval/dry-server.ts). Both flags are required together, and no
  * other flag may be combined with them, so a dry-run server can never be mistaken for, or mixed into, a real one.
@@ -29,6 +32,8 @@ import { checkToolLogPath } from './server/tool-log.js';
 export interface ServeArgs {
   confirm?: 'dialog' | 'deny';
   voice?: true;
+  /** --assume-private-read: taint armed from the start. */
+  assumePrivateRead?: true;
   sessionState?: string;
   /** --tool-log <file>: absolute path directly inside <home>/voice/. */
   toolLog?: string;
@@ -54,6 +59,8 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
       out.confirm = v;
     } else if (a === '--voice') out.voice = true;
     else if (a.startsWith('--voice=')) return { error: '--voice takes no value' };
+    else if (a === '--assume-private-read') out.assumePrivateRead = true;
+    else if (a.startsWith('--assume-private-read=')) return { error: '--assume-private-read takes no value' };
     else if (a === '--session-state' || a.startsWith('--session-state=')) {
       if (out.sessionState !== undefined) return { error: '--session-state given twice' };
       const p = a === '--session-state' ? argv[++i] : a.slice('--session-state='.length);
@@ -88,7 +95,7 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
   if (fakePage !== undefined && !dry) return { error: '--fake-page only goes with --dry-run' };
   if (dry || record !== undefined) {
     if (!dry || record === undefined) return { error: '--dry-run and --record <file> go together' };
-    if (out.confirm || out.voice || out.sessionState || out.toolLog) return { error: '--dry-run cannot be combined with other serve options' };
+    if (out.confirm || out.voice || out.sessionState || out.toolLog || out.assumePrivateRead) return { error: '--dry-run cannot be combined with other serve options' };
     out.dryRun = { record, ...(fakePage !== undefined ? { fakePage } : {}) };
   }
   return out;

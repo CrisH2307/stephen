@@ -118,7 +118,15 @@ async function serve(argv: string[] = []): Promise<void> {
   }
   const manager = createBrowserManager(cfg);
   // --session-state: the gate's memory follows the voice conversation (imported now if present, saved on change).
-  const safetyFactory = opts.sessionState ? withSessionState(createSafety, opts.sessionState) : createSafety;
+  const withState = opts.sessionState ? withSessionState(createSafety, opts.sessionState) : createSafety;
+  // --assume-private-read: arm the taint before the first action (after the state binding, so it is saved too).
+  const safetyFactory: typeof createSafety = opts.assumePrivateRead
+    ? (c, d) => {
+        const s = withState(c, d);
+        s.gate.notePrivateData('private');
+        return s;
+      }
+    : withState;
   const deps: ServerDepsWithVoice = {
     cfg,
     manager,
