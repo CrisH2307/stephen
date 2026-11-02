@@ -1,5 +1,8 @@
 /** `stephen history [--limit N] | clear`: show or delete the local command history (see store.ts). */
+import { join } from 'node:path';
 import { loadConfig } from '../config.js';
+import { Conversation } from '../voice/conversation.js';
+import { claudeTranscriptDir, purgeTranscripts } from '../voice/transcripts.js';
 import { clean } from '../safety/text.js';
 import { parseHistoryConfig } from './config.js';
 import { DEFAULT_LIST_LIMIT, HistoryStore, MAX_LIST_LIMIT, localDate, type HistoryEntry } from './store.js';
@@ -69,10 +72,19 @@ export async function runHistoryCli(argv: string[], e: HistoryEnv = {}): Promise
     store = new HistoryStore({ home: cfg.home, retentionDays: parseHistoryConfig(cfg.history).retentionDays });
   }
   if (a.cmd === 'clear') {
+    // Also Claude Code's own transcripts of voice sessions (review 5, R5-1); the follow-up conversation ends too,
+    // so a running listener starts fresh instead of resuming a deleted session.
+    if (!e.store) {
+      const home = loadConfig().home;
+      const voiceDir = join(home, 'voice');
+      new Conversation({ dir: voiceDir, windowSec: 0 }).end();
+      purgeTranscripts(claudeTranscriptDir(join(voiceDir, 'workdir')), null);
+    }
     const n = store.clear();
     out(n ? `Deleted ${n} day${n === 1 ? '' : 's'} of history.` : 'No history to delete.');
     return 0;
   }
+  store.purge(); // expired entries go now, even with history off (review 5, R5-6)
   if (!store.enabled) {
     out('History is off (history.retentionDays is 0 in config.json).');
     return 0;

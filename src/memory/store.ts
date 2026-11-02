@@ -10,7 +10,7 @@
  *  - At most `maxItems` (≤ MAX_MEMORY_ITEMS) items of 1 to MAX_MEMORY_CHARS characters, one line each.
  *  - Text is cleaned (control / bidi characters removed, whitespace collapsed, `<` `>` become `‹` `›`, so it can
  *    never close the `<user_memory>` block it is sent in).
- *  - Secret-looking text (passwords, codes, card numbers, 4+ digits in a row) is refused: memory is sent to
+ *  - Secret-looking text (passwords, codes, card numbers, 6+ digits in a row) is refused: memory is sent to
  *    Anthropic with every command.
  *  - Every change takes `memory.json.lock` (O_EXCL, pid inside; a lock whose pid is gone or that is older than
  *    LOCK_STALE_MS is removed) and writes atomically, 0600 (src/safety/session-state.ts helpers: O_NOFOLLOW reads,
@@ -91,7 +91,6 @@ export const MEMORY_MESSAGES: Record<MemoryRefusal, string> = {
 };
 
 const ID_RE = /^m[1-9]\d{0,8}$/;
-/** 4 or more digits in a row, also when spoken apart ("1 2 3 4", "1234-5678"). */
 /**
  * Memory goes to Anthropic with every command, so secrets are refused. Narrower than the page-field check
  * (textLooksSecret), which also flags harmless words like "expires", "routing" or "pin it": owner feedback, a course
@@ -100,8 +99,10 @@ const ID_RE = /^m[1-9]\d{0,8}$/;
  */
 const MEMORY_SECRET_RE = new RegExp(
   [
-    String.raw`\b(?:password|passwd|passcode|passphrase|cvv|cvc|otp|2fa|ssn|api\s?key|secret\s?key|access\s?token|private\s?key)\b`,
-    String.raw`\bpin\b(?=\s*(?:code|number|no\b|is|was|=|:|\d))`,
+    String.raw`\b(?:pass\s?word|passwd|pass\s?code|pass\s?phrase|cvv|cvc|otp|2fa|ssn|api\s?key|secret\s?key|access\s?token|private\s?key)s?\b`,
+    String.raw`\bpin(?:'s)?\b(?=\s*(?:code|number|no\b|is|was|=|:|\d))`,
+    String.raw`\bcode\s+(?:for|to|of)\s+(?:the\s+|my\s+)?(?:door|locker|gate|alarm|garage|lock|safe|building|wifi|wi-fi)\b`,
+    String.raw`\b(?:opens?|unlocks?)\s+with\s+(?:the\s+)?(?:code\s+)?\d`,
     String.raw`\b(?:bank|card|atm|debit|phone|sim)\s+pin\b`,
     String.raw`\b(?:door|locker|gate|alarm|access|entry|lock|garage|verification|security|one[- ]time|login|confirmation|recovery|backup|wifi|wi-fi)\s+(?:code|key|password|combo)\b`,
     String.raw`\b(?:combo|combination)\b`,
@@ -109,7 +110,12 @@ const MEMORY_SECRET_RE = new RegExp(
   ].join('|'),
   'i',
 );
+/** 6+ digits in a row, also spoken apart ("1 2 3 4 5 6", "1234-5678"). */
 const DIGIT_RUN_RE = /\d(?:[ .-]?\d){5,}/;
+/** 8+ digits in comma/space groups, the way speech-to-text writes card numbers ("4512, 3456, 7890, 1234"). */
+const DIGIT_GROUPS_RE = /\d(?:[\s,.\-/]{0,2}\d){7,}/;
+/** 4+ single digits in a comma list ("1, 2, 3, 4"): a spoken code. */
+const DIGIT_LIST_RE = /(?<!\d)\d(?:\s?,\s?\d(?!\d)){3,}/;
 
 /** Memory text as stored: unsafe characters removed, one line, collapsed spaces, `<` `>` → `‹` `›`. */
 export function cleanMemoryText(text: string): string {
@@ -118,7 +124,9 @@ export function cleanMemoryText(text: string): string {
 
 /** True for text that looks like a password, code, card or account number (refused). */
 export function memoryTextLooksSecret(text: string): boolean {
-  return MEMORY_SECRET_RE.test(text) || DIGIT_RUN_RE.test(text);
+  // NFKC first: full-width digits ("４５１２") become ASCII so the digit rules see them; curly apostrophes too.
+  const t = String(text).normalize('NFKC').replace(/[’‘]/g, "'");
+  return MEMORY_SECRET_RE.test(t) || DIGIT_RUN_RE.test(t) || DIGIT_GROUPS_RE.test(t) || DIGIT_LIST_RE.test(t);
 }
 
 /** Clean and check one memory text: the stored form, or why it is refused. */

@@ -3,8 +3,9 @@
  * `<home>/history/YYYY-MM-DD.jsonl` (local date). A log for the owner only: it is never sent back to Claude.
  *
  *  - Folder 0700, files 0600, opened with O_NOFOLLOW; each entry is ONE O_APPEND write.
- *  - `retentionDays` (config `history.retentionDays`, default 1, 0 to 30): day files older than that many days are
- *    deleted on every append and on purge(). 0 = history off: nothing is written and purge deletes every day file.
+ *  - `retentionDays` (config `history.retentionDays`, default 1, 0 to 30): a rolling window (same time N days ago).
+ *    Older entries are deleted on every append, list() and purge() (listener start, `stephen history`).
+ *    0 = history off: nothing is written and purge deletes every day file.
  *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 5 MB per day file (a full day drops new entries).
  *  - Malformed lines are skipped when reading.
  */
@@ -20,6 +21,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  renameSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
@@ -92,6 +94,11 @@ export interface HistoryStoreOptions {
   retentionDays: number;
   /** Injectable clock (tests). */
   now?: () => Date;
+  /**
+   * Also run on purge (with the cutoff time in ms) and on clear (null = everything): deletes Claude Code's own
+   * transcripts of voice sessions (review 5, R5-1; see src/voice/transcripts.ts).
+   */
+  onPurge?: (olderThanMs: number | null) => void;
 }
 
 function nonNegInt(v: unknown): number {
@@ -128,6 +135,7 @@ export class HistoryStore {
   readonly retentionDays: number;
   private readonly now: () => Date;
 
+  private readonly onPurge?: (olderThanMs: number | null) => void;
   constructor(opts: HistoryStoreOptions) {
     if (!Number.isInteger(opts.retentionDays) || opts.retentionDays < 0 || opts.retentionDays > 30) {
       throw new HistoryError('retentionDays must be a whole number from 0 to 30');
@@ -135,6 +143,16 @@ export class HistoryStore {
     this.dir = historyDir(opts.home);
     this.retentionDays = opts.retentionDays;
     this.now = opts.now ?? (() => new Date());
+    this.onPurge = opts.onPurge;
+  }
+
+  /** Run the onPurge hook (Claude transcripts, review 5 R5-1); a failure never breaks history. */
+  private extraPurge(olderThanMs: number | null): void {
+    try {
+      this.onPurge?.(olderThanMs);
+    } catch {
+      /* best effort */
+    }
   }
 
   /** History is off (retentionDays 0). */
@@ -180,11 +198,13 @@ export class HistoryStore {
 
   /** Entries newest first. `before`: only entries with ts earlier than this ISO time. `limit`: 1 to 100 (default 20). */
   list(opts: { before?: string; limit?: number } = {}): HistoryEntry[] {
+    this.purge();
     if (!this.enabled) return [];
     const limit = Math.min(MAX_LIST_LIMIT, Math.max(1, Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT) || DEFAULT_LIST_LIMIT));
     const before = opts.before !== undefined ? Date.parse(opts.before) : null;
     if (before !== null && Number.isNaN(before)) throw new HistoryError('before must be an ISO date/time');
     const cutoff = this.cutoff();
+    const oldestMs = this.cutoffMs();
     const out: HistoryEntry[] = [];
     for (const name of this.dayFiles().sort().reverse()) {
       if (name.slice(0, 10) < cutoff) break;
@@ -196,7 +216,7 @@ export class HistoryStore {
         } catch {
           e = null;
         }
-        if (!e || (before !== null && Date.parse(e.ts) >= before)) continue;
+        if (!e || Date.parse(e.ts) < oldestMs || (before !== null && Date.parse(e.ts) >= before)) continue;
         out.push(e);
         if (out.length >= limit) return out;
       }
@@ -206,20 +226,68 @@ export class HistoryStore {
 
   /** Delete every day file. Returns how many were deleted. */
   clear(): number {
+    this.extraPurge(null);
     return this.remove(() => true);
   }
 
   /** Delete day files older than retentionDays (all of them when history is off). Returns how many were deleted. */
   purge(): number {
     const cutoff = this.cutoff();
-    return this.remove((date) => date < cutoff);
+    const oldestMs = this.cutoffMs();
+    this.extraPurge(this.enabled ? oldestMs : null);
+    const n = this.remove((date) => date < cutoff);
+    if (this.enabled) this.trimDayFile(cutoff, oldestMs);
+    return n;
   }
 
-  /** Oldest day kept: today minus retentionDays (a date later than today when history is off). */
+  /**
+   * Retention is a rolling window: entries older than the same time retentionDays days ago are dropped (review 5, R5-6; "1 day"
+   * used to keep up to ~48 h). Whole day files before the cutoff's day are deleted; the cutoff's own day file is
+   * rewritten without the expired entries.
+   */
+  private cutoffMs(): number {
+    // Same local wall-clock time `retentionDays` calendar days ago (so a DST change doesn't shift it by an hour).
+    const n = this.now();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate() - this.retentionDays, n.getHours(), n.getMinutes(), n.getSeconds(), n.getMilliseconds()).getTime();
+  }
+
+  /** Oldest day file kept: the local date of the cutoff (a date later than today when history is off). */
   private cutoff(): string {
     const n = this.now();
     if (!this.enabled) return localDate(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1));
-    return localDate(new Date(n.getFullYear(), n.getMonth(), n.getDate() - this.retentionDays));
+    return localDate(new Date(this.cutoffMs()));
+  }
+
+  /** Rewrite one day file keeping only entries at or after `oldestMs` (deleted when none are left). */
+  private trimDayFile(date: string, oldestMs: number): void {
+    const file = join(this.dir, `${date}.jsonl`);
+    const lines = this.readDayFile(file);
+    if (!lines.length) return;
+    const keep = lines.filter((l) => {
+      try {
+        const e = parseHistoryEntry(JSON.parse(l));
+        return e !== null && Date.parse(e.ts) >= oldestMs;
+      } catch {
+        return false;
+      }
+    });
+    if (keep.length === lines.length) return;
+    try {
+      if (!keep.length) {
+        unlinkSync(file);
+        return;
+      }
+      const tmp = join(this.dir, `.${date}.${randomBytes(6).toString('hex')}.tmp`);
+      const fd = openSync(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+      try {
+        writeSync(fd, keep.map((l) => `${l}\n`).join(''));
+      } finally {
+        closeSync(fd);
+      }
+      renameSync(tmp, file);
+    } catch {
+      // best effort: the next purge tries again; list() hides expired entries anyway
+    }
   }
 
   private dayFiles(): string[] {

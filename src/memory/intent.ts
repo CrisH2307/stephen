@@ -17,7 +17,9 @@ export type MemoryIntent =
   | { kind: 'forget'; query: string }
   | { kind: 'forget-last' }
   | { kind: 'forget-all' }
-  | { kind: 'list' };
+  | { kind: 'list' }
+  /** "remember 4417" / "remember hunter2": a one-word body with a digit looks like a code; refused locally (R5-4). */
+  | { kind: 'remember-code' };
 
 /** Verbs that start a command after a joiner in a remember line (12.3; fixed on purpose, no guessing). */
 export const COMMAND_VERBS: readonly string[] = [
@@ -30,6 +32,7 @@ export const FORGET_LAST_WINDOW_MS = 10 * 60_000;
 /** Lower-case, letters/digits/apostrophes only, single spaces (same rule as the listener's plainWords). */
 export function memoryWords(text: string): string {
   return String(text)
+    .normalize('NFKC')
     .toLowerCase()
     .replace(/[’‘`]/g, "'")
     .replace(/[^a-z0-9']+/g, ' ')
@@ -90,7 +93,8 @@ export function parseMemoryIntent(command: string): MemoryIntent | null {
     if (split) body = split.text;
     body = body.replace(TRAILING_POLITE_RE, '').trim();
     // One word ("remember that one", "remember goodlife") is too little to be a fact worth saving.
-    if (body.split(' ').length < 2) return null;
+    // But a single word with a digit looks like a code: refuse it here instead of sending it to Claude (review 5, R5-4).
+    if (body.split(' ').length < 2) return /\d/.test(body) ? { kind: 'remember-code' } : null;
     return rest ? { kind: 'remember', text: body, rest } : { kind: 'remember', text: body };
   }
   return null;
