@@ -19,7 +19,7 @@ import type {
 import { countsTowardRateLimit, isSecretField } from './classify.js';
 import { buildPrompt, describeAction, type PromptContext, redactValue } from './confirm.js';
 import { normalizeHost } from './domains.js';
-import { describeSources, taintScope } from './egress.js';
+import { describeSources, privateDataHost, taintScope, type PrivateDataSource } from './egress.js';
 import {
   compileLists,
   evaluate,
@@ -199,7 +199,20 @@ export class SafetyGate implements ISafetyGate {
 
   noteRead(url: string): void {
     const r = privateReadOf(url, this.lists, this.now());
-    if (!r) return;
+    if (r) this.remember(r);
+  }
+
+  /**
+   * Private data was read by one of Stephen's own tools (Canvas, Gmail, Notion, calendar; phase 2a): arm the taint
+   * exactly like a private page read, under a synthetic host (`canvas.private.stephen.invalid`). Call BEFORE the
+   * data goes back to Claude; throws (fail closed) if the session state can't be saved.
+   */
+  notePrivateData(source: PrivateDataSource): void {
+    const host = privateDataHost(source);
+    this.remember({ host, scope: host, at: this.now() });
+  }
+
+  private remember(r: PrivateRead): void {
     const known = this.privateReads.has(r.scope);
     this.privateReads.delete(r.scope); // re-insert so Map order = least recently read first
     this.privateReads.set(r.scope, r);

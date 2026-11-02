@@ -337,9 +337,42 @@ export function taintFromOtherHosts(reads: readonly PrivateRead[], destHost: str
   return reads.filter((r) => destHost === '' || r.host !== destHost);
 }
 
+// ───────────────────────────── private data read by Stephen's own tools (phase 2a) ─────────────────────────────
+
+/**
+ * Sources of private data read through Stephen's own API tools (Canvas, Gmail, Notion, calendar), not a web page.
+ * "private" = `serve --assume-private-read` (taint armed from the start). See docs/PLAN-2A-READ-MY-STUFF.md.
+ */
+export const PRIVATE_DATA_SOURCES = ['canvas', 'gmail', 'notion', 'calendar', 'private'] as const;
+export type PrivateDataSource = (typeof PRIVATE_DATA_SOURCES)[number];
+const PRIVATE_DATA_SUFFIX = '.private.stephen.invalid';
+const PRIVATE_DATA_LABELS: Record<PrivateDataSource, string> = {
+  canvas: 'your Canvas',
+  gmail: 'your email',
+  notion: 'your Notion',
+  calendar: 'your calendar',
+  private: 'your private data',
+};
+
+/**
+ * The synthetic taint host of a source: `canvas.private.stephen.invalid`. `.invalid` can never resolve (RFC 2606),
+ * so no real page has this host: every real destination counts as a different host than the read.
+ */
+export function privateDataHost(source: PrivateDataSource): string {
+  if (!PRIVATE_DATA_SOURCES.includes(source)) throw new Error(`unknown private data source: ${String(source)}`);
+  return `${source}${PRIVATE_DATA_SUFFIX}`;
+}
+
+/** "your Canvas" for a synthetic host, else null. */
+export function privateDataLabel(host: string): string | null {
+  if (!host.endsWith(PRIVATE_DATA_SUFFIX)) return null;
+  const s = host.slice(0, -PRIVATE_DATA_SUFFIX.length) as PrivateDataSource;
+  return PRIVATE_DATA_SOURCES.includes(s) ? PRIVATE_DATA_LABELS[s] : null;
+}
+
 /** "mail.google.com", "mail.google.com and docs.google.com", "mail.google.com and 3 other private sites". */
 export function describeSources(reads: readonly PrivateRead[]): string {
-  const hosts = [...new Set(reads.map((r) => r.host))];
+  const hosts = [...new Set(reads.map((r) => privateDataLabel(r.host) ?? r.host))];
   if (hosts.length === 0) return 'a private site';
   if (hosts.length === 1) return hosts[0]!;
   if (hosts.length === 2) return `${hosts[0]} and ${hosts[1]}`;
