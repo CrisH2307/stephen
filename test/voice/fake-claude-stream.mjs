@@ -7,7 +7,7 @@
 // It always starts a child in its own process group, standing in for `stephen serve` (FAKE_CLAUDE_SERVE_WRITES=<file>:
 // that child rewrites <file> every 5 ms while alive, like an old serve saving the gate state). Pids go to
 // $FAKE_CLAUDE_PIDS as {claude, child}.
-// Every user message is appended to $FAKE_CLAUDE_TURNS as {pid, n, prompt, line, personaExists}.
+// Every user message is appended to $FAKE_CLAUDE_TURNS (default "$FAKE_CLAUDE_LOG.turns") as {pid, n, prompt, line, personaExists, at}.
 //   FAKE_CLAUDE_MODE  ok (default) | error (every turn: error_max_turns) | garbage (a non-JSON line instead of a result)
 //                     | exit-mid-turn (exit 3 once a message arrives) | hang (never answer a message) | hang-stubborn
 //                     (hang + ignore SIGTERM) | no-init (never answer initialize) | init-error (refuse initialize)
@@ -84,8 +84,9 @@ export async function runStream({ argv, at, mode, logTools }) {
     if (msg.type !== 'user' || msg.message?.role !== 'user') die(`Expected message role 'user', got '${msg.message?.role}'`);
     messages++;
     const prompt = typeof msg.message.content === 'string' ? msg.message.content : JSON.stringify(msg.message.content);
-    if (env.FAKE_CLAUDE_TURNS) {
-      appendFileSync(env.FAKE_CLAUDE_TURNS, JSON.stringify({ pid: process.pid, n: messages, prompt, line, personaExists: personaPath ? existsSync(personaPath) : null }) + '\n');
+    const turns = env.FAKE_CLAUDE_TURNS ?? (env.FAKE_CLAUDE_LOG ? `${env.FAKE_CLAUDE_LOG}.turns` : null);
+    if (turns) {
+      appendFileSync(turns, JSON.stringify({ pid: process.pid, n: messages, prompt, line, personaExists: personaPath ? existsSync(personaPath) : null, at: Date.now() }) + '\n');
     }
     if (mode === 'exit-mid-turn') {
       process.stderr.write('Error: exited mid-turn\n');

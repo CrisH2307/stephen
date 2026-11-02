@@ -20,6 +20,7 @@ describe('parseVoiceConfig', () => {
         claudeModel: 'sonnet',
         maxTurns: 25,
         followUpWindowSec: 180, // follow-ups: commands within 180 s of the last one's end continue its conversation
+        warm: true, // phase 3: one long-lived Claude Code per conversation, pre-warmed on wake / F5
         cooldownSec: 20,
         wakeWord: true,
         speak: true,

@@ -25,6 +25,8 @@ export interface FakeRun {
   argv: string[];
   cwd: string;
   pid: number;
+  /** Date.now() at start-up. */
+  at?: number;
   /** Persona file contents and mode at start-up (only when --append-system-prompt-file was passed). */
   persona?: { text: string; mode: number } | null;
 }
@@ -35,6 +37,38 @@ export function readFakeLog(path: string): FakeRun[] {
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l) as FakeRun);
+}
+
+/** One command the warm (stream-json) fake received: `<FAKE_CLAUDE_LOG>.turns`. */
+export interface FakeTurn {
+  pid: number;
+  n: number;
+  prompt: string;
+  line: string;
+  personaExists: boolean | null;
+  at: number;
+}
+
+export function readFakeTurns(log: string): FakeTurn[] {
+  const p = `${log}.turns`;
+  if (!existsSync(p)) return [];
+  return readFileSync(p, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as FakeTurn);
+}
+
+/** Every prompt that reached the fake claude: one-shot runs (`-p <prompt>`) and warm-process commands. */
+export function fakePrompts(log: string): string[] {
+  const oneShot = readFakeLog(log)
+    .filter((r) => !r.argv.includes('--input-format'))
+    .map((r) => r.argv[1]!);
+  return [...oneShot, ...readFakeTurns(log).map((t) => t.prompt)];
+}
+
+/** The warm (stream-json) processes the fake claude started (the listener's start-up check is the first). */
+export function fakeWarmProcesses(log: string): FakeRun[] {
+  return readFakeLog(log).filter((r) => r.argv.includes('--input-format'));
 }
 
 /** A process is gone if signal 0 fails, or (Linux) it is a zombie nobody reaped yet. */

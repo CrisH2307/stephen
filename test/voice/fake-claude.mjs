@@ -36,7 +36,7 @@ if (log) {
       persona = null;
     }
   }
-  appendFileSync(log, JSON.stringify({ argv, cwd: process.cwd(), pid: process.pid, ...(persona !== undefined ? { persona } : {}) }) + '\n');
+  appendFileSync(log, JSON.stringify({ argv, cwd: process.cwd(), pid: process.pid, at: Date.now(), ...(persona !== undefined ? { persona } : {}) }) + '\n');
 }
 const mode = process.env.FAKE_CLAUDE_MODE ?? 'ok';
 const at = (flag) => {

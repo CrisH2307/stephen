@@ -130,6 +130,12 @@ const VoiceConfigSchema = z
      */
     followUpWindowSec: z.number().int().min(0).max(1800).default(180),
     /**
+     * Phase 3: one long-lived Claude Code per conversation, started when the wake word fires or F5 goes down, so its
+     * start-up is hidden while you talk (docs/ADR-003). The listener checks the stream protocol at start and falls
+     * back to one `claude -p` per command if it fails. false = always one `claude -p` per command (as before).
+     */
+    warm: z.boolean().default(true),
+    /**
      * After every command, the wake word is ignored for this many seconds (a page or video Stephen just opened
      * may say "Hey Stephen…"). Press Enter in the listener's terminal to re-arm early. 0 = no cooldown.
      * Only used without Stephen Helper: with it, the wake word is ignored only while the Mac plays sound.

@@ -9,12 +9,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ArrayAudioSource, type AudioSource } from '../../src/voice/audio.js';
-import { buildClaudeArgs } from '../../src/voice/claude.js';
+import { buildClaudeArgs, buildWarmArgs } from '../../src/voice/claude.js';
 import { createEngines, runListen, type Engines, type ListenEnv } from '../../src/voice/index.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
 import { modelPaths } from '../../src/voice/models.js';
 import { concatSamples, silence } from '../../src/voice/wav.js';
-import { FIXTURES, fakeClaudePath, fixture, isAlive, prepareAllModels, readFakeLog, RecordingChimes, RecordingSpeaker, waitFor } from './helpers.js';
+import { FIXTURES, fakeClaudePath, fakeWarmProcesses, fixture, isAlive, prepareAllModels, readFakeLog, readFakeTurns, RecordingChimes, RecordingSpeaker, waitFor } from './helpers.js';
 
 const models = await prepareAllModels('whisper-tiny.en');
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-pipeline-'));
@@ -70,9 +70,10 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     const speaker = new RecordingSpeaker();
     const chimes = new RecordingChimes();
     const out: string[] = [];
-    const transcripts: { raw: string; command: string; ms: number }[] = [];
+    const transcripts: { raw: string; command: string; ms: number; at: number }[] = [];
     const env: ListenEnv = {
-      loadConfig: () => ({ home, voice: { claudePath: fakeClaudePath(), ...voice } }),
+      // One claude -p per command here (voice.warm false); the warm runner has its own tests at the end.
+      loadConfig: () => ({ home, voice: { claudePath: fakeClaudePath(), warm: false, ...voice } }),
       modelsRoot: root,
       engines: sharedEngines,
       speaker,
@@ -82,7 +83,7 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
       signals: false,
       cliPath: '/opt/stephen/dist/cli.js',
       env: { ...process.env, FAKE_CLAUDE_LOG: log, ...extraEnv },
-      onTranscript: (raw, command, ms) => transcripts.push({ raw, command, ms }),
+      onTranscript: (raw, command, ms) => transcripts.push({ raw, command, ms, at: Date.now() }),
       killGraceMs: 500,
       helper: () => null, // no Stephen Helper: the wake-word cooldown applies (see ptt.int.test.ts for the helper)
     };
@@ -235,5 +236,71 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     await waitFor(() => !isAlive(claude) && !isAlive(child), 5000, 'process group to die');
     expect(h.out).toContain('Stopping (wake word)…');
     expect(readFakeLog(h.log)).toHaveLength(1);
+  });
+
+  // ───────────── the warm runner (voice.warm, the default; docs/ADR-003) ─────────────
+
+  it('warm: the wake word starts Claude before the transcript is ready, and the command goes to that process', async () => {
+    const h = harness('warm', {}, { warm: true });
+    engines.spotter.restart();
+    expect(await runListen(['--wav', join(FIXTURES, 'wake-onebreath.amy.wav')], h.env)).toBe(0);
+    const procs = fakeWarmProcesses(h.log);
+    expect(procs).toHaveLength(2); // the start-up protocol check, then the pre-warmed process
+    const mcpPath = join(h.home, 'voice', 'mcp-config.json');
+    expect(procs[1]!.argv).toEqual(buildWarmArgs({ claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: mcpPath, followUps: true }));
+    expect(procs[1]!.at!).toBeLessThan(h.transcripts[0]!.at); // spawned while the user was still talking / ASR ran
+    expect(readFakeTurns(h.log).map((t) => [t.pid, t.prompt])).toEqual([[procs[1]!.pid, 'open youtube']]);
+    expect(h.speaker.said).toEqual(['Done! open youtube']);
+    expect(h.out.some((l) => /^claude: \d+\.\d s \(warm, spawned \d+\.\d s ahead; start-up \+ MCP /.test(l))).toBe(true);
+    expect(isAlive(procs[1]!.pid)).toBe(false); // listener exit ended the conversation
+    expect(existsSync(join(h.home, 'voice', 'conversation.json'))).toBe(false);
+  });
+
+  it('warm: if the stream protocol check fails at start, a note, then one claude -p per command (as before)', async () => {
+    const h = harness('warm-fallback', { FAKE_CLAUDE_MODE: 'init-error' }, { warm: true });
+    engines.spotter.restart();
+    expect(await runListen(['--wav', join(FIXTURES, 'wake-onebreath.amy.wav')], h.env)).toBe(0);
+    expect(h.out.some((l) => l.startsWith("ERR Note: Claude Code's stream mode didn't answer (Claude Code refused the request (initialize refused).)"))).toBe(true);
+    expect(fakeWarmProcesses(h.log)).toHaveLength(1); // only the check
+    const oneShot = readFakeLog(h.log).filter((r) => !r.argv.includes('--input-format'));
+    expect(oneShot.map((r) => r.argv[1])).toEqual(['open youtube']);
+    expect(h.speaker.said).toEqual(['Done! I opened YouTube for "open youtube".']);
+  });
+
+  it('voice.warm false: no stream process at all', async () => {
+    const h = harness('warm-off', {}, { warm: false });
+    engines.spotter.restart();
+    expect(await runListen(['--wav', join(FIXTURES, 'wake-onebreath.amy.wav')], h.env)).toBe(0);
+    expect(fakeWarmProcesses(h.log)).toEqual([]);
+    expect(readFakeLog(h.log)).toHaveLength(1);
+  });
+
+  it('warm: a follow-up right after the reply goes to the SAME process', async () => {
+    const h = harness('warm-followup', {}, { warm: true, cooldownSec: 0 });
+    engines.spotter.restart();
+    expect(await runListen([], { ...h.env, source: backToBack(h) })).toBe(0);
+    const turns = readFakeTurns(h.log);
+    expect(turns.map((t) => t.prompt)).toEqual(['open youtube', "what's on my screen"]);
+    expect(turns[1]!.pid).toBe(turns[0]!.pid);
+    expect(h.out).toContain('Working… (follow-up)');
+    expect(h.out.some((l) => /\(warm, follow-up 2 on this process; /.test(l))).toBe(true);
+    expect(fakeWarmProcesses(h.log)).toHaveLength(2); // the check + one process for both commands
+  });
+
+  it('warm: "Stephen stop" during a long command kills the warm process group', async () => {
+    const pids = join(tmp, 'warm-stop.pids');
+    const h = harness('warm-stop', { FAKE_CLAUDE_MODE: 'hang', FAKE_CLAUDE_PIDS: pids }, { warm: true });
+    engines.spotter.restart();
+    const cmd = fixture('wake-onebreath.amy.wav');
+    const audio = concatSamples([cmd, silence(0.5), fixture('stop.alan.wav'), silence(0.5)]);
+    const gate = Math.ceil((cmd.length + 0.5 * 16000) / 512);
+    const source = new GatedSource(audio, gate, () => waitFor(() => readFakeTurns(h.log).length === 1, 20_000, 'the command to reach claude'));
+    expect(await runListen([], { ...h.env, source })).toBe(0);
+    const { claude, child } = JSON.parse(readFileSync(pids, 'utf8')) as { claude: number; child: number };
+    expect(claude).toBe(readFakeTurns(h.log)[0]!.pid);
+    await waitFor(() => !isAlive(claude) && !isAlive(child), 5000, 'process group to die');
+    expect(h.out).toContain('Stopping (stop phrase)…');
+    expect(h.out).toContain('Cancelled.');
+    expect(h.speaker.said).toEqual([]);
   });
 });

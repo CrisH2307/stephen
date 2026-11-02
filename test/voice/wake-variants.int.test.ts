@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_ASR_MODEL, parseVoiceConfig } from '../../src/voice/config.js';
 import { createEngines, runListen, type Engines, type ListenEnv } from '../../src/voice/index.js';
 import { modelPaths } from '../../src/voice/models.js';
-import { FIXTURES, fakeClaudePath, prepareAllModels, readFakeLog, RecordingChimes, RecordingSpeaker } from './helpers.js';
+import { FIXTURES, fakeClaudePath, fakePrompts, prepareAllModels, RecordingChimes, RecordingSpeaker } from './helpers.js';
 
 const models = await prepareAllModels(DEFAULT_ASR_MODEL);
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-variants-'));
@@ -75,7 +75,7 @@ describe.skipIf(!models.ok)(`wake variants with ${DEFAULT_ASR_MODEL} (real model
     engines.spotter.restart();
     expect(await runListen(['--wav', join(FIXTURES, file)], env)).toBe(0);
     expect(out.some((l) => /voice-setup/.test(l))).toBe(false); // the default model is installed: no hint
-    const sent = readFakeLog(log).map((r) => r.argv[1]!);
+    const sent = fakePrompts(log); // the default warm runner: commands go to the pre-warmed process
     report.push(`${file.padEnd(26)} claude=${JSON.stringify(sent)} transcript=${JSON.stringify(transcripts[0] ?? null)}`);
     if (want === null) {
       expect(sent, `${file} must never reach claude`).toEqual([]);
