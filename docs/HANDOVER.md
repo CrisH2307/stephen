@@ -274,3 +274,8 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   more link/code shapes cleaned, account env names stripped from claude's env, .env parser fixes. R6-1 not an issue
   (Mac .gitignore has .env). Full eval before the review fixes: 52/53 (mis-lofi borderline). Owner's Mac already has
   commits through calendar ("src"); timers + review-6 fixes are new and uncommitted.
+- 2026-11-02 12:40 — Owner: all looks good; handing over to the owner's personal account (cloud session). New
+  requirements recorded: jobs while away ("go cook" mode: documents, papers, code, research, homework, vibe-coding
+  with no hands on the Mac), phone → Stephen remote control, a UI pass with design skills at the end of every phase,
+  simple code that scales. Agreed order: morning briefing → speed (phase 3) → Notion/Gmail → jobs → phone. Wrote
+  docs/HANDOFF-PROMPT.md (paste into the new session) and the order at the top of docs/ROADMAP.md.

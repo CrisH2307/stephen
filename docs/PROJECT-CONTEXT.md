@@ -60,4 +60,5 @@ node dist/cli.js voice-setup          # speech models
 Open Zen with **"Zen for Stephen"** (Dock) so Stephen can control it.
 
 ## Next step
-Review #5 is done (docs/REVIEW-5.md). Owner's Mac checks of phase 1.9, then `docs/ROADMAP.md` → phase 2a "read my stuff" (Gmail, Canvas, Notion, Calendar, Maps), read-only first.
+See docs/HANDOFF-PROMPT.md (master prompt for a new session) and the agreed order at the top of docs/ROADMAP.md:
+morning briefing → speed (phase 3) → Notion/Gmail → jobs while away → phone → UI pass after each.

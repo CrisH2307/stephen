@@ -1,4 +1,16 @@
-# Stephen — roadmap (as of 2026-10-31)
+# Stephen — roadmap (as of 2026-11-02)
+
+## Order agreed 2026-11-02 (details: docs/HANDOFF-PROMPT.md)
+1. Morning briefing ("what's my day": calendar + Canvas due + weather).
+2. Phase 3 speed + real follow-ups (start Claude while speaking; long-lived session and server).
+3. Finish 2a: Notion to-dos, then Gmail (two personal accounts first).
+4. Jobs while away ("go cook" mode): a separate sandboxed Claude Code run per job (own folder or git worktree, no
+   browser/gate tools, budgets, no network writes), dialog to start, notification + spoken summary, Jobs tab.
+5. Phone → Stephen: prefer existing Claude mobile/remote features; otherwise an authenticated, private, low-trust
+   channel with a threat model and an independent review first.
+6. Every phase ends with a Stephen app UI pass (frontend-design skill; small, self-contained SwiftUI changes).
+Reviews #7 after 1–3 and #8 after 4–5. Keep code simple; reuse modules; keep SYSTEM-DESIGN-STEPHEN.md current.
+Done since 10-31: phase 1.9, review 5, F5 push-to-talk, Canvas + Google Calendar (2a part 1), timers/reminders, review 6.
 
 Owner: Cris (cris.huynh@ontariotechu.net). Product: Stephen, a voice assistant for the owner's Mac ("Hey Stephen…",
 or hold Fn+Option). Repo: `~/Documents/SoftwareProject/brower-hub/browser-hub` → github.com/CrisH2307/browser_hub.
