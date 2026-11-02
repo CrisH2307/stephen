@@ -228,3 +228,12 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
 - 2026-11-01 21:10 — Owner: **hold F5 works** on the Mac. Next: owner checks the Stephen window (chat / memory /
   history / settings / audit) before anything new; then phase 2a. Still to do later: change the "Hold Fn+Option" text
   in replies/docs to F5.
+- 2026-11-01 21:20 — Owner checked the Stephen window: all fine. **Phase 2a started** (plan: docs/PLAN-2A-READ-MY-STUFF.md).
+  Findings: headless `claude -p` has no claude.ai connectors (cloud probe; Stephen's `--strict-mcp-config` blocks
+  them anyway, and the gate couldn't see their reads) → Stephen's own read-only API tools inside its MCP server.
+  Taint: a read tool calls `gate.notePrivateData(source)` when it returns data (synthetic host
+  `<source>.private.stephen.invalid`, prompts say "your Canvas"), saved in session state; `serve --assume-private-read`
+  arms it from the start (for later). **Subtask 1 built + tested** (test/safety/private-data.test.ts; safety/server/
+  cli/memory/eval suites 1180 green). Grapuco (owner asked to use it) isn't reachable: api.grapuco.com is blocked
+  (403) from the cloud and there's no grapuco tool/CLI here. Waiting on the owner's answers (plan §5: Canvas URL +
+  token, which email account, Notion to-do page, calendar) before subtasks 2–7.
