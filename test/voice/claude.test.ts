@@ -265,6 +265,33 @@ describe('ClaudeRunner with a fake claude', () => {
     expect(flagValue(args, '--instance')).toBe(made[1]!.id);
   });
 
+  it('serveInstance gets the run\'s trust (R7-2): a wake-word run\'s serve has --trust wake, a trusted one none', async () => {
+    const home = join(tmp, 'trust-home');
+    mkdirSync(join(home, 'voice'), { recursive: true, mode: 0o700 });
+    const seen: { trust: string; args: string[] }[] = [];
+    const runner = new ClaudeRunner({
+      ...settings,
+      claudePath: fake,
+      cwd: tmp,
+      env: { ...process.env, FAKE_CLAUDE_LOG: join(tmp, 'trust.log') },
+      serveInstance: async (trust) => {
+        const id = newServeInstance();
+        const inst = { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(join(home, 'voice'), '/usr/bin/node', '/x/cli.js', null, null, id, trust) };
+        claimServeInstance(home, id, 1);
+        seen.push({ trust, args: JSON.parse(readFileSync(inst.mcpConfigPath, 'utf8')).mcpServers.stephen.args as string[] });
+        return inst;
+      },
+    });
+    await runner.run('any new emails', { trust: 'wake' });
+    await runner.run('open youtube'); // no trust given: the cautious one
+    await runner.run('read me that email', { trust: 'trusted' });
+    expect(seen.map((s) => s.trust)).toEqual(['wake', 'wake', 'trusted']);
+    expect(flagValue(seen[0]!.args, '--trust')).toBe('wake');
+    expect(seen[2]!.args).not.toContain('--trust');
+    expect(mcpConfig('/n', '/c', null, null, null, 'wake').mcpServers.stephen.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice', '--trust', 'wake']);
+    expect(mcpConfig('/n', '/c').mcpServers.stephen.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice']);
+  });
+
   it('spawns argv directly (no shell), detached, in the private cwd; every command is a fresh session', async () => {
     const calls: Parameters<SpawnFn>[] = [];
     const { runner, log } = mk('fresh', {}, (cmd, args, opts) => {

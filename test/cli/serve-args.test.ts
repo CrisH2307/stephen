@@ -13,3 +13,16 @@ describe('serve --confirm (voice listener forces the macOS dialog)', () => {
     }
   });
 });
+
+describe('serve --trust wake (review 7, R7-2: a wake-word conversation)', () => {
+  it('R7-2: only "wake" is accepted, once; it goes with the voice flags and with --dry-run', () => {
+    expect(parseServeArgs(['--trust', 'wake'])).toEqual({ trust: 'wake' });
+    expect(parseServeArgs(['--trust=wake'])).toEqual({ trust: 'wake' });
+    expect(parseServeArgs(['--confirm', 'dialog', '--voice', '--trust', 'wake'])).toEqual({ confirm: 'dialog', voice: true, trust: 'wake' });
+    expect(parseServeArgs(['--dry-run', '--record', '/tmp/r.jsonl', '--trust', 'wake'])).toEqual({ trust: 'wake', dryRun: { record: '/tmp/r.jsonl' } });
+    for (const bad of [['--trust'], ['--trust', 'trusted'], ['--trust', 'full'], ['--trust', 'WAKE'], ['--trust=']]) {
+      expect(parseServeArgs(bad), bad.join(' ')).toEqual({ error: '--trust must be "wake"' });
+    }
+    expect(parseServeArgs(['--trust', 'wake', '--trust', 'wake'])).toEqual({ error: '--trust given twice' });
+  });
+});

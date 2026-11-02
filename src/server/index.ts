@@ -37,6 +37,11 @@ export interface ServerDeps {
    * RESTARTED_NOTICE and nothing runs; this is called after each refusal (serve exits non-zero).
    */
   restarted?: () => void;
+  /**
+   * `serve --trust wake`: a wake-word conversation (docs/REVIEW-7.md R7-2). The account tools then give email as who
+   * and when only, and refuse to read a message (src/accounts/index.ts). Absent: trusted.
+   */
+  trust?: 'wake';
 }
 
 /**

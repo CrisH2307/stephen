@@ -23,6 +23,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
+import type { Trust } from './assistant.js';
 import {
   MCP_SERVER_NAME,
   SESSION_ID_RE,
@@ -66,6 +67,8 @@ export interface WarmProcess {
   readonly spawnedAt: number;
   /** Memory key of the persona it was started with: Claude Code snapshots the system prompt. */
   readonly memoryKey: string | undefined;
+  /** The conversation's trust (R7-2): only commands of this trust go to it; `wake` = its serve has `--trust wake`. */
+  readonly trust: Trust;
   /** It has exited (or never started). */
   readonly exited: boolean;
   /** Claude Code's session id, from the first line that carried one (null before that). */
@@ -118,6 +121,7 @@ export class WarmClaude implements WarmProcess {
     private readonly o: WarmClaudeOptions,
     readonly memoryKey: string | undefined,
     memory: readonly string[] = [],
+    readonly trust: Trust = 'wake',
   ) {
     this.spawnedAt = this.now();
     let init!: { resolve: () => void; reject: (e: Error) => void };
@@ -180,7 +184,7 @@ export class WarmClaude implements WarmProcess {
   private async start(memory: readonly string[]): Promise<void> {
     if (this.o.serveInstance) {
       try {
-        this.inst = await this.o.serveInstance();
+        this.inst = await this.o.serveInstance(this.trust);
       } catch (e) {
         this.onClosed();
         throw new Error(`Could not write the MCP config (${(e as Error).message}).`);

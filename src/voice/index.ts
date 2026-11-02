@@ -23,7 +23,7 @@ import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/inst
 import { toolLogPath } from '../server/tool-log.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
-import { Assistant, type CommandReport, type CommandRunner } from './assistant.js';
+import { Assistant, type CommandReport, type CommandRunner, type Trust } from './assistant.js';
 import { MicrophoneSource, listInputDevices, resolveDeviceIndex, wavFileSource, type AudioSource } from './audio.js';
 import {
   ClaudeRunner,
@@ -331,9 +331,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog);
   // A fresh `serve --instance` per Claude process (R7-1): the config is rewritten before each spawn (one Claude
   // process at a time: the next spawns only after the previous group is gone), and the runner checks the serve's lock.
-  const serveInstance = async (): Promise<ServeInstance> => {
+  // A wake-word conversation's serve also gets `--trust wake` (R7-2: email shows only who and when).
+  const serveInstance = async (trust: Trust): Promise<ServeInstance> => {
     const id = newServeInstance();
-    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id) };
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust) };
   };
   if (!args.dryRun) sweepServeLocks(home, Date.now() - 24 * 3600_000); // file times are real time: left behind by a killed listener
   const settings: ClaudeSettings = {
@@ -410,7 +411,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       };
       warm = new WarmConversationRunner({
         conversation,
-        start: (key) => new WarmClaude(warmOpts, key, memoryNow()),
+        start: (key, trust) => new WarmClaude(warmOpts, key, memoryNow(), trust),
         onTiming: (t) => out(formatTiming(t)),
         now: env.now,
         log: err,

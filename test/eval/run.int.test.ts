@@ -185,6 +185,7 @@ describe('eval helpers', () => {
   it('evalMcpConfig: only the dry-run server', () => {
     expect(evalMcpConfig('/node', '/cli.js', '/r.jsonl')).toEqual({ mcpServers: { stephen: { command: '/node', args: ['/cli.js', 'serve', '--dry-run', '--record', '/r.jsonl'] } } });
     expect(evalMcpConfig('/node', '/cli.js', '/r.jsonl', '/p.txt').mcpServers.stephen.args.slice(-2)).toEqual(['--fake-page', '/p.txt']);
+    expect(evalMcpConfig('/node', '/cli.js', '/r.jsonl', undefined, 'wake').mcpServers.stephen.args.slice(-2)).toEqual(['--trust', 'wake']); // R7-2
     expect(stamp(new Date('2026-01-02T03:04:05.678Z'))).toBe('2026-01-02T03-04-05');
   });
 

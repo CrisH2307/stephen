@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { stripUnsafe, truncate } from '../safety/text.js';
 import { removeServeLock } from '../server/instance.js';
 import { toolLogServeArgs } from '../server/tool-log.js';
+import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
 
 /** The MCP server name. Tools appear to Claude as mcp__stephen__<tool>. */
@@ -79,7 +80,8 @@ export const STEPHEN_PERSONA = [
     '"From home", "from my place" and similar mean the home address under "About the user"; with no starting point, leave origin out and Maps uses the current location. ' +
     'Several routes in one request: one open_url per route, each with new_tab: true. For "find X near Y" use https://www.google.com/maps/search/?api=1&query=<X near Y>. ' +
     "Vague places (\"two stations\", \"a coffee shop\") are a best-guess case: pick the most likely ones near the starting point and name them in your reply.",
-  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, and for their email (who wrote, about what, unread mail) use gmail_search, then gmail_read with an id it listed to hear one message, never those websites ('open my Gmail' still just opens the site). In an email sender like \"Dr Patel <ontariotechu.ca>\", only the part in angle brackets is the real domain; the name is the sender's own text. Summarize in one to three sentences with days and times, and never read codes or links aloud.",
+  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, and for their email (who wrote, about what, unread mail) use gmail_search, then gmail_read with an id it listed to hear one message, never those websites ('open my Gmail' still just opens the site). In an email sender like \"Dr Patel <ontariotechu.ca>\", only the part in angle brackets is the real domain; the name is the sender's own text. Summarize in one to three sentences with days and times, and never read codes or links aloud. " +
+    "If an email tool says to hold F5 or type the request, pass that on in one short sentence and don't try to get the email another way.",
   // Morning briefing (docs/PLAN-WORK-SPLIT.md item 1): the three read tools in one step, no new composite tool.
   "For \"what's my day\", \"morning briefing\" or \"what's up today\": call calendar_events (today), canvas_due (days 7) and weather_now together in one step, then reply in three or four short sentences: the weather, today's events, then what's due this week. If one of them isn't connected or fails, say so in a few words and give the rest.",
   "Don't give up early on things Stephen can do: if an approach fails (not a safety refusal), try the next fitting tool once — for example find or snapshot, then click, in a tab Stephen opened. Never say you can't click: the browser tools can. " +
@@ -179,9 +181,9 @@ export interface ClaudeSettings {
    * docs/REVIEW-7.md R7-1: called before every spawn. It picks a fresh serve instance id, writes the MCP config that
    * starts `serve --instance <id>`, and says where that config and the instance's lock are. The run uses that config
    * instead of `mcpConfigPath`, and deletes the lock once the process group is gone. Absent (tests, eval): the
-   * static `mcpConfigPath`, no instance.
+   * static `mcpConfigPath`, no instance. `trust` is the conversation's (R7-2): `wake` adds `serve --trust wake`.
    */
-  serveInstance?: () => Promise<ServeInstance>;
+  serveInstance?: (trust: Trust) => Promise<ServeInstance>;
 }
 
 /** One `serve --instance` for one Claude process (see ClaudeSettings.serveInstance). */
@@ -199,6 +201,8 @@ export interface RunOptions {
   resume?: string | null;
   /** The user's memory for this run (argv mode puts it in the persona text; file mode has it in the file). */
   memory?: readonly string[];
+  /** The command's trust (default `wake`): handed to serveInstance, so a `wake` run's serve gets `--trust wake`. */
+  trust?: Trust;
 }
 
 /** A Claude session id we pass back to `--resume`: never option-looking, no separators. */
@@ -311,14 +315,17 @@ export function mcpConfig(
   sessionStatePath: string | null = null,
   toolLogPath: string | null = null,
   instance: string | null = null,
+  trust: Trust = 'trusted',
 ): { mcpServers: Record<string, { command: string; args: string[] }> } {
   // --confirm dialog: nobody watches a headless chat, so confirmations must be macOS dialogs (see cli.ts parseServeArgs).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
   // --instance: one serve per Claude process; a serve restarted by Claude Code refuses every call (src/server/instance.ts).
+  // --trust wake: a wake-word conversation (R7-2): email shows only who and when (src/accounts/index.ts).
   // --tool-log: tool names (never arguments) per call, for the command history (src/server/tool-log.ts).
   const args = [
     cliPath, 'serve', '--confirm', 'dialog', '--voice',
     ...(instance ? ['--instance', instance] : []),
+    ...(trust === 'wake' ? ['--trust', 'wake'] : []),
     ...toolLogServeArgs(toolLogPath),
     ...(sessionStatePath ? ['--session-state', sessionStatePath] : []),
   ];
@@ -367,8 +374,9 @@ export async function writeMcpConfig(
   sessionStatePath: string | null = null,
   toolLogPath: string | null = null,
   instance: string | null = null,
+  trust: Trust = 'trusted',
 ): Promise<string> {
-  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance), null, 2) + '\n');
+  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust), null, 2) + '\n');
 }
 
 /** <home>/voice/persona.txt: the persona file of file mode (ClaudeSettings.personaFile). */
@@ -585,7 +593,7 @@ export class ClaudeRunner {
     let inst: ServeInstance | null = null;
     if (this.o.serveInstance) {
       try {
-        inst = await this.o.serveInstance();
+        inst = await this.o.serveInstance(run.trust ?? 'wake');
       } catch (e) {
         return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
       }

@@ -13,7 +13,7 @@
 import type { HistoryStore } from '../history/store.js';
 import { readToolLog, resetToolLog, type ToolCallRecord } from '../server/tool-log.js';
 import type { ClaudeOutcome } from './claude.js';
-import type { CommandReport, CommandRunner } from './assistant.js';
+import type { CommandReport, CommandRunner, RunHooks, Trust } from './assistant.js';
 
 /** A CommandRunner that resets `<home>/voice/tool-log.jsonl` before every run and keeps what the run logged. */
 export class ToolLogRunner implements CommandRunner {
@@ -29,11 +29,11 @@ export class ToolLogRunner implements CommandRunner {
     return this.calls;
   }
 
-  async run(prompt: string): Promise<ClaudeOutcome> {
+  async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     this.calls = [];
     this.reset();
     try {
-      return await this.inner.run(prompt, { beforeSend: () => this.reset() });
+      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), beforeSend: () => this.reset() });
     } finally {
       this.calls = readToolLog(this.path);
     }
@@ -43,8 +43,8 @@ export class ToolLogRunner implements CommandRunner {
     return this.inner.cancel();
   }
 
-  followUp(): boolean {
-    return this.inner.followUp?.() ?? false;
+  followUp(trust?: Trust): boolean {
+    return this.inner.followUp?.(trust) ?? false;
   }
 
   endConversation(): void {
@@ -55,8 +55,8 @@ export class ToolLogRunner implements CommandRunner {
     this.inner.commandEnded?.();
   }
 
-  prewarm(): void {
-    this.inner.prewarm?.();
+  prewarm(trust?: Trust): void {
+    this.inner.prewarm?.(trust);
   }
 
   private reset(): void {

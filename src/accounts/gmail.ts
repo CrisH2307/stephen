@@ -202,6 +202,21 @@ export function formatSearchLine(m: GmailMessage, opts: { timeZone?: string } = 
   return `- id ${m.id} · ${dateText(m, opts.timeZone)} · ${senderText(header(m, 'From'))}${unread ? ' · unread' : ''} · "${field(header(m, 'Subject') || '(no subject)', 160)}"${snippet ? ` — ${snippet}` : ''}`;
 }
 
+/**
+ * After the wake word (`serve --trust wake`, docs/REVIEW-7.md R7-2) anyone in the room may be asking, so email gives
+ * only who and when: one line per message with the date, sender name and domain, and unread; no id, subject or
+ * snippet. These notices tell the model where the rest is.
+ */
+export const WAKE_MAIL_FOOTER = 'For subjects or to read an email, hold F5 or type the request.';
+export const WAKE_MAIL_READ_NOTICE =
+  "After the wake word, Stephen only says who emailed and when. For subjects or to read an email, hold F5 or type the request. Tell the user exactly that; don't try another way.";
+
+/** One wake-word search line: date, sender name and domain, unread. No id, subject or snippet. */
+export function formatWakeSearchLine(m: GmailMessage, opts: { timeZone?: string } = {}): string {
+  const unread = Array.isArray(m.labelIds) && m.labelIds.includes('UNREAD');
+  return `- ${dateText(m, opts.timeZone)} · ${senderText(header(m, 'From'))}${unread ? ' · unread' : ''}`;
+}
+
 /** Drop `<style>…</style>`, `<script>…</script>` and `<head>…</head>` with indexOf scans (linear time, review 6 R6-2). */
 export function dropBlocks(html: string): string {
   const lower = html.toLowerCase();
