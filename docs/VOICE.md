@@ -298,7 +298,10 @@ stephen memory forget m3
 stephen memory clear        # asks y/N
 ```
 
-Text that looks like a password, code, card or account number (including 4 or more digits in a row) is refused,
+Text that looks like a password, code, card or account number (6+ digits in a row, 8+ digits in spoken groups like
+"4512, 3456, …", a comma list of 4+ single digits, "pin's", "pass word", "code for the door", full-width digits) is
+refused, and so is a one-word "remember 4417" (refused locally, never sent to Claude; history keeps only
+"remember [refused: looks like a secret]"),
 because memory is sent to Claude with every command. Changes are written to the audit log with the text's length
 only. Config: `"memory": { "enabled": true, "confirmWakeWord": true, "maxItems": 30 }`.
 
@@ -312,14 +315,17 @@ or replies is parsed for memory).
 |---|---|
 | "remember my gym is GoodLife on King St" | saves it ("Bet, saved: …"), keeping the case Whisper heard |
 | "remember my gym is GoodLife and play lofi" | saves "my gym is GoodLife", then runs "play lofi" as a normal command; the reply says both. The split happens only at "and" / "then" / "and then" / "and also" followed by play, open, put, turn, set, pause, skip, start, launch, show, find, check, go, search or mute |
-| "what do you remember" | reads the list out |
-| "forget my gym" | forgets the one item that matches best; if two match equally it names them and forgets nothing |
+| "what do you remember" | reads the list out (after the wake word: says only how many, see Trust) |
+| "forget my gym" | forgets the one item that matches best; if two match equally it names them and forgets nothing (after the wake word it asks first) |
 | "forget that" | forgets the newest item, only if it was saved in the last 10 minutes |
 | "forget everything" | asks in a macOS dialog first, always |
 
 Trust: Fn+Option and `stephen listen --text` save directly. A "remember …" after the wake word asks in a macOS
 dialog first ("Remember this?", Deny is the default, gives up after 120 s) because a video can say "Hey Stephen,
-remember …"; if you deny, nothing is saved and the rest of a split line doesn't run either.
+remember …"; the dialog also shows the split part it will run, and if you deny, nothing is saved and the rest of a split
+line doesn't run either. The same applies to "forget …" after the wake word (dialog "Forget this?"), and a wake-word
+"what do you remember" only says how many items there are, so nobody in the room hears them. Saved/forgotten text is
+spoken back, so it also goes to your voice service (ElevenLabs when that is set up).
 `memory.confirmWakeWord: false` turns that dialog off. Any change (save / forget / clear) ends the follow-up
 conversation, so the next command starts a fresh Claude session that sees the new memory. `memory.enabled: false`
 turns all of this off: "remember …" then goes to Claude like any other command and no memory is sent to Claude.
@@ -418,8 +424,15 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4�
   `stephen history clear` deletes them all.
 - Stored only on this Mac in `<home>/history/YYYY-MM-DD.jsonl` (folder 0700, files 0600): what you said, the reply,
   the outcome, tool names and timings. Never sent back to Claude. Caps: said 2000 chars, reply 4000 chars, 5 MB a day.
-- `"history": { "retentionDays": 1 }` in config.json (default 1, 0 to 30). Day files older than that many days are
-  deleted on every new entry; `0` turns history off and deletes what is there.
+- `"history": { "retentionDays": 1 }` in config.json (default 1, 0 to 30). A rolling window: entries from before the
+  same time N days ago are deleted when `stephen listen` starts, on every new entry and when history is listed
+  (`stephen history`, the app); `0` turns history off and deletes what is there.
+- **Claude Code's own copy.** With follow-ups on, Claude Code saves each voice session as a transcript in
+  `~/.claude/projects/<voice workdir slug>/` (prompt, tool results, replies). Stephen deletes a session's transcript
+  when its conversation ends, deletes older ones with the same retention window, and `stephen history clear` deletes
+  them all (and ends the follow-up conversation). With `voice.followUpWindowSec: 0` nothing is saved at all.
+- **Persona file.** `<home>/voice/persona.txt` (persona, aboutMe, memory) exists only while a `claude` run starts and is
+  deleted after each run and when `stephen listen` exits.
 - Tool names come from `stephen serve --tool-log <home>/voice/tool-log.jsonl`, which records only
   `{tool, isError, ms}` per call, never arguments or results. `stephen listen` adds the flag (only while history is
   on), empties the file before each command and reads it after. Memory commands are recorded with outcome `memory`

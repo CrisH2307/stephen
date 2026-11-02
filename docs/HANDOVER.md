@@ -202,3 +202,29 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   the menu bar, restart `stephen listen`. Eval on the Mac 45/46 (mis-lofi: "low fly girl" searched as heard): persona
   now says an unknown name was probably misheard → use the closest well-known one. Cloud: `--only mis` 6/6 ×3,
   full eval 46/46.
+- 2026-11-01 17:00 — **Security review #5 done and fixed** (docs/REVIEW-5.md). Fresh opus subagent that didn't build
+  1.9 (Jev couldn't size it: openrouter.ai is blocked from both the Mac VM shell and the cloud, 403; used Jev's earlier
+  "large → opus"). No Critical/High: nothing Claude, a page, an email or a tool result does can write memory; app.sock
+  is safe from lower-trust actors. Fixed, each with tests (test/voice/review5.test.ts, transcripts.test.ts):
+  R5-1 Claude Code's own session transcripts (`~/.claude/projects/<voice workdir slug>/`) deleted when a conversation
+  drops a session, purged with the history window, all on `history clear` (src/voice/transcripts.ts);
+  R5-2 conversation.json keeps a memory-list hash, a change from anywhere (CLI, hand edit) starts fresh;
+  R5-3 persona.txt exists only during a claude run; refused secrets stored as "remember [refused: …]";
+  R5-4 secret check: NFKC, spoken digit groups/lists, pin's, pass word, "code for the door", one-word "remember 4417"
+  refused locally; R5-5 wake-word forget asks, wake-word list/tie say only the count; R5-6 history is a rolling window
+  (same time N days ago), purged at listen start / list / `stephen history`; R5-7 src/history is a boundary, cli.ts
+  loads voice/index.js on demand (serve start-up graph test); R5-9/10 dialog shows the split part and mentions the
+  voice service. Open: R5-8 (= review 4 #6, helper.sock nonce, Swift/Mac). Suite: **2498 passed, 11 skipped**; real
+  eval (sonnet, cloud) inject 3/3, memory 3/3. No Swift changed (no install-helper needed). Owner next: `npm run build`,
+  then the Mac checks (Fn+Option after Input Monitoring, gym memory → directions, the window, YouTube Music).
+- 2026-11-01 19:50 — Owner: Fn+Option still didn't work on the Mac → **hold F5 to talk** added (Fn+Option kept as a
+  backup). helper/Core.swift `PushToTalk`: F5 (kVK_F5 = 96) key-down starts a press, F5 key-up ends it, auto-repeat
+  ignored, modifier changes don't end an F5 press (so Fn+F5 works), max-hold/Esc as before; helper/main.swift taps
+  keyUp too and only looks at Esc/F5 key codes. Mirrored in test/helper/ptt-model.ts (+6 scenarios) and the Swift
+  harness (`keyup <code>`). Cloud: helper model tests green; Swift not compiled here. Owner: `npm run build &&
+  node dist/cli.js install-helper`, re-grant Input Monitoring, then `npx vitest run test/helper/swift.int.test.ts`.
+  Mac keyboards send F5 as a media/Dictation key unless "Use F1, F2, etc. keys as standard function keys" is on;
+  otherwise press Fn+F5. User-facing text still says Fn+Option (not changed yet).
+- 2026-11-01 21:10 — Owner: **hold F5 works** on the Mac. Next: owner checks the Stephen window (chat / memory /
+  history / settings / audit) before anything new; then phase 2a. Still to do later: change the "Hold Fn+Option" text
+  in replies/docs to F5.

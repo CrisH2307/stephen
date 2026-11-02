@@ -23,7 +23,7 @@ wants a handover doc kept current. Casual tone is fine.
      in device_bash `tar --exclude=node_modules --exclude=dist --exclude=.git -czf ../stephen-base.tgz browser-hub`
      from the `brower-hub` folder → device_stage_files → untar in the cloud workspace, `git init` + commit as a base.
   2. Build and test in the **cloud workspace** (Linux): `npm ci && npm run build && npx vitest run` (~8 min; real
-     Chromium, sherpa-onnx models download on first run). **~2473 passed, 11 skipped**, all green.
+     Chromium, sherpa-onnx models download on first run). **~2498 passed, 11 skipped**, all green.
   3. The real `claude` CLI works in the cloud workspace, so `node dist/cli.js eval [--only x] --model sonnet --jobs 4`
      runs the real one-shot eval there (cloud plan; dry-run tools). Last full run: 46/46.
   4. Sync back: **first** check the Mac has no owner edits (compare its files with your base snapshot, e.g.
@@ -37,7 +37,8 @@ wants a handover doc kept current. Casual tone is fine.
   6. Parallel work: git worktrees in the cloud copy (symlink node_modules; add it to `.git/info/exclude`), one
      subagent per worktree, the lead merges and runs the full suite. The owner's Jev router lives on the Mac at
      `~/.config/jev` (`cd "$HOME/mnt/jev" && JEV_DIR="$PWD" python3 jev_router.py route --test "<task>"`) and sizes a
-     task to haiku / sonnet / opus / fable; the owner wants it used to pick subagent models.
+     task to haiku / sonnet / opus / fable; the owner wants it used to pick subagent models. (2026-11-01: openrouter.ai
+     is blocked from both the Mac VM shell and the cloud, so Jev falls back to "self"; until that's allowed, size by hand.)
 - **Logs on the Mac:** `~/.browser-hub/` (legacy home still in use): `audit.log` (every action), `state/zen.json`,
   `state/zen-real.log`, `logs/helper.log`. Ask for folder access to read them when debugging.
 - The helper app is in the owner's Dock at `~/Applications/Stephen Helper.app`; rebuild with
@@ -59,4 +60,4 @@ node dist/cli.js voice-setup          # speech models
 Open Zen with **"Zen for Stephen"** (Dock) so Stephen can control it.
 
 ## Next step
-Independent security review #5 of phase 1.9 (docs/PLAN-1.9-MEMORY-DASHBOARD.md), then `docs/ROADMAP.md` → phase 2a "read my stuff" (Gmail, Canvas, Notion, Calendar, Maps), read-only first.
+Review #5 is done (docs/REVIEW-5.md). Owner's Mac checks of phase 1.9, then `docs/ROADMAP.md` → phase 2a "read my stuff" (Gmail, Canvas, Notion, Calendar, Maps), read-only first.
