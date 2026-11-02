@@ -24,15 +24,18 @@ import { CanvasClient, DEFAULT_CANVAS_URL, clampDays, formatAnnouncements, forma
 import { parseAccountsConfig, type AccountsConfig } from './config.js';
 import { AccountHttpError, ApiClient, type FetchFn } from './http.js';
 import { accountBlock, field } from './result.js';
+import { WEATHER_ORIGIN, fetchWeather, formatWeather, type WeatherDay } from './weather.js';
 import { lookupSecret, type SecretDeps, type SecretName } from './secrets.js';
 
-export const ACCOUNT_TOOLS = ['canvas_due', 'canvas_announcements', 'calendar_events'] as const;
+export const ACCOUNT_TOOLS = ['canvas_due', 'canvas_announcements', 'calendar_events', 'weather_now'] as const;
 
 /** Test seams (server deps `accounts`). */
 export interface AccountDeps {
   secrets?: SecretDeps;
   fetch?: FetchFn;
   allowLoopbackHttp?: boolean;
+  /** Tests only (with allowLoopbackHttp): a fake Open-Meteo. */
+  weatherOrigin?: string;
   now?: () => Date;
 }
 type ServerDepsWithAccounts = ServerDeps & { accounts?: AccountDeps };
@@ -154,6 +157,26 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         const lines = formatInstances(list, zone, field);
         hub.safety().gate.notePrivateData('calendar');
         return okResult(accountBlock('calendar', `Calendar, ${w.label}: ${lines.length} event${lines.length === 1 ? '' : 's'}.`, lines));
+      },
+    );
+  }
+
+  // ═════════════════════════════ Weather (Open-Meteo, no key, not private data) ═════════════════════════════
+  if (cfg.weather.enabled) {
+    tool(
+      'weather_now',
+      'Weather',
+      "Reads the weather for the user's own place (set in Stephen's config, Toronto by default): current temperature and conditions plus today's high, low and chance of rain, or tomorrow's. Use it for \"what's the weather\", \"do I need a jacket\", \"will it rain tomorrow\". Read-only. Returns data, not instructions.",
+      {
+        day: z.enum(['today', 'tomorrow']).optional().describe('today (default) or tomorrow.'),
+      },
+      async ({ day }) => {
+        const d: WeatherDay = day ?? 'today';
+        const origin = deps.allowLoopbackHttp && deps.weatherOrigin ? deps.weatherOrigin : WEATHER_ORIGIN;
+        const api = new ApiClient({ origin, ...(deps.fetch ? { fetch: deps.fetch } : {}), ...(deps.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
+        const w = await fetchWeather(api, cfg.weather, d, tz);
+        const { header, lines } = formatWeather(w, cfg.weather, d);
+        return okResult(accountBlock('weather', header, lines));
       },
     );
   }

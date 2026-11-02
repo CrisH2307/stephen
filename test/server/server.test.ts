@@ -13,6 +13,7 @@ const EXPECTED_TOOLS = [
   'canvas_due',
   'canvas_announcements',
   'calendar_events',
+  'weather_now',
   'browser_status',
   'browser_connect',
   'tabs_list',

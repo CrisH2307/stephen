@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { checkOrigin } from './http.js';
+import { DEFAULT_WEATHER } from './weather.js';
 
 const service = z.object({ enabled: z.boolean().default(true) }).strict();
 
@@ -15,6 +16,15 @@ const schema = z
     timeZone: z.string().min(1).max(64).optional(),
     canvas: service.extend({ url: z.string().min(1).max(200).optional() }).strict().default({ enabled: true }),
     calendar: service.default({ enabled: true }),
+    /** Where the weather tool looks (Open-Meteo, no key). Default Toronto. */
+    weather: service
+      .extend({
+        latitude: z.number().min(-90).max(90).default(DEFAULT_WEATHER.latitude),
+        longitude: z.number().min(-180).max(180).default(DEFAULT_WEATHER.longitude),
+        label: z.string().min(1).max(60).default(DEFAULT_WEATHER.label),
+      })
+      .strict()
+      .default({ enabled: true, ...DEFAULT_WEATHER }),
   })
   .strict();
 
