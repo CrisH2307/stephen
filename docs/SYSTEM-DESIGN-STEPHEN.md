@@ -52,7 +52,7 @@ The hard parts are not speech or the LLM call. They are:
   │     ├─▶ MemoryRouter (deterministic grammar)  ── remember/forget/list ─▶ memory.json (0600) │
   │     │        └─ "remember X and play Y": saves X, passes "play Y" on                        │
   │     ▼                                                                                       │
-  │ ConversationRunner ─▶ claude -p  (only Stephen's MCP tools, persona file, --resume window)  │
+  │ WarmConversationRunner ─▶ one warm claude -p per conversation (only Stephen's MCP tools)    │
   │     ▲                     │                                                                 │
   │ app.sock (0600) ◀─ Stephen window (SwiftUI: chat / memory / history / settings / audit)    │
   └─────────────────────────┼───────────────────────────────────────────────────────────────────┘
@@ -93,7 +93,9 @@ of private content read this session.
 - The taint never expires within a session (a prompt-injected model can wait), is capped at a fixed number of
   scopes (LRU), and is **persisted** to a 0600 file for follow-up commands, so the model's memory and the gate's
   memory of a conversation always live and die together. Writes are fail-closed: if the taint can't be saved,
-  the private text is not handed to the model.
+  the private text is not handed to the model. Since phase 3 one serve lives for the whole conversation (§4.11), so
+  the file mostly guards a restart and the one-shot fallback; it is still written fail-closed, and it is deleted only
+  once that serve is gone.
 
 Design choice: an **API tool marks the taint when it returns data**, not when a command starts. Arming at the start
 would make "play lofi" ask before touching YouTube. Marking on return taxes only the commands that really read
@@ -212,6 +214,60 @@ it does **not** arm the taint (a briefing followed by "play lofi" shouldn't ask)
 response, and coordinates are never put in the result. Real-model eval: `brief-day` and an injected-calendar variant
 pass. The injected run reported the planted instruction to the owner and opened nothing.
 
+### 4.11 Warm Claude session (phase 3)
+
+Before phase 3 every command started `claude -p` and a fresh `stephen serve`: about 1.5 s of start-up per command,
+plus 0.45 s waiting for the exit. Now the live listener keeps **one** long-lived
+`claude -p --input-format stream-json --output-format stream-json --verbose` per conversation
+(`src/voice/warm-claude.ts`, `WarmConversationRunner` in `src/voice/conversation.ts`). It is spawned the moment the
+wake word fires or F5 goes down. Recording and speech-to-text take at least 2 s, which covers the start-up.
+
+- **Same lock-down.** The argv is the one-shot argv without the prompt and without `--resume` (a test compares them
+  flag by flag). Each command goes to stdin as `JSON.stringify` of one user message, one line. Claude Code exits on
+  a malformed line, so text is never pasted into JSON by hand.
+- **Ready, then checked before every command.** Ready means `initialize` answered (then the persona file is deleted:
+  Claude Code has read it, and the system prompt is a snapshot from now on) and `mcp_status` says `stephen` is
+  `connected`. Before each command the memory key must still equal the key at spawn and MCP must still be connected.
+  Anything else fails closed: the command reports an error and the conversation ends.
+- **One process per conversation.** It ends when the follow-up window runs out (a timer, and checked again before a
+  command), memory changes (the router, or a key mismatch from the app, the CLI or a hand edit), on any cancel (Esc,
+  "Stephen stop", the wake word while running, F5 while busy, Ctrl-C), on any error (error result, protocol error,
+  exit, MCP not connected), and at the caps: an unused pre-warm after 60 s, 25 commands, 30 minutes, listener exit.
+  With `followUpWindowSec: 0` it ends after every command and the next one is pre-warmed again.
+- **End order: kill, wait, reset.** SIGTERM the process group; wait until Claude Code has closed **and** the rest of
+  its group (the serve) is gone, SIGKILL after a grace period; then delete the session id, then the state file, then
+  the transcript. The next process starts only on the next wake word or F5. Why kill first: a serve writes the state
+  file merged with what is on disk, so a serve still alive after the reset could write the old taint back, and the
+  next conversation's serve would import it. That is stricter, not a leak, but wrong: a fresh conversation would ask
+  for things it shouldn't. The test for it uses a fake serve that rewrites the state file every 5 ms; after the end
+  the file stays deleted.
+- **Cancel still kills the group.** The stream protocol has an `interrupt`, but an interrupted tool keeps running (a
+  pending dialog would stay up), and every cancel ends the conversation anyway.
+- **Rate limit per conversation.** The gate's limiter now lives with the conversation's serve. It already was a
+  sliding window (40 allowed actions in any 60 s), not a per-command budget, so it stayed as it was. Tests: 25 heavy
+  commands (8 actions each, with bursts of 4 commands in under a minute) over 30 minutes never hit it, and a runaway
+  loop (a click every 100 ms for 5 minutes) never gets more than 40 actions into any minute.
+- **Per-command numbers.** `num_turns` and `duration_ms` are per message, but `duration_api_ms` and `total_cost_usd`
+  are per process, so the runner reports the difference from the previous result. The tool log is still truncated
+  before each command: serve opens the file for every record and writes it before the tool result reaches Claude,
+  so each command sees only its own tool names.
+- **Fallback.** At start the listener sends one `initialize` probe. If it fails, it prints a note and uses the
+  one-shot runner (also the eval's runner). `voice.warm: false` turns the warm runner off; `--text` stays one-shot,
+  so follow-ups across `--text` runs keep using `--resume`.
+
+Measured (docs/ADR-003-long-lived-claude.md; Linux cloud box, Claude Code 2.1.316, sonnet, n=5 per row,
+"overhead" = wall time minus Claude Code's own `duration_ms`):
+
+| Case | One `claude -p` per command | Warm |
+|---|---|---|
+| "say hi" (fresh) | p50 2.74 s, p90 4.43 s, overhead 1.56 s | spawned 3 s ahead: p50 1.91 s, p90 2.66 s, overhead 0.03 s |
+| "say bye" (follow-up) | `--resume`: p50 3.78 s, p90 7.22 s, overhead 1.43 s | same process: p50 1.75 s, overhead 0.01 s |
+| "now open gmail" (follow-up) | `--resume`: p50 5.44 s, p90 14.1 s, overhead 1.33 s | same process: p50 4.49 s, overhead 0.01 s |
+
+A lead of 2 s or more hides all of the start-up, 1 s hides part of it, 0 s none. An idle warm process (claude plus
+serve) costs about 270 MB and 0.6 % of one core. The Mac numbers are still to be measured by the owner (the
+`formatTiming` line, one-shot vs warm).
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |
@@ -266,5 +322,5 @@ the owner instead of following.
 
 Phase 2a continues with the same pattern: Google Calendar (secret iCal feed, RRULE expansion), Notion (to-do
 database), and Gmail (OAuth desktop flow with PKCE, `gmail.readonly`). Then phase 2b (careful writes: every send or
-change is shown verbatim in a native dialog), phase 3 (a long-lived session for real follow-ups and lower latency)
-and phase 4 (accessibility-based control of approved apps).
+change is shown verbatim in a native dialog), phase 3 (built: one warm Claude Code per conversation, §4.11; Mac
+measurements pending) and phase 4 (accessibility-based control of approved apps).

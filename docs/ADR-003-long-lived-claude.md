@@ -1,6 +1,6 @@
 # ADR-003: Phase 3 — one long-lived `claude -p` (stream-json) per conversation, pre-warmed
 
-**Status:** Accepted (owner chose a long-lived `claude -p` over the Agent SDK: no API key), 2026-11-02
+**Status:** Accepted (owner chose a long-lived `claude -p` over the Agent SDK: no API key), 2026-11-02. Subtasks 1 to 3 implemented (see "Implementation" at the end); Mac measurements pending.
 **Measured with:** Claude Code 2.1.316, `--model sonnet`, Stephen's exact lock-down argv (`buildClaudeArgs`), the eval
 dry-run server, on the Linux cloud box (not the Mac). Probe scripts: the session scratchpad `p1/` (`bench.mjs`,
 `warm.mjs`, `interrupt.mjs`, `persona*.mjs`, `idle.mjs`, `ready.mjs`, `slowtool.mjs`, `realserve.mjs`).
@@ -152,3 +152,26 @@ as the fallback when the protocol probe fails.
 4. **Measure.** On the Mac: 10 commands one-shot vs warm (the `formatTiming` lines) and the follow-up pairs. Update
    `docs/VOICE.md` "Where the time goes" and `SYSTEM-DESIGN-STEPHEN.md` §4.1 (the state file now guards restarts).
    Optional, separate: a fixed cwd in the eval so its medians match the listener's prompt cache.
+
+## Implementation (2026-11-02, subtasks 1 to 3)
+
+Built: `src/voice/warm-claude.ts` (`WarmClaude`, `buildWarmArgs` in `claude.ts`, `probeWarmProtocol`),
+`WarmConversationRunner` in `src/voice/conversation.ts`, the pre-warm calls in `listener.ts`, and the wiring in
+`index.ts`. The result to outcome mapping is shared (`outcomeFromResult`). Tests: `test/voice/warm-claude.test.ts`,
+`test/voice/warm-runner.test.ts`, `test/safety/rate-limit-conversation.test.ts`, warm cases in the pipeline and
+push-to-talk integration tests, and the opt-in real probe `test/voice/warm-claude-real.test.ts`
+(`STEPHEN_REAL_CLAUDE=1`). Differences from the plan above, all small:
+
+- The switch is `voice.warm: true | false` (owner decision), not `voice.claudeMode`.
+- `stephen listen --text` and `--dry-run` stay one-shot: `--text` runs one command per process, and its follow-ups
+  across runs keep using `--resume`. Typed app chat needs no hook of its own: `run()` spawns when no process is up.
+- `kill()` waits for the whole process group (the serve too), not only for Claude Code's `close`, before the reset.
+  That is what makes "kill before reset" hold.
+- The rate limiter needed no change: it already was a sliding window (`safety.maxActionsPerMinute`, 40 in any 60 s).
+- `ToolLogRunner` needed no offset logic: truncating the log before each command already slices it, because serve
+  opens the file for every record and writes it before the tool result reaches Claude (tested on one serve).
+- A `control_request` from Claude Code (none is expected with `dontAsk` and no callbacks) is answered with an error.
+- The timing line keeps the one-shot split, so the two compare directly:
+  `claude: 1.9 s (warm, spawned 3.0 s ahead; start-up + MCP 0.0 s, model 1.8 s in 1 turn, tools + overhead 0.1 s)`.
+- F5 pressed while a command runs cancels it first; the runner is still busy with the cancelled run at that moment,
+  so that one next command starts cold. Every other wake / F5 press pre-warms.

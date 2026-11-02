@@ -294,3 +294,21 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   Merged with weather (conflicts were additive). Full suite **2601 passed, 11 skipped**. Owner: put NOTION_API in .env,
   share the to-do database with the integration, run `node dist/cli.js accounts test notion`; answer the database
   questions (done property name/type and option names, title, due-date property).
+- 2026-11-02 20:20 - **Phase 3 built: one warm Claude Code per conversation** (docs/ADR-003, subtasks 1 to 3).
+  `src/voice/warm-claude.ts` drives one long-lived `claude -p --input-format stream-json --output-format stream-json
+  --verbose` with the one-shot lock-down argv (`buildWarmArgs`): initialize, persona deleted, `mcp_status` until
+  `stephen` is connected, one `JSON.stringify` line per command, per-command differences of the cumulative cost and
+  api time, `kill()` waits until the whole process group is gone. `WarmConversationRunner` (conversation.ts) owns the
+  lifetime: pre-warmed on the wake word / F5 down; ends on window expiry, memory change, any cancel, any error, an
+  unused pre-warm after 60 s, 25 commands, 30 minutes, listener exit; always kill, wait, then reset (session id,
+  state file, transcript). Config `voice.warm` (default true); the listener checks `initialize` at start and falls
+  back to one `claude -p` per command with a note; `--text` and `--dry-run` stay one-shot. The rate limiter needed
+  no change (already a sliding 40 actions / 60 s); new tests show a 25-command / 30-minute chain passes and a
+  runaway loop is held at 40 per minute. `formatTiming` warm line: `claude: 1.9 s (warm, spawned 3.0 s ahead;
+  start-up + MCP 0.0 s, model …, tools + overhead …)` or `(warm, follow-up 2 on this process; …)`. Fake claude has a
+  stream mode (test/voice/fake-claude-stream.mjs). Opt-in real probe: `STEPHEN_REAL_CLAUDE=1 npx vitest run
+  test/voice/warm-claude-real.test.ts` (passed here: ready 1.4 s). Real headless run here: `listen --wav
+  wake-onebreath.amy.wav` with the real claude printed `claude: 9.1 s (warm, spawned 1.6 s ahead; start-up + MCP
+  0.1 s, model 8.9 s in 4 turns, …)` (WAV audio runs faster than real time, so the lead is short). Full suite **2660
+  passed, 12 skipped**. Docs: SYSTEM-DESIGN §4.11 (new) and §4.1, STEPHEN.md follow-ups row, VOICE.md, ADR-003
+  "Implementation". Owner: measure on the Mac, one-shot (`"warm": false`) vs warm, with the `claude:` lines.
