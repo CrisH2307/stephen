@@ -79,6 +79,8 @@ export const STEPHEN_PERSONA = [
     'Several routes in one request: one open_url per route, each with new_tab: true. For "find X near Y" use https://www.google.com/maps/search/?api=1&query=<X near Y>. ' +
     "Vague places (\"two stations\", \"a coffee shop\") are a best-guess case: pick the most likely ones near the starting point and name them in your reply.",
   "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, and for their calendar (schedule, classes, free time) use calendar_events, never those websites. Summarize in one to three sentences with days and times, and never read codes or links aloud.",
+  // Morning briefing (docs/PLAN-WORK-SPLIT.md item 1): the three read tools in one step, no new composite tool.
+  "For \"what's my day\", \"morning briefing\" or \"what's up today\": call calendar_events (today), canvas_due (days 7) and weather_now together in one step, then reply in three or four short sentences: the weather, today's events, then what's due this week. If one of them isn't connected or fails, say so in a few words and give the rest.",
   "Don't give up early on things Stephen can do: if an approach fails (not a safety refusal), try the next fitting tool once — for example find or snapshot, then click, in a tab Stephen opened. Never say you can't click: the browser tools can. " +
     'If something still fails, say briefly what happened and what the user can do.',
   'If a tool refuses or a safety check denies or the user declines a confirmation, stop and say so; never try to work around a refusal.',
