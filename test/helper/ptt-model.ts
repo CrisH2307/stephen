@@ -16,6 +16,7 @@ export type Out = { type: 'ptt_down'; at: number } | { type: 'ptt_up'; at: numbe
 export class PttModel {
   isDown = false;
   latched = false;
+  byF5 = false;
   private downAt = 0;
   constructor(readonly maxHoldMs: number) {}
 
@@ -25,6 +26,7 @@ export class PttModel {
 
   flags(m: Mods, now: number): Out[] {
     if (this.latched && !(m.fn && m.opt)) this.latched = false;
+    if (this.isDown && this.byF5) return [];
     const active = PttModel.comboActive(m);
     if (!this.isDown) {
       if (active && !this.latched) {
@@ -46,11 +48,24 @@ export class PttModel {
   }
 
   key(code: number, isRepeat: boolean, now: number): Out[] {
-    return code === 53 && !isRepeat ? [{ type: 'esc', at: now }] : [];
+    if (isRepeat) return [];
+    if (code === 96) {
+      if (this.isDown) return [];
+      this.isDown = true;
+      this.byF5 = true;
+      this.downAt = now;
+      return [{ type: 'ptt_down', at: now }];
+    }
+    return code === 53 ? [{ type: 'esc', at: now }] : [];
+  }
+
+  keyUp(code: number, now: number): Out[] {
+    return code === 96 && this.isDown && this.byF5 ? this.release(now, false) : [];
   }
 
   private release(now: number, stillHeld: boolean): Out[] {
     this.isDown = false;
+    this.byF5 = false;
     this.latched = stillHeld;
     return [{ type: 'ptt_up', at: now, heldMs: Math.max(0, now - this.downAt) }];
   }
@@ -59,6 +74,7 @@ export class PttModel {
 export type Step =
   | { flags: Mods }
   | { key: number; repeat?: boolean }
+  | { keyup: number }
   | { interrupt: true }
   /** Let time pass (the model ticks; the Swift harness really waits — keep these short there). */
   | { wait: number };
@@ -103,6 +119,13 @@ export const SCENARIOS: Scenario[] = [
   { name: 'interrupt while idle does nothing', steps: [{ interrupt: true }], expect: [] },
   { name: 'Esc (53) is reported, auto-repeat and other keys are not', steps: [{ key: 53 }, { key: 53, repeat: true }, { key: 0 }, { key: 36 }], expect: ['esc'] },
   { name: 'Esc during a press', steps: [{ flags: { fn: true, opt: true } }, { key: 53 }, { flags: {} }], expect: ['ptt_down', 'esc', 'ptt_up'] },
+  // Hold F5 to talk (kVK_F5 = 96).
+  { name: 'F5 down/up is one press; auto-repeat ignored', steps: [{ key: 96 }, { key: 96, repeat: true }, { key: 96, repeat: true }, { keyup: 96 }], expect: ['ptt_down', 'ptt_up'] },
+  { name: 'Fn+F5 (function keys as media keys): releasing Fn first does not end it', steps: [{ flags: { fn: true } }, { key: 96 }, { flags: {} }, { keyup: 96 }], expect: ['ptt_down', 'ptt_up'] },
+  { name: 'F5 key-up with no press, other key-ups: nothing', steps: [{ keyup: 96 }, { keyup: 53 }, { keyup: 0 }], expect: [] },
+  { name: 'F5 during a Fn+Option press does nothing extra', steps: [{ flags: { fn: true, opt: true } }, { key: 96 }, { keyup: 96 }, { flags: {} }], expect: ['ptt_down', 'ptt_up'] },
+  { name: 'F5 max hold sends ptt_up; repeats while still held do not restart', steps: [{ key: 96 }, { wait: SCENARIO_MAX_HOLD_MS + 250 }, { key: 96, repeat: true }, { keyup: 96 }], expect: ['ptt_down', 'ptt_up'] },
+  { name: 'Esc during an F5 press', steps: [{ key: 96 }, { key: 53 }, { keyup: 96 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
 ];
 
 /** Run a scenario against the model with a fake clock (ticks every 10 ms while waiting). */
@@ -113,6 +136,7 @@ export function runModel(s: Scenario, maxHoldMs = SCENARIO_MAX_HOLD_MS): Out[] {
   for (const step of s.steps) {
     if ('flags' in step) out.push(...m.flags(step.flags, now));
     else if ('key' in step) out.push(...m.key(step.key, !!step.repeat, now));
+    else if ('keyup' in step) out.push(...m.keyUp(step.keyup, now));
     else if ('interrupt' in step) out.push(...m.interrupt(now));
     else {
       const end = now + step.wait;
@@ -133,5 +157,6 @@ export function harnessLine(step: Exclude<Step, { wait: number }>): string {
     return ['flags', f.fn && 'fn', f.opt && 'opt', f.cmd && 'cmd', f.ctrl && 'ctrl', f.shift && 'shift'].filter(Boolean).join(' ');
   }
   if ('key' in step) return `key ${step.key}${step.repeat ? ' repeat' : ''}`;
+  if ('keyup' in step) return `keyup ${step.keyup}`;
   return 'interrupt';
 }

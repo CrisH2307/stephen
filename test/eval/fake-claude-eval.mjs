@@ -4,7 +4,7 @@
 // stdio, and calls tools on it; WHICH tools come from $FAKE_EVAL_SCRIPT (JSON: { "<prompt>": { calls: [{tool, args}],
 // reply, mode? } }). mode "hang" = never answer (timeout tests), "error" = an error_max_turns result.
 // Every run's argv is appended to $FAKE_EVAL_LOG; with $FAKE_EVAL_RESULTS, every tool result's text is appended there.
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, statSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -13,7 +13,17 @@ const at = (f) => {
   const i = argv.indexOf(f);
   return i >= 0 ? argv[i + 1] : undefined;
 };
-if (process.env.FAKE_EVAL_LOG) appendFileSync(process.env.FAKE_EVAL_LOG, JSON.stringify({ argv, cwd: process.cwd() }) + '\n');
+// The persona file only exists while claude runs (review 5, R5-3): record what it held at start-up.
+const personaPath = at('--append-system-prompt-file');
+let persona;
+if (personaPath) {
+  try {
+    persona = { text: readFileSync(personaPath, 'utf8'), mode: statSync(personaPath).mode & 0o777 };
+  } catch {
+    persona = null;
+  }
+}
+if (process.env.FAKE_EVAL_LOG) appendFileSync(process.env.FAKE_EVAL_LOG, JSON.stringify({ argv, cwd: process.cwd(), ...(persona !== undefined ? { persona } : {}) }) + '\n');
 const prompt = (at('-p') ?? '').trim();
 const script = JSON.parse(readFileSync(process.env.FAKE_EVAL_SCRIPT, 'utf8'));
 const plan = script[prompt] ?? { calls: [], reply: 'Not sure what you mean?' };

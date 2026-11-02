@@ -180,7 +180,7 @@ describe('HistoryStore', () => {
     c.set(2026, 11, 1);
     const s3 = new HistoryStore({ home, retentionDays: 3, now: c.now });
     expect(s3.list().map((e) => e.said)).toEqual(['oct 31', 'oct 30', 'oct 29']); // list hides expired days
-    expect(s3.purge()).toBe(2);
+    expect(s3.purge()).toBe(0); // list() already purged them (review 5, R5-6)
     expect(files()).toEqual(['2026-10-29.jsonl', '2026-10-30.jsonl', '2026-10-31.jsonl']);
     // Default 1 day: append on Nov 1 deletes Oct 29 and Oct 30, keeps yesterday and today.
     const s1 = new HistoryStore({ home, retentionDays: 1, now: c.now });

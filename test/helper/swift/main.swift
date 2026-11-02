@@ -3,7 +3,7 @@
 // It runs the real socket server and push-to-talk logic, takes simulated OS events on stdin and reports the UI
 // side on stdout, so the Node HelperClient can be tested against the actual Swift code.
 //
-// stdin (one per line):  flags [fn] [opt] [cmd] [ctrl] [shift] | key <code> [repeat] | audio 0|1 | perm 0|1
+// stdin (one per line):  flags [fn] [opt] [cmd] [ctrl] [shift] | key <code> [repeat] | keyup <code> | audio 0|1 | perm 0|1
 //                        | interrupt | exit
 // stdout:                ready | ui <state> | quit | open_window | error <message>
 // args:                  --socket <path> [--max-hold-ms <n>]
@@ -72,6 +72,8 @@ DispatchQueue.global().async {
         core.handleFlags(m)
       case "key":
         core.handleKeyDown(keyCode: Int64(parts.count > 1 ? parts[1] : "") ?? -1, isRepeat: parts.contains("repeat"))
+      case "keyup":
+        core.handleKeyUp(keyCode: Int64(parts.count > 1 ? parts[1] : "") ?? -1)
       case "audio":
         simulatedAudio = parts.count > 1 && parts[1] == "1"
         core.handleAudio(playing: simulatedAudio ?? false)

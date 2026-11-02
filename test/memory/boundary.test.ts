@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { describe, expect, it, vi } from 'vitest';
 import { buildServer, type ServerDeps } from '../../src/server/index.js';
 import type { ServerDepsWithVoice } from '../../src/voice/announce.js';
-import { CLAUDE_REACHABLE, directViolations, importsOf, scanSrc, transitiveViolations, SRC_ROOT, type Boundary } from '../helpers/import-scan.js';
+import { CLAUDE_REACHABLE, directViolations, importsOf, scanSrc, staticReach, transitiveViolations, SRC_ROOT, type Boundary } from '../helpers/import-scan.js';
 import { FakeAudit, FakeGate, FakeManager, makeEngine, setup } from '../server/fakes.js';
 import { join } from 'node:path';
 
@@ -19,6 +19,8 @@ const BOUNDARIES: readonly Boundary[] = [
   { target: 'src/memory/', importers: CLAUDE_REACHABLE },
   // The Stephen window's socket (app.sock) can change memory and history: nothing Claude reaches may import it.
   { target: 'src/app/', importers: CLAUDE_REACHABLE },
+  // History holds every command and reply and is "never sent to Claude" (review 5, R5-7).
+  { target: 'src/history/', importers: CLAUDE_REACHABLE },
 ];
 
 const MEMORY_TOOL_RE = /remember|memor|forget/i;
@@ -47,6 +49,14 @@ describe('import boundaries', () => {
       expect(transitiveViolations(b, refs).map((c) => c.join(' -> '))).toEqual([]);
     });
   }
+});
+
+describe('the stephen serve process (review 5, R5-7)', () => {
+  it('src/cli.ts loads no memory, app or history code at start-up (listen/memory/history/app load it on demand)', () => {
+    const loaded = [...staticReach('src/cli.ts')];
+    expect(loaded).toContain('src/server/index.ts'); // the scan works
+    expect(loaded.filter((f) => /^src\/(memory|app|history)\//.test(f))).toEqual([]);
+  });
 });
 
 describe('MCP tool surface', () => {

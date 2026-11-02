@@ -13,7 +13,7 @@
 // FAKE_CLAUDE_STARTUP_MS / FAKE_CLAUDE_DURATION_MS / FAKE_CLAUDE_API_MS (ok mode): wait start-up + duration ms, and
 // report duration_ms / duration_api_ms like the real result JSON (timing tests).
 import { spawn } from 'node:child_process';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
 const log = process.env.FAKE_CLAUDE_LOG;
@@ -24,7 +24,17 @@ if (log) {
   } catch {
     // first run
   }
-  appendFileSync(log, JSON.stringify({ argv, cwd: process.cwd(), pid: process.pid }) + '\n');
+  // The persona file exists only while claude runs (review 5, R5-3), so record what it held at start-up.
+  const pf = argv.indexOf('--append-system-prompt-file');
+  let persona;
+  if (pf >= 0) {
+    try {
+      persona = { text: readFileSync(argv[pf + 1], 'utf8'), mode: statSync(argv[pf + 1]).mode & 0o777 };
+    } catch {
+      persona = null;
+    }
+  }
+  appendFileSync(log, JSON.stringify({ argv, cwd: process.cwd(), pid: process.pid, ...(persona !== undefined ? { persona } : {}) }) + '\n');
 }
 const mode = process.env.FAKE_CLAUDE_MODE ?? 'ok';
 const at = (flag) => {

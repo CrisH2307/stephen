@@ -25,6 +25,8 @@ export interface FakeRun {
   argv: string[];
   cwd: string;
   pid: number;
+  /** Persona file contents and mode at start-up (only when --append-system-prompt-file was passed). */
+  persona?: { text: string; mode: number } | null;
 }
 
 export function readFakeLog(path: string): FakeRun[] {

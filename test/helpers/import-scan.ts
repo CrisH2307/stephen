@@ -17,6 +17,8 @@ export interface ImportRef {
   /** Repo-relative resolved file for relative specifiers, else null (packages, node: builtins). */
   resolved: string | null;
   typeOnly: boolean;
+  /** `import('…')`: only loaded when that code path runs. */
+  dynamic?: boolean;
 }
 
 const rel = (abs: string) => relative(REPO_ROOT, abs).split(sep).join('/');
@@ -57,7 +59,7 @@ export function importsOf(fileAbs: string): ImportRef[] {
     out.push({ from, spec: m[4]!, resolved: resolveSpec(fileAbs, m[4]!), typeOnly: !!m[2] || allTypeNamed });
   }
   for (const m of src.matchAll(SIDE_EFFECT_RE)) out.push({ from, spec: m[1]!, resolved: resolveSpec(fileAbs, m[1]!), typeOnly: false });
-  for (const m of src.matchAll(DYNAMIC_RE)) out.push({ from, spec: m[1]!, resolved: resolveSpec(fileAbs, m[1]!), typeOnly: false });
+  for (const m of src.matchAll(DYNAMIC_RE)) out.push({ from, spec: m[1]!, resolved: resolveSpec(fileAbs, m[1]!), typeOnly: false, dynamic: true });
   return out;
 }
 
@@ -117,4 +119,29 @@ export function transitiveViolations(b: Boundary, refs: readonly ImportRef[] = s
     }
   }
   return chains;
+}
+
+/**
+ * Every file loaded at start-up from `start` (static value imports only; dynamic `import()` and type-only imports
+ * are skipped): what a process like `stephen serve` has in memory before any command-specific code runs.
+ */
+export function staticReach(start: string, refs: readonly ImportRef[] = scanSrc()): Set<string> {
+  const graph = new Map<string, string[]>();
+  for (const r of refs) {
+    if (!r.resolved || r.typeOnly || r.dynamic) continue;
+    const list = graph.get(r.from) ?? [];
+    list.push(r.resolved);
+    graph.set(r.from, list);
+  }
+  const seen = new Set<string>([start]);
+  const queue = [start];
+  while (queue.length) {
+    for (const next of graph.get(queue.shift()!) ?? []) {
+      if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return seen;
 }

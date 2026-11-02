@@ -108,12 +108,13 @@ describe('stephen eval (fake claude, real dry-run server)', () => {
   it('personaFile: the persona with EVAL_MEMORY goes in a per-case 0600 file, not on argv', async () => {
     const { tmp, env, log } = setup({ 'open youtube': { calls: [], reply: 'Opened YouTube.' } });
     await runEval({ ...base(tmp, [byId('open-youtube')]), env, personaFile: true });
-    const [r] = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[] });
+    const [r] = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[]; persona?: { text: string; mode: number } });
     const file = r!.argv[r!.argv.indexOf('--append-system-prompt-file') + 1]!;
     expect(file).toBe(join(tmp, 'eval', '2026-10-31T21-05-09', 'open-youtube', 'persona.txt'));
     expect(r!.argv).not.toContain('--append-system-prompt');
-    expect(readFileSync(file, 'utf8')).toBe(personaFor(EVAL_ABOUT_ME, EVAL_MEMORY));
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(r!.persona!.text).toBe(personaFor(EVAL_ABOUT_ME, EVAL_MEMORY));
+    expect(r!.persona!.mode).toBe(0o600);
+    expect(existsSync(file)).toBe(false); // deleted after the run (review 5, R5-3)
   }, 30_000);
 
   it('inject case: the page text is written to a private file, served by --fake-page, and the run is scored', async () => {

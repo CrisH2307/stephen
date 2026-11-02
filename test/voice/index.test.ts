@@ -66,8 +66,10 @@ describe('stephen listen --text', () => {
     expect(run!.argv[run!.argv.indexOf('--append-system-prompt-file') + 1]).toBe(file);
     expect(run!.argv).not.toContain('--append-system-prompt');
     expect(run!.argv.join(' ')).not.toContain('Secret Rd');
-    expect(readFileSync(file, 'utf8')).toContain('Home address: 1 Secret Rd.');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(run!.persona!.text).toContain('Home address: 1 Secret Rd.');
+    expect(run!.persona!.mode).toBe(0o600);
+    // Review 5 R5-3: the file only exists while claude runs.
+    expect(existsSync(file)).toBe(false);
   });
 
   it('follow-ups (fake claude + --text): within the window the 2nd command resumes the 1st session; after it, fresh', async () => {
