@@ -111,3 +111,20 @@ list in HANDOVER.
 | R1 research | opus / medium | 4a ADR-004 jobs + 5a phone options (research only) | no src edits |
 | M1 market | sonnet / medium | job-market fit research | no src edits |
 Lead: 1c persona, 1d eval cases, merges, full suite, real eval, docs.
+
+## 8. Owner answers, round 2 (2026-11-02)
+- ADR-003 accepted. Rate limit **per conversation** (long follow-up chains must work; runaway loops still stopped).
+  Caps OK: unused pre-warm 60 s, conversation 30 min / 25 commands.
+- Notion: checkbox done / not done, or status todo / progress / in review / done / close; title "todo list" or
+  "tasks"; due = first date property. → `Close`, `Closed`, `Cancelled` added to the done names.
+- Google OAuth desktop client created (client id goes in config `accounts.gmail.clientId`, not in code).
+- Jev now lives in the repo (`jev/`). It runs here but falls back to "self": no key in the cloud (correct) and
+  openrouter.ai is blocked. Sizing stays by hand; `hardest` now maps to opus.
+
+## 9. Wave 2 as launched
+| Agent | Model / effort | Work |
+|---|---|---|
+| S1 warm session | opus / high | ADR-003 subtasks 1–3 + docs (2c, 2d, 2e) |
+| G1 gmail | opus / high | 3b + 3c + 3d (OAuth PKCE connect, gmail_search, gmail_read, eval) |
+| U1 ui | sonnet / medium | Accounts status in the window, Today card, empty/error states |
+Then: review #7 (fresh opus / high) over items 1–3, fixes, then items 4–5 per ADR-004/005 after the owner's go.
