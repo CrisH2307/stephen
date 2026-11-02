@@ -350,3 +350,12 @@ describe('stephen accounts test notion', () => {
     expect(out.join('\n')).toMatch(/stephen accounts test notion/);
   });
 });
+
+describe('Notion done names (owner, 2026-11-02: todo / progress / in review / done / close)', () => {
+  it('close, closed and cancelled count as done; in review and progress stay open', () => {
+    const rule = doneRule(STATUS_SCHEMA);
+    const names = (xs: string[]) => formatTodos(xs.map((s, i) => statusPage(`T${i}`, s)), rule).length;
+    expect(names(['Close', 'Closed', 'Cancelled', 'Canceled'])).toBe(0);
+    expect(names(['Todo', 'Progress', 'In review'])).toBe(3);
+  });
+});
