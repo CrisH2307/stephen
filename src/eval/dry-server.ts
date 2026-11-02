@@ -89,6 +89,15 @@ export function fakeResult(tool: string, args: Record<string, unknown>, n: numbe
           : ['- Fri, Oct 30, 3:00 pm · SOFE 3980U · "Lab moved" — Lab 4 is in room UA1350 this week.'];
     return text(accountBlock('canvas', tool === 'canvas_due' ? `Canvas, due in the next 7 days: ${lines.length} items.` : `Canvas announcements from the last 7 days: ${lines.length}.`, lines));
   }
+  if (tool === 'notion_todos' || tool === 'notion_search') {
+    const lines =
+      ctx.page !== undefined
+        ? ctx.page.split('\n').map((l) => `- ${l}`)
+        : tool === 'notion_todos'
+          ? ['- Finish SOFE 3980U lab report · due Tue, Nov 3 (In progress)', '- Email Dr Patel about the midterm (Not started)', '- Buy groceries']
+          : ['- SOFE 3980U notes · page · edited Oct 30, 2026'];
+    return text(accountBlock('notion', tool === 'notion_todos' ? `Notion to-do list: ${lines.length} open items.` : `Notion pages and databases matching the search: ${lines.length}.`, lines));
+  }
   switch (tool) {
     case 'announce':
       return text(`Said: "${str(args.text)}". Go ahead.`);

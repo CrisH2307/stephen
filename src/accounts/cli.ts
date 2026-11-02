@@ -1,6 +1,6 @@
 /**
  * `stephen accounts` — which account secrets Stephen can find (never their values), and
- * `stephen accounts test canvas` — a real read-only call (your name + how many items are due this week).
+ * `stephen accounts test canvas|calendar|notion|weather` — one real read-only call each (e.g. how many items are due this week).
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -8,6 +8,7 @@ import { configFilePath, loadConfig } from '../config.js';
 import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow } from './calendar.js';
 import { CanvasClient, DEFAULT_CANVAS_URL, formatDue } from './canvas.js';
 import { ApiClient } from './http.js';
+import { NO_TODO_DATABASE, NotionClient } from './notion.js';
 import { field } from './result.js';
 import { parseAccountsConfig } from './config.js';
 import { WEATHER_ORIGIN, fetchWeather, formatWeather } from './weather.js';
@@ -16,6 +17,7 @@ import { lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from './
 export const ACCOUNTS_HELP = `stephen accounts              Show which account secrets Stephen finds (Keychain or .env; never the values)
 stephen accounts test canvas  Read your Canvas once: your name and what's due in the next 7 days
 stephen accounts test calendar  Read your Google Calendar feed once: events in the next 7 days
+stephen accounts test notion  Read your Notion to-do database once: how many open to-dos
 stephen accounts weather      Show the place the weather tool uses (default Toronto, ON)
 stephen accounts weather set <latitude> <longitude> [label…]  Save your place in config.json (e.g. set 43.9 -78.9 Oshawa, ON)
 stephen accounts test weather  Read the weather once for that place`;
@@ -31,6 +33,8 @@ export interface AccountsCliEnv {
   weatherOrigin?: string;
   /** Tests only: the config.json to read and write (default: Stephen's). */
   configPath?: string;
+  /** Tests only: a fake Notion server. */
+  notionOrigin?: string;
 }
 
 /** Set `accounts.weather` in config.json, keeping everything else (and comments are not supported: it is plain JSON). */
@@ -159,6 +163,34 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
     }
     out(`Saved: ${place.label} (${latitude}, ${longitude}) in ${file}. Restart Stephen to use it.`);
     return 0;
+  }
+  if (argv[0] === 'test' && argv[1] === 'notion' && argv.length === 2) {
+    let cfg;
+    try {
+      cfg = parseAccountsConfig(e.accounts !== undefined ? e.accounts : loadConfig().accounts);
+    } catch (x) {
+      err((x as Error).message);
+      return 2;
+    }
+    const token = await lookupSecret('notion-token', e.secrets);
+    if (!token.value) {
+      err(`No Notion token found. Put NOTION_API=<internal integration token> in Stephen's .env (chmod 600) or the Keychain item "stephen-notion", and share the to-do database with the integration.${token.notes.length ? ` (${token.notes.join('; ')})` : ''}`);
+      return 1;
+    }
+    try {
+      const c = new NotionClient({ token: token.value, ...(e.notionOrigin ? { origin: e.notionOrigin } : {}), ...(e.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
+      const r = await c.todos(cfg.notion.todoDatabase, cfg.timeZone ? { timeZone: cfg.timeZone } : {});
+      if (!r) {
+        err(NO_TODO_DATABASE);
+        return 1;
+      }
+      out(`Notion OK (token from ${token.source}). To-do database: "${field(r.title, 80)}"${r.picked ? ' (picked by its name; set accounts.notion.todoDatabase to choose another)' : ''}.`);
+      out(`Open to-dos: ${r.lines.length}${r.truncated ? '+' : ''}.`);
+      return 0;
+    } catch (x) {
+      err(`Notion test failed: ${(x as Error).message}`);
+      return 1;
+    }
   }
   if (argv[0] === 'test' && argv[1] === 'weather' && argv.length === 2) {
     let cfg;

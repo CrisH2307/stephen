@@ -54,7 +54,7 @@ deleted. Maps is already done (phase 1.8: directions/search via `open_url`).
    (untrusted header, caps, code masking), tool registration only when the secret exists.
 4. ← built. Canvas tools (src/accounts/canvas.ts; base URL default https://learn.ontariotechu.ca): `canvas_due` (to-dos / planner items for N days), `canvas_announcements`. Fake Canvas server tests.
 5. ← built. Calendar tool (src/accounts/calendar.ts; secret `GOOGLE_CALENDAR_ICS` in .env): `calendar_events` (today / tomorrow / N days) from the iCal feed (RRULE basics). Fixture tests.
-6. Notion tools: `notion_todos` (configured database, open items), `notion_search` (titles only).
+6. ← built. Notion tools (src/accounts/notion.ts; token `NOTION_API` in .env or Keychain `stephen-notion`; optional `accounts.notion.todoDatabase`, else the first shared database titled like "To-do"/"Tasks"): `notion_todos` (open items), `notion_search` (titles only). Fake Notion server tests.
 7. Gmail tools: `gmail_search` (from/subject/newer_than, snippets), `gmail_read` (one message, plain text). OAuth
    `stephen connect gmail` (loopback + PKCE). Fake Gmail server tests.
 8. Persona 2a block + voice allow-list (`--allowedTools` gets the exact new tool names) + eval cases.
