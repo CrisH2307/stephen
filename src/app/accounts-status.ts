@@ -4,7 +4,7 @@
  * and parseAccountsConfig; a missing or broken "accounts" config is tolerated (the problem goes in `note`).
  */
 import { AccountsConfigError, parseAccountsConfig, type AccountsConfig } from '../accounts/config.js';
-import { lookupSecret, type SecretDeps, type SecretName } from '../accounts/secrets.js';
+import { lookupGmailToken, lookupSecret, type SecretDeps, type SecretName } from '../accounts/secrets.js';
 
 export type AccountState = 'connected' | 'not_set' | 'off';
 
@@ -31,31 +31,14 @@ export const ACCOUNT_HINTS = {
   calendar: 'Put GOOGLE_CALENDAR_ICS (your secret iCal address) in .env',
   notion: 'Put NOTION_API in .env, then share your to-do database with the integration',
   weather: 'No key needed. Change the place with: stephen accounts weather set <lat> <lon> <label>',
-  gmail: 'Gmail is not connected from the window yet',
+  gmail: 'Connect it with: stephen connect gmail <label> (the refresh token goes in the Keychain)',
 } as const;
-
-function gmailLabels(raw: unknown): string[] {
-  if (!raw || typeof raw !== 'object') return [];
-  const g = (raw as Record<string, unknown>).gmail;
-  const list = g && typeof g === 'object' ? (g as Record<string, unknown>).accounts : undefined;
-  if (!Array.isArray(list)) return [];
-  const labels: string[] = [];
-  for (const a of list.slice(0, 10)) {
-    const obj = a && typeof a === 'object' ? (a as Record<string, unknown>) : null;
-    const label = typeof a === 'string' ? a : obj && typeof obj.label === 'string' ? obj.label : '';
-    if (label.trim()) labels.push(label.trim().slice(0, 60));
-  }
-  return labels;
-}
 
 export async function accountsStatus(rawAccounts: unknown, deps: SecretDeps = {}): Promise<AccountsStatus> {
   let note: string | undefined;
   let cfg: AccountsConfig;
-  // (gmail is not part of the accounts schema yet, which is strict: leave it out before parsing)
-  const base = rawAccounts && typeof rawAccounts === 'object' && !Array.isArray(rawAccounts) ? { ...(rawAccounts as Record<string, unknown>) } : {};
-  delete base.gmail;
   try {
-    cfg = parseAccountsConfig(base);
+    cfg = parseAccountsConfig(rawAccounts && typeof rawAccounts === 'object' && !Array.isArray(rawAccounts) ? rawAccounts : {});
   } catch (e) {
     note = e instanceof AccountsConfigError ? e.message : 'could not read the accounts config';
     cfg = parseAccountsConfig({});
@@ -79,6 +62,10 @@ export async function accountsStatus(rawAccounts: unknown, deps: SecretDeps = {}
       hint: ACCOUNT_HINTS.weather,
     },
   ];
-  gmailLabels(rawAccounts).forEach((label, i) => rows.push({ id: `gmail:${i + 1}`, name: 'Gmail', state: 'not_set', source: null, detail: label, hint: ACCOUNT_HINTS.gmail }));
+  const gmailOn = cfg.enabled && cfg.gmail.enabled;
+  for (const [i, label] of cfg.gmail.accounts.entries()) {
+    const r = gmailOn ? await lookupGmailToken(label, deps) : null;
+    rows.push({ id: `gmail:${i + 1}`, name: 'Gmail', state: !gmailOn ? 'off' : r?.value ? 'connected' : 'not_set', source: r?.value ? r.source : null, detail: label, hint: ACCOUNT_HINTS.gmail });
+  }
   return { accounts: rows, ...(note ? { note } : {}) };
 }

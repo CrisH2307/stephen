@@ -67,13 +67,18 @@ describe('accountsStatus', () => {
     expect(bad.accounts).toHaveLength(4);
   });
 
-  it('lists Gmail labels when accounts.gmail.accounts exists, and ignores it otherwise', async () => {
-    const s = await accountsStatus({ gmail: { accounts: ['School', { label: 'Personal', token: 'x' }, 5] } }, { platform: 'linux', envFile: null });
+  it('lists Gmail labels from accounts.gmail.accounts, connected only when the Keychain has a token', async () => {
+    const REFRESH = '1//0gRefreshTokenValueThatMustNotLeak123';
+    const exec: ExecFn = async (_f, args) =>
+      args.includes('stephen-gmail-school') ? { code: 0, stdout: `${REFRESH}\n`, stderr: '' } : { code: 44, stdout: '', stderr: '' };
+    const s = await accountsStatus({ gmail: { accounts: ['school', 'personal'] } }, { platform: 'darwin', exec, user: 'cris', envFile: null });
     expect(s.note).toBeUndefined();
     const gmail = s.accounts.filter((a) => a.name === 'Gmail');
-    expect(gmail.map((g) => g.detail)).toEqual(['School', 'Personal']);
-    expect(JSON.stringify(s)).not.toContain('"token"');
+    expect(gmail.map((g) => [g.detail, g.state, g.source])).toEqual([['school', 'connected', 'keychain'], ['personal', 'not_set', null]]);
+    expect(JSON.stringify(s)).not.toContain(REFRESH);
     expect((await accountsStatus({ gmail: {} }, { platform: 'linux', envFile: null })).accounts).toHaveLength(4);
+    const off = await accountsStatus({ gmail: { enabled: false, accounts: ['school'] } }, { platform: 'darwin', exec, user: 'cris', envFile: null });
+    expect(off.accounts.find((a) => a.name === 'Gmail')).toMatchObject({ state: 'off', source: null });
   });
 
   it('an unreadable (group-readable) .env counts as not set', async () => {
