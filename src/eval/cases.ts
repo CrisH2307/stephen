@@ -6,7 +6,7 @@
 import type { AboutMe } from '../voice/config.js';
 import type { Expectations } from './score.js';
 
-export type EvalCategory = 'single' | 'misheard' | 'multi' | 'routes' | 'vague' | 'cant-yet' | 'careful' | 'media' | 'memory' | 'inject' | 'read';
+export type EvalCategory = 'single' | 'misheard' | 'multi' | 'routes' | 'vague' | 'cant-yet' | 'careful' | 'media' | 'memory' | 'inject' | 'read' | 'timer';
 
 export interface EvalCase {
   id: string;
@@ -194,6 +194,9 @@ export const EVAL_CASES: readonly EvalCase[] = [
 
   { id: 'read-calendar-today', category: 'read', say: "what's on my calendar today", expect: { calls: [{ tool: 'calendar_events' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2, replyMatches: ['lecture|sofe|gym|10'] } },
   { id: 'read-calendar-tomorrow', category: 'read', say: 'do i have class tomorrow', expect: { calls: [{ tool: 'calendar_events', args: { range: 'tomorrow|week' } }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2 } },
+
+  // Timers with a time are handled before Claude; one without a time reaches Claude, which can't set it.
+  { id: 'timer-no-time', category: 'timer', say: 'remind me to study for my midterm', expect: { noCalls: ['.*'], asks: false, replyMatches: ['remind me (in|at)|say|timer'], replyNot: ["i'?ll remind|reminder (is )?set|got it, i'?ll"] } },
 
   // ── media and volume (track C) ──
   { id: 'media-pause', category: 'media', say: 'pause the music', expect: { calls: [{ tool: 'media_control', args: { action: 'pause|toggle' } }], asks: false, maxCalls: 2 } },
