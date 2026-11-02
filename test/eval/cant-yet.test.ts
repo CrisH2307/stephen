@@ -89,7 +89,8 @@ describe('persona: can\'t-yet parts are said right away', () => {
 
 describe("persona: reading the owner's accounts is named as can't-yet (round 2)", () => {
   it('names the accounts still can\'t-yet, and sends Canvas to the read tools (phase 2a), so nothing is browsed', () => {
-    expect(STEPHEN_PERSONA).toMatch(/reading the user's emails, Notion pages or chats/);
-    expect(STEPHEN_PERSONA).toMatch(/use canvas_due and canvas_announcements, and for their calendar .* use calendar_events, never those websites/);
+    expect(STEPHEN_PERSONA).toMatch(/reading the user's emails or chats/);
+    expect(STEPHEN_PERSONA).not.toMatch(/can't do yet[^.]*Notion/);
+    expect(STEPHEN_PERSONA).toMatch(/use canvas_due and canvas_announcements, for their calendar .* use calendar_events, and for their Notion to-do list .* use notion_todos and notion_search, never those websites/);
   });
 });

@@ -188,7 +188,7 @@ describe('Canvas formatting', () => {
 
 describe('accounts config', () => {
   it('defaults, validation', () => {
-    expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true } });
+    expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true }, notion: { enabled: true } });
     expect(() => parseAccountsConfig({ canvas: { url: 'http://x.ca' } })).toThrow(/https/);
     expect(() => parseAccountsConfig({ timeZone: 'Mars/Base' })).toThrow(/time zone/);
     expect(() => parseAccountsConfig({ canvas: { token: 'x' } })).toThrow();

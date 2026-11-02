@@ -13,6 +13,8 @@ const EXPECTED_TOOLS = [
   'canvas_due',
   'canvas_announcements',
   'calendar_events',
+  'notion_todos',
+  'notion_search',
   'browser_status',
   'browser_connect',
   'tabs_list',
