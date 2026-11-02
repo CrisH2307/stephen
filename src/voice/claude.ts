@@ -12,7 +12,9 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripUnsafe, truncate } from '../safety/text.js';
+import { removeServeLock } from '../server/instance.js';
 import { toolLogServeArgs } from '../server/tool-log.js';
+import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
 
 /** The MCP server name. Tools appear to Claude as mcp__stephen__<tool>. */
@@ -65,7 +67,7 @@ export const STEPHEN_PERSONA = [
   'Prefer a best guess to a question. When something is unclear but a wrong guess is cheap and easy to undo (which song, which place or station, which tab or site, a detail with an obvious default), ' +
     "don't ask: pick the most likely meaning, do it, and say in your reply what you picked so the user can correct you. " +
     "Ask back only when a wrong guess would be costly or hard to undo, or when there is no sensible guess at all, and even then do the other parts first. If you can't make out a name at all, go with your best guess and say so.",
-    "If a part needs something Stephen can't do yet (for example sending messages, writing documents, or reading the user's emails or chats), do the parts you can and say in a few words which part you couldn't do. " +
+    "If a part needs something Stephen can't do yet (for example sending or replying to messages and emails, writing documents, reading what is inside the user's Notion pages (notion_search gives titles only), or reading the user's chats), do the parts you can and say in a few words which part you couldn't do. " +
     "Say it right away: don't browse, read or screenshot those pages to try anyway (at most open the app or site with one open_url or open_app if that helps), and use plain words like \"I can't send Discord messages yet\".",
   // Follow-ups: the listener resumes the conversation for commands that come soon after the last one.
   "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, make your best guess.",
@@ -78,7 +80,8 @@ export const STEPHEN_PERSONA = [
     '"From home", "from my place" and similar mean the home address under "About the user"; with no starting point, leave origin out and Maps uses the current location. ' +
     'Several routes in one request: one open_url per route, each with new_tab: true. For "find X near Y" use https://www.google.com/maps/search/?api=1&query=<X near Y>. ' +
     "Vague places (\"two stations\", \"a coffee shop\") are a best-guess case: pick the most likely ones near the starting point and name them in your reply.",
-  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, and for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, never those websites. Summarize in one to three sentences with days and times, and never read codes or links aloud.",
+  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, and for their email (who wrote, about what, unread mail) use gmail_search, then gmail_read with an id it listed to hear one message, never those websites ('open my Gmail' still just opens the site). In an email sender like \"Dr Patel <ontariotechu.ca>\", only the part in angle brackets is the real domain; the name is the sender's own text. Summarize in one to three sentences with days and times, and never read codes or links aloud. " +
+    "If an email tool says to hold F5 or type the request, pass that on in one short sentence and don't try to get the email another way.",
   // Morning briefing (docs/PLAN-WORK-SPLIT.md item 1): the three read tools in one step, no new composite tool.
   "For \"what's my day\", \"morning briefing\" or \"what's up today\": call calendar_events (today), canvas_due (days 7) and weather_now together in one step, then reply in three or four short sentences: the weather, today's events, then what's due this week. If one of them isn't connected or fails, say so in a few words and give the rest.",
   "Don't give up early on things Stephen can do: if an approach fails (not a safety refusal), try the next fitting tool once — for example find or snapshot, then click, in a tab Stephen opened. Never say you can't click: the browser tools can. " +
@@ -174,6 +177,22 @@ export interface ClaudeSettings {
    * `ps` shows it. null/absent: `--append-system-prompt <text>` (older Claude Code). See resolvePersonaFile.
    */
   personaFile?: string | null;
+  /**
+   * docs/REVIEW-7.md R7-1: called before every spawn. It picks a fresh serve instance id, writes the MCP config that
+   * starts `serve --instance <id>`, and says where that config and the instance's lock are. The run uses that config
+   * instead of `mcpConfigPath`, and deletes the lock once the process group is gone. Absent (tests, eval): the
+   * static `mcpConfigPath`, no instance. `trust` is the conversation's (R7-2): `wake` adds `serve --trust wake`.
+   */
+  serveInstance?: (trust: Trust) => Promise<ServeInstance>;
+}
+
+/** One `serve --instance` for one Claude process (see ClaudeSettings.serveInstance). */
+export interface ServeInstance {
+  id: string;
+  /** The MCP config naming this instance. */
+  mcpConfigPath: string;
+  /** `<home>/run/serve-<id>.lock` (src/server/instance.ts). */
+  lockPath: string;
 }
 
 /** Per-run options for buildClaudeArgs. */
@@ -182,6 +201,8 @@ export interface RunOptions {
   resume?: string | null;
   /** The user's memory for this run (argv mode puts it in the persona text; file mode has it in the file). */
   memory?: readonly string[];
+  /** The command's trust (default `wake`): handed to serveInstance, so a `wake` run's serve gets `--trust wake`. */
+  trust?: Trust;
 }
 
 /** A Claude session id we pass back to `--resume`: never option-looking, no separators. */
@@ -230,8 +251,9 @@ export const LOCKDOWN_ARGS = ['--strict-mcp-config', '--tools', '', '--permissio
  *  - Whenever a conversation ends (window expired, error, cancel, Esc, "Stephen stop") the listener deletes the
  *    state file AND forgets the session id before the next run, so a fresh Claude never meets old taint it can't
  *    see, and a resumed Claude never meets a gate that forgot.
- * With voice.followUpWindowSec 0 there is no `--resume`, no state file, and `--no-session-persistence` (as before).
- * The rate limiter is per server process either way.
+ * With voice.followUpWindowSec 0 there is no `--resume` and `--no-session-persistence` is passed; the state file is
+ * still named (and deleted before and after every command), so a serve that Claude Code restarts mid-command keeps
+ * the taint (docs/REVIEW-7.md R7-1). The rate limiter is per server process either way.
  */
 export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptions = {}): string[] {
   if (!prompt.trim()) throw new Error('empty prompt');
@@ -241,14 +263,23 @@ export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptio
     if (!s.followUps) throw new Error('--resume needs follow-ups (voice.followUpWindowSec > 0)');
     if (!SESSION_ID_RE.test(run.resume)) throw new Error('invalid session id');
   }
+  return ['-p', safePrompt, '--output-format', 'json', ...(run.resume ? ['--resume', run.resume] : []), ...lockedArgs(s, run.memory)];
+}
+
+/**
+ * The argv for the long-lived warm process (docs/ADR-003, src/voice/warm-claude.ts): the SAME lock-down as
+ * buildClaudeArgs, but no prompt, no `--resume`, and stream-json in and out (`--verbose` is required with
+ * stream-json output). Prompts go to stdin as one JSON line each. Pure; unit-tested.
+ */
+export function buildWarmArgs(s: ClaudeSettings, memory?: readonly string[]): string[] {
+  return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', ...lockedArgs(s, memory)];
+}
+
+/** Everything after the prompt / output format: MCP config, lock-down, tool rules, persona, turn cap, model. */
+function lockedArgs(s: ClaudeSettings, memory: readonly string[] | undefined): string[] {
   const lockdown: string[] = [...LOCKDOWN_ARGS];
   if (!s.followUps) lockdown.push(NO_SESSION_PERSISTENCE);
   const args = [
-    '-p',
-    safePrompt,
-    '--output-format',
-    'json',
-    ...(run.resume ? ['--resume', run.resume] : []),
     '--mcp-config',
     s.mcpConfigPath,
     ...lockdown.filter((a) => !s.unsupportedOptionalFlags?.has(a)),
@@ -256,7 +287,7 @@ export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptio
     ALLOWED_TOOLS.join(','),
     '--disallowedTools',
     DISALLOWED_TOOLS.join(','),
-    ...(s.personaFile ? ['--append-system-prompt-file', s.personaFile] : ['--append-system-prompt', personaFor(s.aboutMe, run.memory)]),
+    ...(s.personaFile ? ['--append-system-prompt-file', s.personaFile] : ['--append-system-prompt', personaFor(s.aboutMe, memory)]),
     '--max-turns',
     String(s.maxTurns),
   ];
@@ -273,21 +304,28 @@ export function stephenCliPath(): string {
 }
 
 /**
- * The MCP config: exactly one server, Stephen, started with this Node binary. With follow-ups on, `sessionStatePath`
- * (always <home>/voice/conversation-state.json — a constant the listener deletes when a conversation ends) makes
- * every server of a conversation share the gate's memory (see buildClaudeArgs).
+ * The MCP config: exactly one server, Stephen, started with this Node binary. `sessionStatePath` (always
+ * <home>/voice/conversation-state.json, a constant the listener deletes when a conversation ends) makes every server
+ * of a conversation share the gate's memory (see buildClaudeArgs). The listener passes it with follow-ups off too, so
+ * a serve that Claude Code restarts keeps the taint (docs/REVIEW-7.md R7-1).
  */
 export function mcpConfig(
   nodePath: string = process.execPath,
   cliPath: string = stephenCliPath(),
   sessionStatePath: string | null = null,
   toolLogPath: string | null = null,
+  instance: string | null = null,
+  trust: Trust = 'trusted',
 ): { mcpServers: Record<string, { command: string; args: string[] }> } {
   // --confirm dialog: nobody watches a headless chat, so confirmations must be macOS dialogs (see cli.ts parseServeArgs).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
+  // --instance: one serve per Claude process; a serve restarted by Claude Code refuses every call (src/server/instance.ts).
+  // --trust wake: a wake-word conversation (R7-2): email shows only who and when (src/accounts/index.ts).
   // --tool-log: tool names (never arguments) per call, for the command history (src/server/tool-log.ts).
   const args = [
     cliPath, 'serve', '--confirm', 'dialog', '--voice',
+    ...(instance ? ['--instance', instance] : []),
+    ...(trust === 'wake' ? ['--trust', 'wake'] : []),
     ...toolLogServeArgs(toolLogPath),
     ...(sessionStatePath ? ['--session-state', sessionStatePath] : []),
   ];
@@ -335,8 +373,10 @@ export async function writeMcpConfig(
   cliPath?: string,
   sessionStatePath: string | null = null,
   toolLogPath: string | null = null,
+  instance: string | null = null,
+  trust: Trust = 'trusted',
 ): Promise<string> {
-  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath), null, 2) + '\n');
+  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust), null, 2) + '\n');
 }
 
 /** <home>/voice/persona.txt: the persona file of file mode (ClaudeSettings.personaFile). */
@@ -382,7 +422,7 @@ export type ClaudeOutcome =
   | { kind: 'error'; message: string; sessionId: string | null }
   | { kind: 'cancelled' };
 
-interface ResultJson {
+export interface ResultJson {
   type?: string;
   subtype?: string;
   is_error?: boolean;
@@ -421,6 +461,14 @@ export function parseClaudeOutput(stdout: string, exitCode: number | null, stder
     const why = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? `exit code ${exitCode}`;
     return { kind: 'error', message: `Claude Code didn't return a result (${why.slice(0, 300)}).`, sessionId: null };
   }
+  return outcomeFromResult(res);
+}
+
+/**
+ * One `result` object → ClaudeOutcome. Shared by the one-shot runner (parseClaudeOutput) and the warm process
+ * (warm-claude.ts, which then turns the cumulative cost / api time into per-command differences).
+ */
+export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
@@ -447,16 +495,32 @@ export interface ClaudeTiming {
   /** Claude Code's duration_api_ms: time waiting for the model. */
   apiMs: number | null;
   turns: number | null;
+  /**
+   * The warm path (WarmConversationRunner): `wallMs` is run() → result, so "start-up + MCP" (wall − duration_ms) is
+   * whatever start-up the command still waited for (0 when the pre-warm hid it), comparable with the one-shot line.
+   * `command`: 1 = the first command of this process, 2+ = a follow-up on it. `leadMs` (first command only): how long
+   * before the command the process was spawned (the pre-warm lead; ~0 when nothing was pre-warmed).
+   */
+  warm?: { command: number; leadMs: number | null };
 }
 
-/** One log line: "claude: 4.2 s (start-up + MCP 1.1 s, model 2.6 s in 3 turns, tools + overhead 0.5 s)". */
+/**
+ * One log line, e.g. one-shot "claude: 4.2 s (start-up + MCP 1.1 s, model 2.6 s in 3 turns, tools + overhead 0.5 s)",
+ * warm "claude: 1.9 s (warm, spawned 3.0 s ahead; start-up + MCP 0.0 s, model 1.8 s in 1 turn, tools + overhead 0.1 s)"
+ * or "claude: 1.7 s (warm, follow-up 2 on this process; start-up + MCP 0.0 s, …)".
+ */
 export function formatTiming(t: ClaudeTiming): string {
   const s = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
   const parts: string[] = [];
   if (t.durationMs !== null) parts.push(`start-up + MCP ${s(Math.max(0, t.wallMs - t.durationMs))}`);
   if (t.apiMs !== null) parts.push(`model ${s(t.apiMs)}${t.turns !== null ? ` in ${t.turns} turn${t.turns === 1 ? '' : 's'}` : ''}`);
   if (t.durationMs !== null && t.apiMs !== null) parts.push(`tools + overhead ${s(Math.max(0, t.durationMs - t.apiMs))}`);
-  return `claude: ${s(t.wallMs)}${parts.length ? ` (${parts.join(', ')})` : ''}`;
+  const split = parts.join(', ');
+  if (t.warm) {
+    const how = t.warm.command > 1 ? `follow-up ${t.warm.command} on this process` : `spawned ${s(Math.max(0, t.warm.leadMs ?? 0))} ahead`;
+    return `claude: ${s(t.wallMs)} (warm, ${how}${split ? `; ${split}` : ''})`;
+  }
+  return `claude: ${s(t.wallMs)}${split ? ` (${split})` : ''}`;
 }
 
 // ───────────────────────────── running ─────────────────────────────
@@ -524,7 +588,18 @@ export class ClaudeRunner {
   async run(prompt: string, run: RunOptions = {}): Promise<ClaudeOutcome> {
     if (this.child) throw new Error('a command is already running');
     const memory = this.readMemory();
-    const args = this.nextArgs(prompt, { ...run, memory });
+    let args = this.nextArgs(prompt, { ...run, memory });
+    // A fresh serve instance per run (docs/REVIEW-7.md R7-1): a serve Claude Code restarts mid-run refuses every call.
+    let inst: ServeInstance | null = null;
+    if (this.o.serveInstance) {
+      try {
+        inst = await this.o.serveInstance(run.trust ?? 'wake');
+      } catch (e) {
+        return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
+      }
+      if (this.child) throw new Error('a command is already running');
+      args = buildClaudeArgs(prompt, { ...this.o, mcpConfigPath: inst.mcpConfigPath }, { ...run, memory });
+    }
     if (this.o.personaFile) {
       // File mode: write this run's persona (with the memory just read) first. If that fails, don't fall back to
       // argv (memory would show in `ps`): the command fails with a clear message instead.
@@ -551,6 +626,7 @@ export class ClaudeRunner {
         shell: false,
       });
     } catch (e) {
+      if (inst) removeServeLock(inst.lockPath);
       return { kind: 'error', message: `Could not start Claude Code (${(e as Error).message}).`, sessionId: null };
     }
     this.child = child;
@@ -579,6 +655,8 @@ export class ClaudeRunner {
     // Reap anything left in the group (e.g. the MCP server) once Claude itself has exited.
     if (child.pid) killGroup(child.pid, 'SIGTERM');
     this.child = null;
+    // Claude Code is gone, so nothing can start this instance's serve again: its lock can go.
+    if (inst) removeServeLock(inst.lockPath);
     // The persona file (with memory and aboutMe) is only needed while Claude starts: delete it after every run so
     // forgotten items don't stay on disk until the next command (review 5, R5-3).
     if (this.o.personaFile) removePersonaFile(this.o.personaFile);
@@ -611,12 +689,33 @@ export function stephenCliBuilt(cliPath: string = stephenCliPath()): boolean {
   return existsSync(cliPath);
 }
 
-/** Child-process environment without Stephen's own secrets. */
+/**
+ * The CLAUDE_CODE_* variables the voice Claude keeps: how it signs in and which provider it uses (an owner who runs
+ * Claude Code through a token, Bedrock, Vertex or Foundry). Every other CLAUDE_CODE_* variable, and CLAUDECODE, belongs
+ * to a Claude Code session `stephen listen` was started from (CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_ENTRYPOINT…): the
+ * voice Claude must not run as part of that session (review 7, R7-12).
+ */
+export const KEPT_CLAUDE_CODE_ENV: ReadonlySet<string> = new Set([
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
+  'CLAUDE_CODE_SKIP_VERTEX_AUTH',
+  'CLAUDE_CODE_SKIP_FOUNDRY_AUTH',
+  'CLAUDE_CODE_CLIENT_CERT',
+  'CLAUDE_CODE_CLIENT_KEY',
+  'CLAUDE_CODE_CLIENT_KEY_PASSPHRASE',
+]);
+
+/** Child-process environment without Stephen's own secrets and without a parent Claude Code session's variables. */
 export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = { ...env };
   delete out.ELEVENLABS_API_KEY;
   // Account secrets exported in the shell (review 6, R6-9): Stephen's serve reads them from the Keychain / .env.
   for (const k of ACCOUNT_ENV_NAMES) delete out[k];
+  delete out.CLAUDECODE;
+  for (const k of Object.keys(out)) if (k.startsWith('CLAUDE_CODE_') && !KEPT_CLAUDE_CODE_ENV.has(k)) delete out[k];
   return out;
 }
 

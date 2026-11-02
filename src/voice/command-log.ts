@@ -3,13 +3,17 @@
  * command, with the names of the tools Claude called, read from `serve --tool-log` (never arguments or results).
  *
  * ToolLogRunner empties the tool log right before each Claude run and reads it back after, so the entry of a memory
- * command handled locally never picks up the previous run's tools. Recording never fails a command: errors are
- * only logged.
+ * command handled locally never picks up the previous run's tools. That also slices the log per command when one
+ * warm `stephen serve` lives across a whole conversation (phase 3): serve opens the file for every record, and each
+ * record is written before the tool result reaches Claude, so nothing of command N can land after command N's
+ * result. After a cancel, the old group can still be finishing a tool for up to the kill grace period, so the log is
+ * emptied again in the `beforeSend` hook, which the warm runner calls once that group is gone and right before the
+ * command goes out (docs/REVIEW-7.md R7-10). Recording never fails a command: errors are only logged.
  */
 import type { HistoryStore } from '../history/store.js';
 import { readToolLog, resetToolLog, type ToolCallRecord } from '../server/tool-log.js';
 import type { ClaudeOutcome } from './claude.js';
-import type { CommandReport, CommandRunner } from './assistant.js';
+import type { CommandReport, CommandRunner, RunHooks, Trust } from './assistant.js';
 
 /** A CommandRunner that resets `<home>/voice/tool-log.jsonl` before every run and keeps what the run logged. */
 export class ToolLogRunner implements CommandRunner {
@@ -25,15 +29,11 @@ export class ToolLogRunner implements CommandRunner {
     return this.calls;
   }
 
-  async run(prompt: string): Promise<ClaudeOutcome> {
+  async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     this.calls = [];
+    this.reset();
     try {
-      resetToolLog(this.path);
-    } catch (e) {
-      this.log(`Note: could not reset the tool log ${this.path} (${(e as Error).message}).`);
-    }
-    try {
-      return await this.inner.run(prompt);
+      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), beforeSend: () => this.reset() });
     } finally {
       this.calls = readToolLog(this.path);
     }
@@ -43,8 +43,8 @@ export class ToolLogRunner implements CommandRunner {
     return this.inner.cancel();
   }
 
-  followUp(): boolean {
-    return this.inner.followUp?.() ?? false;
+  followUp(trust?: Trust): boolean {
+    return this.inner.followUp?.(trust) ?? false;
   }
 
   endConversation(): void {
@@ -53,6 +53,18 @@ export class ToolLogRunner implements CommandRunner {
 
   commandEnded(): void {
     this.inner.commandEnded?.();
+  }
+
+  prewarm(trust?: Trust): void {
+    this.inner.prewarm?.(trust);
+  }
+
+  private reset(): void {
+    try {
+      resetToolLog(this.path);
+    } catch (e) {
+      this.log(`Note: could not reset the tool log ${this.path} (${(e as Error).message}).`);
+    }
   }
 }
 

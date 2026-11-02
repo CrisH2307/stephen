@@ -294,3 +294,73 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   Merged with weather (conflicts were additive). Full suite **2601 passed, 11 skipped**. Owner: put NOTION_API in .env,
   share the to-do database with the integration, run `node dist/cli.js accounts test notion`; answer the database
   questions (done property name/type and option names, title, due-date property).
+- 2026-11-02 — **Stephen window UI pass** (branch worktree-agent-a5ae9da0f62adfcdd). New **Accounts** tab: protocol request
+  `accounts.status` → `accounts` (src/app/accounts-status.ts, built on `lookupSecret` + `parseAccountsConfig`, no network, never a
+  value; rows for Canvas, Calendar, Notion, Weather and Gmail labels if `accounts.gmail.accounts` exists; state connected / not_set
+  / off, source keychain or .env, one-line hint). **Today card** on Chat: button sends "what's my day?" through the normal
+  `chat.send`. Empty states (memory, history, audit, accounts) and one-line offline state with Retry. Protocol v1 stays
+  compatible (additive; fixture lines a20). Swift was NOT compiled here (no swiftc): first compile is on the Mac.
+  **Mac check steps:**
+  1. `npm run build && node dist/cli.js install-helper` (watch for any swiftc error; paste it back if there is one).
+  2. System Settings, Privacy & Security, Input Monitoring: remove and re-enable Stephen Helper (the rebuild changes its signature).
+  3. `stephen app` (with `stephen listen` running in another terminal).
+  **What to look at:** (a) sidebar has Accounts with a key icon; rows show Canvas/Calendar/Notion/Weather with the right state, the
+  source (Keychain or .env) and a hint, and no secret anywhere; Weather shows your place label. (b) Chat tab: Today card at the top;
+  **What's my day?** puts "what's my day?" in the chat as your bubble and gets a reply; the button greys out while a command runs.
+  (c) Stop `stephen listen`: one line "Can't reach Stephen. Run `stephen listen`." and Retry; start it again and the window recovers
+  in about 3 s. (d) Memory, History, Audit with nothing in them show a symbol and one line. (e) Dark mode: switch System Settings,
+  Appearance, Dark; text, cards and the status colours stay readable.
+- 2026-11-02 19:40 — **Gmail built** (PLAN-2A subtask 7). `gmail_search` (fields → Gmail `q` built in code, values
+  reduced to plain words and quoted, fixed `-in:sent -in:drafts -in:chats`; sender as name + domain; snippets
+  cleaned; up to 10) and `gmail_read` (only ids gmail_search returned in this process, per account; text/plain
+  preferred, HTML via result.ts with style/script/head dropped linearly; 3000 chars). Taint `gmail`. Accounts:
+  `accounts.gmail.accounts` labels (first = default), `accounts.gmail.clientId`. Owner-only `stephen connect gmail
+  <label>` / `stephen disconnect gmail <label>` in new src/connect/gmail-oauth.ts (only src/cli.ts loads it, dynamic;
+  boundary test): loopback 127.0.0.1 random port, PKCE S256, state, 3 min timeout, scope exactly gmail.readonly
+  (anything else is not stored), refresh token → Keychain `stephen-gmail-<label>` via the voice-key `security -i`
+  stdin path (now shared: `keychainStore` / `keychainDelete` in src/voice/tts/keys.ts), disconnect revokes at Google.
+  ApiClient got `postForm` (token endpoint). Client secret optional: `GOOGLE_OAUTH_CLIENT_SECRET` (.env) or Keychain
+  `stephen-google-oauth`. Access tokens in memory only. `stephen accounts` lists Gmail labels. Persona: Gmail in the
+  accounts sentence; reading email no longer can't-yet (sending/replying still is). Eval: `read-mail-prof`,
+  `read-mail-unread`, `inject-email` (dry-server fakes respect --fake-page); not yet run against the real model.
+  Tests: test/accounts/gmail.test.ts (23), gmail-oauth.test.ts (18). Full suite 2644 passed / 11 skipped; one real
+  Chromium timing test (page/review2 #15) failed once under load and passes alone. Owner setup: PLAN-2A §7.
+- 2026-11-02 20:20 - **Phase 3 built: one warm Claude Code per conversation** (docs/ADR-003, subtasks 1 to 3).
+  `src/voice/warm-claude.ts` drives one long-lived `claude -p --input-format stream-json --output-format stream-json
+  --verbose` with the one-shot lock-down argv (`buildWarmArgs`): initialize, persona deleted, `mcp_status` until
+  `stephen` is connected, one `JSON.stringify` line per command, per-command differences of the cumulative cost and
+  api time, `kill()` waits until the whole process group is gone. `WarmConversationRunner` (conversation.ts) owns the
+  lifetime: pre-warmed on the wake word / F5 down; ends on window expiry, memory change, any cancel, any error, an
+  unused pre-warm after 60 s, 25 commands, 30 minutes, listener exit; always kill, wait, then reset (session id,
+  state file, transcript). Config `voice.warm` (default true); the listener checks `initialize` at start and falls
+  back to one `claude -p` per command with a note; `--text` and `--dry-run` stay one-shot. The rate limiter needed
+  no change (already a sliding 40 actions / 60 s); new tests show a 25-command / 30-minute chain passes and a
+  runaway loop is held at 40 per minute. `formatTiming` warm line: `claude: 1.9 s (warm, spawned 3.0 s ahead;
+  start-up + MCP 0.0 s, model …, tools + overhead …)` or `(warm, follow-up 2 on this process; …)`. Fake claude has a
+  stream mode (test/voice/fake-claude-stream.mjs). Opt-in real probe: `STEPHEN_REAL_CLAUDE=1 npx vitest run
+  test/voice/warm-claude-real.test.ts` (passed here: ready 1.4 s). Real headless run here: `listen --wav
+  wake-onebreath.amy.wav` with the real claude printed `claude: 9.1 s (warm, spawned 1.6 s ahead; start-up + MCP
+  0.1 s, model 8.9 s in 4 turns, …)` (WAV audio runs faster than real time, so the lead is short). Full suite **2660
+  passed, 12 skipped**. Docs: SYSTEM-DESIGN §4.12 (new) and §4.1, STEPHEN.md follow-ups row, VOICE.md, ADR-003
+  "Implementation". Owner: measure on the Mac, one-shot (`"warm": false`) vs warm, with the `claude:` lines.
+- 2026-11-02: Review 7 R7-2 fixed (owner decision "summary only" for the wake word). Trust follows the conversation:
+  `trusted` (F5 / Fn+Option, typed text, app chat, `--text`) or `wake` (wake word), `trustOf(source)` in
+  `src/voice/assistant.ts`. A command of the other trust always starts a fresh conversation (kill, wait, reset,
+  drop), in the warm runner (the process records its trust; pre-warm spawns one of the trust that pressed it, and a
+  typed command after a wake pre-warm replaces it) and in the one-shot runner (`conversation.json` keeps the trust; no
+  `--resume` across trust levels; an old file without one is never resumed). A wake conversation's serve gets
+  `serve --trust wake` (`src/serve-args.ts`; also with `--dry-run`): `gmail_search` = count + date + sender name and
+  domain only, footer "For subjects or to read an email, hold F5 or type the request."; `gmail_read` refused (no
+  request, no taint, audited). Canvas, Calendar, Notion, weather, briefing, memory and timer rules unchanged. One
+  persona sentence. Eval: `trust: 'wake'` on a case; `wake-mail-summary`, `wake-mail-read`: real sonnet 4/4 (2 runs
+  each). Full suite **2771 passed, 13 skipped**. Docs: REVIEW-7 R7-2 Fixed + table, SYSTEM-DESIGN §4.2 (trust
+  table), §4.12, §5, STEPHEN.md rule row.
+- 2026-11-02 22:30 — **Review #7 done and fixed** (docs/REVIEW-7.md, fresh opus): no Critical/High. Fixed with tests:
+  R7-1 serve instance lock + pid check (a serve Claude Code restarts refuses every tool; the runner ends the
+  conversation), R7-2 wake-word trust per conversation (owner chose "summary only": wake-word Gmail gives count +
+  senders, no subjects, no gmail_read; trust change = fresh conversation; a false wake word no longer ends a live F5
+  conversation), R7-3 transcript of a cancelled first command, R7-4 Notion page content stays can't-yet, R7-5 short
+  codes masked near code words, R7-6 sender shown as `Name <domain>`, R7-7 connect gmail confirms the signed-in
+  address, R7-8 write helpers moved to src/connect (boundary test), R7-9 status reads no secret values, R7-10/11/12.
+  Full suite **2771 passed, 13 skipped**; real eval 59/60 before the fixes, wake/notion/mail cases pass after.
+  **Owner next: docs/MAC-TEST-PLAN.md.** Then items 4 (jobs, ADR-004) and 5 (phone, ADR-005) on the owner's go.

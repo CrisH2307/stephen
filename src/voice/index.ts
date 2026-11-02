@@ -19,10 +19,11 @@ import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memo
 import { MemoryStore } from '../memory/store.js';
 import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
+import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
 import { toolLogPath } from '../server/tool-log.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
-import { Assistant, type CommandReport, type CommandRunner } from './assistant.js';
+import { Assistant, type CommandReport, type CommandRunner, type Trust } from './assistant.js';
 import { MicrophoneSource, listInputDevices, resolveDeviceIndex, wavFileSource, type AudioSource } from './audio.js';
 import {
   ClaudeRunner,
@@ -34,6 +35,7 @@ import {
   writeMcpConfig,
   type ClaudeOutcome,
   type ClaudeSettings,
+  type ServeInstance,
   type SpawnFn,
   type ClaudeFlagProbe,
   PERSONA_FILE,
@@ -42,7 +44,8 @@ import {
   resolvePersonaFile,
 } from './claude.js';
 import { ToolLogRunner, historyRecorder } from './command-log.js';
-import { Conversation, ConversationRunner, memoryKey } from './conversation.js';
+import { Conversation, ConversationRunner, WarmConversationRunner, memoryKey } from './conversation.js';
+import { WarmClaude, probeWarmProtocol, type WarmClaudeOptions } from './warm-claude.js';
 import { claudeTranscriptDir, purgeTranscripts, removeSessionTranscript } from './transcripts.js';
 import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
@@ -53,6 +56,7 @@ import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel,
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
+import { accountsStatus } from '../app/accounts-status.js';
 import { macNotify, type NotifyFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
@@ -189,6 +193,8 @@ interface LoadedVoice {
   memory: MemoryConfig;
   history: HistoryConfig;
   app: AppConfig;
+  /** Raw "accounts" section (accounts.status). */
+  accounts: unknown;
   auditLogPath: string | null;
 }
 
@@ -202,6 +208,7 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null
       memory: parseMemoryConfig(c.memory),
       history: parseHistoryConfig(c.history),
       app: parseAppConfig(c.app),
+      accounts: c.accounts ?? {},
       auditLogPath: c.auditLogPath ?? null,
     };
   } catch (e) {
@@ -308,7 +315,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     // Memory changed anywhere (router, app, `stephen memory`, a hand edit) → don't resume (review 5, R5-2).
     memoryKey: () => memoryKey(memoryStore ? memoryStore.listSync().map((i) => i.text) : []),
   });
-  const sessionStatePath = conversation.enabled ? conversation.statePath : null;
+  // Always named, also with follow-ups off (window 0: deleted before and after every command), so a serve that Claude
+  // Code restarts behind our back still starts with the taint (docs/REVIEW-7.md R7-1).
+  const sessionStatePath = conversation.statePath;
   if (!conversation.enabled) conversation.end(); // window 0: no leftovers from an earlier setting
   // History: one entry per command; the tool log (names only) is only written when history is on.
   const history = new HistoryStore({
@@ -320,6 +329,14 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   if (!args.dryRun) history.purge(); // drop expired history (and old Claude transcripts) at start, not only on the next command (R5-6)
   const toolLog = history.enabled ? toolLogPath(home) : null;
   const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog);
+  // A fresh `serve --instance` per Claude process (R7-1): the config is rewritten before each spawn (one Claude
+  // process at a time: the next spawns only after the previous group is gone), and the runner checks the serve's lock.
+  // A wake-word conversation's serve also gets `--trust wake` (R7-2: email shows only who and when).
+  const serveInstance = async (trust: Trust): Promise<ServeInstance> => {
+    const id = newServeInstance();
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust) };
+  };
+  if (!args.dryRun) sweepServeLocks(home, Date.now() - 24 * 3600_000); // file times are real time: left behind by a killed listener
   const settings: ClaudeSettings = {
     claudePath: cfg.claudePath,
     maxTurns: cfg.maxTurns,
@@ -327,6 +344,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     mcpConfigPath,
     followUps: conversation.enabled,
     aboutMe: cfg.aboutMe ?? null,
+    ...(args.dryRun ? {} : { serveInstance }),
   };
   // Check once that this Claude Code knows our lock-down flags: required ones missing → refuse (update Claude Code);
   // optional ones (--no-chrome, --no-session-persistence) missing → leave them out instead of failing every command.
@@ -363,6 +381,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         log: err,
       })
     : null;
+  const memoryTexts = memoryStore ? () => memoryStore.listSync().map((i) => i.text) : undefined;
   const claude = args.dryRun
     ? null
     : new ClaudeRunner({
@@ -372,11 +391,37 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         spawn: env.spawn,
         killGraceMs: env.killGraceMs,
         onTiming: (t) => out(formatTiming(t)),
-        memory: memoryStore ? () => memoryStore.listSync().map((i) => i.text) : undefined,
+        memory: memoryTexts,
       });
+  // Phase 3 (voice.warm, docs/ADR-003): the live listener keeps ONE warm Claude Code per conversation, started on the
+  // wake word / F5. Checked once here; if the stream protocol doesn't answer, every command uses one claude -p as
+  // before. `--text` (one command, follow-ups across processes) and `--dry-run` stay one-shot.
+  let warm: WarmConversationRunner | null = null;
+  if (claude && cfg.warm && args.text === null) {
+    const warmOpts: WarmClaudeOptions = { ...settings, cwd: workDir, env: env.env, spawn: env.spawn, killGraceMs: env.killGraceMs, now: env.now };
+    const why = await probeWarmProtocol(warmOpts);
+    if (why) err(`Note: Claude Code's stream mode didn't answer (${why}); using one claude -p per command instead. Set "voice": {"warm": false} to skip this check.`);
+    else {
+      const memoryNow = (): readonly string[] => {
+        try {
+          return memoryTexts?.() ?? [];
+        } catch {
+          return [];
+        }
+      };
+      warm = new WarmConversationRunner({
+        conversation,
+        start: (key, trust) => new WarmClaude(warmOpts, key, memoryNow(), trust),
+        onTiming: (t) => out(formatTiming(t)),
+        now: env.now,
+        log: err,
+      });
+    }
+  }
   // Dry runs never resume (nothing ran before them); real runs continue a conversation inside the follow-up window.
-  const toolRunner = claude && toolLog ? new ToolLogRunner(new ConversationRunner(claude, conversation), toolLog, err) : null;
-  const runner: CommandRunner = toolRunner ?? (claude ? new ConversationRunner(claude, conversation) : new DryRunRunner(settings, out));
+  const inner: CommandRunner | null = warm ?? (claude ? new ConversationRunner(claude, conversation) : null);
+  const toolRunner = inner && toolLog ? new ToolLogRunner(inner, toolLog, err) : null;
+  const runner: CommandRunner = toolRunner ?? inner ?? new DryRunRunner(settings, out);
   const recordHistory = args.dryRun ? undefined : historyRecorder(history, toolRunner ? () => toolRunner.tools() : null, err);
   // The Stephen window (app.sock): started once the listener exists; until then (and with --text) it stays null.
   let app: AppServer | null = null;
@@ -441,6 +486,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       history,
       audit,
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
+      accounts: () => accountsStatus(loaded.accounts),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
       log: err,
@@ -461,6 +507,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     const now = Date.now();
     if (now - lastSigint < 2000) {
       claude?.killNow();
+      warm?.killNow();
       process.exit(130);
     }
     lastSigint = now;
@@ -470,11 +517,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       listener.requestExit();
     } else {
       claude?.killNow();
+      warm?.killNow();
       process.exit(130);
     }
   };
   const onExit = () => {
     claude?.killNow();
+    warm?.killNow();
     app?.closeSync();
     if (settings.personaFile) removePersonaFile(settings.personaFile);
   };
@@ -593,6 +642,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     }
   } finally {
     timerStore?.stop();
+    await warm?.shutdown(); // listener exit ends the conversation: kill → close → reset
     if (settings.personaFile) removePersonaFile(settings.personaFile);
     await app?.close();
     app = null;

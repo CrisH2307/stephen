@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | accounts | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
+import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
-import { parseTtsConfig, runVoiceKey } from './voice/tts/index.js';
+import { parseTtsConfig } from './voice/tts/index.js';
 import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
 import { helperDoctorChecks } from './helper/doctor.js';
 import { runInstallHelper } from './helper/install.js';
@@ -63,8 +64,11 @@ Usage:
   stephen memory list | add "<text>" | forget <id> | clear
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
-  stephen accounts [test canvas]
                          Show your recent commands (kept on this Mac only), or delete them
+  stephen accounts [test canvas|calendar|notion|weather]
+                         Which account secrets and Gmail accounts Stephen finds (never the values)
+  stephen connect gmail <label> | disconnect gmail <label>
+                         Sign in to a Gmail account once, read-only (Google's page opens; token in the Keychain)
   stephen app            Open the Stephen window (chat, memory, history, settings, audit) in Stephen Helper
   stephen voice-setup    Download and check the local wake-word and speech models (once)
   stephen voice-setup --tts kokoro
@@ -98,9 +102,9 @@ async function serve(argv: string[] = []): Promise<void> {
     // stephen eval: same tools, nothing acts (src/eval/dry-server.ts). No home dirs touched, no browser, no audit.
     const { buildDryRunServer, fileRecorder, readFakePage } = await import('./eval/dry-server.js');
     const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
-    const deps: ServerDepsWithVoice = { cfg, manager: createBrowserManager(cfg), engine: pageEngine, safetyFactory: createSafety, voice: {} };
+    const deps: ServerDepsWithVoice = { cfg, manager: createBrowserManager(cfg), engine: pageEngine, safetyFactory: createSafety, voice: {}, ...(opts.trust ? { trust: opts.trust } : {}) };
     const page = opts.dryRun.fakePage !== undefined ? readFakePage(opts.dryRun.fakePage) : undefined;
-    const { server } = buildDryRunServer(deps, packageVersion(), fileRecorder(opts.dryRun.record), page !== undefined ? { page } : {});
+    const { server } = buildDryRunServer(deps, packageVersion(), fileRecorder(opts.dryRun.record), { ...(page !== undefined ? { page } : {}), ...(opts.trust ? { trust: opts.trust } : {}) });
     const bye = () => process.exit(0);
     process.stdin.once('end', bye);
     process.stdin.once('close', bye);
@@ -109,6 +113,20 @@ async function serve(argv: string[] = []): Promise<void> {
     await server.connect(new StdioServerTransport());
     return;
   }
+  // --instance: one serve per id. A second serve of the same id is Claude Code restarting a dead one behind the
+  // listener's back (docs/REVIEW-7.md R7-1): it refuses every tool call and exits. Any other failure throws (no tools).
+  let restarted: (() => void) | undefined;
+  if (opts.instance && claimServeInstance(cfg.home, opts.instance) === 'restarted') {
+    console.error(`[stephen] serve instance ${opts.instance} already ran: Claude Code restarted serve, so every tool call is refused`);
+    let exiting = false;
+    restarted = () => {
+      if (exiting) return;
+      exiting = true;
+      setTimeout(() => process.exit(RESTARTED_EXIT_CODE), 250); // let the refusal reach Claude Code first
+    };
+  }
+  // --trust wake: a wake-word conversation (R7-2). Logged here; each refused email read is in the audit log.
+  if (opts.trust) console.error('[stephen] trust: wake word (email: who and when only; gmail_read refused)');
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
   if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
   // Profiles, state and saved page output are private to this user (mode 0700).
@@ -135,6 +153,8 @@ async function serve(argv: string[] = []): Promise<void> {
     safetyFactory,
     ...(opts.voice ? { voice: {} } : {}),
     ...(opts.toolLog ? { toolLog: opts.toolLog } : {}),
+    ...(restarted ? { restarted } : {}),
+    ...(opts.trust ? { trust: opts.trust } : {}),
   };
   await serveStdio(deps);
 }
@@ -457,11 +477,17 @@ async function main(argv: string[]): Promise<number> {
     case 'app':
       return (await import('./app/cli.js')).runAppCli(rest);
     case 'accounts':
-      return (await import('./accounts/cli.js')).runAccountsCli(rest);
+      // Owner-only (it writes config.json): loaded on demand, never by `stephen serve` (review 7, R7-8).
+      return (await import('./connect/accounts-cli.js')).runAccountsCli(rest);
+    case 'connect':
+    case 'disconnect':
+      // Owner-only sign-in (OAuth + Keychain write): loaded on demand, never by `stephen serve` (boundary test).
+      return (await import('./connect/gmail-oauth.js')).runConnectCli(cmd, rest);
     case 'voice-setup':
       return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : (await import('./voice/index.js')).runVoiceSetup(rest);
     case 'voice-key':
-      return runVoiceKey(rest, { ttsConfig: () => parseTtsConfig(loadConfig().voice) });
+      // Owner-only Keychain write: loaded on demand (review 7, R7-8).
+      return (await import('./connect/voice-key.js')).runVoiceKey(rest, { ttsConfig: () => parseTtsConfig(loadConfig().voice) });
     case 'help':
     case '--help':
     case '-h':

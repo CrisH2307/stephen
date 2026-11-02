@@ -16,17 +16,29 @@
  * the listener can show tool names in the history (src/server/tool-log.ts). Same path rule as --session-state, but
  * a `.jsonl` file (see checkToolLogPath). It records only; it changes no tool's behaviour.
  *
+ * `serve --instance <id>`: the voice listener's Claude process (docs/REVIEW-7.md R7-1). `<id>` is 32 hex characters, a
+ * fresh random one per Claude process. The first serve of an id takes `<home>/run/serve-<id>.lock`; a serve that finds
+ * that lock already taken is a restart by Claude Code and refuses every tool call (src/server/instance.ts). The id is
+ * a name, not a path, so the flag can only switch tools off.
+ *
+ * `serve --trust wake`: the voice listener's wake-word conversation (docs/REVIEW-7.md R7-2; anyone in the room or a
+ * video can say the wake word). Email gives only who and when: gmail_search lists a count and each message's sender
+ * name, domain and date (no subject, no snippet), and gmail_read refuses without a request. `wake` is the only value
+ * (a trusted conversation has no flag), so the flag can only take reads away. It may go with `--dry-run` (the eval).
+ *
  * `serve --assume-private-read`: the gate starts as if private data had already been read (phase 2a), so the
  * cross-site egress rules apply from the first action. Takes no value; it can only make the gate stricter.
  *
  * `serve --dry-run --record <file>`: `stephen eval` only. The same tools, but every call is appended to <file> and
  * answered with a fake result — nothing acts (src/eval/dry-server.ts). Both flags are required together, and no
- * other flag may be combined with them, so a dry-run server can never be mistaken for, or mixed into, a real one.
+ * other flag but `--trust wake` may be combined with them, so a dry-run server can never be mistaken for, or mixed
+ * into, a real one.
  * `--fake-page <file>` (absolute path) only goes with --dry-run: the page-reading tools answer with that file's text
  * (the prompt-injection eval cases).
  */
 import { isAbsolute } from 'node:path';
 import { checkSessionStatePath } from './safety/session-state.js';
+import { SERVE_INSTANCE_RE } from './server/instance.js';
 import { checkToolLogPath } from './server/tool-log.js';
 
 export interface ServeArgs {
@@ -37,12 +49,16 @@ export interface ServeArgs {
   sessionState?: string;
   /** --tool-log <file>: absolute path directly inside <home>/voice/. */
   toolLog?: string;
+  /** --instance <id>: 32 hex characters (one serve per id; a second one refuses every call). */
+  instance?: string;
+  /** --trust wake: a wake-word conversation (email: who and when only). */
+  trust?: 'wake';
   /** --dry-run --record <file>: absolute path of the call log; --fake-page <file>: what the pages "say". */
   dryRun?: { record: string; fakePage?: string };
 }
 
 export interface ServeArgsContext {
-  /** Stephen's home (loadConfig().home); required for --session-state and --tool-log. */
+  /** Stephen's home (loadConfig().home); required for --session-state, --tool-log and --instance. */
   home?: string;
 }
 
@@ -77,6 +93,17 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
       const r = checkToolLogPath(p, ctx.home);
       if ('error' in r) return r;
       out.toolLog = r.path;
+    } else if (a === '--instance' || a.startsWith('--instance=')) {
+      if (out.instance !== undefined) return { error: '--instance given twice' };
+      const id = a === '--instance' ? argv[++i] : a.slice('--instance='.length);
+      if (id === undefined || !SERVE_INSTANCE_RE.test(id)) return { error: '--instance needs 32 lowercase hex characters' };
+      if (!ctx.home) return { error: "--instance: Stephen's home folder is unknown" };
+      out.instance = id;
+    } else if (a === '--trust' || a.startsWith('--trust=')) {
+      if (out.trust !== undefined) return { error: '--trust given twice' };
+      const t = a === '--trust' ? argv[++i] : a.slice('--trust='.length);
+      if (t !== 'wake') return { error: '--trust must be "wake"' };
+      out.trust = t;
     } else if (a === '--dry-run') {
       if (dry) return { error: '--dry-run given twice' };
       dry = true;
@@ -95,7 +122,7 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
   if (fakePage !== undefined && !dry) return { error: '--fake-page only goes with --dry-run' };
   if (dry || record !== undefined) {
     if (!dry || record === undefined) return { error: '--dry-run and --record <file> go together' };
-    if (out.confirm || out.voice || out.sessionState || out.toolLog || out.assumePrivateRead) return { error: '--dry-run cannot be combined with other serve options' };
+    if (out.confirm || out.voice || out.sessionState || out.toolLog || out.assumePrivateRead || out.instance) return { error: '--dry-run cannot be combined with other serve options' };
     out.dryRun = { record, ...(fakePage !== undefined ? { fakePage } : {}) };
   }
   return out;

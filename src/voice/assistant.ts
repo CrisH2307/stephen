@@ -7,15 +7,44 @@ import type { ClaudeOutcome } from './claude.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
 
+/**
+ * How far a conversation is trusted (docs/REVIEW-7.md R7-2). `trusted`: push-to-talk (F5 / Fn+Option), typed text,
+ * the app chat, `--text`. `wake`: the wake word, which anyone in the room or a video can say. A conversation has one
+ * trust level: a command of another level always starts a fresh one, and a `wake` conversation's serve runs with
+ * `--trust wake` (email shows only who and when).
+ */
+export type Trust = 'trusted' | 'wake';
+
+/** The trust of a command from this source: only the wake word is `wake`. */
+export function trustOf(source: CommandSource): Trust {
+  return source === 'voice-wake' ? 'wake' : 'trusted';
+}
+
 export interface CommandRunner {
-  run(prompt: string): Promise<ClaudeOutcome>;
+  run(prompt: string, hooks?: RunHooks): Promise<ClaudeOutcome>;
   cancel(): boolean;
-  /** Follow-ups (ConversationRunner): decide whether the next run resumes the conversation. */
-  followUp?(): boolean;
+  /** Follow-ups (ConversationRunner): decide whether the next run (of this trust) resumes the conversation. */
+  followUp?(trust?: Trust): boolean;
   /** Esc / "Stephen stop" / any cancel: end the conversation (the next command starts fresh). */
   endConversation?(): void;
   /** The reply is out (spoken or shown): the follow-up window counts from now. */
   commandEnded?(): void;
+  /**
+   * The user started talking (wake word: `wake`, F5: `trusted`): start Claude now so it is ready when the transcript
+   * is (warm runner). A live process of the other trust is ended first.
+   */
+  prewarm?(trust?: Trust): void;
+}
+
+/** Per-run options: the command's trust, and hooks a runner may call during run() (ToolLogRunner). */
+export interface RunHooks {
+  /** The command's trust (default `wake`, the most cautious). A conversation of another trust is never continued. */
+  trust?: Trust;
+  /**
+   * Called right before the command goes to Claude, once every earlier process group is gone (warm runner), so
+   * nothing of an earlier, cancelled command can still write after this point (docs/REVIEW-7.md R7-10).
+   */
+  beforeSend?: () => void;
 }
 
 export type Phase = 'idle' | 'running' | 'speaking';
@@ -114,6 +143,7 @@ export class Assistant {
     const now = this.o.now ?? Date.now;
     const t0 = now();
     const source: CommandSource = opts.source ?? 'voice-wake';
+    const trust = trustOf(source);
     const id = opts.id ?? newHistoryId();
     this.cancelled = false;
     this.phaseNow = 'running';
@@ -154,14 +184,14 @@ export class Assistant {
       }
       let followUp = false;
       try {
-        followUp = this.o.runner.followUp?.() ?? false;
+        followUp = this.o.runner.followUp?.(trust) ?? false;
       } catch {
         // run() reports it
       }
       this.o.status(followUp ? 'Working… (follow-up)' : 'Working…');
       let out: ClaudeOutcome;
       try {
-        out = await this.o.runner.run(prompt);
+        out = await this.o.runner.run(prompt, { trust });
       } catch (e) {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
@@ -225,6 +255,11 @@ export class Assistant {
       this.phaseNow = 'idle';
     }
     return { id: newHistoryId(), source: 'cli', said: '', reply: text, result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', ranClaude: false, followUp: false, turns: 0, ms: Math.max(0, now() - t0) };
+  }
+
+  /** The user started talking: let the runner start Claude now (no-op for the one-shot runner). */
+  prewarm(trust: Trust = 'wake'): void {
+    this.o.runner.prewarm?.(trust);
   }
 
   /** End the follow-up conversation: the next command starts a fresh Claude session with a fresh gate. */

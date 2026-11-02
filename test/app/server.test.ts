@@ -20,6 +20,7 @@ import {
   type AppServerOptions,
 } from '../../src/app/server.js';
 import { appSettings } from '../../src/app/settings.js';
+import { accountsStatus } from '../../src/app/accounts-status.js';
 import { parseHistoryConfig } from '../../src/history/config.js';
 import { HistoryStore } from '../../src/history/store.js';
 import { parseMemoryConfig } from '../../src/memory/config.js';
@@ -117,6 +118,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     history,
     audit: { recent: async (n) => AUDIT.slice(0, n) },
     settings: () => settingsFor(),
+    accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
     speakReplies: false,
     openWindow: () => (calls.opens++, null),
     newId: () => `h_test${++ids}`,

@@ -23,6 +23,21 @@ describe('voice command timing', () => {
     expect(formatTiming({ wallMs: 900, durationMs: null, apiMs: null, turns: null })).toBe('claude: 0.9 s');
   });
 
+  it('formats the warm path: the pre-warm lead or the follow-up number, then the same split (comparable with one-shot)', () => {
+    // Pre-warmed 3 s before the command: nothing left to wait for.
+    expect(formatTiming({ wallMs: 1900, durationMs: 1880, apiMs: 1800, turns: 1, warm: { command: 1, leadMs: 3000 } })).toBe(
+      'claude: 1.9 s (warm, spawned 3.0 s ahead; start-up + MCP 0.0 s, model 1.8 s in 1 turn, tools + overhead 0.1 s)',
+    );
+    // Spawned only 0.4 s ahead: the command waited about 1.1 s of start-up.
+    expect(formatTiming({ wallMs: 3400, durationMs: 2300, apiMs: 2000, turns: 2, warm: { command: 1, leadMs: 400 } })).toBe(
+      'claude: 3.4 s (warm, spawned 0.4 s ahead; start-up + MCP 1.1 s, model 2.0 s in 2 turns, tools + overhead 0.3 s)',
+    );
+    expect(formatTiming({ wallMs: 1700, durationMs: 1690, apiMs: 1500, turns: 1, warm: { command: 3, leadMs: null } })).toBe(
+      'claude: 1.7 s (warm, follow-up 3 on this process; start-up + MCP 0.0 s, model 1.5 s in 1 turn, tools + overhead 0.2 s)',
+    );
+    expect(formatTiming({ wallMs: 800, durationMs: null, apiMs: null, turns: null, warm: { command: 1, leadMs: 0 } })).toBe('claude: 0.8 s (warm, spawned 0.0 s ahead)');
+  });
+
   it('ClaudeRunner reports the timing of a finished run (fake claude: 300 ms start-up, 400 ms run, 250 ms model)', async () => {
     const timings: ClaudeTiming[] = [];
     const runner = new ClaudeRunner({

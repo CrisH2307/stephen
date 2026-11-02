@@ -1,6 +1,6 @@
 # ADR-003: Phase 3 — one long-lived `claude -p` (stream-json) per conversation, pre-warmed
 
-**Status:** Accepted (owner chose a long-lived `claude -p` over the Agent SDK: no API key), 2026-11-02
+**Status:** Accepted (owner chose a long-lived `claude -p` over the Agent SDK: no API key), 2026-11-02. Subtasks 1 to 3 implemented (see "Implementation" at the end); Mac measurements pending.
 **Measured with:** Claude Code 2.1.316, `--model sonnet`, Stephen's exact lock-down argv (`buildClaudeArgs`), the eval
 dry-run server, on the Linux cloud box (not the Mac). Probe scripts: the session scratchpad `p1/` (`bench.mjs`,
 `warm.mjs`, `interrupt.mjs`, `persona*.mjs`, `idle.mjs`, `ready.mjs`, `slowtool.mjs`, `realserve.mjs`).
@@ -111,8 +111,9 @@ as the fallback when the protocol probe fails.
    - the follow-up window ran out (`followUpWindowSec` after `touch()`; a timer, and checked again in `begin()`);
    - a memory change: the router's `changed`, or memory key ≠ key at spawn (app, CLI, a hand edit);
    - a cancel: Esc, "Stephen stop" (also when idle), the wake word while running, F5 while busy, Ctrl-C;
-   - any error: a non-success result, a protocol/parse error, process exit, `mcp_status` ≠ connected (this also
-     covers serve's own exit when a state-file write fails);
+   - any error: a non-success result, a protocol/parse error, process exit, `mcp_status` ≠ connected (this was meant
+     to cover serve's own exit when a state-file write fails; it does not, see "Implementation notes after review 7":
+     the serve instance lock does it now);
    - safety caps: an unused pre-warmed process after 60 s, a live process after `MAX_FOLLOW_UP_WINDOW_SEC` (30 min)
      or 25 commands, and listener exit (`killNow`).
 5. **Window 0** (`followUpWindowSec: 0`): end after every command, so it behaves like today, but still pre-warmed.
@@ -152,3 +153,51 @@ as the fallback when the protocol probe fails.
 4. **Measure.** On the Mac: 10 commands one-shot vs warm (the `formatTiming` lines) and the follow-up pairs. Update
    `docs/VOICE.md` "Where the time goes" and `SYSTEM-DESIGN-STEPHEN.md` §4.1 (the state file now guards restarts).
    Optional, separate: a fixed cwd in the eval so its medians match the listener's prompt cache.
+
+## Implementation (2026-11-02, subtasks 1 to 3)
+
+Built: `src/voice/warm-claude.ts` (`WarmClaude`, `buildWarmArgs` in `claude.ts`, `probeWarmProtocol`),
+`WarmConversationRunner` in `src/voice/conversation.ts`, the pre-warm calls in `listener.ts`, and the wiring in
+`index.ts`. The result to outcome mapping is shared (`outcomeFromResult`). Tests: `test/voice/warm-claude.test.ts`,
+`test/voice/warm-runner.test.ts`, `test/safety/rate-limit-conversation.test.ts`, warm cases in the pipeline and
+push-to-talk integration tests, and the opt-in real probe `test/voice/warm-claude-real.test.ts`
+(`STEPHEN_REAL_CLAUDE=1`). Differences from the plan above, all small:
+
+- The switch is `voice.warm: true | false` (owner decision), not `voice.claudeMode`.
+- `stephen listen --text` and `--dry-run` stay one-shot: `--text` runs one command per process, and its follow-ups
+  across runs keep using `--resume`. Typed app chat needs no hook of its own: `run()` spawns when no process is up.
+- `kill()` waits for the whole process group (the serve too), not only for Claude Code's `close`, before the reset.
+  That is what makes "kill before reset" hold.
+- The rate limiter needed no change: it already was a sliding window (`safety.maxActionsPerMinute`, 40 in any 60 s).
+- `ToolLogRunner` needed no offset logic: truncating the log before each command already slices it, because serve
+  opens the file for every record and writes it before the tool result reaches Claude (tested on one serve).
+- A `control_request` from Claude Code (none is expected with `dontAsk` and no callbacks) is answered with an error.
+- The timing line keeps the one-shot split, so the two compare directly:
+  `claude: 1.9 s (warm, spawned 3.0 s ahead; start-up + MCP 0.0 s, model 1.8 s in 1 turn, tools + overhead 0.1 s)`.
+- F5 pressed while a command runs cancels it first; the runner is still busy with the cancelled run at that moment,
+  so that one next command starts cold. Every other wake / F5 press pre-warms.
+
+## Implementation notes after review 7 (2026-11-02)
+
+- **"MCP still connected" does not catch a dead serve (R7-1).** With Claude Code 2.1.316, `mcp_status` keeps saying
+  `connected` after the serve died, and Claude Code starts a new serve on the next tool call, between turns and
+  inside a turn. Step 3 above and the "covers serve's own exit" line in step 4 were therefore wrong. Fix: every
+  Claude process gets a fresh `serve --instance <32 hex>` (written into `<home>/voice/mcp-config.json` right before
+  the spawn; one Claude process at a time, so rewriting the one file is safe). The first serve of an id takes
+  `<home>/run/serve-<id>.lock` with `O_EXCL` (0600, its pid); a second serve of that id refuses every tool call
+  ("Stephen's tools restarted …") and exits 75. `WarmClaude` reads the pid at ready and, before every command and
+  after every result, checks that the lock still names that pid and that it is alive; otherwise the command is an
+  error and the conversation ends. The lock is deleted once the group is gone. The one-shot runner uses the same
+  instance per run (a restart inside a run is refused), without the pid check.
+- **`--session-state` is always passed**, also with `followUpWindowSec: 0` (deleted before and after every command
+  there), so even a restart that slipped through keeps the taint.
+- **Session id from `system`/`init` (R7-3).** Claude Code prints `system`/`init` with the session id at the start of
+  every turn, before any tool runs. `WarmClaude.sessionId` takes the first one, and the runner drops it on every end,
+  so a cancelled or failed first command's transcript is deleted.
+- **Tool log after a cancel (R7-10).** `ToolLogRunner` passes a `beforeSend` hook; the warm runner calls it right
+  before the command goes out, after every earlier group is gone, and the log is truncated again there.
+- Probes with the real Claude Code and the real `stephen serve`: a serve SIGKILLed between commands → the next
+  command errors without being sent and the conversation ends; when the message is sent anyway (raw probe), Claude
+  Code restarts serve and the call gets the restart notice; a serve killed after the first of two calls in one
+  command → the second call is refused (tool log `isError`), the command errors. Opt-in test:
+  `STEPHEN_REAL_CLAUDE=1 npx vitest run test/voice/warm-claude-real.test.ts`.

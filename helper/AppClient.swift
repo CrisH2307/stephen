@@ -25,6 +25,8 @@ let APP_MEMORY_MAX_ITEMS = 30
 let APP_REQUEST_TIMEOUT_SECONDS = 15.0
 /** While the window is open and Stephen isn't reachable, try again this often. */
 let APP_RETRY_SECONDS = 3.0
+/** What the Today card on the Chat tab submits, exactly as if it were typed (test/helper/app-protocol.test.ts). */
+let APP_TODAY_PROMPT = "what's my day?"
 /** Chat bubbles kept in the window. */
 let APP_MAX_BUBBLES = 300
 
@@ -162,6 +164,31 @@ struct AppRequest: Encodable {
   static func auditRecent(_ id: String, limit: Int) -> AppRequest {
     return AppRequest(id: id, type: "audit.recent", limit: limit)
   }
+  static func accountsStatus(_ id: String) -> AppRequest { return AppRequest(id: id, type: "accounts.status") }
+}
+
+/** One row of `accounts.status` (src/app/accounts-status.ts). Never holds a secret, only where it was found. */
+struct AccountRow: Decodable, Identifiable, Equatable {
+  var id: String = ""
+  var name: String = ""
+  /** "connected" | "not_set" | "off" */
+  var state: String = ""
+  /** "keychain" | ".env" | nil */
+  var source: String? = nil
+  var detail: String? = nil
+  var hint: String = ""
+
+  enum CodingKeys: String, CodingKey { case id, name, state, source, detail, hint }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? ""
+    name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+    state = (try? c.decodeIfPresent(String.self, forKey: .state)) ?? ""
+    source = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? nil
+    detail = (try? c.decodeIfPresent(String.self, forKey: .detail)) ?? nil
+    hint = (try? c.decodeIfPresent(String.self, forKey: .hint)) ?? ""
+  }
 }
 
 /** A saved memory item (section 2). */
@@ -283,6 +310,9 @@ struct AppMessage: Decodable {
   var items: [MemoryItem]? = nil
   var config: AppJSON? = nil
   var configPath: String? = nil
+  // accounts
+  var accounts: [AccountRow]? = nil
+  var note: String? = nil
   // state / heard pushes
   var state: String? = nil
   var text: String? = nil
@@ -290,7 +320,7 @@ struct AppMessage: Decodable {
 
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
-      configPath, state, text, source
+      configPath, state, text, source, accounts, note
   }
 
   init(localError: String, id: String?) {
@@ -321,6 +351,8 @@ struct AppMessage: Decodable {
     items = try? c.decodeIfPresent([MemoryItem].self, forKey: .items)
     config = try? c.decodeIfPresent(AppJSON.self, forKey: .config)
     configPath = try? c.decodeIfPresent(String.self, forKey: .configPath)
+    accounts = try? c.decodeIfPresent([AccountRow].self, forKey: .accounts)
+    note = try? c.decodeIfPresent(String.self, forKey: .note)
     state = try? c.decodeIfPresent(String.self, forKey: .state)
     text = try? c.decodeIfPresent(String.self, forKey: .text)
     source = try? c.decodeIfPresent(String.self, forKey: .source)
@@ -542,6 +574,9 @@ final class AppModel: ObservableObject {
 
   @Published private(set) var audit: [AuditEntry] = []
   @Published private(set) var auditNotice: String? = nil
+
+  @Published private(set) var accounts: [AccountRow] = []
+  @Published private(set) var accountsNotice: String? = nil
 
   let socketPath: String
   private let log: (String) -> Void
@@ -880,6 +915,18 @@ final class AppModel: ObservableObject {
         self.auditNotice = nil
       } else {
         self.auditNotice = msg.message ?? "error"
+      }
+    }
+  }
+
+  func refreshAccounts() {
+    request(AppRequest.accountsStatus(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "accounts" {
+        self.accounts = msg.accounts ?? []
+        self.accountsNotice = msg.note
+      } else {
+        self.accountsNotice = msg.message ?? "error"
       }
     }
   }

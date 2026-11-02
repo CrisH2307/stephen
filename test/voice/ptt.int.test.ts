@@ -16,7 +16,7 @@ import { createEngines, runListen, type Engines, type ListenEnv } from '../../sr
 import { modelPaths } from '../../src/voice/models.js';
 import { concatSamples, silence } from '../../src/voice/wav.js';
 import { FakeHelper } from './fakes.js';
-import { fakeClaudePath, fixture, prepareAllModels, readFakeLog, RecordingChimes, RecordingSpeaker, waitFor } from './helpers.js';
+import { fakeClaudePath, fakeWarmProcesses, fixture, prepareAllModels, readFakeLog, readFakeTurns, RecordingChimes, RecordingSpeaker, waitFor } from './helpers.js';
 
 const models = await prepareAllModels('whisper-tiny.en');
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-ptt-'));
@@ -63,7 +63,8 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
     const helper = opts.helper === undefined ? new FakeHelper() : opts.helper;
     let helperCalls = 0;
     const env: ListenEnv = {
-      loadConfig: () => ({ home: join(tmp, 'homes', name), voice: { claudePath: fakeClaudePath(), ...opts.voice } }),
+      // One claude -p per command here (voice.warm false), so the argv checks below see it; warm PTT is tested last.
+      loadConfig: () => ({ home: join(tmp, 'homes', name), voice: { claudePath: fakeClaudePath(), warm: false, ...opts.voice } }),
       modelsRoot: root,
       engines: async () => engines,
       speaker,
@@ -109,6 +110,8 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
       '--confirm',
       'dialog',
       '--voice',
+      '--instance', // a fresh one per Claude process (docs/REVIEW-7.md R7-1)
+      expect.stringMatching(/^[0-9a-f]{32}$/),
       '--tool-log',
       join(tmp, 'homes', file, 'voice', 'tool-log.jsonl'),
       '--session-state',
@@ -211,5 +214,32 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
     expect(h.transcripts).toEqual([]);
     expect(readFakeLog(h.log)).toEqual([]);
     expect(h.out.some((l) => l.startsWith('Ready on '))).toBe(true);
+  });
+
+  it('warm: F5 down starts Claude before the keys are released; the command goes to that process', async () => {
+    const h = harness('warm-ptt', { voice: { warm: true } });
+    engines.spotter.restart();
+    const clip = fixture('ptt-open.amy.wav');
+    const audio = concatSamples([silence(0.3), clip, silence(1)]);
+    const downAt = Math.floor((0.3 * 16000) / FRAME);
+    const upAt = Math.ceil((0.3 * 16000 + clip.length) / FRAME);
+    let releasedAt = 0;
+    const hooks = new Map<number, () => Promise<void> | void>([
+      [downAt, () => h.helper!.emit({ type: 'ptt_down', at: Date.now() })],
+      [
+        upAt,
+        async () => {
+          // The check at start-up is process 1; the pre-warm (process 2) must come from F5 down alone.
+          await waitFor(() => fakeWarmProcesses(h.log).length === 2, 10_000, 'the pre-warm on F5 down');
+          releasedAt = Date.now();
+          h.helper!.emit({ type: 'ptt_up', at: Date.now(), heldMs: (upAt - downAt) * MS_PER_FRAME });
+        },
+      ],
+    ]);
+    expect(await runListen([], { ...h.env, source: new HookedSource(audio, hooks) })).toBe(0);
+    const procs = fakeWarmProcesses(h.log);
+    expect(procs[1]!.at!).toBeLessThanOrEqual(releasedAt);
+    expect(readFakeTurns(h.log).map((t) => [t.pid, t.prompt])).toEqual([[procs[1]!.pid, 'open youtube']]);
+    expect(h.speaker.said).toEqual(['Done! open youtube']);
   });
 });

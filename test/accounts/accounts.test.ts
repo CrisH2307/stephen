@@ -188,7 +188,7 @@ describe('Canvas formatting', () => {
 
 describe('accounts config', () => {
   it('defaults, validation', () => {
-    expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true }, notion: { enabled: true }, weather: { enabled: true, latitude: 43.6532, longitude: -79.3832, label: 'Toronto, ON' } });
+    expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true }, notion: { enabled: true }, gmail: { enabled: true, accounts: [] }, weather: { enabled: true, latitude: 43.6532, longitude: -79.3832, label: 'Toronto, ON' } });
     expect(() => parseAccountsConfig({ canvas: { url: 'http://x.ca' } })).toThrow(/https/);
     expect(() => parseAccountsConfig({ timeZone: 'Mars/Base' })).toThrow(/time zone/);
     expect(() => parseAccountsConfig({ canvas: { token: 'x' } })).toThrow();
@@ -270,7 +270,7 @@ describe('Canvas tools over MCP', () => {
 
 describe('stephen accounts', () => {
   it('status shows sources only; test canvas reads the fake server', async () => {
-    const { runAccountsCli } = await import('../../src/accounts/cli.js');
+    const { runAccountsCli } = await import('../../src/connect/accounts-cli.js');
     const f = join(tmp, 'env-cli');
     writeFileSync(f, `CANVAS_API=${TOKEN}\nCANVAS_URL=${base}\n`, { mode: 0o600 });
     const out: string[] = [];

@@ -8,7 +8,7 @@
  * page/database URLs are never returned.
  *
  * "Open" is decided by one rule picked from the database schema (table-driven, first match wins):
- *   status property (any name)                      → open unless its option is Done/Complete/Archived (or in such a group)
+ *   status property (any name)                      → open unless its option is Done/Complete/Closed/Cancelled/Archived (or in such a group)
  *   checkbox named like Done/Complete               → open while unchecked
  *   select named like Status/State/Progress/Stage   → open unless Done/Complete/Archived
  *   none of these                                   → every item counts as open
@@ -85,7 +85,7 @@ export function titleOf(p: NotionPage): string {
   return '';
 }
 
-const CLOSED = /^(done|complete|completed|archived)$/i;
+const CLOSED = /^(done|complete|completed|archived|close|closed|cancel+ed|won'?t do)$/i;
 
 export interface DoneRule {
   property: string;

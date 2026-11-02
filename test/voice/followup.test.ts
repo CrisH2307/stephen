@@ -65,8 +65,38 @@ describe('Conversation: the follow-up window', () => {
     await h.runner.run('what about by car');
     expect(h.inner.resumes()).toEqual([null, 'sess-1', 'sess-1']);
     const saved = JSON.parse(readFileSync(join(h.dir, CONVERSATION_FILE), 'utf8'));
-    expect(saved).toEqual({ sessionId: 'sess-1', endedAt: h.now() });
+    expect(saved).toEqual({ sessionId: 'sess-1', endedAt: h.now(), trust: 'wake' }); // no trust given: the cautious one
     expect(statSync(join(h.dir, CONVERSATION_FILE)).mode & 0o777).toBe(0o600);
+  });
+
+  it.each([
+    ['trusted', 'wake'],
+    ['wake', 'trusted'],
+  ] as const)('R7-2: one-shot: a %s conversation is never resumed by a %s command (no --resume, state file gone)', async (first, second) => {
+    const h = harness(180);
+    await h.runner.run('read me my latest email', { trust: first });
+    h.plantState();
+    h.tick(10_000);
+    expect(h.runner.followUp(second)).toBe(false); // begin() for that trust: reset now
+    expect(existsSync(h.conv.statePath)).toBe(false);
+    await h.runner.run('what did it say', { trust: second });
+    h.tick(10_000);
+    h.inner.next = OK('sess-1');
+    await h.runner.run('and the one before', { trust: second }); // same trust: resumes
+    expect(h.inner.resumes()).toEqual([null, null, 'sess-1']);
+    expect(h.inner.calls.map((c) => c.run.trust)).toEqual([first, second, second]);
+    expect(JSON.parse(readFileSync(join(h.dir, CONVERSATION_FILE), 'utf8')).trust).toBe(second);
+    // A followUp() planned for one trust never carries over to a run of the other.
+    expect(h.runner.followUp(second)).toBe(true);
+    await h.runner.run('open it', { trust: first });
+    expect(h.inner.resumes().at(-1)).toBe(null);
+  });
+
+  it('R7-2: a saved conversation without a trust (older file) is never resumed', async () => {
+    const h = harness(180);
+    writeFileSync(join(h.dir, CONVERSATION_FILE), JSON.stringify({ sessionId: 'sess-old', endedAt: h.now() }), { mode: 0o600 });
+    expect(h.conv.peek('trusted')).toBe(null);
+    expect(h.conv.peek('wake')).toBe(null);
   });
 
   it('after the window expires: no --resume, the state file is deleted, no session id held', async () => {

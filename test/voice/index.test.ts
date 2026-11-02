@@ -125,9 +125,13 @@ describe('stephen listen --text', () => {
       buildClaudeArgs('open youtube', { claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: zmcp }),
       buildClaudeArgs('now search for lo-fi', { claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: zmcp }),
     ]);
+    // Each run gets a fresh serve instance (R7-1), and window 0 still names the state file, so a serve that Claude
+    // Code restarts mid-command keeps the taint (deleted before and after every command).
     expect(JSON.parse(readFileSync(zmcp, 'utf8')).mcpServers.stephen.args).toEqual([
-      '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice', '--tool-log', join(zhome, 'voice', 'tool-log.jsonl'),
+      '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice', '--instance', expect.stringMatching(/^[0-9a-f]{32}$/),
+      '--tool-log', join(zhome, 'voice', 'tool-log.jsonl'), '--session-state', join(zhome, 'voice', 'conversation-state.json'),
     ]);
+    expect(existsSync(join(zhome, 'voice', 'conversation-state.json'))).toBe(false);
     expect(zero.out).not.toContain('Working… (follow-up)');
     expect(existsSync(join(zhome, 'voice', 'conversation.json'))).toBe(false);
   });

@@ -62,9 +62,12 @@ export interface EvalReport {
   file: string;
 }
 
-/** MCP config for one case: only Stephen's dry-run server, recording into `record` (pages say `fakePage`'s text). */
-export function evalMcpConfig(nodePath: string, cliPath: string, record: string, fakePage?: string) {
-  const args = [cliPath, 'serve', '--dry-run', '--record', record, ...(fakePage ? ['--fake-page', fakePage] : [])];
+/**
+ * MCP config for one case: only Stephen's dry-run server, recording into `record` (pages say `fakePage`'s text).
+ * `trust: 'wake'` runs it as a wake-word conversation's serve (`--trust wake`, docs/REVIEW-7.md R7-2).
+ */
+export function evalMcpConfig(nodePath: string, cliPath: string, record: string, fakePage?: string, trust?: 'wake') {
+  const args = [cliPath, 'serve', '--dry-run', '--record', record, ...(fakePage ? ['--fake-page', fakePage] : []), ...(trust ? ['--trust', trust] : [])];
   return { mcpServers: { stephen: { command: nodePath, args } } };
 }
 
@@ -84,7 +87,7 @@ async function runCase(k: EvalCase, dir: string, o: EvalOptions): Promise<CaseRe
     fakePage = join(caseDir, 'page.txt');
     await writeFile(fakePage, k.page, { mode: 0o600 });
   }
-  await writeFile(mcpConfigPath, JSON.stringify(evalMcpConfig(o.nodePath, o.cliPath, record, fakePage), null, 2) + '\n', { mode: 0o600 });
+  await writeFile(mcpConfigPath, JSON.stringify(evalMcpConfig(o.nodePath, o.cliPath, record, fakePage, k.trust), null, 2) + '\n', { mode: 0o600 });
   const runner = new ClaudeRunner({
     claudePath: o.claudePath,
     maxTurns: o.maxTurns,

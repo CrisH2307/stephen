@@ -34,6 +34,7 @@ import {
   type AppState,
 } from './protocol.js';
 import type { AppSettings } from './settings.js';
+import type { AccountsStatus } from './accounts-status.js';
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -76,6 +77,8 @@ export interface AppServerOptions {
   /** null = no audit log configured. */
   audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
   settings: () => AppSettings;
+  /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
+  accounts?: () => Promise<AccountsStatus>;
   /** app.speakReplies: speak typed-chat replies too. */
   speakReplies: boolean;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
@@ -398,6 +401,14 @@ export class AppServer {
         }
         return fitList(entries, (e) => ({ id, type: 'audit', entries: e }));
       }
+      case 'accounts.status':
+        if (!this.o.accounts) return { id, type: 'error', message: 'accounts status is not available' };
+        try {
+          const s = await this.o.accounts();
+          return { id, type: 'accounts', accounts: s.accounts, ...(s.note ? { note: s.note } : {}) };
+        } catch {
+          return { id, type: 'error', message: 'could not read the accounts status' };
+        }
       case 'window.open': {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };

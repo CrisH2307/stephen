@@ -328,6 +328,11 @@ export interface ISafetyGate {
    * `serve --assume-private-read`) is about to reach the model: arms the cross-site taint like noteRead.
    */
   notePrivateData(source: 'canvas' | 'gmail' | 'notion' | 'calendar' | 'private'): void;
+  /**
+   * Count one account-tool call (gmail_search, canvas_due…) as one action in the rate limit (review 7, R7-11).
+   * Returns null when it may run, else the refusal text (and nothing is counted).
+   */
+  countAccountCall(): string | null;
   /** True if a field must never be typed into / revealed (password, OTP, payment…). */
   isSecretField(el: ElementInfo): boolean;
   /**

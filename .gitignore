@@ -3,5 +3,8 @@ dist/
 *.log
 .DS_Store
 coverage/
-.envjev/openrouter_key
+.env
+jev/openrouter_key
+jev/router_state.json
+__pycache__/
 .env

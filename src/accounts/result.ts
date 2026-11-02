@@ -46,9 +46,61 @@ export function reduceLinks(text: string): string {
   );
 }
 
-/** 6+ digit runs (also "123 456", "123-456") near nothing in particular → "[code]": never read codes aloud. */
+/** Words that mark a nearby short token as a one-time code or PIN (review 7, R7-5). */
+const CODE_WORD_RE = /\b(?:codes?|pins?|passcodes?|verification|verify|otp|2fa|security|one-time|(?:log|sign)[- ]?in)\b/gi;
+/** A "verification code" line: every code-shaped token on it is masked, however far from the word. */
+const CODE_LINE_RE = /\b(?:verification|security|one-time|login|sign-?in)\s+(?:pass)?code\b/i;
+/** Candidate tokens: letters and digits, optionally joined by single hyphens (unambiguous, so linear). */
+const TOKEN_RE = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g;
+/** How far (characters between them) a code word reaches. */
+const CODE_NEAR = 40;
+const MONTH_BEFORE_RE = /(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s*$/i;
+
+/**
+ * A short token that looks like a code: 4 to 5 digits ("4417", "0042"), or 5 to 12 characters with at least two
+ * letters and two digits ("ABC123", "K7X9P"). "3980U" (one letter), "Lab 4", "10:30" and "1350" alone are not codes
+ * unless a code word is near; a year right after a month and day ("Nov 5, 2026") never is.
+ */
+function codeShaped(tok: string, before: string): boolean {
+  if (/^\d{4,5}$/.test(tok)) return !(/^(?:19|20)\d\d$/.test(tok) && MONTH_BEFORE_RE.test(before));
+  if (tok.length < 5 || tok.length > 12) return false;
+  const digits = tok.replace(/[^0-9]/g, '').length;
+  const letters = tok.replace(/[^A-Za-z]/g, '').length;
+  return digits >= 2 && letters >= 2;
+}
+
+/**
+ * Short codes near a code word (within CODE_NEAR characters, or anywhere on a "verification code" line) →
+ * "[code]". One pass to find the code words, one pass over the tokens with a forward-only pointer: linear time.
+ */
+function maskShortCodes(text: string): string {
+  const words = [...text.matchAll(CODE_WORD_RE)].map((m) => [m.index, m.index + m[0].length] as const);
+  if (!words.length) return text;
+  const codeLines: [number, number][] = [];
+  let start = 0;
+  for (const line of text.split('\n')) {
+    if (CODE_LINE_RE.test(line)) codeLines.push([start, start + line.length]);
+    start += line.length + 1;
+  }
+  let w = 0;
+  let l = 0;
+  return text.replace(TOKEN_RE, (tok: string, at: number) => {
+    const end = at + tok.length;
+    while (w < words.length && words[w]![1] < at - CODE_NEAR) w++;
+    while (l < codeLines.length && codeLines[l]![1] < at) l++;
+    const nearWord = w < words.length && words[w]![0] <= end + CODE_NEAR;
+    const onCodeLine = l < codeLines.length && codeLines[l]![0] <= at;
+    if (!nearWord && !onCodeLine) return tok;
+    return codeShaped(tok, text.slice(Math.max(0, at - 16), at)) ? '[code]' : tok;
+  });
+}
+
+/**
+ * One-time codes → "[code]": never read codes aloud. 6+ digit runs (also "123 456", "123-456") anywhere; shorter
+ * codes, PINs and letter+digit codes near a code word or on a "verification code" line (review 7, R7-5).
+ */
 export function maskCodes(text: string): string {
-  return text.replace(/\b\d(?:[ .-]?\d){5,}\b/g, '[code]');
+  return maskShortCodes(text).replace(/\b\d(?:[ .-]?\d){5,}\b/g, '[code]');
 }
 
 /** One untrusted field, cleaned and capped. */

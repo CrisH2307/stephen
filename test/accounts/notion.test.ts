@@ -332,7 +332,7 @@ describe('notion_search over MCP', () => {
 
 describe('stephen accounts test notion', () => {
   it('counts open to-dos in the configured database; no token → exit 1', async () => {
-    const { runAccountsCli } = await import('../../src/accounts/cli.js');
+    const { runAccountsCli } = await import('../../src/connect/accounts-cli.js');
     handler = (q, res) => {
       if (q.method === 'GET') return json(res, { title: rt('Cris to-dos'), properties: CHECKBOX_SCHEMA });
       json(res, { results: [checkboxPage('A', false), checkboxPage('B', false), checkboxPage('C', true)] });
@@ -348,5 +348,14 @@ describe('stephen accounts test notion', () => {
     out.length = 0;
     expect(await runAccountsCli(['--help'], env)).toBe(0);
     expect(out.join('\n')).toMatch(/stephen accounts test notion/);
+  });
+});
+
+describe('Notion done names (owner, 2026-11-02: todo / progress / in review / done / close)', () => {
+  it('close, closed and cancelled count as done; in review and progress stay open', () => {
+    const rule = doneRule(STATUS_SCHEMA);
+    const names = (xs: string[]) => formatTodos(xs.map((s, i) => statusPage(`T${i}`, s)), rule).length;
+    expect(names(['Close', 'Closed', 'Cancelled', 'Canceled'])).toBe(0);
+    expect(names(['Todo', 'Progress', 'In review'])).toBe(3);
   });
 });

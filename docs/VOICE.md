@@ -86,9 +86,19 @@ Listening for "hey stephen"…
   `serve --session-state <home>/voice/conversation-state.json`: it loads what the earlier servers saw, and writes
   every new private read or approval to that file (atomically, 0600) **before** the page text or the approved
   action goes back to Claude — if it can't, the server stops instead. When a conversation ends, the listener
-  deletes that file and forgets the session id before the next `claude` starts. The rate limiter is still per
-  command. The session id and end time are kept in `<home>/voice/conversation.json` (0600), so
-  `stephen listen --text` follow-ups work across runs too.
+  deletes that file and forgets the session id before the next `claude` starts. The session id and end time are
+  kept in `<home>/voice/conversation.json` (0600), so `stephen listen --text` follow-ups work across runs too.
+- **Warm Claude (phase 3, `voice.warm`, on by default).** The live listener keeps ONE long-lived
+  `claude -p --input-format stream-json` (and with it one `stephen serve`) per conversation, started the moment the
+  wake word fires or F5 goes down, so Claude Code's start-up runs while you are still talking. Follow-ups go to the
+  same process; there is no `--resume` and no start-up at all. It has exactly the lock-down flags of the one-shot run.
+  The conversation ends (the process group is killed, then the state file and session id are deleted) on the same
+  triggers as above, plus: a memory change, any error, an unused pre-warm after 60 s, 25 commands or 30 minutes in
+  one process, and quitting the listener. The rate limit (`safety.maxActionsPerMinute`, a sliding 60 s window) now
+  counts across the whole conversation, which a normal 25-command chain stays far below. At start the listener checks
+  the stream protocol once; if Claude Code doesn't answer it, it prints a note and runs one `claude -p` per command
+  as before. `"warm": false` always does that. `--text` and `--dry-run` are always one-shot. See
+  docs/ADR-003-long-lived-claude.md and docs/SYSTEM-DESIGN-STEPHEN.md section 4.12.
 - **Cooldown after each command (without the helper).** For 20 s after a command (`voice.cooldownSec`), "Hey
   Stephen" is ignored and `Ignored "hey stephen" — the wake word is paused…` is printed. **Press Enter** in the
   listener's terminal to talk sooner. See [Tuning false wakes](#tuning-false-wakes) (guard 4) for why. With Stephen
@@ -376,6 +386,14 @@ Every finished command prints one line, e.g.
 `claude: 4.3 s (start-up + MCP 1.1 s, model 2.6 s in 3 turns, tools + overhead 0.6 s)` — wall time of `claude -p`,
 split with Claude Code's own `duration_ms` / `duration_api_ms`. Run a few commands on the Mac to see the real split.
 
+With the warm runner (phase 3) the line says how the process was used, and keeps the same split so the two can be
+compared: `claude: 1.9 s (warm, spawned 3.0 s ahead; start-up + MCP 0.0 s, model 1.8 s in 1 turn, tools + overhead
+0.1 s)` for the first command (the process was spawned 3.0 s before the command was sent, so no start-up was left to
+wait for), and `claude: 1.7 s (warm, follow-up 2 on this process; start-up + MCP 0.0 s, …)` for a follow-up. Here
+"start-up + MCP" is what the command still waited for: 0.0 s when the pre-warm hid it, more when the transcript came
+sooner than Claude Code was ready. Model time and cost are per command (Claude Code reports them per process).
+Before/after on the Mac: run the same commands with `"warm": false` and with the default, and compare the lines.
+
 Measured here (Linux cloud box; the real `claude` 2.1.316 with Stephen's exact flags against a fake local Messages
 API, so no model quota and no model latency; `dist/cli.js serve --confirm dialog --voice` as the MCP server):
 
@@ -395,17 +413,17 @@ search page → snapshot (a large result back into context) → click → check,
 start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4–6 s on the Mac.
 
 **Further big wins (proposed, not built):**
-1. **Pre-warm on wake.** Start `claude -p --input-format stream-json` (and with it the MCP server) the moment the
-   wake word or push-to-talk fires, while the user is still talking, and stream the transcript in when ASR is done.
-   Hides Claude Code start-up + MCP start (~1–2 s on a Mac, est.).
+1. **Pre-warm on wake.** Built in phase 3 (`voice.warm`, above): measured on Linux, it saves about 1.5 s per
+   command (2 s with the exit wait) and most of the p90 of follow-ups (docs/ADR-003-long-lived-claude.md).
 2. **Fold the announce into play_media** (or let the model call announce and play_media in one response): one
    model turn less (~0.7–1.5 s).
 3. **A voice tool profile.** `serve --voice` could register only the tools voice needs (open_app, open_url,
    play_media, desktop_status, announce, tab/find/click basics): ~27 KB of schemas → ~8 KB per turn, faster
    time to first token on every turn.
 4. **Lazy imports in `stephen serve`** (puppeteer-core and the MCP SDK each take ~170 ms to load): ~0.3 s.
-5. **Phase 3: one long-lived Agent SDK session + one long-lived Stephen server** — no per-command start-up at all,
-   the browser stays attached, and the prompt cache stays warm.
+5. **Phase 3: one long-lived Claude Code + one long-lived Stephen server per conversation.** Built (with
+   `claude -p --input-format stream-json`, not the Agent SDK: no API key): no per-command start-up, the browser stays
+   attached, and the prompt cache stays warm.
 6. **A local fast path for "play …"** that calls play_media without the model when the transcript is clearly a play
    request — fastest (~1 s), but loses the model's correction of misheard names; maybe only above an ASR
    confidence threshold.
@@ -460,6 +478,7 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4�
 | `cooldownSec` | `20` | Without the helper: after each command, ignore the wake word for this long (press Enter to re-arm early). `0` = off. With the helper the wake word is gated on playing sound instead |
 | `wakeWord` | `true` | `false` = push-to-talk only (needs Stephen Helper); same as `--ptt-only` |
 | `followUpWindowSec` | `180` | A command within this many seconds of the previous one's end continues its conversation (`--resume` + the gate's memory). `0` = every command fresh. Max 1800 |
+| `warm` | `true` | Phase 3: one long-lived Claude Code per conversation, started on the wake word / F5 (start-up hidden while you talk). `false` = one `claude -p` per command. Falls back to that with a note if the start-up check fails |
 | `speak` / `voice` / `rate` | `true` / system / system | `say` voice name (`say -v ?`) and words per minute |
 | `chimes` | `true` | Tink on wake, Pop when done |
 | `silenceSec` / `maxCommandSec` / `noSpeechTimeoutSec` | `0.8` / `25` / `5` | Endpointing (`maxCommandSec` was 12 before 1.8) |
@@ -769,8 +788,10 @@ copy of a repeated phrase, so both voices give "open youtube".
   Stephen server is phase 3.
 - English only. Wake phrases must be plain English words.
 
-- Every command starts a new `claude -p` process, which adds start-up time (see "Where the time goes"); follow-ups
-  resume the conversation but not the process. A long-lived Agent SDK session with one long-lived Stephen server is phase 3.
+- With `"warm": false` (or when the stream check fails) every command starts a new `claude -p` process, which adds
+  start-up time (see "Where the time goes"). The warm runner (default) uses Claude Code's stream-json control
+  protocol (`initialize`, `mcp_status`), which is only partly documented: a Claude Code update could change it, and
+  then the start-up check falls back to one `claude -p` per command.
 - English only. The wake phrase must be plain English words.
 - The keyword spotter has no published false-alarm rate, and the test numbers come from synthetic speech.
   Expect to tune `keywordsThreshold` for your room.
@@ -781,7 +802,9 @@ copy of a repeated phrase, so both voices give "open youtube".
 `src/voice/`: `index.ts` (CLI), `listener.ts` (wake → endpoint → ASR loop, push-to-talk, Esc, busy rules, gating
 and cooldown), `helper-link.ts` (the listener's view of Stephen Helper: `HelperLink`, `HelperBridge`), `engine.ts`
 (sherpa-onnx adapters), `keywords.ts` (sentencepiece tokenizer and keywords file), `models.ts` (pinned downloads),
-`claude.ts` (argv and lock-down flags, MCP config, process-group cancel), `assistant.ts`, `speech.ts`,
+`claude.ts` (argv and lock-down flags, MCP config, process-group cancel), `warm-claude.ts` (the long-lived
+stream-json process), `conversation.ts` (follow-up window, `ConversationRunner`, `WarmConversationRunner`),
+`assistant.ts`, `speech.ts`,
 `transcript.ts`, `audio.ts`, `wav.ts`, `config.ts`, `args.ts`. Tests are in `test/voice/`
 (`wake-variants.int.test.ts` runs the default model on every wake variant). The fake `claude` is
 `test/voice/fake-claude.mjs`, so tests never use your Claude quota; `test/voice/fakes.ts` has a fake helper.
