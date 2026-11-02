@@ -484,16 +484,17 @@ describe('Trust follows the conversation (review 7, R7-2)', () => {
     expect(h.procs[1]!.turns).toEqual(['open my gmail']);
   });
 
-  it('R7-2: pre-warm of the other trust ends a live conversation; of the same trust keeps it', async () => {
+  it('R7-2: a false wake word keeps a live F5 conversation; a real wake-word command then ends it', async () => {
     const h = harness();
     await h.runner.run('one', { trust: 'trusted' });
     h.runner.commandEnded();
-    h.runner.prewarm('trusted');
+    h.plantState();
+    h.runner.prewarm('wake'); // the wake word fired during an F5 conversation (maybe a video): nothing happens
     await settle();
     expect(h.procs).toHaveLength(1);
-    h.plantState();
-    h.runner.prewarm('wake'); // the wake word fired during an F5 conversation
-    await settle();
+    expect(h.stateExists()).toBe(true);
+    expect(h.runner.followUp('trusted')).toBe(true);
+    await h.runner.run('two', { trust: 'wake' }); // a wake-word command really came: fresh conversation
     expectEndedInOrder(h.w.events, 1);
     expect(h.procs.map((p) => p.trust)).toEqual(['trusted', 'wake']);
     expect(h.stateExists()).toBe(false);

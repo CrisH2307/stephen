@@ -363,11 +363,14 @@ export class WarmConversationRunner implements CommandRunner {
 
   /**
    * The wake word fired (`wake`) or F5 went down (`trusted`): start a process of that trust now, unless one that can
-   * take the command is up. A live process of the other trust ends first (kill, wait, reset).
+   * take the command is up. An unused pre-warm of another trust is replaced. A conversation that already ran
+   * commands is left alone: a false wake word (a video) must not cost the owner the follow-up; if a command of the
+   * other trust really comes, run() ends the conversation then (kill, wait, reset) and starts cold.
    */
   prewarm(trust: Trust = DEFAULT_TRUST): void {
     if (this.busy) return;
     if (this.proc && this.reusable(trust)) return;
+    if (this.proc && this.commands > 0 && this.reusable(this.proc.trust)) return;
     if (this.proc) void this.endProcess();
     this.ending = this.ending.then(() => {
       if (this.proc || this.busy) return;

@@ -50,7 +50,7 @@ describe('accountsStatus', () => {
       { platform: 'linux', envFile: envFile(`CANVAS_API=${CANVAS}\n`) },
     );
     expect(byId(s).canvas).toMatchObject({ state: 'off', source: null });
-    expect(byId(s).weather.detail).toBe('Oshawa, ON');
+    expect(byId(s).weather!.detail).toBe('Oshawa, ON');
     expect(JSON.stringify(s)).not.toContain(CANVAS);
     const all = await accountsStatus({ enabled: false }, { platform: 'linux', envFile: null });
     expect(all.accounts.map((a) => a.state)).toEqual(['off', 'off', 'off', 'off']);
@@ -104,7 +104,7 @@ describe('accountsStatus', () => {
     expect(json).not.toContain('LEAKED');
     expect(json).not.toContain(NOTION);
     // An empty .env key is not "connected".
-    expect(byId(await accountsStatus({}, { platform: 'linux', envFile: envFile('NOTION_API=\n') })).notion.state).toBe('not_set');
+    expect(byId(await accountsStatus({}, { platform: 'linux', envFile: envFile('NOTION_API=\n') })).notion!.state).toBe('not_set');
   });
 
   it('an unreadable (group-readable) .env counts as not set', async () => {

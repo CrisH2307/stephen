@@ -288,8 +288,8 @@ describe('ClaudeRunner with a fake claude', () => {
     expect(seen.map((s) => s.trust)).toEqual(['wake', 'wake', 'trusted']);
     expect(flagValue(seen[0]!.args, '--trust')).toBe('wake');
     expect(seen[2]!.args).not.toContain('--trust');
-    expect(mcpConfig('/n', '/c', null, null, null, 'wake').mcpServers.stephen.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice', '--trust', 'wake']);
-    expect(mcpConfig('/n', '/c').mcpServers.stephen.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice']);
+    expect(mcpConfig('/n', '/c', null, null, null, 'wake').mcpServers.stephen!.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice', '--trust', 'wake']);
+    expect(mcpConfig('/n', '/c').mcpServers.stephen!.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice']);
   });
 
   it('spawns argv directly (no shell), detached, in the private cwd; every command is a fresh session', async () => {
