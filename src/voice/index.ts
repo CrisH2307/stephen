@@ -52,6 +52,10 @@ import { MemoryRouter } from './memory-router.js';
 import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelPaths } from './models.js';
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
+import { ownerZone } from '../accounts/calendar.js';
+import { macNotify, type NotifyFn } from '../timers/notify.js';
+import { TimerRouter } from '../timers/router.js';
+import { TimerStore } from '../timers/store.js';
 
 export { LISTEN_USAGE } from './args.js';
 
@@ -73,6 +77,7 @@ export interface ListenEnv {
     memory?: Record<string, unknown>;
     history?: Record<string, unknown>;
     app?: Record<string, unknown>;
+    accounts?: Record<string, unknown>;
     auditLogPath?: string;
   };
   /** Shown in the Stephen window's Settings (default: configFilePath()). */
@@ -99,6 +104,8 @@ export interface ListenEnv {
    * returns an unsubscribe function. Default: watch stdin when it is a terminal and `signals` is on.
    */
   keys?: (onEnter: () => void) => () => void;
+  /** Timer/reminder notification (tests); default: macOS notification. */
+  notify?: (text: string) => void;
   /**
    * Stephen Helper (push-to-talk, Esc, audio.playing, menu-bar state): returns an un-started link, or null when
    * there is none. Default: the real client from src/helper/client.ts, loaded lazily (missing → null).
@@ -176,6 +183,8 @@ class DryRunRunner implements CommandRunner {
 
 interface LoadedVoice {
   home: string;
+  /** accounts.timeZone if valid, else the Mac's zone (timers, reminders). */
+  timeZone: string;
   cfg: VoiceConfig;
   memory: MemoryConfig;
   history: HistoryConfig;
@@ -188,6 +197,7 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null
     const c = (env.loadConfig ?? loadConfig)();
     return {
       home: c.home,
+      timeZone: ownerZone(typeof c.accounts?.timeZone === 'string' ? c.accounts.timeZone : undefined),
       cfg: parseVoiceConfig(c.voice),
       memory: parseMemoryConfig(c.memory),
       history: parseHistoryConfig(c.history),
@@ -386,6 +396,18 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     }
   }
   const chimes = cfg.chimes && !args.dryRun ? (env.chimes ?? new AfplayChimes()) : silentChimes;
+  // Timers and reminders ("set a timer for 10 minutes", "remind me at 5 to …"): handled before Claude, fired by
+  // this process while it listens. A dry run changes nothing.
+  let alertTimers: (text: string) => void = () => undefined;
+  const timerStore = args.dryRun ? null : new TimerStore({ home, now: env.now, log: err, onFire: (items) => alertTimers(timerRouter!.alertText(items)) });
+  const timerRouter = timerStore
+    ? new TimerRouter({
+        store: timerStore,
+        timeZone: loaded.timeZone,
+        confirmer: env.confirmer ?? new DialogConfirmer({ timeoutSec: MEMORY_DIALOG_TIMEOUT_SEC }),
+        ...(env.now ? { now: env.now } : {}),
+      })
+    : null;
   const makeAssistant = (bridge: HelperBridge | null) => {
     const hooks = assistantHooks(bridge);
     return new Assistant({
@@ -395,6 +417,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       speak,
       status: out,
       memory: memoryRouter,
+      timers: timerRouter,
       onDone,
       onStart: (c) => app?.heard(c.said, c.source),
       ...hooks,
@@ -529,6 +552,37 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
+    // Fire timers only while listening. The notification shows at once; the spoken alert waits in ONE queue until the
+    // listener is idle (not recording, no command, nobody talking) and runs through listener.submit, so it counts as
+    // busy while it speaks (review 6, R6-5). Gives up speaking after 10 minutes (the notification already showed).
+    const notify: NotifyFn = env.notify ?? macNotify;
+    const pending: string[] = [];
+    let pumping = false;
+    const pump = async (): Promise<void> => {
+      if (pumping) return;
+      pumping = true;
+      try {
+        const deadline = Date.now() + 10 * 60_000;
+        while (pending.length && Date.now() < deadline) {
+          const l = listener;
+          const run = l ? l.submit(() => assistant.announce(pending.join(' '))) : null;
+          if (run) {
+            pending.length = 0;
+            await run.catch(() => undefined);
+          } else await new Promise((r) => setTimeout(r, 500));
+        }
+        pending.length = 0;
+      } finally {
+        pumping = false;
+      }
+    };
+    alertTimers = (text) => {
+      out(`Timer: ${text}`);
+      notify(text);
+      pending.push(text);
+      void pump();
+    };
+    timerStore?.start();
     const keys = env.keys ?? (signals ? watchEnterKey : null);
     const current = listener;
     const unwatch = keys ? keys(() => void current.rearm()) : () => undefined;
@@ -538,6 +592,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       unwatch();
     }
   } finally {
+    timerStore?.stop();
     if (settings.personaFile) removePersonaFile(settings.personaFile);
     await app?.close();
     app = null;

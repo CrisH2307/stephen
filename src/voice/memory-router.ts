@@ -96,10 +96,10 @@ export class MemoryRouter {
         body:
           `Remember this? "${text}"` +
           (rest ? `\n\nAllow also runs: "${rest}"` : '') +
-          `\n\nYou said "remember …" after the wake word. Allow saves it (it is sent to Claude with every command, and read out through your voice service). Hold Fn+Option to save without this question.`,
+          `\n\nYou said "remember …" after the wake word. Allow saves it (it is sent to Claude with every command, and read out through your voice service). Hold F5 to save without this question.`,
       });
       // Denied or unanswered: nothing is saved and the rest of the line is not run either (it may not have been you).
-      if (answer === 'unavailable') return { reply: "I couldn't ask you to confirm, so I didn't save it. Hold Fn+Option and say it again.", changed: false };
+      if (answer === 'unavailable') return { reply: "I couldn't ask you to confirm, so I didn't save it. Hold F5 and say it again.", changed: false };
       if (answer !== 'approved') return { reply: "Okay, didn't save it.", changed: false };
     }
     const r = await this.o.store.add(text, source);
@@ -118,7 +118,7 @@ export class MemoryRouter {
     if (!items.length) return { reply: "I don't have anything saved yet. Say \"remember\" and the thing.", changed: false };
     const n = items.length === 1 ? '1 thing' : `${items.length} things`;
     // After the wake word, say only the count: reading them out would tell whoever is in the room.
-    if (this.untrusted(source)) return { reply: `I remember ${n}. Hold Fn+Option and ask again, or open the Stephen app, to hear them.`, changed: false };
+    if (this.untrusted(source)) return { reply: `I remember ${n}. Hold F5 and ask again, or open the Stephen app, to hear them.`, changed: false };
     return { reply: `I remember ${n}: ${quoteList(items)}.`, changed: false };
   }
 
@@ -127,7 +127,7 @@ export class MemoryRouter {
     const m = matchForget(items, query);
     if ('none' in m) return { reply: `I don't have anything about ${query}.`, changed: false };
     if ('tie' in m) {
-      if (this.untrusted(source)) return { reply: `I have ${m.tie.length} things about ${query}. Hold Fn+Option and say it more exactly, or use the Stephen app.`, changed: false };
+      if (this.untrusted(source)) return { reply: `I have ${m.tie.length} things about ${query}. Hold F5 and say it more exactly, or use the Stephen app.`, changed: false };
       return { reply: `I have ${m.tie.length} things about ${query}: ${quoteList(m.tie)}. Say it more exactly, or use the Stephen app.`, changed: false };
     }
     return this.forgetItem(m.match, source);
@@ -144,9 +144,9 @@ export class MemoryRouter {
     if (this.untrusted(source)) {
       const answer = await this.o.confirmer.confirm({
         title: 'Stephen: forget this?',
-        body: `Forget this? "${item.text}"\n\nYou said "forget …" after the wake word. Hold Fn+Option to forget without this question.`,
+        body: `Forget this? "${item.text}"\n\nYou said "forget …" after the wake word. Hold F5 to forget without this question.`,
       });
-      if (answer === 'unavailable') return { reply: "I couldn't ask you to confirm, so I kept it. Hold Fn+Option and say it again.", changed: false };
+      if (answer === 'unavailable') return { reply: "I couldn't ask you to confirm, so I kept it. Hold F5 and say it again.", changed: false };
       if (answer !== 'approved') return { reply: 'Okay, kept it.', changed: false };
     }
     const r = await this.o.store.forget(item.id);

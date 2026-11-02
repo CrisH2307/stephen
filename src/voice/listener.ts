@@ -15,7 +15,7 @@
  *  - The stop phrase ("stephen stop") cancels the running command or the spoken reply, at any time.
  *  - Follow-ups (src/voice/conversation.ts): any cancel, Esc or the stop phrase — even when idle — also ends the
  *    conversation, so the next command starts a fresh Claude session with a fresh safety gate.
- *  - Push-to-talk (helper: hold Fn+Option) needs no wake word: pressing it cancels whatever is running, records
+ *  - Push-to-talk (helper: hold F5) needs no wake word: pressing it cancels whatever is running, records
  *    until release (≥ PTT_MIN_HOLD_MS, at most PTT_MAX_HOLD_MS) and sends the transcript. Esc cancels like
  *    "stephen stop". `voice.wakeWord: false` turns the wake word off (push-to-talk only).
  *  - Nothing spoken is ever a confirmation: risky actions are confirmed in a macOS dialog by the MCP server.
@@ -182,7 +182,7 @@ export class Listener {
     return this.state === 'busy';
   }
 
-  /** Waiting for the wake word or Fn+Option: nothing running, nobody talking (submit() would start). */
+  /** Waiting for the wake word or F5: nothing running, nobody talking (submit() would start). */
   get idle(): boolean {
     return this.state === 'listening' && !this.exitRequested;
   }
@@ -212,7 +212,7 @@ export class Listener {
 
   /** The "ready" line printed whenever Stephen is idle again. */
   private readyLine(): string {
-    if (!this.wakeOn) return 'Ready — hold Fn+Option to talk…';
+    if (!this.wakeOn) return 'Ready — hold F5 to talk…';
     return `Listening for "${this.o.wakePhrase}"…`;
   }
 
@@ -231,7 +231,7 @@ export class Listener {
 
   /**
    * Run a typed command (the Stephen app's chat) in the same queue as voice commands: it counts as busy, so the wake
-   * word can only cancel it, Esc / "stephen stop" / Fn+Option cancel it, and push-to-talk waits for it. `run` starts
+   * word can only cancel it, Esc / "stephen stop" / F5 cancel it, and push-to-talk waits for it. `run` starts
    * the command (assistant.command(...)). Returns null, without running anything, when Stephen is not idle (a command
    * is running or being spoken, or the user is talking).
    */
@@ -283,11 +283,11 @@ export class Listener {
 
   async run(): Promise<number> {
     await this.d.source.start();
-    const ptt = this.d.helper ? ' (or hold Fn+Option)' : '';
+    const ptt = this.d.helper ? ' (or hold F5)' : '';
     this.d.status(
       this.wakeOn
         ? `Listening for "${this.o.wakePhrase}"${ptt} on ${this.d.source.label}… (Ctrl-C to quit)`
-        : `Ready on ${this.d.source.label} — hold Fn+Option to talk… (Ctrl-C to quit)`,
+        : `Ready on ${this.d.source.label} — hold F5 to talk… (Ctrl-C to quit)`,
     );
     this.attachHelper();
     this.menu('listening');
@@ -360,7 +360,7 @@ export class Listener {
       // Unknown (null: just (re)connected, no audio event yet) is treated like playing — fail closed (review #4 #2).
       if (this.d.helper!.audioPlaying !== false) {
         this.ignoredWakes++;
-        this.d.status(`Ignored "${this.o.wakePhrase}" — sound is playing (it may be a video talking). Hold Fn+Option to talk.`);
+        this.d.status(`Ignored "${this.o.wakePhrase}" — sound is playing (it may be a video talking). Hold F5 to talk.`);
         return;
       }
       this.beginCapture(hit);
@@ -468,13 +468,13 @@ export class Listener {
     this.state = 'recording';
     this.d.chimes.play('wake');
     this.menu('recording');
-    this.d.status('Recording… (release Fn+Option to send)');
+    this.d.status('Recording… (release F5 to send)');
   }
 
   /** The helper connection dropped mid-press: never send a cut-off command ("close all tabs except…"). */
   private abortPtt(): void {
     if (this.state !== 'recording') return;
-    this.d.status('Push-to-talk was interrupted (the helper disconnected) — nothing was sent. Hold Fn+Option and try again.');
+    this.d.status('Push-to-talk was interrupted (the helper disconnected) — nothing was sent. Hold F5 and try again.');
     this.toListening();
   }
 
@@ -482,7 +482,7 @@ export class Listener {
     if (this.state !== 'recording') return; // already sent at the length cap, or cancelled
     const min = this.o.pttMinHoldMs ?? PTT_MIN_HOLD_MS;
     if (heldMs < min) {
-      this.d.status(`Ignored a ${Math.round(heldMs)} ms tap — hold Fn+Option while you speak.`);
+      this.d.status(`Ignored a ${Math.round(heldMs)} ms tap — hold F5 while you speak.`);
       this.toListening();
       return;
     }

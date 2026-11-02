@@ -68,6 +68,8 @@ export interface AssistantOptions {
   soundPlaying?: () => Promise<boolean>;
   /** Memory commands, handled before Claude (absent or memory.enabled false: everything goes to Claude). */
   memory?: MemoryRouter | null;
+  /** Timer / reminder commands, handled before Claude like memory (src/timers/router.ts). */
+  timers?: { route(text: string, opts: { source: CommandSource; raw?: string }): Promise<{ reply: string; changed: false; rest?: string; said?: string } | null> } | null;
   /** Called once per command with its report (history). A throwing hook is logged, never fails the command. */
   onDone?: (r: CommandReport) => void;
   /** Called when a command starts, before the memory router (the Stephen app shows voice commands live). Same rules. */
@@ -133,7 +135,9 @@ export class Assistant {
     try {
       let prefix = '';
       let prompt = text;
-      const route = this.o.memory ? await this.o.memory.route(text, { source, raw: opts.raw }) : null;
+      const route =
+        (this.o.memory ? await this.o.memory.route(text, { source, raw: opts.raw }) : null) ??
+        (this.o.timers ? await this.o.timers.route(text, { source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) }) : null);
       if (route) {
         if (route.said !== undefined) said = route.said;
         // A memory change ends the conversation BEFORE anything else runs: a resumed session would keep the old
@@ -204,6 +208,23 @@ export class Assistant {
     this.o.chimes.play('done');
     const secs = ((now() - t0) / 1000).toFixed(1);
     this.o.status(this.cancelled ? 'Stopped.' : `Done (${secs} s)`);
+  }
+
+  /**
+   * Say a timer/reminder alert like a reply (shown, spoken unless sound is playing, done chime). Run it through
+   * Listener.submit so it waits for idle and counts as busy while it speaks (no wake word, no recording on top;
+   * review 6, R6-5). Not recorded in history.
+   */
+  async announce(text: string): Promise<CommandReport> {
+    const now = this.o.now ?? Date.now;
+    const t0 = now();
+    this.cancelled = false;
+    try {
+      await this.deliver(text, true, undefined, t0);
+    } finally {
+      this.phaseNow = 'idle';
+    }
+    return { id: newHistoryId(), source: 'cli', said: '', reply: text, result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', ranClaude: false, followUp: false, turns: 0, ms: Math.max(0, now() - t0) };
   }
 
   /** End the follow-up conversation: the next command starts a fresh Claude session with a fresh gate. */

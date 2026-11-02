@@ -28,7 +28,7 @@ export interface HelperLink {
 
 export const HELPER_HINT = 'Install the helper for push-to-talk and no wake-word cooldown: stephen install-helper';
 export const PTT_NEEDS_HELPER =
-  'Push-to-talk only (voice.wakeWord false / --ptt-only) needs Stephen Helper for the Fn+Option keys: run `stephen install-helper`, ' +
+  'Push-to-talk only (voice.wakeWord false / --ptt-only) needs Stephen Helper for the F5 / Fn+Option keys: run `stephen install-helper`, ' +
   'or turn the wake word back on.';
 /** How long to wait for a fresh `audio` answer before using the last known value. */
 export const AUDIO_QUERY_WAIT_MS = 300;

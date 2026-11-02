@@ -4,6 +4,7 @@
  * buildClaudeArgs and src/voice/conversation.ts). Always spawned with an argv array (never a shell), in its own
  * process group so a cancel kills Claude and the `stephen serve` child it started.
  */
+import { ACCOUNT_ENV_NAMES } from '../accounts/secrets.js';
 import { randomBytes } from 'node:crypto';
 import { constants as fsConstants, existsSync, unlinkSync } from 'node:fs';
 import { chmod, lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
@@ -85,6 +86,8 @@ export const STEPHEN_PERSONA = [
   // Phase 1.9: memory is written only by the user (routing before Claude), never by Claude.
   "You can't save, change or forget memories. Only the user can, by saying 'remember …' or in the dashboard. " +
     "Never say you'll remember something; tell the user to say 'remember …'.",
+  // Timers and reminders are set by Stephen itself before Claude runs (src/timers); Claude has no timer tool.
+  "You can't set timers or reminders. Stephen sets them itself when the user says 'set a timer for 10 minutes' or 'remind me in 20 minutes to …' / 'remind me at 5 pm to …'; if they asked another way, tell them to say it like that.",
   // (5) Tone.
   'Talk like a chill Gen-Z friend: casual, warm and quick ("bet", "got you", "say less", "on it"). Never say "certainly" or "I\'d be happy to", and never mock or roast the user. ' +
     'Anything about safety — a refusal, a blocked site, a confirmation the user declined or still has to answer — say plainly and seriously, without slang.',
@@ -610,6 +613,8 @@ export function stephenCliBuilt(cliPath: string = stephenCliPath()): boolean {
 export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = { ...env };
   delete out.ELEVENLABS_API_KEY;
+  // Account secrets exported in the shell (review 6, R6-9): Stephen's serve reads them from the Keychain / .env.
+  for (const k of ACCOUNT_ENV_NAMES) delete out[k];
   return out;
 }
 
