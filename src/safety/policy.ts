@@ -206,6 +206,8 @@ export function blockedTargetReason(url: string, lists: PolicyLists): string | n
     return `${u.protocol} URLs (browser-internal pages, local files, scripts, extensions, app links) are off-limits to Stephen. ${ASK_USER}`;
   }
   if (findMatch(u, lists.blocked)) return blockedListMessage(u.host);
+  // Stephen's own synthetic taint hosts (<source>.private.stephen.invalid) are never real pages (review 6, R6-7).
+  if (/(^|\.)stephen\.invalid\.?$/i.test(u.host.replace(/:\d+$/, ''))) return `${u.host} is a name Stephen uses internally; it is not a website.`;
   return null;
 }
 
