@@ -78,7 +78,7 @@ Usage:
   stephen install-zen-launcher [--dry-run]
                          Create "~/Applications/${ZEN_LAUNCHER_APP_NAME}.app" (runs zen-launch; put it in your Dock)
   stephen install-helper [--dry-run]
-                         Build "~/Applications/Stephen Helper.app" (Fn+Option push-to-talk, Esc; needs Xcode tools)
+                         Build "~/Applications/Stephen Helper.app" (F5 or Fn+Option push-to-talk, Esc; needs Xcode tools)
   stephen help | --help  This help
   stephen --version      Print the version
 
