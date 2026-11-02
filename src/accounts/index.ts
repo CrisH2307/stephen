@@ -69,7 +69,10 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
   function tool<S extends ZodRawShapeCompat>(name: string, title: string, description: string, inputSchema: S, handler: (args: ShapeOutput<S>) => Promise<CallToolResult>): void {
     const cb = (async (args: ShapeOutput<S>) => {
       try {
-        hub.safety();
+        // One action each in the gate's rate limit, like a click (review 7, R7-11): a looping model can't run
+        // gmail_search (11 Google requests) without bound.
+        const limited = hub.safety().gate.countAccountCall();
+        if (limited) return toErrorResult(new NoticeError(limited));
         return await handler(args);
       } catch (e) {
         if (e instanceof AccountHttpError) return toErrorResult(new NoticeError(e.message));

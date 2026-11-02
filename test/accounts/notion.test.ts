@@ -332,7 +332,7 @@ describe('notion_search over MCP', () => {
 
 describe('stephen accounts test notion', () => {
   it('counts open to-dos in the configured database; no token → exit 1', async () => {
-    const { runAccountsCli } = await import('../../src/accounts/cli.js');
+    const { runAccountsCli } = await import('../../src/connect/accounts-cli.js');
     handler = (q, res) => {
       if (q.method === 'GET') return json(res, { title: rt('Cris to-dos'), properties: CHECKBOX_SCHEMA });
       json(res, { results: [checkboxPage('A', false), checkboxPage('B', false), checkboxPage('C', true)] });

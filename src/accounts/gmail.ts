@@ -164,16 +164,27 @@ const header = (m: GmailMessage, name: string): string => {
   return typeof h?.value === 'string' ? h.value.slice(0, 2000) : '';
 };
 
-/** A From header → display name + the address's domain only ("Dr Patel (ontariotechu.ca)"); never the full address. */
+/**
+ * A From header → display name + the address's real domain only ("Dr Patel <ontariotechu.ca>"); never the full
+ * address. The display name is the sender's own text, so it can't carry a domain of its own (review 7, R7-6): after
+ * NFKC (so "＠" and "（" are caught), words that hold an "@" or look like a domain ("ontariotechu.ca") are dropped,
+ * and so are parentheses and brackets. The angle brackets then hold only the domain from the address.
+ */
 export function senderText(from: string): string {
   const addr = /<([^<>\s]*)>\s*$/.exec(from)?.[1] ?? /[^\s<>"]+@[^\s<>"]+/.exec(from)?.[0] ?? '';
   const at = addr.lastIndexOf('@');
   const domain = at >= 0 ? addr.slice(at + 1).toLowerCase() : '';
   const okDomain = /^[a-z0-9.-]{1,253}$/.test(domain) ? domain : '';
-  let name = from.replace(/<[^<>]*>\s*$/, '').trim().replace(/^"(.*)"$/, '$1').trim();
-  if (name.includes('@')) name = ''; // a bare address, or an address used as the name
+  const name = from
+    .replace(/<[^<>]*>\s*$/, '')
+    .slice(0, 400)
+    .normalize('NFKC')
+    .replace(/[()[\]{}<>"]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w && !w.includes('@') && !/[\p{L}\p{N}-]\.\p{L}{2,}/u.test(w))
+    .join(' ');
   const n = field(name, 60);
-  if (n && okDomain) return `${n} (${okDomain})`;
+  if (n && okDomain) return `${n} <${okDomain}>`;
   return n || (okDomain ? `someone at ${okDomain}` : 'unknown sender');
 }
 
@@ -223,6 +234,48 @@ export function dropBlocks(html: string): string {
   return out + html.slice(i);
 }
 
+/** An element hidden by its own attributes: `hidden`, `aria-hidden="true"`, or an inline style that hides it. */
+const HIDDEN_ATTR_RE = /\shidden(?=[\s=/>]|$)|aria-hidden\s*=\s*["']?true|display\s*:\s*none|visibility\s*:\s*hidden|(?:^|[\s;"'])(?:font-size|max-height|height|width|opacity)\s*:\s*0(?:\.0+)?(?:px|pt|em|rem|%)?\s*(?:[;"'!>]|$)/i;
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+
+/**
+ * Drop elements the reader can't see (review 7, R7-11): `hidden`, `aria-hidden="true"`, `display:none`,
+ * `visibility:hidden`, zero size / font size / opacity in an inline style. Best effort (CSS classes are not looked
+ * at). One forward scan over the tags; inside a hidden element only same-name tags are counted for nesting, so it
+ * is linear time. An unclosed hidden element drops the rest.
+ */
+export function dropHidden(html: string): string {
+  let out = '';
+  let i = 0;
+  let hiddenTag = '';
+  let depth = 0;
+  for (;;) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) break;
+    const gt = html.indexOf('>', lt);
+    if (gt < 0) break; // no tag left: the rest is text
+    const tag = html.slice(lt, gt + 1);
+    const m = /^<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/.exec(tag);
+    const name = m ? m[2]!.toLowerCase() : '';
+    const closing = !!m?.[1];
+    const selfClosing = VOID_TAGS.has(name) || tag.endsWith('/>');
+    if (hiddenTag) {
+      if (name === hiddenTag && !selfClosing) depth += closing ? -1 : 1;
+      if (depth === 0) hiddenTag = '';
+    } else {
+      out += html.slice(i, lt);
+      if (m && !closing && HIDDEN_ATTR_RE.test(tag.slice(m[0].length))) {
+        if (!selfClosing) {
+          hiddenTag = name;
+          depth = 1;
+        }
+      } else out += tag;
+    }
+    i = gt + 1;
+  }
+  return hiddenTag ? out : out + html.slice(i);
+}
+
 const MAX_PARTS = 60;
 const MAX_RAW_CHARS = 400_000;
 
@@ -252,7 +305,7 @@ export function messageText(payload: GmailPart | undefined): string {
       .filter((l) => !/^\s*>/.test(l))
       .join('\n');
   }
-  if (html !== null) return htmlToText(dropBlocks(html as string));
+  if (html !== null) return htmlToText(dropHidden(dropBlocks(html as string)));
   return '';
 }
 

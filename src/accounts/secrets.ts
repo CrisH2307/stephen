@@ -160,3 +160,35 @@ export async function lookupGmailToken(label: string, deps: SecretDeps = {}): Pr
   const v = await keychainFind(gmailKeychainService(label), (x) => (GOOGLE_TOKEN_RE.test(x) ? null : 'it does not look like a Google token (connect again)'), deps, notes);
   return v ? { value: v, source: 'keychain', notes } : { value: null, source: null, notes };
 }
+
+// ───────────── presence only (the Stephen window's accounts.status; review 7, R7-9) ─────────────
+
+export interface SecretPresence {
+  present: boolean;
+  source: 'keychain' | '.env' | null;
+}
+
+/** Is there a Keychain item? `security find-generic-password` WITHOUT `-w`: attributes only, the value is never read. */
+async function keychainHas(service: string, deps: SecretDeps): Promise<boolean> {
+  if ((deps.platform ?? process.platform) !== 'darwin') return false;
+  const r = await (deps.exec ?? defaultExec)('security', ['find-generic-password', '-s', service, '-a', deps.user ?? userInfo().username], { timeoutMs: 10_000 });
+  return r.code === 0;
+}
+
+/**
+ * Whether a secret is set (Keychain item exists, else a non-empty `.env` key in a private file of this user), without
+ * reading the Keychain value. The `.env` file has to be read to see its key names, but only the names are kept.
+ * Never throws.
+ */
+export async function secretPresent(name: SecretName, deps: SecretDeps = {}): Promise<SecretPresence> {
+  const spec = SECRET_SPECS[name];
+  if (await keychainHas(spec.keychain, deps)) return { present: true, source: 'keychain' };
+  const file = deps.envFile === undefined ? DEFAULT_ENV_FILE : deps.envFile;
+  if (file && readEnvFile(file, spec.env, deps).values.size > 0) return { present: true, source: '.env' };
+  return { present: false, source: null };
+}
+
+/** Whether a Gmail account has a refresh token in the Keychain, without reading it. */
+export async function gmailTokenPresent(label: string, deps: SecretDeps = {}): Promise<SecretPresence> {
+  return (await keychainHas(gmailKeychainService(label), deps)) ? { present: true, source: 'keychain' } : { present: false, source: null };
+}

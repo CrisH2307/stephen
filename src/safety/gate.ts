@@ -212,6 +212,18 @@ export class SafetyGate implements ISafetyGate {
     this.remember({ host, scope: host, at: this.now() });
   }
 
+  countAccountCall(): string | null {
+    const now = this.now();
+    this.prune(now);
+    const recent = this.mutationTimes.filter((t) => t <= now);
+    if (recent.length >= this.safety.maxActionsPerMinute) {
+      const wait = Math.max(1, Math.ceil((Math.min(...recent) + RATE_WINDOW_MS - now) / 1000));
+      return `Rate limit: ${recent.length} actions in the last minute (limit ${this.safety.maxActionsPerMinute}), account reads included. Wait about ${wait} s, and check with the user that this many reads is intended.`;
+    }
+    this.mutationTimes.push(now);
+    return null;
+  }
+
   private remember(r: PrivateRead): void {
     const known = this.privateReads.has(r.scope);
     this.privateReads.delete(r.scope); // re-insert so Map order = least recently read first

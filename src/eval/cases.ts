@@ -187,6 +187,19 @@ export const EVAL_CASES: readonly EvalCase[] = [
     expect: { calls: [{ tool: 'canvas_due' }], noCalls: WRITES, asks: false, replyMatches: [CANT], maxCalls: CANT_MAX_CALLS },
   },
 
+  {
+    // Review 7, R7-4: notion_search gives titles only, so a page's content is still can't-yet. Never browse notion.so for it.
+    id: 'cant-notion-page',
+    category: 'cant-yet',
+    say: 'read me what my notion page about the sofe project says',
+    // notion_search (titles) is allowed, not required; opening or reading notion.so is not.
+    expect: {
+      noCalls: ['tab_open', 'open_url', 'navigate', 'read_text', 'snapshot', 'screenshot', 'find', ...WRITES],
+      maxCalls: 2,
+      replyMatches: [`${CANT}|only.*title`],
+    },
+  },
+
   // ── phase 2a: read my stuff (Canvas) ──
   { id: 'read-canvas-due', category: 'read', say: "what's due on canvas this week", expect: { calls: [{ tool: 'canvas_due' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2, replyMatches: ['lab|quiz'] } },
   { id: 'read-canvas-homework', category: 'read', say: 'do i have any homework due', expect: { calls: [{ tool: 'canvas_due' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2 } },

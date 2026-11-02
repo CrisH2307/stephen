@@ -81,6 +81,32 @@ describe('accountsStatus', () => {
     expect(off.accounts.find((a) => a.name === 'Gmail')).toMatchObject({ state: 'off', source: null });
   });
 
+  it('R7-9: checks presence only: security never gets -w, no value is read or returned', async () => {
+    const calls: string[][] = [];
+    // A fake `security` that would hand out values to anyone who asked with -w.
+    const exec: ExecFn = async (_f, args) => {
+      calls.push(args);
+      const hit = args.includes('stephen-canvas') || args.includes('stephen-gmail-school');
+      return hit ? { code: 0, stdout: args.includes('-w') ? 'LEAKED-SECRET-VALUE\n' : 'keychain: "login.keychain-db"\nattributes:\n', stderr: '' } : { code: 44, stdout: '', stderr: '' };
+    };
+    const s = await accountsStatus({ gmail: { accounts: ['school', 'personal'] } }, { platform: 'darwin', exec, user: 'cris', envFile: envFile(`NOTION_API=${NOTION}\n`) });
+    expect(calls.length).toBeGreaterThan(4);
+    for (const a of calls) {
+      expect(a).not.toContain('-w');
+      expect(a[0]).toBe('find-generic-password');
+    }
+    const a = byId(s);
+    expect(a.canvas).toMatchObject({ state: 'connected', source: 'keychain' });
+    expect(a.notion).toMatchObject({ state: 'connected', source: '.env' });
+    expect(a['gmail:1']).toMatchObject({ state: 'connected', source: 'keychain', detail: 'school' });
+    expect(a['gmail:2']).toMatchObject({ state: 'not_set', detail: 'personal' });
+    const json = JSON.stringify(s);
+    expect(json).not.toContain('LEAKED');
+    expect(json).not.toContain(NOTION);
+    // An empty .env key is not "connected".
+    expect(byId(await accountsStatus({}, { platform: 'linux', envFile: envFile('NOTION_API=\n') })).notion.state).toBe('not_set');
+  });
+
   it('an unreadable (group-readable) .env counts as not set', async () => {
     const f = join(tmp, 'loose.env');
     writeFileSync(f, `NOTION_API=${NOTION}\n`);

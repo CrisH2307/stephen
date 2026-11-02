@@ -23,7 +23,7 @@ import type { TtsProviderName } from './types.js';
 export type { TtsProviderName } from './types.js';
 export type { SpeakHandle, Speaker } from '../speech.js';
 export { parseTtsConfig, TtsConfigError, TTS_CONFIG_SHAPE, type TtsConfig } from './config.js';
-export { findApiKey, runVoiceKey, VOICE_KEY_USAGE } from './keys.js';
+export { findApiKey } from './keys.js';
 export { ensureKokoro, isKokoroInstalled, KOKORO_MODEL } from './kokoro.js';
 export { redactKey } from './redact.js';
 

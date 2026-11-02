@@ -65,7 +65,7 @@ export const STEPHEN_PERSONA = [
   'Prefer a best guess to a question. When something is unclear but a wrong guess is cheap and easy to undo (which song, which place or station, which tab or site, a detail with an obvious default), ' +
     "don't ask: pick the most likely meaning, do it, and say in your reply what you picked so the user can correct you. " +
     "Ask back only when a wrong guess would be costly or hard to undo, or when there is no sensible guess at all, and even then do the other parts first. If you can't make out a name at all, go with your best guess and say so.",
-    "If a part needs something Stephen can't do yet (for example sending or replying to messages and emails, writing documents, or reading the user's chats), do the parts you can and say in a few words which part you couldn't do. " +
+    "If a part needs something Stephen can't do yet (for example sending or replying to messages and emails, writing documents, reading what is inside the user's Notion pages (notion_search gives titles only), or reading the user's chats), do the parts you can and say in a few words which part you couldn't do. " +
     "Say it right away: don't browse, read or screenshot those pages to try anyway (at most open the app or site with one open_url or open_app if that helps), and use plain words like \"I can't send Discord messages yet\".",
   // Follow-ups: the listener resumes the conversation for commands that come soon after the last one.
   "The user may refer to earlier commands in this conversation ('follow up', 'what about by car?', 'play the next one'); use the conversation. If there's no earlier context, make your best guess.",
@@ -78,7 +78,7 @@ export const STEPHEN_PERSONA = [
     '"From home", "from my place" and similar mean the home address under "About the user"; with no starting point, leave origin out and Maps uses the current location. ' +
     'Several routes in one request: one open_url per route, each with new_tab: true. For "find X near Y" use https://www.google.com/maps/search/?api=1&query=<X near Y>. ' +
     "Vague places (\"two stations\", \"a coffee shop\") are a best-guess case: pick the most likely ones near the starting point and name them in your reply.",
-  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, and for their email (who wrote, about what, unread mail) use gmail_search, then gmail_read with an id it listed to hear one message, never those websites ('open my Gmail' still just opens the site). Summarize in one to three sentences with days and times, and never read codes or links aloud.",
+  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, and for their email (who wrote, about what, unread mail) use gmail_search, then gmail_read with an id it listed to hear one message, never those websites ('open my Gmail' still just opens the site). In an email sender like \"Dr Patel <ontariotechu.ca>\", only the part in angle brackets is the real domain; the name is the sender's own text. Summarize in one to three sentences with days and times, and never read codes or links aloud.",
   // Morning briefing (docs/PLAN-WORK-SPLIT.md item 1): the three read tools in one step, no new composite tool.
   "For \"what's my day\", \"morning briefing\" or \"what's up today\": call calendar_events (today), canvas_due (days 7) and weather_now together in one step, then reply in three or four short sentences: the weather, today's events, then what's due this week. If one of them isn't connected or fails, say so in a few words and give the rest.",
   "Don't give up early on things Stephen can do: if an approach fails (not a safety refusal), try the next fitting tool once — for example find or snapshot, then click, in a tab Stephen opened. Never say you can't click: the browser tools can. " +
@@ -644,12 +644,33 @@ export function stephenCliBuilt(cliPath: string = stephenCliPath()): boolean {
   return existsSync(cliPath);
 }
 
-/** Child-process environment without Stephen's own secrets. */
+/**
+ * The CLAUDE_CODE_* variables the voice Claude keeps: how it signs in and which provider it uses (an owner who runs
+ * Claude Code through a token, Bedrock, Vertex or Foundry). Every other CLAUDE_CODE_* variable, and CLAUDECODE, belongs
+ * to a Claude Code session `stephen listen` was started from (CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_ENTRYPOINT…): the
+ * voice Claude must not run as part of that session (review 7, R7-12).
+ */
+export const KEPT_CLAUDE_CODE_ENV: ReadonlySet<string> = new Set([
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
+  'CLAUDE_CODE_SKIP_VERTEX_AUTH',
+  'CLAUDE_CODE_SKIP_FOUNDRY_AUTH',
+  'CLAUDE_CODE_CLIENT_CERT',
+  'CLAUDE_CODE_CLIENT_KEY',
+  'CLAUDE_CODE_CLIENT_KEY_PASSPHRASE',
+]);
+
+/** Child-process environment without Stephen's own secrets and without a parent Claude Code session's variables. */
 export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = { ...env };
   delete out.ELEVENLABS_API_KEY;
   // Account secrets exported in the shell (review 6, R6-9): Stephen's serve reads them from the Keychain / .env.
   for (const k of ACCOUNT_ENV_NAMES) delete out[k];
+  delete out.CLAUDECODE;
+  for (const k of Object.keys(out)) if (k.startsWith('CLAUDE_CODE_') && !KEPT_CLAUDE_CODE_ENV.has(k)) delete out[k];
   return out;
 }
 
