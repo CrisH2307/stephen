@@ -13,6 +13,9 @@
  *  4. Window query: instances overlapping [start, end), sorted.
  */
 
+import { tzOffset, validZone, wallParts, zonedToUtc } from '../util/zone.js';
+
+export { tzOffset, validZone, wallParts, zonedToUtc };
 export const MAX_INSTANCES = 2000;
 const DAY = 24 * 3600 * 1000;
 
@@ -78,37 +81,9 @@ export function unescapeText(v: string): string {
   return v.replace(/\\([\\;,nN])/g, (_m, c: string) => (c === 'n' || c === 'N' ? ' ' : c));
 }
 
-/** UTC ms → the offset (ms) of `tz` at that instant. */
-export function tzOffset(ms: number, tz: string): number {
-  const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
-  const asUtc = Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour! % 24, +p.minute!, +p.second!);
-  return asUtc - Math.floor(ms / 1000) * 1000;
-}
 
-/** Wall clock in `tz` → UTC ms (two fixed-point steps settle DST edges; a skipped hour moves forward). */
-export function zonedToUtc(y: number, mo: number, d: number, h: number, mi: number, s: number, tz: string): number {
-  const guess = Date.UTC(y, mo, d, h, mi, s);
-  let t = guess - tzOffset(guess, tz);
-  t = guess - tzOffset(t, tz);
-  return t;
-}
 
-/** UTC ms → wall-clock parts in `tz`. */
-export function wallParts(ms: number, tz: string): { y: number; mo: number; d: number; h: number; mi: number; s: number; dow: number } {
-  const w = new Date(ms + tzOffset(ms, tz));
-  return { y: w.getUTCFullYear(), mo: w.getUTCMonth(), d: w.getUTCDate(), h: w.getUTCHours(), mi: w.getUTCMinutes(), s: w.getUTCSeconds(), dow: w.getUTCDay() };
-}
 
-export function validZone(tz: string | undefined): tz is string {
-  if (!tz) return false;
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** An ICS date/time value → { ms, allDay, tz }. Null when it can't be read. */
 export function parseIcsTime(value: string, params: Record<string, string>, floatingTz: string): { ms: number; allDay: boolean; tz: string | null } | null {
@@ -138,6 +113,10 @@ export function parseRrule(v: string): Record<string, string> {
 }
 
 /** Parse every VEVENT of a feed. Events without a readable start are skipped. */
+export const MAX_EVENTS = 5000;
+export const MAX_PROPS = 200;
+export const MAX_EXDATES = 1000;
+
 export function parseIcs(text: string, floatingTz: string): CalEvent[] {
   const out: CalEvent[] = [];
   let cur: IcsProp[] | null = null;
@@ -147,10 +126,11 @@ export function parseIcs(text: string, floatingTz: string): CalEvent[] {
       if (cur) {
         const ev = toEvent(cur, floatingTz);
         if (ev) out.push(ev);
+        if (out.length >= MAX_EVENTS) break;
       }
       cur = null;
-    } else if (cur) {
-      const p = parseProp(line);
+    } else if (cur && cur.length < MAX_PROPS) {
+      const p = parseProp(line.slice(0, 8192));
       if (p) cur.push(p);
     }
   }
@@ -170,7 +150,8 @@ function toEvent(props: IcsProp[], floatingTz: string): CalEvent | null {
   if (end < start.ms) end = start.ms;
   const exdates = new Set<number>();
   for (const p of props.filter((x) => x.name === 'EXDATE')) {
-    for (const v of p.value.split(',')) {
+    for (const v of p.value.split(',', MAX_EXDATES)) {
+      if (exdates.size >= MAX_EXDATES) break;
       const t = parseIcsTime(v, p.params, floatingTz);
       if (t) exdates.add(t.ms);
     }
@@ -205,51 +186,72 @@ export function parseDuration(v: string): number {
 
 const DOW: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 
-/** Start times (UTC ms) of a recurring event up to `until` (exclusive), wall-clock based. */
-export function expandStarts(ev: CalEvent, until: number, floatingTz: string): number[] {
+/** Loop iterations per event, however the rule is written (review 6, R6-2: bounded CPU for hostile invites). */
+export const MAX_ITER = 5000;
+
+/**
+ * Start times (UTC ms) of a recurring event in [from, until), wall-clock based. Without COUNT the expansion jumps
+ * straight to the period just before `from` (arithmetic on days / weeks / months / years), so an event that has
+ * repeated daily since 2015 still shows up this week (review 6, R6-3). With COUNT it counts from DTSTART, bounded.
+ */
+export function expandStarts(ev: CalEvent, until: number, floatingTz: string, from: number = ev.start): number[] {
   const r = ev.rrule;
   if (!r) return [ev.start];
   const tz = ev.tz ?? 'UTC';
   const freq = r.FREQ;
-  const interval = Math.max(1, Number.parseInt(r.INTERVAL ?? '1', 10) || 1);
+  const interval = Math.min(10_000, Math.max(1, Number.parseInt(r.INTERVAL ?? '1', 10) || 1));
   const count = r.COUNT ? Math.max(0, Number.parseInt(r.COUNT, 10) || 0) : Infinity;
   const untilRule = r.UNTIL ? parseIcsTime(r.UNTIL, {}, floatingTz)?.ms ?? Infinity : Infinity;
   const stop = Math.min(until, untilRule === Infinity ? Infinity : untilRule + 1);
   const w0 = wallParts(ev.start, tz);
   const at = (y: number, mo: number, d: number) => zonedToUtc(y, mo, d, w0.h, w0.mi, w0.s, tz);
+  // Without COUNT, instances before `from` don't matter: skip whole periods up to it.
+  const skipping = count === Infinity && from > ev.start;
+  const wf = wallParts(from, tz);
+  const dayDiff = Math.floor((Date.UTC(wf.y, wf.mo, wf.d) - Date.UTC(w0.y, w0.mo, w0.d)) / DAY);
+  const monthDiff = (wf.y - w0.y) * 12 + (wf.mo - w0.mo);
+  const skipPeriods = (units: number) => (skipping ? Math.max(0, Math.floor(units / interval) - 1) * interval : 0);
   const out: number[] = [];
+  let iter = 0;
+  /** false = stop the loop. */
   const push = (t: number): boolean => {
+    if (++iter > MAX_ITER) return false;
     if (t < ev.start) return true;
     if (t >= stop || out.length >= count || out.length >= MAX_INSTANCES) return false;
     out.push(t);
     return true;
   };
   if (freq === 'DAILY') {
-    for (let i = 0; ; i += interval) if (!push(at(w0.y, w0.mo, w0.d + i))) break;
+    for (let i = skipPeriods(dayDiff); ; i += interval) if (!push(at(w0.y, w0.mo, w0.d + i))) break;
   } else if (freq === 'WEEKLY') {
-    const days = (r.BYDAY ? r.BYDAY.split(',').map((x) => DOW[x.slice(-2)]).filter((x): x is number => x !== undefined) : [w0.dow]).sort((a, b) => a - b);
+    const days = [...new Set(r.BYDAY ? r.BYDAY.split(',').map((x) => DOW[x.slice(-2)]).filter((x): x is number => x !== undefined) : [w0.dow])].sort((a, b) => a - b);
+    if (!days.length) days.push(w0.dow);
     const weekStart = w0.d - w0.dow; // Sunday of the first week
-    outer: for (let wk = 0; ; wk += interval) {
-      for (const dow of days) {
-        if (!push(at(w0.y, w0.mo, weekStart + wk * 7 + dow))) break outer;
-      }
-      if (wk > 52 * 50) break;
+    outer: for (let wk = skipPeriods(Math.floor(dayDiff / 7)); ; wk += interval) {
+      for (const dow of days) if (!push(at(w0.y, w0.mo, weekStart + wk * 7 + dow))) break outer;
     }
   } else if (freq === 'MONTHLY') {
     const day = r.BYMONTHDAY ? Number.parseInt(r.BYMONTHDAY, 10) : w0.d;
-    for (let i = 0; i < 12 * 50; i += interval) {
+    if (!(day >= 1 && day <= 31)) return [ev.start];
+    for (let i = skipPeriods(monthDiff); ; i += interval) {
       const dim = new Date(Date.UTC(w0.y, w0.mo + i + 1, 0)).getUTCDate();
-      if (day > dim) continue; // no Feb 30
+      if (day > dim) {
+        if (++iter > MAX_ITER) break;
+        continue; // no Feb 30
+      }
       if (!push(at(w0.y, w0.mo + i, day))) break;
     }
   } else if (freq === 'YEARLY') {
-    for (let i = 0; i < 200; i += interval) {
+    for (let i = skipPeriods(wf.y - w0.y); ; i += interval) {
       const dim = new Date(Date.UTC(w0.y + i, w0.mo + 1, 0)).getUTCDate();
-      if (w0.d > dim) continue;
+      if (w0.d > dim) {
+        if (++iter > MAX_ITER) break;
+        continue;
+      }
       if (!push(at(w0.y + i, w0.mo, w0.d))) break;
     }
   } else {
-    return [ev.start]; // unsupported FREQ: just the first instance
+    return [ev.start]; // unsupported FREQ (SECONDLY, HOURLY…): just the first instance
   }
   return out;
 }
@@ -265,7 +267,7 @@ export function instancesBetween(events: readonly CalEvent[], start: number, end
   for (const e of events) {
     if (e.recurrenceId !== null) continue;
     const len = e.end - e.start;
-    for (const s of expandStarts(e, end, floatingTz)) {
+    for (const s of expandStarts(e, end, floatingTz, start - len - DAY)) {
       if (e.exdates.has(s)) continue;
       const ov = overrides.get(`${e.uid}|${s}`);
       if (ov) {

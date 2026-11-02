@@ -22,6 +22,24 @@ export const SECRET_SPECS = {
 } as const;
 export type SecretName = keyof typeof SECRET_SPECS;
 
+/** Every environment name an account secret may use (stripped from claude's environment; review 6, R6-9). */
+export const ACCOUNT_ENV_NAMES: readonly string[] = Object.values(SECRET_SPECS).flatMap((s) => [...s.env]);
+
+const URL_SECRETS: ReadonlySet<SecretName> = new Set(['canvas-url', 'calendar-ics']);
+
+/**
+ * A plausible value for this secret, else a note. Tokens: printable ASCII only, so a bad paste (NUL, newline,
+ * smart quotes) can't end up in a header error message (review 6, R6-6). Addresses: https/webcal URLs.
+ */
+export function checkSecretValue(name: SecretName, v: string): string | null {
+  if (!/^[\x21-\x7e]{8,4096}$/.test(v)) return `the ${name} value has characters that can't be right (re-paste it)`;
+  // (http only for loopback: the tests' fake servers. ApiClient still refuses plain http outside tests.)
+  if (URL_SECRETS.has(name) && !/^(https|webcals?):\/\/[^/\s]+/i.test(v) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(v)) {
+    return `the ${name} value is not an https address`;
+  }
+  return null;
+}
+
 /** Stephen's repo root: this file is src/accounts/secrets.ts or dist/accounts/secrets.js. */
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const DEFAULT_ENV_FILE = join(REPO_ROOT, '.env');
@@ -57,9 +75,10 @@ export function parseEnvFile(text: string, wanted: readonly string[]): Map<strin
     const m = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!m || !wanted.includes(m[1]!)) continue;
     let v = m[2]!.trim();
-    if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v.at(-1) === v[0]) v = v.slice(1, -1);
+    const q = /^(["'])(.*)\1\s*(?:#.*)?$/.exec(v); // KEY="v" # note (review 6, R6-10)
+    if (q) v = q[2]!;
     else v = v.replace(/\s+#.*$/, '');
-    if (v && !out.has(m[1]!)) out.set(m[1]!, v);
+    if (v) out.set(m[1]!, v); // the last one wins, like dotenv
   }
   return out;
 }
@@ -92,7 +111,11 @@ export async function lookupSecret(name: SecretName, deps: SecretDeps = {}): Pro
     const exec = deps.exec ?? defaultExec;
     const r = await exec('security', ['find-generic-password', '-s', spec.keychain, '-a', deps.user ?? userInfo().username, '-w'], { timeoutMs: 10_000 });
     const v = r.stdout.trim();
-    if (r.code === 0 && v) return { value: v, source: 'keychain', notes };
+    if (r.code === 0 && v) {
+      const bad = checkSecretValue(name, v);
+      if (!bad) return { value: v, source: 'keychain', notes };
+      notes.push(`Keychain ${spec.keychain}: ${bad}`);
+    }
     if (r.code !== 0 && r.code !== 44) notes.push(`Keychain lookup for ${spec.keychain} failed: ${r.stderr.trim().split('\n')[0] || `exit ${r.code}`}`);
   }
   const file = deps.envFile === undefined ? DEFAULT_ENV_FILE : deps.envFile;
@@ -101,7 +124,10 @@ export async function lookupSecret(name: SecretName, deps: SecretDeps = {}): Pro
     if (note) notes.push(note);
     for (const k of spec.env) {
       const v = values.get(k);
-      if (v) return { value: v, source: '.env', notes };
+      if (!v) continue;
+      const bad = checkSecretValue(name, v);
+      if (!bad) return { value: v, source: '.env', notes };
+      notes.push(`.env ${k}: ${bad}`);
     }
   }
   return { value: null, source: null, notes };

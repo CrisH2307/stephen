@@ -102,8 +102,8 @@ export class ApiClient {
       });
     } catch (e) {
       clearTimeout(timer);
-      const aborted = (e as Error).name === 'AbortError';
-      throw new AccountHttpError(aborted ? `${u.host} did not answer in time` : `could not reach ${u.host} (${(e as Error).message.slice(0, 120)})`);
+      // Fixed words only: the raw message can hold a header value, i.e. the token (review 6, R6-6).
+      throw new AccountHttpError(`${u.host}: ${networkReason(e)}`);
     }
     try {
       if (res.status >= 300 && res.status < 400) throw new AccountHttpError(`${u.host} answered with a redirect (${res.status}) — refused`, res.status);
@@ -147,6 +147,18 @@ export class ApiClient {
     }
     return { items, truncated: href !== null };
   }
+}
+
+/** A network error in plain words, never its raw message. */
+export function networkReason(e: unknown): string {
+  const err = e as { name?: string; code?: string; cause?: { code?: string } };
+  if (err?.name === 'AbortError') return 'did not answer in time';
+  const code = err?.cause?.code ?? err?.code ?? '';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'the address could not be found (no internet, or a typo)';
+  if (code === 'ECONNREFUSED' || code === 'ECONNRESET') return 'the connection was refused or dropped';
+  if (/CERT|SSL|TLS/i.test(code)) return 'the secure connection failed (certificate problem)';
+  if (code === 'UND_ERR_CONNECT_TIMEOUT') return 'did not answer in time';
+  return 'could not be reached';
 }
 
 function parseJson<T>(text: string, origin: string): T {
