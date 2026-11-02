@@ -33,7 +33,7 @@ SIZES = {
     "tiny": "haiku",
     "everyday": "sonnet",
     "large": "opus",
-    "hardest": "fable",
+    "hardest": "opus",  # Fable is off for now (owner, 2026-11-02); was "fable"
 }
 
 QUESTIONS = {
