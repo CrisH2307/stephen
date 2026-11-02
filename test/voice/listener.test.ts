@@ -320,3 +320,19 @@ describe('Listener', () => {
     expect(await p).toBe(0);
   });
 });
+
+describe('Listener: pre-warm (phase 3)', () => {
+  it('the wake word pre-warms Claude once, before the command runs; the wake word while Claude runs only cancels', async () => {
+    const runner = new FakeRunner(true);
+    const gates = new Map<number, () => Promise<void>>([[85, () => waitFor(() => runner.pending, 5000, 'claude running')]]);
+    const t = setup({ pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(100), hits: { 12: 'WAKE', 90: 'WAKE' }, texts: ['hey stephen play a long podcast'], runner, gates });
+    await t.listener.run();
+    expect(runner.calls).toEqual(['prewarm', 'run:play a long podcast', 'cancel']);
+  });
+
+  it('a capture that never becomes a command still pre-warmed (the runner kills an unused process itself)', async () => {
+    const t = setup({ pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(40), hits: { 12: 'WAKE' }, texts: ['some video talking'] });
+    await t.listener.run();
+    expect(t.runner.calls).toEqual(['prewarm']);
+  });
+});

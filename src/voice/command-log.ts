@@ -3,8 +3,10 @@
  * command, with the names of the tools Claude called, read from `serve --tool-log` (never arguments or results).
  *
  * ToolLogRunner empties the tool log right before each Claude run and reads it back after, so the entry of a memory
- * command handled locally never picks up the previous run's tools. Recording never fails a command: errors are
- * only logged.
+ * command handled locally never picks up the previous run's tools. That also slices the log per command when one
+ * warm `stephen serve` lives across a whole conversation (phase 3): serve opens the file for every record, and each
+ * record is written before the tool result reaches Claude, so nothing of command N can land after command N's
+ * result. Recording never fails a command: errors are only logged.
  */
 import type { HistoryStore } from '../history/store.js';
 import { readToolLog, resetToolLog, type ToolCallRecord } from '../server/tool-log.js';
@@ -53,6 +55,10 @@ export class ToolLogRunner implements CommandRunner {
 
   commandEnded(): void {
     this.inner.commandEnded?.();
+  }
+
+  prewarm(): void {
+    this.inner.prewarm?.();
   }
 }
 

@@ -486,7 +486,7 @@ export function formatTiming(t: ClaudeTiming): string {
   if (t.durationMs !== null && t.apiMs !== null) parts.push(`tools + overhead ${s(Math.max(0, t.durationMs - t.apiMs))}`);
   const split = parts.join(', ');
   if (t.warm) {
-    const how = t.warm.command > 1 ? `follow-up ${t.warm.command} on this process` : t.warm.leadMs !== null ? `spawned ${s(Math.max(0, t.warm.leadMs))} ahead` : 'first command';
+    const how = t.warm.command > 1 ? `follow-up ${t.warm.command} on this process` : `spawned ${s(Math.max(0, t.warm.leadMs ?? 0))} ahead`;
     return `claude: ${s(t.wallMs)} (warm, ${how}${split ? `; ${split}` : ''})`;
   }
   return `claude: ${s(t.wallMs)}${split ? ` (${split})` : ''}`;

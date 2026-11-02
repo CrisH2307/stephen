@@ -16,6 +16,8 @@ export interface CommandRunner {
   endConversation?(): void;
   /** The reply is out (spoken or shown): the follow-up window counts from now. */
   commandEnded?(): void;
+  /** The user started talking (wake word, F5): start Claude now so it is ready when the transcript is (warm runner). */
+  prewarm?(): void;
 }
 
 export type Phase = 'idle' | 'running' | 'speaking';
@@ -225,6 +227,11 @@ export class Assistant {
       this.phaseNow = 'idle';
     }
     return { id: newHistoryId(), source: 'cli', said: '', reply: text, result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', ranClaude: false, followUp: false, turns: 0, ms: Math.max(0, now() - t0) };
+  }
+
+  /** The user started talking: let the runner start Claude now (no-op for the one-shot runner). */
+  prewarm(): void {
+    this.o.runner.prewarm?.();
   }
 
   /** End the follow-up conversation: the next command starts a fresh Claude session with a fresh gate. */
