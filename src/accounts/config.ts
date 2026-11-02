@@ -1,13 +1,15 @@
 /**
  * `"accounts"` in config.json (phase 2a). Everything is optional:
  *   { "enabled": true, "timeZone": "America/Toronto", "canvas": { "enabled": true, "url": "https://learn.ontariotechu.ca" },
- *     "notion": { "enabled": true, "todoDatabase": "<32 hex id>" } }
+ *     "notion": { "enabled": true, "todoDatabase": "<32 hex id>" },
+ *     "gmail": { "enabled": true, "clientId": "<Google OAuth desktop client id>", "accounts": ["personal", "personal2"] } }
  * Tokens are NEVER here (Keychain or the repo's .env, see secrets.ts).
  */
 import { z } from 'zod';
 import { checkOrigin } from './http.js';
 import { DEFAULT_WEATHER } from './weather.js';
 import { normalizeNotionId } from './notion.js';
+import { GMAIL_LABEL_RE } from './secrets.js';
 
 const service = z.object({ enabled: z.boolean().default(true) }).strict();
 
@@ -29,6 +31,17 @@ const schema = z
       .default({ enabled: true, ...DEFAULT_WEATHER }),
     /** todoDatabase: the to-do database id (32 hex, dashes optional); unset = the first shared database titled like "To-do"/"Tasks". */
     notion: service.extend({ todoDatabase: z.string().min(1).max(64).optional() }).strict().default({ enabled: true }),
+    /**
+     * clientId: the owner's Google Cloud OAuth client (Desktop app); not a secret. accounts: the connected labels in
+     * order (the first is the default), added by `stephen connect gmail <label>`. Refresh tokens: Keychain only.
+     */
+    gmail: service
+      .extend({
+        clientId: z.string().regex(/^[A-Za-z0-9._-]{1,200}$/, 'must look like a Google OAuth client id').optional(),
+        accounts: z.array(z.string().regex(GMAIL_LABEL_RE, 'a label is 1 to 20 of a-z, 0-9 and -')).max(10).default([]),
+      })
+      .strict()
+      .default({ enabled: true, accounts: [] }),
   })
   .strict();
 
@@ -59,5 +72,6 @@ export function parseAccountsConfig(raw: unknown): AccountsConfig {
     if (!id) throw new AccountsConfigError('config.json "accounts": notion.todoDatabase must be a Notion database id (32 hex characters, dashes optional)');
     c.notion.todoDatabase = id;
   }
+  c.gmail.accounts = [...new Set(c.gmail.accounts)];
   return c;
 }

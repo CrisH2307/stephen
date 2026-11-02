@@ -3,6 +3,7 @@
  *  - The origin is fixed when the client is made (Canvas base URL, api.notion.com, …); every request is a path on
  *    it. A path that resolves to another origin is refused, so Claude-chosen filters can never steer a request
  *    elsewhere (the tools never take URLs from Claude anyway).
+ *  - GET; POST only for read-only query APIs (JSON) and OAuth token endpoints (form).
  *  - https only (plain http only for loopback, and only when `allowLoopbackHttp` is set: tests).
  *  - No redirects (`redirect: 'manual'`; a 3xx is an error), timeout per request, response size cap.
  *  - Pagination by RFC 8288 `Link: <…>; rel="next"` (Canvas), same origin only, at most `maxPages`.
@@ -81,7 +82,7 @@ export class ApiClient {
     return u.href;
   }
 
-  private async fetchOnce(href: string, init: { method?: 'GET' | 'POST'; body?: string } = {}): Promise<{ text: string; res: Response }> {
+  private async fetchOnce(href: string, init: { method?: 'GET' | 'POST'; body?: string; form?: boolean } = {}): Promise<{ text: string; res: Response }> {
     const u = new URL(href);
     if (u.origin !== this.origin) throw new AccountHttpError('request left the account origin — refused');
     const ctrl = new AbortController();
@@ -94,7 +95,7 @@ export class ApiClient {
         signal: ctrl.signal,
         headers: {
           accept: 'application/json, text/calendar;q=0.9, */*;q=0.1',
-          ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(init.body !== undefined ? { 'content-type': init.form ? 'application/x-www-form-urlencoded' : 'application/json' } : {}),
           ...(this.o.headers ?? {}),
           ...(this.o.token ? { authorization: `Bearer ${this.o.token}` } : {}),
         },
@@ -130,6 +131,11 @@ export class ApiClient {
   /** POST JSON (read-only APIs that use POST for queries, e.g. Notion search). */
   async postJson<T = unknown>(path: string, body: unknown): Promise<T> {
     return parseJson<T>((await this.fetchOnce(this.url(path), { method: 'POST', body: JSON.stringify(body) })).text, this.origin);
+  }
+
+  /** POST a form (OAuth token endpoints), JSON back. The form values (codes, tokens) never appear in an error. */
+  async postForm<T = unknown>(path: string, form: Record<string, string>): Promise<T> {
+    return parseJson<T>((await this.fetchOnce(this.url(path), { method: 'POST', body: new URLSearchParams(form).toString(), form: true })).text, this.origin);
   }
 
   /** GET a JSON array, following `Link: rel="next"` on the same origin, up to maxPages. */

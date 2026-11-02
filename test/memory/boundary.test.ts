@@ -23,6 +23,8 @@ const BOUNDARIES: readonly Boundary[] = [
   { target: 'src/history/', importers: CLAUDE_REACHABLE },
   // Timers/reminders are spoken later: Claude-reachable code must not be able to create them.
   { target: 'src/timers/', importers: CLAUDE_REACHABLE },
+  // `stephen connect gmail` (OAuth sign-in, Keychain write, config change) is owner-only: no tool may reach it.
+  { target: 'src/connect/', importers: CLAUDE_REACHABLE },
 ];
 
 const MEMORY_TOOL_RE = /remember|memor|forget/i;
@@ -57,7 +59,9 @@ describe('the stephen serve process (review 5, R5-7)', () => {
   it('src/cli.ts loads no memory, app or history code at start-up (listen/memory/history/app load it on demand)', () => {
     const loaded = [...staticReach('src/cli.ts')];
     expect(loaded).toContain('src/server/index.ts'); // the scan works
-    expect(loaded.filter((f) => /^src\/(memory|app|history|timers)\//.test(f))).toEqual([]);
+    expect(loaded.filter((f) => /^src\/(memory|app|history|timers|connect)\//.test(f))).toEqual([]);
+    // The connect flow is reached only through a dynamic import from src/cli.ts.
+    expect(scanSrc().filter((r) => r.resolved?.startsWith('src/connect/')).map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`)).toEqual(['src/cli.ts (dynamic)']);
   });
 });
 

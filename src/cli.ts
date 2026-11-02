@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | accounts | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { withSessionState } from './safety/session-state.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
@@ -63,8 +63,11 @@ Usage:
   stephen memory list | add "<text>" | forget <id> | clear
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
-  stephen accounts [test canvas]
                          Show your recent commands (kept on this Mac only), or delete them
+  stephen accounts [test canvas|calendar|notion|weather]
+                         Which account secrets and Gmail accounts Stephen finds (never the values)
+  stephen connect gmail <label> | disconnect gmail <label>
+                         Sign in to a Gmail account once, read-only (Google's page opens; token in the Keychain)
   stephen app            Open the Stephen window (chat, memory, history, settings, audit) in Stephen Helper
   stephen voice-setup    Download and check the local wake-word and speech models (once)
   stephen voice-setup --tts kokoro
@@ -458,6 +461,10 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./app/cli.js')).runAppCli(rest);
     case 'accounts':
       return (await import('./accounts/cli.js')).runAccountsCli(rest);
+    case 'connect':
+    case 'disconnect':
+      // Owner-only sign-in (OAuth + Keychain write): loaded on demand, never by `stephen serve` (boundary test).
+      return (await import('./connect/gmail-oauth.js')).runConnectCli(cmd, rest);
     case 'voice-setup':
       return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : (await import('./voice/index.js')).runVoiceSetup(rest);
     case 'voice-key':
