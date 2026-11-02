@@ -75,6 +75,11 @@ export function fakeResult(tool: string, args: Record<string, unknown>, n: numbe
     const lines = ctx.page !== undefined ? ctx.page.split('\n').map((l) => `- ${l}`) : ['- Mon, Nov 2, 10:00 am – 11:20 am · SOFE 3980U Lecture @ UA1350', '- Mon, Nov 2, 6:00 pm – 7:00 pm · Gym'];
     return text(accountBlock('calendar', `Calendar, the rest of today: ${lines.length} events.`, lines));
   }
+  if (tool === 'weather_now') {
+    const tomorrow = args.day === 'tomorrow';
+    const lines = tomorrow ? ['- cloudy, high 11°C, low 4°C, 40% chance of rain'] : ['- now: cloudy, 8°C (feels like 5°C), wind 14 km/h', '- today: high 11°C, low 4°C, 40% chance of rain'];
+    return text(accountBlock('weather', `Weather in Toronto, ON, ${tomorrow ? 'tomorrow' : 'now and today'}:`, lines));
+  }
   if (tool === 'canvas_due' || tool === 'canvas_announcements') {
     const lines =
       ctx.page !== undefined
