@@ -24,6 +24,8 @@ let PTT_MAX_HOLD_MS: Int64 = 30_000
 let MAX_LINE_BYTES = 4096
 /** macOS virtual key code for Escape (kVK_Escape). */
 let KEYCODE_ESCAPE: Int64 = 53
+/** macOS virtual key code for F5 (kVK_F5): hold it to talk, like Fn+Option. */
+let KEYCODE_F5: Int64 = 96
 
 // ───────────────────────────── time ─────────────────────────────
 
@@ -403,6 +405,8 @@ struct Modifiers: Equatable {
 final class PushToTalk {
   let maxHoldMs: Int64
   private(set) var isDown = false
+  /** The current press came from holding F5 (only an F5 key-up ends it, not modifier changes). */
+  private(set) var byF5 = false
   private(set) var latched = false
   private var downAtMono: Int64 = 0
 
@@ -414,6 +418,7 @@ final class PushToTalk {
 
   func flagsChanged(_ m: Modifiers, at t: Stamp) -> [HelperEventOut] {
     if latched && !(m.fn && m.option) { latched = false }
+    if isDown && byF5 { return [] }
     let active = PushToTalk.comboActive(m)
     if !isDown {
       if active && !latched {
@@ -439,14 +444,29 @@ final class PushToTalk {
     return release(at: t, stillHeld: true)
   }
 
-  /** Esc key-downs (auto-repeats ignored). */
+  /** Esc key-downs → esc; an F5 key-down starts a press (auto-repeats ignored for both). */
   func keyDown(keyCode: Int64, isRepeat: Bool, at t: Stamp) -> [HelperEventOut] {
-    guard keyCode == KEYCODE_ESCAPE, !isRepeat else { return [] }
+    guard !isRepeat else { return [] }
+    if keyCode == KEYCODE_F5 {
+      guard !isDown else { return [] }
+      isDown = true
+      byF5 = true
+      downAtMono = t.monoMs
+      return [.pttDown(at: t.wallMs)]
+    }
+    guard keyCode == KEYCODE_ESCAPE else { return [] }
     return [.esc(at: t.wallMs)]
+  }
+
+  /** F5 released → ends an F5 press. Other key-ups are ignored. */
+  func keyUp(keyCode: Int64, at t: Stamp) -> [HelperEventOut] {
+    guard keyCode == KEYCODE_F5, isDown, byF5 else { return [] }
+    return release(at: t, stillHeld: false)
   }
 
   private func release(at t: Stamp, stillHeld: Bool) -> [HelperEventOut] {
     isDown = false
+    byF5 = false
     latched = stillHeld
     return [.pttUp(at: t.wallMs, heldMs: max(0, t.monoMs - downAtMono))]
   }
@@ -814,6 +834,10 @@ final class HelperCore {
 
   func handleKeyDown(keyCode: Int64, isRepeat: Bool, at t: Stamp = .now()) {
     emit(ptt.keyDown(keyCode: keyCode, isRepeat: isRepeat, at: t))
+  }
+
+  func handleKeyUp(keyCode: Int64, at t: Stamp = .now()) {
+    emit(ptt.keyUp(keyCode: keyCode, at: t))
   }
 
   /** The event tap was disabled (timeout/user input) — key-ups may have been lost. */

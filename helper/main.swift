@@ -103,6 +103,7 @@ final class KeyTap {
     remove()
     let mask: CGEventMask =
       (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << CGEventType.keyDown.rawValue)
+      | (CGEventMask(1) << CGEventType.keyUp.rawValue)
     guard
       let t = CGEvent.tapCreate(
         tap: .cgSessionEventTap,
@@ -152,11 +153,14 @@ final class KeyTap {
       m.shift = f.contains(.maskShift)
       core.handleFlags(m)
     case .keyDown:
-      // Only the key code is examined, and only to recognise Esc; nothing about other keys is kept or sent.
+      // Only the key code is examined, and only to recognise Esc and F5; nothing about other keys is kept or sent.
       let code = event.getIntegerValueField(.keyboardEventKeycode)
-      if code == KEYCODE_ESCAPE {
+      if code == KEYCODE_ESCAPE || code == KEYCODE_F5 {
         core.handleKeyDown(keyCode: code, isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
       }
+    case .keyUp:
+      let code = event.getIntegerValueField(.keyboardEventKeycode)
+      if code == KEYCODE_F5 { core.handleKeyUp(keyCode: code) }
     default:
       break
     }
