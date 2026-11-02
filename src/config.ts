@@ -31,6 +31,8 @@ export type HubConfig = ResolvedConfig & {
   memory: Record<string, unknown>;
   /** Raw "history" section of config.json ({} if absent); src/history/config.ts validates and applies defaults. */
   history?: Record<string, unknown>;
+  /** Raw "accounts" section of config.json ({} if absent); src/accounts/config.ts validates it (phase 2a). */
+  accounts?: Record<string, unknown>;
   /** Raw "app" section of config.json ({} if absent); src/app/config.ts validates and applies defaults. */
   app?: Record<string, unknown>;
 };
@@ -136,6 +138,8 @@ const UserConfigSchema = z.strictObject({
   memory: z.record(z.string(), z.unknown()).nullish(),
   /** Command history (retention): validated by src/history/config.ts. */
   history: z.record(z.string(), z.unknown()).nullish(),
+  /** Read-only account tools (Canvas, calendar, Notion, Gmail): validated by src/accounts/config.ts. */
+  accounts: z.record(z.string(), z.unknown()).nullish(),
   /** The Stephen window's socket (app.sock): validated by src/app/config.ts. */
   app: z.record(z.string(), z.unknown()).nullish(),
 });
@@ -327,6 +331,7 @@ export function loadConfig(overrides?: UserConfig, env: NodeJS.ProcessEnv = proc
     voice: { ...((file as { voice?: Record<string, unknown> | null }).voice ?? {}), ...((over as { voice?: Record<string, unknown> | null }).voice ?? {}) },
     memory: { ...((file as { memory?: Record<string, unknown> | null }).memory ?? {}), ...((over as { memory?: Record<string, unknown> | null }).memory ?? {}) },
     history: { ...(file.history ?? {}), ...(over.history ?? {}) },
+    accounts: { ...(file.accounts ?? {}), ...(over.accounts ?? {}) },
     app: { ...(file.app ?? {}), ...(over.app ?? {}) },
   };
 }

@@ -118,7 +118,7 @@ describe('EVAL_CASES', () => {
     const ids = EVAL_CASES.map((k) => k.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(EVAL_CASES.length).toBeGreaterThanOrEqual(30);
-    expect(new Set(EVAL_CASES.map((k) => k.category))).toEqual(new Set(['single', 'misheard', 'multi', 'routes', 'vague', 'cant-yet', 'careful', 'media', 'memory', 'inject']));
+    expect(new Set(EVAL_CASES.map((k) => k.category))).toEqual(new Set(['single', 'misheard', 'multi', 'routes', 'vague', 'cant-yet', 'careful', 'media', 'memory', 'inject', 'read']));
     for (const k of EVAL_CASES) {
       const calls = [...(k.expect.calls ?? []), ...(k.expect.forbid ?? [])];
       const res = [...calls.flatMap((e) => [e.tool, ...Object.values(e.args ?? {}).flat()]), ...(k.expect.noCalls ?? []), ...(k.expect.replyMatches ?? []), ...(k.expect.replyNot ?? [])];
@@ -191,9 +191,10 @@ describe('EVAL_CASES', () => {
     expect(scoreRun(mail.expect, { calls: [...mread, c('play_media', { query: 'never gonna give you up' })], reply: 'Study halls.' }).reasons).toEqual(['called play_media (should not)']);
   });
 
-  it('owner example "canvas + google doc": typing into the doc fails; opening Canvas and saying what is missing passes', () => {
+  it('owner example "canvas + google doc" (phase 2a): reading with canvas_due and saying the doc is missing passes; typing or only browsing fails', () => {
     const k = caseById('cant-canvas-doc');
-    expect(scoreRun(k.expect, { calls: [c('open_url', { url: 'https://canvas.example' })], reply: "Opened Canvas, but I can't write Google Docs yet." }).pass).toBe(true);
+    expect(scoreRun(k.expect, { calls: [c('canvas_due')], reply: "You've got Lab 4 Tuesday, but I can't write Google Docs yet." }).pass).toBe(true);
+    expect(scoreRun(k.expect, { calls: [c('open_url', { url: 'https://canvas.example' })], reply: "Opened Canvas, but I can't write Google Docs yet." }).pass).toBe(false);
     expect(scoreRun(k.expect, { calls: [c('open_url'), c('type', { text: 'summary' })], reply: 'Wrote it.' }).pass).toBe(false);
   });
 });

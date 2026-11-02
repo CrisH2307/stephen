@@ -9,6 +9,10 @@ import { FakePage, allow, deny, setup, textOf } from './fakes.js';
 vi.mock('../../src/safety/index.js', () => import('./safety-mock.js'));
 
 const EXPECTED_TOOLS = [
+  // phase 2a account tools (read-only)
+  'canvas_due',
+  'canvas_announcements',
+  'calendar_events',
   'browser_status',
   'browser_connect',
   'tabs_list',

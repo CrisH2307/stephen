@@ -388,6 +388,8 @@ export interface SetupOptions {
   elements?: Record<string, Partial<ElementInfo>>;
   actionTimeoutMs?: number;
   orphanWaitMs?: number;
+  /** Extra server deps (e.g. `accounts` test seams). */
+  extraDeps?: Record<string, unknown>;
 }
 
 export async function setup(opts: SetupOptions = {}) {
@@ -413,6 +415,7 @@ export async function setup(opts: SetupOptions = {}) {
     confirmerFactory: () => confirmer,
     ...(opts.actionTimeoutMs !== undefined ? { actionTimeoutMs: opts.actionTimeoutMs } : {}),
     orphanWaitMs: opts.orphanWaitMs ?? 500, // fakes that hang forever must not stall the suite
+    ...(opts.extraDeps ?? {}),
   };
   const server = buildServer(deps);
   const client = new Client(

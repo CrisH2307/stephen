@@ -49,7 +49,8 @@ describe('AuditLog', () => {
       outcome: 'ok',
       args: { text: '[3 chars] "abc"', password: 'hunter2', nested: { otp: '123456', cvv: '999', ok: 1, cardNumber: '4242' }, code: '1', keyCode: 13 },
     });
-    const raw = readFileSync(path, 'utf8');
+    // The timestamp is left out: it can end in "999" by chance (a 1-in-1000 flake).
+    const raw = readFileSync(path, 'utf8').replace(/"ts":"[^"]*"/g, '');
     for (const s of ['hunter2', '123456', '999', '4242']) expect(raw).not.toContain(s);
     const e = (await log.recent(1))[0]!;
     expect(e.args).toEqual({ text: '[3 chars]', nested: { ok: 1 }, keyCode: 13 });

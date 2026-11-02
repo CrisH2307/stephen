@@ -77,6 +77,7 @@ describe('loadConfig', () => {
       memory: {},
       history: {},
       app: {},
+      accounts: {},
     });
   });
 

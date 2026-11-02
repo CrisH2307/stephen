@@ -44,15 +44,18 @@ describe('cant-yet eval cases', () => {
   it('the real round-1 runs now fail only on the browsing (too many calls), not on the wording', () => {
     const d = scoreRun(caseById('cant-discord-msg').expect, DISCORD_RUN);
     expect(d.reasons).toEqual(['11 calls (max 3)']);
+    // Phase 2a: browsing Canvas instead of canvas_due now also misses the read tool.
     const c = scoreRun(caseById('cant-canvas-doc').expect, CANVAS_RUN);
-    expect(c.reasons).toEqual(['12 calls (max 3)']);
+    expect(c.reasons).toEqual(['missing call canvas_due', '12 calls (max 3)']);
   });
 
   it('a fast honest answer passes every cant-yet case, including the owner\'s own request', () => {
     const ids = EVAL_CASES.filter((k) => k.category === 'cant-yet').map((k) => k.id);
     expect(ids).toContain('cant-owner-canvas-doc-discord');
     for (const id of ids) {
-      const r = scoreRun(caseById(id).expect, { calls: calls('open_url'), reply: "Opened it, but I can't do that part yet." });
+      // Canvas cases read with canvas_due first (phase 2a); the rest open at most one page.
+      const first = /canvas/.test(id) ? 'canvas_due' : 'open_url';
+      const r = scoreRun(caseById(id).expect, { calls: calls(first), reply: "Opened it, but I can't do that part yet." });
       expect(r.reasons, id).toEqual([]);
     }
   });
@@ -85,7 +88,8 @@ describe('persona: can\'t-yet parts are said right away', () => {
 });
 
 describe("persona: reading the owner's accounts is named as can't-yet (round 2)", () => {
-  it('names the accounts, so "check my Canvas assignments" is not browsed', () => {
-    expect(STEPHEN_PERSONA).toMatch(/reading what's in the user's accounts: Canvas assignments, emails, Notion pages, calendar, chats/);
+  it('names the accounts still can\'t-yet, and sends Canvas to the read tools (phase 2a), so nothing is browsed', () => {
+    expect(STEPHEN_PERSONA).toMatch(/reading the user's emails, Notion pages or chats/);
+    expect(STEPHEN_PERSONA).toMatch(/use canvas_due and canvas_announcements, and for their calendar .* use calendar_events, never those websites/);
   });
 });

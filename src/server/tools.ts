@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { registerDesktopTools } from '../desktop/index.js';
+import { registerAccountTools } from '../accounts/index.js';
 import { registerAnnounceTool } from '../voice/announce.js';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
@@ -1181,6 +1182,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
 
   // ═════════════════════════════ desktop (Stephen) ═════════════════════════════
   registerDesktopTools(mcp, hub, names);
+  // Read-only account tools (phase 2a): Canvas first; each marks the gate before returning data.
+  registerAccountTools(mcp, hub, names);
   // Voice output (`serve --voice` only): announce before playing sound.
   registerAnnounceTool(mcp, hub, names);
 
