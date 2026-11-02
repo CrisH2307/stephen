@@ -95,7 +95,9 @@ of private content read this session.
   memory of a conversation always live and die together. Writes are fail-closed: if the taint can't be saved,
   the private text is not handed to the model. Since phase 3 one serve lives for the whole conversation (§4.12), so
   the file mostly guards a restart and the one-shot fallback; it is still written fail-closed, and it is deleted only
-  once that serve is gone.
+  once that serve is gone. The listener names it also with follow-ups off (`followUpWindowSec: 0`, deleted before and
+  after every command), because Claude Code restarts a dead serve on its own; such a restarted serve is switched off
+  anyway (the instance lock, §4.12).
 
 Design choice: an **API tool marks the taint when it returns data**, not when a command starts. Arming at the start
 would make "play lofi" ask before touching YouTube. Marking on return taxes only the commands that really read
@@ -262,9 +264,20 @@ wake word fires or F5 goes down. Recording and speech-to-text take at least 2 s,
   flag by flag). Each command goes to stdin as `JSON.stringify` of one user message, one line. Claude Code exits on
   a malformed line, so text is never pasted into JSON by hand.
 - **Ready, then checked before every command.** Ready means `initialize` answered (then the persona file is deleted:
-  Claude Code has read it, and the system prompt is a snapshot from now on) and `mcp_status` says `stephen` is
-  `connected`. Before each command the memory key must still equal the key at spawn and MCP must still be connected.
+  Claude Code has read it, and the system prompt is a snapshot from now on), `mcp_status` says `stephen` is
+  `connected`, and the serve's pid has been read from its instance lock (below). Before each command the memory key
+  must still equal the key at spawn, MCP must still be connected, and the lock must still name that same pid, alive.
   Anything else fails closed: the command reports an error and the conversation ends.
+- **One serve per process: the instance lock.** Claude Code silently starts a new MCP server when the old one died,
+  between turns and inside a turn, and `mcp_status` keeps saying `connected` (review 7, R7-1). A new serve would
+  build a fresh gate (no rate-limiter history, no Gmail id allow-list) while Claude still holds what the old one
+  returned. So every Claude process (warm or one-shot) gets a fresh random id, `serve --instance <32 hex>`, written
+  into the MCP config right before the spawn. The first serve of an id creates `<home>/run/serve-<id>.lock`
+  (`O_CREAT|O_EXCL|O_NOFOLLOW`, 0600, its pid). A serve that finds the lock already there is a restart: it registers
+  the same tools, every call answers "Stephen's tools restarted … Nothing was done" as an error (and is logged as
+  one), and it exits with code 75. The warm runner also checks the lock after each result, so a restart inside a
+  command turns that command into an error and ends the conversation. The lock is deleted once the process group is
+  gone; locks older than a day (a killed listener) are swept at listener start.
 - **One process per conversation.** It ends when the follow-up window runs out (a timer, and checked again before a
   command), memory changes (the router, or a key mismatch from the app, the CLI or a hand edit), on any cancel (Esc,
   "Stephen stop", the wake word while running, F5 while busy, Ctrl-C), on any error (error result, protocol error,
@@ -286,7 +299,12 @@ wake word fires or F5 goes down. Recording and speech-to-text take at least 2 s,
 - **Per-command numbers.** `num_turns` and `duration_ms` are per message, but `duration_api_ms` and `total_cost_usd`
   are per process, so the runner reports the difference from the previous result. The tool log is still truncated
   before each command: serve opens the file for every record and writes it before the tool result reaches Claude,
-  so each command sees only its own tool names.
+  so each command sees only its own tool names. It is truncated again right before the command goes out, once every
+  earlier group is gone, so a tool of a cancelled command that finishes during the kill grace is not counted for the
+  next one (R7-10).
+- **Transcript of a cancelled first command.** The session id is taken from the first stream line that carries it
+  (`system`/`init`, before any tool runs), and every end of the process drops it, so a first command that is
+  cancelled or fails before its result leaves no transcript (R7-3).
 - **Fallback.** At start the listener sends one `initialize` probe. If it fails, it prints a note and uses the
   one-shot runner (also the eval's runner). `voice.warm: false` turns the warm runner off; `--text` stays one-shot,
   so follow-ups across `--text` runs keep using `--resume`.

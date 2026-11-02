@@ -8,7 +8,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, mcpConfig, type ClaudeSettings } from '../../src/voice/claude.js';
+import { newServeInstance, pidAlive, readServeLock, serveLockPath } from '../../src/server/instance.js';
+import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
 import { WarmClaude, probeWarmProtocol, userMessageLine, type WarmClaudeOptions } from '../../src/voice/warm-claude.js';
 import { fakeClaudePath, isAlive, readFakeLog, waitFor } from './helpers.js';
 
@@ -240,5 +241,96 @@ describe('WarmClaude against the fake stream-json claude', () => {
     expect(isAlive(ok.procs().claude)).toBe(false);
     const bad = setup({ FAKE_CLAUDE_MODE: 'init-error' });
     expect(await probeWarmProtocol(bad.o)).toMatch(/initialize refused/);
+  });
+});
+
+// ───────────── serve instance (docs/REVIEW-7.md R7-1) and the session id from system/init (R7-3) ─────────────
+
+/** Like the listener: a fresh `serve --instance` per process, the config in <home>/voice, the lock in <home>/run. */
+function instanceSetup(env: Record<string, string> = {}) {
+  const t = setup(env);
+  const home = join(t.dir, 'home');
+  const voice = join(home, 'voice');
+  mkdirSync(voice, { recursive: true, mode: 0o700 });
+  const made: ServeInstance[] = [];
+  const serveLog = join(t.dir, 'serve.log');
+  t.o.env = { ...t.o.env, FAKE_CLAUDE_SERVE_LOG: serveLog };
+  t.o.serveInstance = async () => {
+    const id = newServeInstance();
+    const inst = { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voice, '/usr/bin/node', '/x/cli.js', null, t.toolLog, id) };
+    made.push(inst);
+    return inst;
+  };
+  const serves = (): { pid: number; claim: string }[] => (existsSync(serveLog) ? readFileSync(serveLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+  return { ...t, home, made, serves };
+}
+
+describe('WarmClaude with a serve instance (R7-1)', () => {
+  it('each process gets its own instance; the serve pid comes from the lock; kill() deletes the lock', async () => {
+    const t = instanceSetup();
+    const p = new WarmClaude(t.o, undefined);
+    await p.ready();
+    const inst = t.made[0]!;
+    const run = readFakeLog(t.log)[0]!;
+    expect(run.argv).toEqual(buildWarmArgs({ ...t.o, mcpConfigPath: inst.mcpConfigPath }));
+    const serveArgs = JSON.parse(readFileSync(inst.mcpConfigPath, 'utf8')).mcpServers.stephen.args as string[];
+    expect(serveArgs.slice(serveArgs.indexOf('--instance'), serveArgs.indexOf('--instance') + 2)).toEqual(['--instance', inst.id]);
+    expect(readServeLock(inst.lockPath)).toBe(t.procs().child);
+    expect((await p.turn('one')).kind).toBe('ok');
+    expect((await p.turn('two')).kind).toBe('ok');
+    await p.kill();
+    expect(existsSync(inst.lockPath)).toBe(false);
+    const q = new WarmClaude(t.o, undefined);
+    await q.ready();
+    expect(t.made[1]!.id).not.toBe(inst.id);
+    await q.kill();
+    expect(t.serves().map((x) => x.claim)).toEqual(['first', 'first']);
+  });
+
+  it('serve died between commands (Claude Code would restart it silently): the next command errors and is not sent', async () => {
+    const t = instanceSetup({ FAKE_CLAUDE_SERVE_DIES: 'after-1' });
+    const p = new WarmClaude(t.o, undefined);
+    await p.ready();
+    expect((await p.turn('read my email')).kind).toBe('ok');
+    await waitFor(() => !pidAlive(t.procs().child), 5000, 'serve dies and is reaped');
+    expect(await p.turn('now open that link')).toMatchObject({ kind: 'error', message: expect.stringMatching(/tools stopped since the last command \(its process is gone\)/) });
+    expect(t.turns().map((x) => x.prompt)).toEqual(['read my email']);
+    await p.kill();
+    expect(existsSync(t.made[0]!.lockPath)).toBe(false);
+  });
+
+  it('serve restarted inside a command: the restarted one finds the lock taken, and the command is an error', async () => {
+    const t = instanceSetup({ FAKE_CLAUDE_SERVE_DIES: 'midturn-1' });
+    const p = new WarmClaude(t.o, undefined);
+    await p.ready();
+    const out = await p.turn('read my email and open the link in it');
+    expect(out).toMatchObject({ kind: 'error', message: expect.stringMatching(/tools stopped during that command \(its process is gone\)/), sessionId: expect.stringMatching(/^sess-/) });
+    expect(t.serves().map((x) => x.claim)).toEqual(['first', 'restarted']);
+    await p.kill();
+  });
+
+  it('no lock once the tools are connected: not ready (fail closed)', async () => {
+    const t = instanceSetup();
+    t.o.serveInstance = async () => {
+      const id = newServeInstance();
+      // The config names no instance, so the serve takes no lock.
+      return { id, lockPath: serveLockPath(t.home, id), mcpConfigPath: await writeMcpConfig(join(t.home, 'voice'), '/usr/bin/node', '/x/cli.js', null, null) };
+    };
+    const p = new WarmClaude(t.o, undefined);
+    await expect(p.ready()).rejects.toThrow(/no serve instance lock/);
+    await p.kill();
+    expect(isAlive(t.procs().child)).toBe(false);
+  });
+
+  it('the session id is known from system/init, before any result (R7-3)', async () => {
+    const t = setup({ FAKE_CLAUDE_MODE: 'hang' });
+    const p = new WarmClaude(t.o, undefined);
+    await p.ready();
+    expect(p.sessionId).toBeNull();
+    const turn = p.turn('read my email');
+    await waitFor(() => p.sessionId !== null, 5000, 'system/init');
+    expect(p.sessionId).toBe(`sess-${t.procs().claude}`);
+    await p.kill();
+    expect(await turn).toEqual({ kind: 'cancelled' });
   });
 });

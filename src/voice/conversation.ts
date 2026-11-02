@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { SESSION_STATE_FILE, readPrivateJsonFile, removeSessionStateFile, writePrivateJsonFileSync } from '../safety/session-state.js';
-import type { CommandRunner } from './assistant.js';
+import type { CommandRunner, RunHooks } from './assistant.js';
 import { SESSION_ID_RE, type ClaudeOutcome, type ClaudeTiming, type RunOptions } from './claude.js';
 import type { WarmProcess } from './warm-claude.js';
 
@@ -300,9 +300,12 @@ const CANCELLED: ClaudeOutcome = { kind: 'cancelled' };
  *  - the follow-up window running out (a timer after each command and touch(), checked again before a command);
  *  - a memory change (endConversation() from the router, or a memory key that differs from the process's);
  *  - a cancel (cancel() / endConversation(): Esc, "Stephen stop", wake word while running, F5 while busy, Ctrl-C);
- *  - any error (an error result, a protocol error, an exit, MCP not connected) and a state save that failed;
+ *  - any error (an error result, a protocol error, an exit, MCP not connected, a serve that died or was restarted
+ *    behind Claude Code's back: docs/REVIEW-7.md R7-1) and a state save that failed;
  *  - the caps: an unused pre-warm after PREWARM_UNUSED_MS, MAX_WARM_COMMANDS commands, MAX_WARM_AGE_MS, listener exit.
  * Window 0: the process ends after every command (the next one is still pre-warmed).
+ * Every end also drops the session id the process announced on its first line (R7-3), so a cancelled or failed
+ * first command leaves no transcript.
  */
 export class WarmConversationRunner implements CommandRunner {
   private proc: WarmProcess | null = null;
@@ -355,7 +358,7 @@ export class WarmConversationRunner implements CommandRunner {
     return this.commands > 0 && this.reusable();
   }
 
-  async run(prompt: string): Promise<ClaudeOutcome> {
+  async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     if (this.busy) throw new Error('a command is already running');
     this.busy = true;
     this.cancelRequested = false;
@@ -385,6 +388,8 @@ export class WarmConversationRunner implements CommandRunner {
         return { kind: 'error', message: 'Your memory changed while Claude Code was starting. Try again.', sessionId: null };
       }
       const command = this.commands + 1;
+      // Every earlier group is gone by now (awaited above), so nothing of a cancelled command can log after this.
+      hooks.beforeSend?.();
       const out = await p.turn(prompt);
       if (this.cancelRequested || out.kind === 'cancelled') return CANCELLED;
       if (out.kind === 'ok') {
@@ -475,6 +480,8 @@ export class WarmConversationRunner implements CommandRunner {
     this.ending = this.ending.then(async () => {
       if (p) await p.kill();
       this.conversation.end();
+      // The id from the process's first line: a cancelled / failed first command never saved one (R7-3).
+      if (p?.sessionId && SESSION_ID_RE.test(p.sessionId)) this.conversation.drop(p.sessionId);
     });
     return this.ending;
   }

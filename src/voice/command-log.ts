@@ -6,7 +6,9 @@
  * command handled locally never picks up the previous run's tools. That also slices the log per command when one
  * warm `stephen serve` lives across a whole conversation (phase 3): serve opens the file for every record, and each
  * record is written before the tool result reaches Claude, so nothing of command N can land after command N's
- * result. Recording never fails a command: errors are only logged.
+ * result. After a cancel, the old group can still be finishing a tool for up to the kill grace period, so the log is
+ * emptied again in the `beforeSend` hook, which the warm runner calls once that group is gone and right before the
+ * command goes out (docs/REVIEW-7.md R7-10). Recording never fails a command: errors are only logged.
  */
 import type { HistoryStore } from '../history/store.js';
 import { readToolLog, resetToolLog, type ToolCallRecord } from '../server/tool-log.js';
@@ -29,13 +31,9 @@ export class ToolLogRunner implements CommandRunner {
 
   async run(prompt: string): Promise<ClaudeOutcome> {
     this.calls = [];
+    this.reset();
     try {
-      resetToolLog(this.path);
-    } catch (e) {
-      this.log(`Note: could not reset the tool log ${this.path} (${(e as Error).message}).`);
-    }
-    try {
-      return await this.inner.run(prompt);
+      return await this.inner.run(prompt, { beforeSend: () => this.reset() });
     } finally {
       this.calls = readToolLog(this.path);
     }
@@ -59,6 +57,14 @@ export class ToolLogRunner implements CommandRunner {
 
   prewarm(): void {
     this.inner.prewarm?.();
+  }
+
+  private reset(): void {
+    try {
+      resetToolLog(this.path);
+    } catch (e) {
+      this.log(`Note: could not reset the tool log ${this.path} (${(e as Error).message}).`);
+    }
   }
 }
 

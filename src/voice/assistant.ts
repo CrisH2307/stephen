@@ -8,7 +8,7 @@ import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
 
 export interface CommandRunner {
-  run(prompt: string): Promise<ClaudeOutcome>;
+  run(prompt: string, hooks?: RunHooks): Promise<ClaudeOutcome>;
   cancel(): boolean;
   /** Follow-ups (ConversationRunner): decide whether the next run resumes the conversation. */
   followUp?(): boolean;
@@ -18,6 +18,15 @@ export interface CommandRunner {
   commandEnded?(): void;
   /** The user started talking (wake word, F5): start Claude now so it is ready when the transcript is (warm runner). */
   prewarm?(): void;
+}
+
+/** Optional hooks a runner may call during run() (ToolLogRunner). */
+export interface RunHooks {
+  /**
+   * Called right before the command goes to Claude, once every earlier process group is gone (warm runner), so
+   * nothing of an earlier, cancelled command can still write after this point (docs/REVIEW-7.md R7-10).
+   */
+  beforeSend?: () => void;
 }
 
 export type Phase = 'idle' | 'running' | 'speaking';

@@ -4,12 +4,14 @@
  * process with fake timers (the 60 s / 25 commands / 30 min caps, the window); the last block uses the real fake
  * claude subprocess (process group, an old serve that keeps writing the state file, tool log per command).
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Assistant } from '../../src/voice/assistant.js';
-import { mcpConfig, type ClaudeOutcome, type ClaudeTiming } from '../../src/voice/claude.js';
+import { mcpConfig, writeMcpConfig, type ClaudeOutcome, type ClaudeTiming, type ServeInstance } from '../../src/voice/claude.js';
+import { newServeInstance, pidAlive, serveLockPath } from '../../src/server/instance.js';
+import { removeSessionTranscript } from '../../src/voice/transcripts.js';
 import { ToolLogRunner } from '../../src/voice/command-log.js';
 import { CONVERSATION_FILE, Conversation, MAX_WARM_COMMANDS, PREWARM_UNUSED_MS, WarmConversationRunner, memoryKey } from '../../src/voice/conversation.js';
 import { WarmClaude, type WarmClaudeOptions, type WarmProcess } from '../../src/voice/warm-claude.js';
@@ -32,6 +34,8 @@ type Next = ClaudeOutcome | 'hold';
 class FakeProc implements WarmProcess {
   readonly spawnedAt = Date.now();
   exited = false;
+  /** Set like WarmClaude does from system/init, as soon as a command was sent. */
+  sessionId: string | null = null;
   readonly turns: string[] = [];
   private readonly exitFns: (() => void)[] = [];
   private release: ((o: ClaudeOutcome) => void) | null = null;
@@ -45,6 +49,7 @@ class FakeProc implements WarmProcess {
   }
   turn(prompt: string): Promise<ClaudeOutcome> {
     this.turns.push(prompt);
+    this.sessionId ??= `init-${this.id}`;
     this.w.events.push(`turn:${this.id}`);
     const n = this.w.next.length ? this.w.next.shift()! : OK();
     if (n === 'hold') return new Promise((r) => (this.release = r));
@@ -83,7 +88,8 @@ function harness(windowSec = 180) {
   const dir = freshDir();
   let memory = ['my gym is goodlife'];
   const w: World = { events: [], next: [], ready: async () => undefined };
-  const conv = new Conversation({ dir, windowSec, memoryKey: () => memoryKey(memory) });
+  const dropped: string[] = [];
+  const conv = new Conversation({ dir, windowSec, memoryKey: () => memoryKey(memory), onSessionDropped: (id) => dropped.push(id) });
   const reset = conv.reset.bind(conv);
   conv.reset = () => {
     w.events.push('reset');
@@ -110,6 +116,7 @@ function harness(windowSec = 180) {
     w,
     timings,
     plantState,
+    dropped,
     setMemory: (m: string[]) => (memory = m),
     stateExists: () => existsSync(conv.statePath),
   };
@@ -240,6 +247,18 @@ describe('WarmConversationRunner (in-memory process, fake timers)', () => {
     expectEndedInOrder(h.w.events, 1);
     expect(h.stateExists()).toBe(false);
     expect(h.runner.cancel()).toBe(false); // nothing running
+  });
+
+  it('R7-3: a cancelled first command (no result, no saved id) still drops the id from system/init', async () => {
+    const h = harness();
+    h.w.next.push('hold');
+    const run = h.runner.run('read my email');
+    await settle();
+    h.runner.cancel();
+    expect(await run).toEqual({ kind: 'cancelled' });
+    await settle();
+    expect(existsSync(join(h.dir, CONVERSATION_FILE))).toBe(false); // nothing was ever saved
+    expect(h.dropped).toEqual(['init-1']);
   });
 
   it('cancel while the process is still starting: cancelled, nothing is sent', async () => {
@@ -412,16 +431,28 @@ describe('WarmConversationRunner (in-memory process, fake timers)', () => {
 
 // ───────────── with the real fake-claude subprocess ─────────────
 
-/** `env` may use the conversation's state file path (the fake serve can be told to keep writing it). */
-function realHarness(env: (statePath: string) => Record<string, string>) {
+/**
+ * `env` may use the conversation's state file path (the fake serve can be told to keep writing it). With `instance`,
+ * every process gets a fresh `serve --instance` like the listener's (R7-1). Transcripts go to `<home>/transcripts`
+ * (FAKE_CLAUDE_TRANSCRIPT_DIR) and are deleted when a session is dropped, like the listener's.
+ */
+function realHarness(env: (statePath: string) => Record<string, string>, opts: { instance?: boolean } = {}) {
   const home = freshDir();
   const voiceDir = join(home, 'voice');
   mkdirSync(voiceDir, { recursive: true, mode: 0o700 });
-  const conv = new Conversation({ dir: voiceDir, windowSec: 180 });
+  const transcripts = join(home, 'transcripts');
+  mkdirSync(transcripts, { mode: 0o700 });
+  const conv = new Conversation({ dir: voiceDir, windowSec: 180, onSessionDropped: (id) => void removeSessionTranscript(transcripts, id) });
   const pids = join(home, 'pids.json');
   const toolLog = toolLogPath(home);
   const mcpConfigPath = join(voiceDir, 'mcp.json');
   writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig('/usr/bin/node', '/x/cli.js', conv.statePath, toolLog)));
+  const locks: string[] = [];
+  const serveInstance = async (): Promise<ServeInstance> => {
+    const id = newServeInstance();
+    locks.push(serveLockPath(home, id));
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, '/usr/bin/node', '/x/cli.js', conv.statePath, toolLog, id) };
+  };
   const o: WarmClaudeOptions = {
     claudePath: fakeClaudePath(),
     maxTurns: 25,
@@ -430,13 +461,15 @@ function realHarness(env: (statePath: string) => Record<string, string>) {
     followUps: true,
     personaFile: join(voiceDir, 'persona.txt'),
     cwd: home,
-    env: { ...process.env, FAKE_CLAUDE_PIDS: pids, ...env(conv.statePath) },
+    env: { ...process.env, FAKE_CLAUDE_PIDS: pids, FAKE_CLAUDE_TRANSCRIPT_DIR: transcripts, ...env(conv.statePath) },
     killGraceMs: 500,
     mcpPollMs: 20,
+    ...(opts.instance ? { serveInstance } : {}),
   };
   const runner = new WarmConversationRunner({ conversation: conv, start: (key) => new WarmClaude(o, key, []) });
   const procs = (): { claude: number; child: number } => JSON.parse(readFileSync(pids, 'utf8'));
-  return { conv, runner, toolLog, procs, spawned: () => existsSync(pids) };
+  const transcriptFiles = () => readdirSync(transcripts);
+  return { conv, runner, toolLog, procs, spawned: () => existsSync(pids), o, locks, transcriptFiles };
 }
 
 describe('WarmConversationRunner with the real fake claude', () => {
@@ -477,6 +510,52 @@ describe('WarmConversationRunner with the real fake claude', () => {
     await runner.run('what time is it');
     expect(runner.tools()).toEqual([]);
     expect(h.procs().claude).toBe(pid); // all three on the same process
+    await h.runner.shutdown();
+  });
+
+  it('R7-1: a serve that died between commands ends the conversation (error, state and session gone); the next command is fresh', async () => {
+    const h = realHarness(() => ({ FAKE_CLAUDE_SERVE_DIES: 'after-1' }), { instance: true });
+    expect(await h.runner.run('read my email')).toMatchObject({ kind: 'ok' });
+    const first = h.procs();
+    await waitFor(() => !pidAlive(first.child), 5000, 'serve dies and is reaped');
+    writeFileSync(h.conv.statePath, '{"version":1,"privateReads":[{"host":"mail.google.com","scope":"mail.google.com","at":1}],"trustedHosts":[]}\n', { mode: 0o600 }); // its taint
+    expect(await h.runner.run('now open the link in it')).toMatchObject({ kind: 'error', message: expect.stringMatching(/tools stopped since the last command/) });
+    await waitFor(() => !isAlive(first.claude), 5000, 'process ended');
+    await h.runner.shutdown();
+    expect(existsSync(h.conv.statePath)).toBe(false);
+    expect(existsSync(join(h.conv.filePath))).toBe(false);
+    expect(h.locks.every((l) => !existsSync(l))).toBe(true);
+    // A new process, a new instance, and it works.
+    h.o.env = { ...h.o.env, FAKE_CLAUDE_SERVE_DIES: '' };
+    expect(await h.runner.run('open youtube')).toMatchObject({ kind: 'ok' });
+    expect(h.procs().claude).not.toBe(first.claude);
+    expect(h.locks).toHaveLength(2);
+    await h.runner.shutdown();
+    expect(h.locks.every((l) => !existsSync(l))).toBe(true);
+  });
+
+  it('R7-3: a cancelled first command leaves no transcript (the id came from system/init)', async () => {
+    const h = realHarness(() => ({ FAKE_CLAUDE_MODE: 'hang' }));
+    const run = h.runner.run('SECRET-CODEWORD read my email');
+    await waitFor(() => h.transcriptFiles().length === 1, 5000, 'transcript written');
+    expect(h.runner.cancel()).toBe(true);
+    expect(await run).toEqual({ kind: 'cancelled' });
+    await h.runner.shutdown();
+    expect(h.transcriptFiles()).toEqual([]);
+  });
+
+  it('R7-10: a tool of a cancelled command that finishes during the kill grace is not in the next command\'s tools', async () => {
+    const h = realHarness(() => ({ FAKE_CLAUDE_MODE: 'hang', FAKE_CLAUDE_SERVE_LATE_TOOL: 'late_tool' }));
+    const runner = new ToolLogRunner(h.runner, h.toolLog);
+    const run = runner.run('play a long podcast');
+    await waitFor(h.spawned, 5000, 'spawn');
+    await new Promise((res) => setTimeout(res, 200));
+    expect(runner.cancel()).toBe(true);
+    expect(await run).toEqual({ kind: 'cancelled' });
+    // The next command, right away (its serve logs nothing): the old serve writes `late_tool` 50 ms after SIGTERM.
+    h.o.env = { ...h.o.env, FAKE_CLAUDE_MODE: 'ok', FAKE_CLAUDE_SERVE_LATE_TOOL: '' };
+    expect(await runner.run('what time is it')).toMatchObject({ kind: 'ok' });
+    expect(runner.tools()).toEqual([]);
     await h.runner.shutdown();
   });
 });

@@ -12,6 +12,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripUnsafe, truncate } from '../safety/text.js';
+import { removeServeLock } from '../server/instance.js';
 import { toolLogServeArgs } from '../server/tool-log.js';
 import type { AboutMe } from './config.js';
 
@@ -174,6 +175,22 @@ export interface ClaudeSettings {
    * `ps` shows it. null/absent: `--append-system-prompt <text>` (older Claude Code). See resolvePersonaFile.
    */
   personaFile?: string | null;
+  /**
+   * docs/REVIEW-7.md R7-1: called before every spawn. It picks a fresh serve instance id, writes the MCP config that
+   * starts `serve --instance <id>`, and says where that config and the instance's lock are. The run uses that config
+   * instead of `mcpConfigPath`, and deletes the lock once the process group is gone. Absent (tests, eval): the
+   * static `mcpConfigPath`, no instance.
+   */
+  serveInstance?: () => Promise<ServeInstance>;
+}
+
+/** One `serve --instance` for one Claude process (see ClaudeSettings.serveInstance). */
+export interface ServeInstance {
+  id: string;
+  /** The MCP config naming this instance. */
+  mcpConfigPath: string;
+  /** `<home>/run/serve-<id>.lock` (src/server/instance.ts). */
+  lockPath: string;
 }
 
 /** Per-run options for buildClaudeArgs. */
@@ -230,8 +247,9 @@ export const LOCKDOWN_ARGS = ['--strict-mcp-config', '--tools', '', '--permissio
  *  - Whenever a conversation ends (window expired, error, cancel, Esc, "Stephen stop") the listener deletes the
  *    state file AND forgets the session id before the next run, so a fresh Claude never meets old taint it can't
  *    see, and a resumed Claude never meets a gate that forgot.
- * With voice.followUpWindowSec 0 there is no `--resume`, no state file, and `--no-session-persistence` (as before).
- * The rate limiter is per server process either way.
+ * With voice.followUpWindowSec 0 there is no `--resume` and `--no-session-persistence` is passed; the state file is
+ * still named (and deleted before and after every command), so a serve that Claude Code restarts mid-command keeps
+ * the taint (docs/REVIEW-7.md R7-1). The rate limiter is per server process either way.
  */
 export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptions = {}): string[] {
   if (!prompt.trim()) throw new Error('empty prompt');
@@ -282,21 +300,25 @@ export function stephenCliPath(): string {
 }
 
 /**
- * The MCP config: exactly one server, Stephen, started with this Node binary. With follow-ups on, `sessionStatePath`
- * (always <home>/voice/conversation-state.json — a constant the listener deletes when a conversation ends) makes
- * every server of a conversation share the gate's memory (see buildClaudeArgs).
+ * The MCP config: exactly one server, Stephen, started with this Node binary. `sessionStatePath` (always
+ * <home>/voice/conversation-state.json, a constant the listener deletes when a conversation ends) makes every server
+ * of a conversation share the gate's memory (see buildClaudeArgs). The listener passes it with follow-ups off too, so
+ * a serve that Claude Code restarts keeps the taint (docs/REVIEW-7.md R7-1).
  */
 export function mcpConfig(
   nodePath: string = process.execPath,
   cliPath: string = stephenCliPath(),
   sessionStatePath: string | null = null,
   toolLogPath: string | null = null,
+  instance: string | null = null,
 ): { mcpServers: Record<string, { command: string; args: string[] }> } {
   // --confirm dialog: nobody watches a headless chat, so confirmations must be macOS dialogs (see cli.ts parseServeArgs).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
+  // --instance: one serve per Claude process; a serve restarted by Claude Code refuses every call (src/server/instance.ts).
   // --tool-log: tool names (never arguments) per call, for the command history (src/server/tool-log.ts).
   const args = [
     cliPath, 'serve', '--confirm', 'dialog', '--voice',
+    ...(instance ? ['--instance', instance] : []),
     ...toolLogServeArgs(toolLogPath),
     ...(sessionStatePath ? ['--session-state', sessionStatePath] : []),
   ];
@@ -344,8 +366,9 @@ export async function writeMcpConfig(
   cliPath?: string,
   sessionStatePath: string | null = null,
   toolLogPath: string | null = null,
+  instance: string | null = null,
 ): Promise<string> {
-  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath), null, 2) + '\n');
+  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance), null, 2) + '\n');
 }
 
 /** <home>/voice/persona.txt: the persona file of file mode (ClaudeSettings.personaFile). */
@@ -557,7 +580,18 @@ export class ClaudeRunner {
   async run(prompt: string, run: RunOptions = {}): Promise<ClaudeOutcome> {
     if (this.child) throw new Error('a command is already running');
     const memory = this.readMemory();
-    const args = this.nextArgs(prompt, { ...run, memory });
+    let args = this.nextArgs(prompt, { ...run, memory });
+    // A fresh serve instance per run (docs/REVIEW-7.md R7-1): a serve Claude Code restarts mid-run refuses every call.
+    let inst: ServeInstance | null = null;
+    if (this.o.serveInstance) {
+      try {
+        inst = await this.o.serveInstance();
+      } catch (e) {
+        return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
+      }
+      if (this.child) throw new Error('a command is already running');
+      args = buildClaudeArgs(prompt, { ...this.o, mcpConfigPath: inst.mcpConfigPath }, { ...run, memory });
+    }
     if (this.o.personaFile) {
       // File mode: write this run's persona (with the memory just read) first. If that fails, don't fall back to
       // argv (memory would show in `ps`): the command fails with a clear message instead.
@@ -584,6 +618,7 @@ export class ClaudeRunner {
         shell: false,
       });
     } catch (e) {
+      if (inst) removeServeLock(inst.lockPath);
       return { kind: 'error', message: `Could not start Claude Code (${(e as Error).message}).`, sessionId: null };
     }
     this.child = child;
@@ -612,6 +647,8 @@ export class ClaudeRunner {
     // Reap anything left in the group (e.g. the MCP server) once Claude itself has exited.
     if (child.pid) killGroup(child.pid, 'SIGTERM');
     this.child = null;
+    // Claude Code is gone, so nothing can start this instance's serve again: its lock can go.
+    if (inst) removeServeLock(inst.lockPath);
     // The persona file (with memory and aboutMe) is only needed while Claude starts: delete it after every run so
     // forgotten items don't stay on disk until the next command (review 5, R5-3).
     if (this.o.personaFile) removePersonaFile(this.o.personaFile);

@@ -102,6 +102,24 @@ second `run()` returns an error and the state file is gone before the next spawn
 same `--instance` → the second one's tools all return the restart notice. A config test: window 0 still writes a
 `--session-state` path into the warm MCP config.
 
+**Fixed (2026-11-02).** Every Claude process (warm and one-shot) gets a fresh `serve --instance <32 hex>`
+(`src/serve-args.ts`, `src/server/instance.ts`), written into the MCP config right before the spawn. The first serve
+of an id takes `<home>/run/serve-<id>.lock` (`O_CREAT|O_EXCL|O_NOFOLLOW`, 0600, its pid); a serve that finds it taken
+registers the same tools, answers every call with "Stephen's tools restarted … Nothing was done" (logged as an
+error), and exits 75. `WarmClaude` reads the pid at ready and checks before every command and after every result
+that the lock still names that pid and it is alive; otherwise the command is an error and the runner ends the
+conversation (kill, then reset). The lock is deleted once the group is gone (locks older than a day are swept at
+listener start). `--session-state` is now always passed, also with window 0. The lock lives in `<home>/run/` (next
+to `app.sock` and `helper.sock`) instead of the suggested `<home>/voice/`. Tests: `test/server/instance.test.ts`
+(flag parsing, lock rules, the refusing server, two real `dist/cli.js serve` of one id: the second refuses and exits
+75), `warm-claude.test.ts` and `warm-runner.test.ts` (serve killed between commands and restarted inside one, on the
+fake), `index.test.ts` (window 0 names `--session-state` and `--instance`), and the opt-in real test
+`warm-claude-real.test.ts` (`STEPHEN_REAL_CLAUDE=1`). Real probes (Claude Code 2.1.316, real `stephen serve`): a serve
+SIGKILLed between commands → the next command errors without being sent and the conversation ends (state file,
+conversation file and lock gone); sent anyway by a raw probe, Claude Code restarts serve (`mcp_status` still
+`connected`) and the call gets the restart notice; killed after the first of two calls in one command → the second
+call is refused (tool log `isError`) and the command errors.
+
 ### R7-2 (Medium) Wake-word commands read the owner's accounts in full
 
 **What.** The trust level of a command (`voice-wake` vs push-to-talk / typed) is used by the memory and timer
@@ -145,6 +163,13 @@ and expose it; the runner drops that id in `endProcess` whatever the outcome.
 
 **Test.** Fake stream claude: emit `system/init` with an id, write a fake transcript file, hang; `cancel()` → the file
 is deleted after the kill.
+
+**Fixed (2026-11-02).** `WarmClaude.sessionId` is taken from the first stream line with a valid `session_id` (the
+`system`/`init` line, printed at the start of every turn before any tool runs; checked with the real Claude Code), and
+`WarmConversationRunner.endProcess` drops it after the kill on every end. Tests: `warm-runner.test.ts` (in memory: a
+cancelled first command drops the init id; with the fake claude: the transcript file it wrote at `system/init` is
+gone after the cancel) and `warm-claude.test.ts`. Real probe: a first command cancelled after its tool ran left a
+transcript holding the codeword; after the end it was deleted.
 
 ### R7-4 (Low) "Read my Notion page" now browses notion.so
 
@@ -257,6 +282,12 @@ reading.
 R7-1 and keep only the current one.
 
 **Test.** Fake serve that appends a tool record 50 ms after SIGTERM: the next command's history entry has no tools.
+
+**Fixed (2026-11-02).** `CommandRunner.run` takes an optional `beforeSend` hook. `ToolLogRunner` still truncates
+the log first (one-shot runner, local memory commands) and passes a hook that truncates it again;
+`WarmConversationRunner` calls it right before the command goes to Claude, after every earlier group is gone. (Waiting
+inside `ToolLogRunner` instead would have let an Esc during that wait be lost.) Test: `warm-runner.test.ts`, the
+fake serve above.
 
 ### R7-11 (Info) Smaller account-tool notes
 

@@ -110,6 +110,8 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
       '--confirm',
       'dialog',
       '--voice',
+      '--instance', // a fresh one per Claude process (docs/REVIEW-7.md R7-1)
+      expect.stringMatching(/^[0-9a-f]{32}$/),
       '--tool-log',
       join(tmp, 'homes', file, 'voice', 'tool-log.jsonl'),
       '--session-state',

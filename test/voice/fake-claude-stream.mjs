@@ -9,7 +9,7 @@
 // $FAKE_CLAUDE_PIDS as {claude, child}.
 // Every user message is appended to $FAKE_CLAUDE_TURNS (default "$FAKE_CLAUDE_LOG.turns") as {pid, n, prompt, line, personaExists, at}.
 //   FAKE_CLAUDE_MODE  ok (default) | error (every turn: error_max_turns) | garbage (a non-JSON line instead of a result)
-//                     | exit-mid-turn (exit 3 once a message arrives) | hang (never answer a message) | hang-stubborn
+//                     | exit-mid-turn (exit 3 once a message arrives) | hang (system/init, then never answer) | hang-stubborn
 //                     (hang + ignore SIGTERM) | no-init (never answer initialize) | init-error (refuse initialize)
 //   FAKE_CLAUDE_MCP   connected (default) | failed | pending (forever) | slow (pending for 2 polls) | drop (failed
 //                     from the 2nd message on)
@@ -17,17 +17,64 @@
 //                     logged to the --tool-log of the --mcp-config, like the Stephen server
 //   FAKE_CLAUDE_DURATION_MS / FAKE_CLAUDE_API_MS  per message: wait this long, report it (api cumulative)
 //   FAKE_CLAUDE_INIT_MS  delay before answering initialize; FAKE_CLAUDE_REPLY  the reply text
+//   FAKE_CLAUDE_TRANSCRIPT_DIR  write <dir>/<session id>.jsonl at system/init, like Claude Code's transcript
+// Serve instance (docs/REVIEW-7.md R7-1): when the --mcp-config gives serve `--instance <id>`, the serve child takes
+// `<folder of the config>/../run/serve-<id>.lock` like `stephen serve` (O_EXCL, 0600, its pid), and logs
+// {pid, claim: first|restarted} to $FAKE_CLAUDE_SERVE_LOG. Like Claude Code, a dead serve child is started again when
+// the next message comes. FAKE_CLAUDE_SERVE_DIES  after-1 (SIGKILL the serve after message 1's result) | midturn-1
+// (kill it and start a new one in the middle of message 1). FAKE_CLAUDE_SERVE_LATE_TOOL=<name>: on SIGTERM the serve
+// waits 50 ms, appends that tool to the --tool-log, then exits (a tool of a cancelled command finishing late).
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 export async function runStream({ argv, at, mode, logTools }) {
   const env = process.env;
-  const serveScript = env.FAKE_CLAUDE_SERVE_WRITES
-    ? `const fs=require('fs');setInterval(()=>{try{fs.writeFileSync(${JSON.stringify(env.FAKE_CLAUDE_SERVE_WRITES)},'{"version":1,"privateReads":[],"trustedHosts":[]}\\n')}catch{}},5)`
-    : 'setInterval(()=>{},1000)';
-  const child = spawn(process.execPath, ['-e', serveScript], { stdio: 'ignore' });
-  if (env.FAKE_CLAUDE_PIDS) writeFileSync(env.FAKE_CLAUDE_PIDS, JSON.stringify({ claude: process.pid, child: child.pid }));
+  const serveArgs = (() => {
+    try {
+      return JSON.parse(readFileSync(at('--mcp-config'), 'utf8')).mcpServers.stephen.args;
+    } catch {
+      return [];
+    }
+  })();
+  const argOf = (flag) => (serveArgs.indexOf(flag) >= 0 ? serveArgs[serveArgs.indexOf(flag) + 1] : null);
+  const instance = argOf('--instance');
+  const lock = instance ? join(dirname(dirname(at('--mcp-config'))), 'run', `serve-${instance}.lock`) : null;
+  const parts = ["const fs=require('fs');"];
+  if (lock) {
+    parts.push(
+      `let claim='first';try{fs.mkdirSync(${JSON.stringify(dirname(lock))},{recursive:true,mode:0o700});const fd=fs.openSync(${JSON.stringify(lock)},'wx',0o600);fs.writeSync(fd,process.pid+'\\n');fs.closeSync(fd)}catch(e){claim=e.code==='EEXIST'?'restarted':'error'}`,
+      env.FAKE_CLAUDE_SERVE_LOG ? `fs.appendFileSync(${JSON.stringify(env.FAKE_CLAUDE_SERVE_LOG)},JSON.stringify({pid:process.pid,claim})+'\\n');` : '',
+    );
+  }
+  if (env.FAKE_CLAUDE_SERVE_WRITES) {
+    parts.push(`setInterval(()=>{try{fs.writeFileSync(${JSON.stringify(env.FAKE_CLAUDE_SERVE_WRITES)},'{"version":1,"privateReads":[],"trustedHosts":[]}\\n')}catch{}},5);`);
+  }
+  if (env.FAKE_CLAUDE_SERVE_LATE_TOOL && argOf('--tool-log')) {
+    const rec = JSON.stringify({ tool: env.FAKE_CLAUDE_SERVE_LATE_TOOL, isError: false, ms: 5 }) + '\n';
+    parts.push(`process.on('SIGTERM',()=>setTimeout(()=>{fs.appendFileSync(${JSON.stringify(argOf('--tool-log'))},${JSON.stringify(rec)});process.exit(0)},50));`);
+  }
+  parts.push('setInterval(()=>{},1000);');
+  const serveScript = parts.join('');
+  let child = null;
+  let childAlive = false;
+  const startServe = () => {
+    child = spawn(process.execPath, ['-e', serveScript], { stdio: 'ignore' });
+    childAlive = true;
+    child.once('exit', () => (childAlive = false));
+    if (env.FAKE_CLAUDE_PIDS) writeFileSync(env.FAKE_CLAUDE_PIDS, JSON.stringify({ claude: process.pid, child: child.pid }));
+  };
+  /** Kill the serve and wait until it is gone. */
+  const killServe = () =>
+    new Promise((r) => {
+      if (!childAlive) return r();
+      child.once('exit', () => r());
+      child.kill('SIGKILL');
+    });
+  /** The lock is taken before "connected" (like stephen serve, which claims before it connects). */
+  const lockTaken = () => !lock || existsSync(lock);
+  startServe();
   if (mode === 'hang-stubborn') process.on('SIGTERM', () => {});
   const personaPath = at('--append-system-prompt-file');
   const sessionId = `sess-${process.pid}`;
@@ -43,6 +90,7 @@ export async function runStream({ argv, at, mode, logTools }) {
     const m = env.FAKE_CLAUDE_MCP ?? 'connected';
     polls++;
     if (m === 'failed') return 'failed';
+    if (!lockTaken()) return 'pending';
     if (m === 'pending') return 'pending';
     if (m === 'slow') return polls <= 2 ? 'pending' : 'connected';
     if (m === 'drop') return messages >= 1 ? 'failed' : 'connected';
@@ -83,6 +131,7 @@ export async function runStream({ argv, at, mode, logTools }) {
     }
     if (msg.type !== 'user' || msg.message?.role !== 'user') die(`Expected message role 'user', got '${msg.message?.role}'`);
     messages++;
+    if (!childAlive) startServe(); // Claude Code starts a dead MCP server again, silently
     const prompt = typeof msg.message.content === 'string' ? msg.message.content : JSON.stringify(msg.message.content);
     const turns = env.FAKE_CLAUDE_TURNS ?? (env.FAKE_CLAUDE_LOG ? `${env.FAKE_CLAUDE_LOG}.turns` : null);
     if (turns) {
@@ -92,9 +141,16 @@ export async function runStream({ argv, at, mode, logTools }) {
       process.stderr.write('Error: exited mid-turn\n');
       process.exit(3);
     }
-    if (mode === 'hang' || mode === 'hang-stubborn') return new Promise(() => {}); // never answers: the queue stalls
+    // Like Claude Code: system/init (with the session id) first, and the transcript is on disk from then on.
     out({ type: 'system', subtype: 'init', session_id: sessionId, model: 'fake-sonnet', mcp_servers: [{ name: 'stephen', status: 'connected' }] });
+    if (env.FAKE_CLAUDE_TRANSCRIPT_DIR) appendFileSync(join(env.FAKE_CLAUDE_TRANSCRIPT_DIR, `${sessionId}.jsonl`), JSON.stringify({ prompt }) + '\n');
+    if (mode === 'hang' || mode === 'hang-stubborn') return new Promise(() => {}); // never answers: the queue stalls
     if (tools[messages - 1]) logTools(tools[messages - 1]);
+    if (env.FAKE_CLAUDE_SERVE_DIES === `midturn-${messages}`) {
+      await killServe();
+      startServe(); // the next tool call of this turn goes to a new serve
+      await new Promise((r) => setTimeout(r, 100)); // it has taken (or found) the lock
+    }
     if (duration > 0) await new Promise((r) => setTimeout(r, duration));
     out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] }, session_id: sessionId });
     out({ type: 'rate_limit_event', rate_limit_info: {} });
@@ -109,6 +165,7 @@ export async function runStream({ argv, at, mode, logTools }) {
     }
     const reply = env.FAKE_CLAUDE_REPLY ?? `**Done!** ${prompt}`;
     out({ type: 'result', subtype: 'success', is_error: false, result: reply, session_id: sessionId, num_turns: 2, duration_ms: duration, duration_api_ms: apiTotal, total_cost_usd: costTotal });
+    if (env.FAKE_CLAUDE_SERVE_DIES === `after-${messages}`) await killServe();
   }
   void argv;
   await new Promise(() => {}); // live until stdin closes (rl close → exit) or a signal

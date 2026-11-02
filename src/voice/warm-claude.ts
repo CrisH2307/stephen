@@ -7,6 +7,13 @@
  * Wire protocol (checked against Claude Code 2.1.316, see the ADR):
  *  - Ready: `control_request` initialize → success (then the persona file is deleted: Claude Code has read it), then
  *    `mcp_status` every 200 ms until the `stephen` server is `connected`. Failure, a timeout or an exit = not ready.
+ *  - Serve instance (docs/REVIEW-7.md R7-1): with `serveInstance` set, each process gets a fresh `serve --instance`;
+ *    at ready the serve's pid is read from the instance lock. Claude Code restarts a dead serve on its own and
+ *    `mcp_status` still says connected, so before every command the lock must still name that pid and it must be
+ *    alive, and after the result too (a restart inside the turn). Otherwise the command is an error (the runner then
+ *    ends the conversation). The restarted serve itself refuses every call (src/server/instance.ts).
+ *  - Session id: taken from the first line that carries one (`system`/`init`, before any tool runs), so a cancelled
+ *    first command's transcript can still be deleted (R7-3).
  *  - Turn: `mcp_status` must still say connected, then ONE line `JSON.stringify({type:'user',…})`; the turn ends at the
  *    next `result` line. `duration_api_ms` and `total_cost_usd` are cumulative per process, so the outcome carries the
  *    difference from the previous result. Every other line type is ignored.
@@ -15,8 +22,10 @@
  * WarmConversationRunner (conversation.ts) owns when a process lives and dies; this class only drives one.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
 import {
   MCP_SERVER_NAME,
+  SESSION_ID_RE,
   buildWarmArgs,
   killGroup,
   outcomeFromResult,
@@ -27,6 +36,7 @@ import {
   type ClaudeOutcome,
   type ClaudeSettings,
   type ResultJson,
+  type ServeInstance,
   type SpawnFn,
 } from './claude.js';
 
@@ -58,6 +68,8 @@ export interface WarmProcess {
   readonly memoryKey: string | undefined;
   /** It has exited (or never started). */
   readonly exited: boolean;
+  /** Claude Code's session id, from the first line that carried one (null before that). */
+  readonly sessionId: string | null;
   /** Resolves once it takes commands; rejects with a user-facing message otherwise. */
   ready(): Promise<void>;
   /** One command. Resolves (never rejects) with the outcome; `cancelled` when kill() ended it. */
@@ -89,6 +101,10 @@ export class WarmClaude implements WarmProcess {
   private prevApiMs = 0;
   private prevCostUsd = 0;
   private killing = false;
+  private inst: ServeInstance | null = null;
+  /** The serve's pid from its instance lock, read once the tools connected. */
+  private servePid: number | null = null;
+  private sid: string | null = null;
   private killed: Promise<void> | null = null;
   private done = false;
   private readonly exitFns: (() => void)[] = [];
@@ -123,6 +139,10 @@ export class WarmClaude implements WarmProcess {
     return this.child?.pid ?? null;
   }
 
+  get sessionId(): string | null {
+    return this.sid;
+  }
+
   ready(): Promise<void> {
     return this.readyP;
   }
@@ -144,6 +164,12 @@ export class WarmClaude implements WarmProcess {
       }
       init.resolve();
       await this.waitConnected(this.now() + timeout);
+      if (this.inst) {
+        // The serve takes its lock before it connects, so it is there once mcp_status says connected.
+        const pid = readServeLock(this.inst.lockPath);
+        if (pid === null || !pidAlive(pid)) throw new Error("Stephen's tools didn't start (no serve instance lock).");
+        this.servePid = pid;
+      }
     } catch (e) {
       init.reject(e as Error);
       void this.kill();
@@ -152,6 +178,14 @@ export class WarmClaude implements WarmProcess {
   }
 
   private async start(memory: readonly string[]): Promise<void> {
+    if (this.o.serveInstance) {
+      try {
+        this.inst = await this.o.serveInstance();
+      } catch (e) {
+        this.onClosed();
+        throw new Error(`Could not write the MCP config (${(e as Error).message}).`);
+      }
+    }
     if (this.o.personaFile) {
       try {
         await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory));
@@ -168,7 +202,7 @@ export class WarmClaude implements WarmProcess {
     const spawnFn: SpawnFn = this.o.spawn ?? ((c, a, opts) => spawn(c, a as string[], opts));
     let child: ChildProcess;
     try {
-      child = spawnFn(this.o.claudePath, buildWarmArgs(this.o, memory), {
+      child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), {
         cwd: this.o.cwd,
         env: withoutSecrets(this.o.env ?? process.env),
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -234,7 +268,8 @@ export class WarmClaude implements WarmProcess {
 
   private async waitConnected(deadline: number): Promise<void> {
     for (;;) {
-      const status = await this.mcpStatus(Math.max(1, deadline - this.now()));
+      // Each poll gets at least 250 ms to answer, so one sent just before the deadline doesn't time out on its own.
+      const status = await this.mcpStatus(Math.max(250, deadline - this.now()));
       if (status === 'connected') return;
       if (status !== 'pending') throw new Error(`Stephen's tools didn't start (MCP status: ${status}).`);
       if (this.now() >= deadline) throw new Error("Stephen's tools didn't connect in time.");
@@ -242,11 +277,23 @@ export class WarmClaude implements WarmProcess {
     }
   }
 
+  /** Null while the serve that was there at ready is still the one (same pid in the lock, alive); else why not. */
+  private serveProblem(): string | null {
+    if (!this.inst) return null;
+    const pid = readServeLock(this.inst.lockPath);
+    if (pid === null) return 'its instance lock is gone';
+    if (pid !== this.servePid) return 'another serve took its place';
+    if (!pidAlive(pid)) return 'its process is gone';
+    return null;
+  }
+
   async turn(prompt: string): Promise<ClaudeOutcome> {
     if (this.current) throw new Error('a command is already running');
     if (!prompt.trim()) throw new Error('empty prompt');
     try {
       await this.readyP;
+      const gone = this.serveProblem();
+      if (gone) throw new Error(`Stephen's tools stopped since the last command (${gone}), so I ended the conversation. Say it again.`);
       const status = await this.mcpStatus(this.o.readyTimeoutMs ?? WARM_READY_TIMEOUT_MS);
       if (status !== 'connected') throw new Error(`Stephen's tools are not connected (MCP status: ${status}).`);
     } catch (e) {
@@ -258,7 +305,9 @@ export class WarmClaude implements WarmProcess {
     return new Promise<ClaudeOutcome>((resolve) => {
       this.current = (o) => {
         this.current = null;
-        resolve(o);
+        // A serve that died (and may have been restarted) inside the turn: fail closed, the conversation ends.
+        const gone = o.kind === 'ok' ? this.serveProblem() : null;
+        resolve(gone ? { kind: 'error', message: `Stephen's tools stopped during that command (${gone}), so I ended the conversation. Say it again.`, sessionId: o.kind === 'ok' ? o.sessionId : null } : o);
       };
       this.child?.stdin?.write(userMessageLine(prompt));
     });
@@ -286,6 +335,8 @@ export class WarmClaude implements WarmProcess {
       this.protocolError("Claude Code printed something that isn't stream-json");
       return;
     }
+    // system/init comes first in every turn, before any tool runs (R7-3).
+    if (this.sid === null && typeof msg.session_id === 'string' && SESSION_ID_RE.test(msg.session_id)) this.sid = msg.session_id;
     if (msg.type === 'control_response') {
       const r = (msg.response ?? {}) as { subtype?: unknown; request_id?: unknown; response?: unknown; error?: unknown };
       const p = typeof r.request_id === 'string' ? this.pending.get(r.request_id) : undefined;
@@ -350,6 +401,7 @@ export class WarmClaude implements WarmProcess {
       if (!pid) {
         if (!this.child) this.onClosed(); // never spawned (or still writing the persona: start() sees `killing`)
         await this.closed;
+        if (this.inst) removeServeLock(this.inst.lockPath);
         return;
       }
       const grace = this.o.killGraceMs ?? 2000;
@@ -367,6 +419,8 @@ export class WarmClaude implements WarmProcess {
         while (groupAlive(pid) && this.now() < last) await sleep(25);
       }
       clearTimeout(hard);
+      // Claude Code is gone, so nothing can start this instance's serve again: its lock can go.
+      if (this.inst) removeServeLock(this.inst.lockPath);
     })().catch(() => undefined);
     return this.killed;
   }

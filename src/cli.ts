@@ -2,6 +2,7 @@
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
 // Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
+import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
@@ -112,6 +113,18 @@ async function serve(argv: string[] = []): Promise<void> {
     await server.connect(new StdioServerTransport());
     return;
   }
+  // --instance: one serve per id. A second serve of the same id is Claude Code restarting a dead one behind the
+  // listener's back (docs/REVIEW-7.md R7-1): it refuses every tool call and exits. Any other failure throws (no tools).
+  let restarted: (() => void) | undefined;
+  if (opts.instance && claimServeInstance(cfg.home, opts.instance) === 'restarted') {
+    console.error(`[stephen] serve instance ${opts.instance} already ran: Claude Code restarted serve, so every tool call is refused`);
+    let exiting = false;
+    restarted = () => {
+      if (exiting) return;
+      exiting = true;
+      setTimeout(() => process.exit(RESTARTED_EXIT_CODE), 250); // let the refusal reach Claude Code first
+    };
+  }
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
   if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
   // Profiles, state and saved page output are private to this user (mode 0700).
@@ -138,6 +151,7 @@ async function serve(argv: string[] = []): Promise<void> {
     safetyFactory,
     ...(opts.voice ? { voice: {} } : {}),
     ...(opts.toolLog ? { toolLog: opts.toolLog } : {}),
+    ...(restarted ? { restarted } : {}),
   };
   await serveStdio(deps);
 }

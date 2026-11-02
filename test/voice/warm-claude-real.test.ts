@@ -3,6 +3,9 @@
  * skipped unless STEPHEN_REAL_CLAUDE=1. Needs `claude` logged in and `npm run build` (the eval's dry-run server is the
  * MCP server, so no tool acts). Checks what WarmClaude relies on: initialize, mcp_status → connected, two commands on
  * one process and one session, per-command differences of the cumulative cost / api time, and kill() of the group.
+ * The second test runs the REAL `stephen serve --instance` (only the harmless `recent_actions` tool is called) and
+ * kills it, between commands and inside one (docs/REVIEW-7.md R7-1): Claude Code restarts it silently, the restarted
+ * serve refuses the call, and WarmClaude reports an error either way.
  *   STEPHEN_REAL_CLAUDE=1 npx vitest run test/voice/warm-claude-real.test.ts
  * STEPHEN_REAL_CLAUDE_PATH / STEPHEN_REAL_CLAUDE_MODEL override `claude` / `sonnet`.
  */
@@ -11,7 +14,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { evalMcpConfig } from '../../src/eval/run.js';
-import { stephenCliPath } from '../../src/voice/claude.js';
+import { newServeInstance, pidAlive, readServeLock, serveLockPath } from '../../src/server/instance.js';
+import { readToolLog, resetToolLog } from '../../src/server/tool-log.js';
+import { stephenCliPath, writeMcpConfig, type ServeInstance } from '../../src/voice/claude.js';
 import { WarmClaude } from '../../src/voice/warm-claude.js';
 import { isAlive } from './helpers.js';
 
@@ -61,4 +66,65 @@ describe.skipIf(!REAL)('real Claude Code over stream-json (opt-in: STEPHEN_REAL_
     expect(isAlive(pid)).toBe(false);
     process.stderr.write(`[warm real] ready ${readyMs} ms; one: api ${a.apiMs} ms $${a.costUsd?.toFixed(4)}; two: api ${b.apiMs} ms $${b.costUsd?.toFixed(4)}\n`);
   }, 120_000);
+
+  it('R7-1: a killed serve (between commands, and inside one) is refused and the command is an error', async () => {
+    expect(existsSync(stephenCliPath()), 'run `npm run build` first').toBe(true);
+    const home = join(tmp, 'home');
+    const voice = join(home, 'voice');
+    const cwd = join(voice, 'workdir');
+    mkdirSync(cwd, { recursive: true, mode: 0o700 });
+    const toolLog = join(voice, 'tool-log.jsonl');
+    const made: ServeInstance[] = [];
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE_|CLAUDECODE$|CCR_|AI_AGENT$)/.test(k)));
+    env.STEPHEN_HOME = home;
+    const start = () =>
+      new WarmClaude(
+        {
+          claudePath: process.env.STEPHEN_REAL_CLAUDE_PATH ?? 'claude',
+          maxTurns: 6,
+          model: process.env.STEPHEN_REAL_CLAUDE_MODEL ?? 'sonnet',
+          mcpConfigPath: join(voice, 'mcp-config.json'),
+          followUps: true,
+          personaFile: join(voice, 'persona.txt'),
+          cwd,
+          env,
+          serveInstance: async () => {
+            const id = newServeInstance();
+            const inst = { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voice, process.execPath, stephenCliPath(), join(voice, 'conversation-state.json'), toolLog, id) };
+            made.push(inst);
+            return inst;
+          },
+        },
+        undefined,
+        [],
+      );
+
+    // Between commands.
+    const a = start();
+    await a.ready();
+    resetToolLog(toolLog);
+    expect(await a.turn('Call the recent_actions tool once, then say in one short sentence what it said.')).toMatchObject({ kind: 'ok' });
+    const pidA = readServeLock(made[0]!.lockPath)!;
+    process.kill(pidA, 'SIGKILL');
+    while (pidAlive(pidA)) await new Promise((r) => setTimeout(r, 25));
+    expect(await a.turn('Call the recent_actions tool again.')).toMatchObject({ kind: 'error', message: expect.stringMatching(/stopped since the last command/) });
+    await a.kill();
+    expect(existsSync(made[0]!.lockPath)).toBe(false);
+
+    // Inside one command: killed right after the first of two calls; Claude Code restarts serve for the second.
+    const b = start();
+    await b.ready();
+    resetToolLog(toolLog);
+    const turn = b.turn('Call the recent_actions tool. After you get its answer, call recent_actions a second time (a separate call). Then give both answers in two short sentences.');
+    while (readToolLog(toolLog).length < 1) await new Promise((r) => setTimeout(r, 20));
+    process.kill(readServeLock(made[1]!.lockPath)!, 'SIGKILL');
+    expect(await turn).toMatchObject({ kind: 'error', message: expect.stringMatching(/stopped during that command/) });
+    // The second call reached the restarted serve, which refused it (logged as an error, nothing ran).
+    expect(readToolLog(toolLog).map((r) => [r.tool, r.isError])).toEqual([
+      ['recent_actions', false],
+      ['recent_actions', true],
+    ]);
+    await b.kill();
+    expect(existsSync(made[1]!.lockPath)).toBe(false);
+  }, 180_000);
 });

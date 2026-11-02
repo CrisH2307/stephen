@@ -19,6 +19,7 @@ import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memo
 import { MemoryStore } from '../memory/store.js';
 import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
+import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
 import { toolLogPath } from '../server/tool-log.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
@@ -34,6 +35,7 @@ import {
   writeMcpConfig,
   type ClaudeOutcome,
   type ClaudeSettings,
+  type ServeInstance,
   type SpawnFn,
   type ClaudeFlagProbe,
   PERSONA_FILE,
@@ -313,7 +315,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     // Memory changed anywhere (router, app, `stephen memory`, a hand edit) → don't resume (review 5, R5-2).
     memoryKey: () => memoryKey(memoryStore ? memoryStore.listSync().map((i) => i.text) : []),
   });
-  const sessionStatePath = conversation.enabled ? conversation.statePath : null;
+  // Always named, also with follow-ups off (window 0: deleted before and after every command), so a serve that Claude
+  // Code restarts behind our back still starts with the taint (docs/REVIEW-7.md R7-1).
+  const sessionStatePath = conversation.statePath;
   if (!conversation.enabled) conversation.end(); // window 0: no leftovers from an earlier setting
   // History: one entry per command; the tool log (names only) is only written when history is on.
   const history = new HistoryStore({
@@ -325,6 +329,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   if (!args.dryRun) history.purge(); // drop expired history (and old Claude transcripts) at start, not only on the next command (R5-6)
   const toolLog = history.enabled ? toolLogPath(home) : null;
   const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog);
+  // A fresh `serve --instance` per Claude process (R7-1): the config is rewritten before each spawn (one Claude
+  // process at a time: the next spawns only after the previous group is gone), and the runner checks the serve's lock.
+  const serveInstance = async (): Promise<ServeInstance> => {
+    const id = newServeInstance();
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id) };
+  };
+  if (!args.dryRun) sweepServeLocks(home, Date.now() - 24 * 3600_000); // file times are real time: left behind by a killed listener
   const settings: ClaudeSettings = {
     claudePath: cfg.claudePath,
     maxTurns: cfg.maxTurns,
@@ -332,6 +343,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     mcpConfigPath,
     followUps: conversation.enabled,
     aboutMe: cfg.aboutMe ?? null,
+    ...(args.dryRun ? {} : { serveInstance }),
   };
   // Check once that this Claude Code knows our lock-down flags: required ones missing → refuse (update Claude Code);
   // optional ones (--no-chrome, --no-session-persistence) missing → leave them out instead of failing every command.

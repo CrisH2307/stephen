@@ -7,6 +7,7 @@ import type { ElicitFn } from '../safety/index.js';
 import type { Confirmer, IBrowserManager, PageEngine, ResolvedConfig } from '../types.js';
 import { Hub } from './hub.js';
 import { SERVER_INSTRUCTIONS } from './instructions.js';
+import { withRestartRefusal } from './instance.js';
 import { fileToolLogger, withToolLog } from './tool-log.js';
 import { registerTools } from './tools.js';
 import { log, withTimeout } from './util.js';
@@ -31,6 +32,11 @@ export interface ServerDeps {
   actionTimeoutMs?: number;
   /** `serve --tool-log <file>`: append `{tool,isError,ms}` per call (never arguments or results; see tool-log.ts). */
   toolLog?: string;
+  /**
+   * `serve --instance` found its lock taken (Claude Code restarted serve, docs/REVIEW-7.md R7-1): every tool answers
+   * RESTARTED_NOTICE and nothing runs; this is called after each refusal (serve exits non-zero).
+   */
+  restarted?: () => void;
 }
 
 /**
@@ -56,7 +62,9 @@ export function buildServer(deps: ServerDeps): McpServer {
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
   const hub = new Hub(deps, mcp);
-  registerTools(deps.toolLog ? withToolLog(mcp, fileToolLogger(deps.toolLog)) : mcp, hub);
+  const logged = deps.toolLog ? withToolLog(mcp, fileToolLogger(deps.toolLog)) : mcp;
+  // The refusal goes outside the tool log, so a refused call is still logged (as an error).
+  registerTools(deps.restarted ? withRestartRefusal(logged, deps.restarted) : logged, hub);
   return mcp;
 }
 

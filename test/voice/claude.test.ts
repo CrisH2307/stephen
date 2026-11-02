@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -13,8 +13,10 @@ import {
   parseClaudeOutput,
   stephenCliPath,
   writeMcpConfig,
+  type ServeInstance,
   type SpawnFn,
 } from '../../src/voice/claude.js';
+import { claimServeInstance, newServeInstance, serveLockPath } from '../../src/server/instance.js';
 import { fakeClaudePath, isAlive, readFakeLog, waitFor } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-claude-'));
@@ -234,6 +236,34 @@ describe('ClaudeRunner with a fake claude', () => {
     });
     return { runner, log };
   };
+
+  it('serveInstance (R7-1): every run gets a fresh `serve --instance` config, and its lock is deleted after the run', async () => {
+    const home = join(tmp, 'inst-home');
+    mkdirSync(join(home, 'voice'), { recursive: true, mode: 0o700 });
+    const made: ServeInstance[] = [];
+    const log = join(tmp, 'inst.log');
+    const runner = new ClaudeRunner({
+      ...settings,
+      claudePath: fake,
+      cwd: tmp,
+      env: { ...process.env, FAKE_CLAUDE_LOG: log },
+      serveInstance: async () => {
+        const id = newServeInstance();
+        const inst = { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(join(home, 'voice'), '/usr/bin/node', '/x/cli.js', null, null, id) };
+        claimServeInstance(home, id, 1); // stands in for the serve the fake claude doesn't start
+        made.push(inst);
+        return inst;
+      },
+    });
+    expect((await runner.run('open youtube')).kind).toBe('ok');
+    expect((await runner.run('open gmail')).kind).toBe('ok');
+    expect(made).toHaveLength(2);
+    expect(made[0]!.id).not.toBe(made[1]!.id);
+    expect(readFakeLog(log).map((r) => flagValue(r.argv, '--mcp-config'))).toEqual(made.map((m) => m.mcpConfigPath));
+    for (const m of made) expect(existsSync(m.lockPath)).toBe(false);
+    const args = JSON.parse(readFileSync(made[1]!.mcpConfigPath, 'utf8')).mcpServers.stephen.args as string[];
+    expect(flagValue(args, '--instance')).toBe(made[1]!.id);
+  });
 
   it('spawns argv directly (no shell), detached, in the private cwd; every command is a fresh session', async () => {
     const calls: Parameters<SpawnFn>[] = [];
