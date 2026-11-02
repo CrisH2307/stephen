@@ -109,13 +109,14 @@ again brings the same one to the front. Size and position are remembered.
 
 | Tab | Shows |
 |---|---|
-| **Chat** | Your typed commands and Stephen's replies as bubbles (tool names in small print under a reply), plus voice commands live as you say them. Type and press Return or **Send**; **Stop** appears while a command runs (same as Esc). The dot in the header is Stephen's state (grey idle, green listening, red recording, orange working, blue speaking). Typed replies are shown, not spoken. |
+| **Chat** | Your typed commands and Stephen's replies as bubbles (tool names in small print under a reply), plus voice commands live as you say them. A **Today** card at the top has a **What's my day?** button that sends that text like typing it. Type and press Return or **Send**; **Stop** appears while a command runs (same as Esc). The dot in the header is Stephen's state (grey idle, green listening, red recording, orange working, blue speaking). Typed replies are shown, not spoken. |
 | **Memory** | What Stephen remembers: add, edit, forget one, or **Forget all…** (asks first). Refusals (for example secret-looking text) are shown as they come from `stephen listen`. Any change starts a fresh conversation with the next command. |
 | **History** | Recent commands grouped by day, with **Load older** and **Clear history…** (asks first). |
 | **Settings** | The resolved voice / memory / history settings, read-only, and **Open config file** (opens the `.json` file in its default app). |
+| **Accounts** | Canvas, Calendar, Notion, Weather (and Gmail labels, if configured): connected, not set or turned off, where the secret was found (Keychain or .env, never the value) and a one-line hint to connect it. |
 | **Audit** | The latest browser actions from the audit log. |
 
-If `stephen listen` isn't running the window says *Stephen isn't listening. Run `stephen listen`.* with **Retry**;
+If `stephen listen` isn't running the window says *Can't reach Stephen. Run `stephen listen`.* with **Retry**;
 while the window is open it also retries every 3 s by itself. Closing the window disconnects; the helper keeps
 running in the menu bar. All text is shown as plain text (no Markdown or links are rendered).
 
@@ -144,7 +145,7 @@ running in the menu bar. All text is shown as plain text (no Markdown or links a
 | `install-helper`: no Swift compiler | `xcode-select --install`, then run it again. With full Xcode, `sudo xcode-select -s /Applications/Xcode.app` if `xcrun` points elsewhere. |
 | "already exists and was not made by Stephen" | Something else is at `~/Applications/Stephen Helper.app`; move it away. |
 | Two `stephen listen` running | They take turns stealing the helper connection. Run one. |
-| Stephen window says "Stephen isn't listening" | Start `stephen listen` (it creates `<stephen home>/run/app.sock`). If it is running, check that the helper and the listener use the same home folder (`helper.log` shows the socket path the window uses). |
+| Stephen window says "Can't reach Stephen" | Start `stephen listen` (it creates `<stephen home>/run/app.sock`). If it is running, check that the helper and the listener use the same home folder (`helper.log` shows the socket path the window uses). |
 | `install-helper` fails in `AppWindow.swift` / `AppClient.swift` | An SDK difference in the SwiftUI window code. The error lines name the API; the rest of the helper is unchanged. |
 
 ## Privacy

@@ -28,6 +28,7 @@ const RESPONSES: Record<string, string[]> = {
   'memory.clear': ['memory', 'error'],
   'settings.get': ['settings', 'error'],
   'audit.recent': ['audit', 'error'],
+  'accounts.status': ['accounts', 'error'],
   // Sent by `stephen app` (src/app/cli.ts), not by the window: the listener forwards open_window to the helper.
   'window.open': ['ok', 'error'],
 };
@@ -156,6 +157,14 @@ describe('app.sock protocol v1 fixture', () => {
           expect(typeof msg.config).toBe('object');
           expect(typeof msg.configPath).toBe('string');
           break;
+        case 'accounts':
+          for (const a of msg.accounts as Record<string, unknown>[]) {
+            expect(['connected', 'not_set', 'off']).toContain(a.state);
+            expect([null, 'keychain', '.env']).toContain(a.source);
+            expect(typeof a.name).toBe('string');
+            expect(typeof a.hint).toBe('string');
+          }
+          break;
         case 'audit':
           for (const a of msg.entries as Record<string, unknown>[]) {
             expect(typeof a.ts).toBe('string');
@@ -193,6 +202,17 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];
       expect(bad).toEqual([]);
     }
+  });
+
+  it('Accounts tab and the Today card are wired to the protocol', () => {
+    expect(window).toContain('case .accounts: AccountsView(model: model)');
+    expect(window).toContain('model.refreshAccounts()');
+    expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
+    // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.
+    expect(client).toContain('let APP_TODAY_PROMPT = "what\'s my day?"');
+    expect(client).toContain('AppRequest.accountsStatus(newId())');
+    // Only system colours.
+    expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
   });
 
   it('the window opens from the menu, --open-window and the open_window command', () => {

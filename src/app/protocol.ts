@@ -7,12 +7,15 @@
  * Every request carries a client `id` (echoed in its response); pushes carry none. Unknown request types are ignored
  * (no response); a malformed request gets `{id?, type:"error", message}`. Extra fields are ignored.
  *
+ * Additive: `{id, type:"accounts.status"}` → `{id, type:"accounts", accounts:[{id,name,state,source,detail?,hint}], note?}`
+ * (which accounts are connected; never a secret value).
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
  */
 import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import type { AuditEntry } from '../types.js';
+import type { AccountRow } from './accounts-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
 /** Longest line in bytes, without its newline (both directions; AppClient.swift APP_MAX_LINE_BYTES). */
@@ -41,6 +44,7 @@ export type AppRequest =
   | { id: string; type: 'memory.clear' }
   | { id: string; type: 'settings.get' }
   | { id: string; type: 'audit.recent'; limit?: number }
+  | { id: string; type: 'accounts.status' }
   | { id: string; type: 'window.open' };
 
 export type AppRequestType = AppRequest['type'];
@@ -58,6 +62,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'memory.clear',
   'settings.get',
   'audit.recent',
+  'accounts.status',
   'window.open',
 ];
 
@@ -73,6 +78,7 @@ export type AppMessage =
   | { id: string; type: 'memory'; items: MemoryItem[] }
   | { id: string; type: 'settings'; config: Record<string, unknown>; configPath: string }
   | { id: string; type: 'audit'; entries: AuditEntry[] }
+  | { id: string; type: 'accounts'; accounts: AccountRow[]; note?: string }
   | { id?: string; type: 'error'; message: string }
   | { type: 'state'; state: AppState }
   | { type: 'heard'; text: string; source: string }
@@ -142,6 +148,7 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'memory.clear': () => ok,
   'settings.get': () => ok,
   'audit.recent': (o) => optionalLimit(o, APP_AUDIT_LIMIT_MAX),
+  'accounts.status': () => ok,
   'window.open': () => ok,
 };
 

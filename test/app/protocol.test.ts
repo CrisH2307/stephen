@@ -33,6 +33,7 @@ describe('parseAppRequest', () => {
     ['memory.clear', { id: 'a', type: 'memory.clear' }, { id: 'a', type: 'memory.clear' }],
     ['settings.get', { id: 'a', type: 'settings.get' }, { id: 'a', type: 'settings.get' }],
     ['audit.recent', { id: 'a', type: 'audit.recent', limit: 200 }, { id: 'a', type: 'audit.recent', limit: 200 }],
+    ['accounts.status', { id: 'a', type: 'accounts.status', x: 1 }, { id: 'a', type: 'accounts.status' }],
     ['window.open', { id: 'a', type: 'window.open' }, { id: 'a', type: 'window.open' }],
     ['extra fields are dropped', { id: 'a', type: 'chat.stop', text: 'ignored', evil: true }, { id: 'a', type: 'chat.stop' }],
   ];
@@ -73,7 +74,7 @@ describe('parseAppRequest', () => {
 
   it('knows every request type of the table plus window.open', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'hello', 'history.clear', 'history.list', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open'].sort(),
     );
   });
 });

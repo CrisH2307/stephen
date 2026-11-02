@@ -294,3 +294,19 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   Merged with weather (conflicts were additive). Full suite **2601 passed, 11 skipped**. Owner: put NOTION_API in .env,
   share the to-do database with the integration, run `node dist/cli.js accounts test notion`; answer the database
   questions (done property name/type and option names, title, due-date property).
+- 2026-11-02 — **Stephen window UI pass** (branch worktree-agent-a5ae9da0f62adfcdd). New **Accounts** tab: protocol request
+  `accounts.status` → `accounts` (src/app/accounts-status.ts, built on `lookupSecret` + `parseAccountsConfig`, no network, never a
+  value; rows for Canvas, Calendar, Notion, Weather and Gmail labels if `accounts.gmail.accounts` exists; state connected / not_set
+  / off, source keychain or .env, one-line hint). **Today card** on Chat: button sends "what's my day?" through the normal
+  `chat.send`. Empty states (memory, history, audit, accounts) and one-line offline state with Retry. Protocol v1 stays
+  compatible (additive; fixture lines a20). Swift was NOT compiled here (no swiftc): first compile is on the Mac.
+  **Mac check steps:**
+  1. `npm run build && node dist/cli.js install-helper` (watch for any swiftc error; paste it back if there is one).
+  2. System Settings, Privacy & Security, Input Monitoring: remove and re-enable Stephen Helper (the rebuild changes its signature).
+  3. `stephen app` (with `stephen listen` running in another terminal).
+  **What to look at:** (a) sidebar has Accounts with a key icon; rows show Canvas/Calendar/Notion/Weather with the right state, the
+  source (Keychain or .env) and a hint, and no secret anywhere; Weather shows your place label. (b) Chat tab: Today card at the top;
+  **What's my day?** puts "what's my day?" in the chat as your bubble and gets a reply; the button greys out while a command runs.
+  (c) Stop `stephen listen`: one line "Can't reach Stephen. Run `stephen listen`." and Retry; start it again and the window recovers
+  in about 3 s. (d) Memory, History, Audit with nothing in them show a symbol and one line. (e) Dark mode: switch System Settings,
+  Appearance, Dark; text, cards and the status colours stay readable.
