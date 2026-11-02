@@ -136,7 +136,7 @@ export function nextSteps(plan: HelperInstallPlan): string[] {
     `     (click + and choose ${plan.appPath} if it is not listed). The menu shows "Input Monitoring: granted" once it works.`,
     '  2. System Settings › Keyboard › "Press 🌐 key to" → "Do Nothing" (otherwise holding Fn opens the emoji picker',
     '     or starts dictation).',
-    '  3. Run `stephen listen`, hold Fn+Option while you talk, let go to send. Esc cancels a running command.',
+    '  3. Run `stephen listen`, hold F5 (or Fn+Option) while you talk, let go to send. Esc cancels a running command.',
     '',
     'Rebuilding changes the app\'s signature, so macOS may ask for Input Monitoring again after `stephen install-helper`.',
     'If it then shows "granted" but keys do nothing, remove Stephen Helper from the Input Monitoring list (−) and add it again.',

@@ -35,7 +35,7 @@ export async function helperDoctorChecks(stephenHome: string, deps: HelperDoctor
   const installed = deps.exists(join(deps.appPath, 'Contents', 'MacOS', HELPER_EXECUTABLE));
   checks.push({
     ok: installed,
-    label: `${HELPER_APP_NAME} installed (push-to-talk: hold Fn+Option)`,
+    label: `${HELPER_APP_NAME} installed (push-to-talk: hold F5 or Fn+Option)`,
     detail: installed ? deps.appPath : `not found at ${deps.appPath}`,
     fix: 'Run `stephen install-helper` (builds it with Xcode\'s Swift compiler).',
   });
@@ -65,7 +65,7 @@ export async function helperDoctorChecks(stephenHome: string, deps: HelperDoctor
   checks.push({
     ok: probe.hello.inputMonitoring,
     label: 'Input Monitoring granted to Stephen Helper',
-    detail: probe.hello.inputMonitoring ? 'yes' : 'no — Fn+Option and Esc do nothing',
+    detail: probe.hello.inputMonitoring ? 'yes' : 'no — F5, Fn+Option and Esc do nothing',
     fix:
       'System Settings › Privacy & Security › Input Monitoring → turn on "Stephen Helper" (or use its menu-bar item → ' +
       `"Open Settings…"). After a rebuild, remove it (−) and add it again. Log: ${helperLogPath(stephenHome)}`,
