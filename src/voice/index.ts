@@ -53,6 +53,7 @@ import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel,
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
+import { accountsStatus } from '../app/accounts-status.js';
 import { macNotify, type NotifyFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
@@ -189,6 +190,8 @@ interface LoadedVoice {
   memory: MemoryConfig;
   history: HistoryConfig;
   app: AppConfig;
+  /** Raw "accounts" section (accounts.status). */
+  accounts: unknown;
   auditLogPath: string | null;
 }
 
@@ -202,6 +205,7 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null
       memory: parseMemoryConfig(c.memory),
       history: parseHistoryConfig(c.history),
       app: parseAppConfig(c.app),
+      accounts: c.accounts ?? {},
       auditLogPath: c.auditLogPath ?? null,
     };
   } catch (e) {
@@ -441,6 +445,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       history,
       audit,
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
+      accounts: () => accountsStatus(loaded.accounts),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
       log: err,

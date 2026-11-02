@@ -11,7 +11,7 @@ import AppKit
 import SwiftUI
 
 enum AppTab: String, CaseIterable, Identifiable {
-  case chat, memory, history, settings, audit
+  case chat, memory, history, settings, accounts, audit
 
   var id: String { return rawValue }
 
@@ -21,6 +21,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case .memory: return "Memory"
     case .history: return "History"
     case .settings: return "Settings"
+    case .accounts: return "Accounts"
     case .audit: return "Audit"
     }
   }
@@ -31,6 +32,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case .memory: return "lightbulb"
     case .history: return "clock"
     case .settings: return "gearshape"
+    case .accounts: return "key"
     case .audit: return "list.bullet"
     }
   }
@@ -72,6 +74,7 @@ struct AppRootView: View {
       case .memory: MemoryView(model: model)
       case .history: HistoryView(model: model)
       case .settings: SettingsView(model: model)
+      case .accounts: AccountsView(model: model)
       case .audit: AuditView(model: model)
       }
     }
@@ -119,6 +122,21 @@ struct NoticeView: View {
   }
 }
 
+/** A centred symbol and one line, for lists with nothing in them yet. */
+struct EmptyStateView: View {
+  let symbol: String
+  let text: String
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: symbol).font(.largeTitle).foregroundColor(.secondary)
+      Text(verbatim: text).foregroundColor(.secondary).multilineTextAlignment(.center)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(20)
+  }
+}
+
 struct OfflineView: View {
   @ObservedObject var model: AppModel
 
@@ -129,14 +147,12 @@ struct OfflineView: View {
         ProgressView().controlSize(.small)
         Text(verbatim: "Connecting to Stephen…").foregroundColor(.secondary)
       } else {
-        Text(verbatim: "Stephen isn't listening. Run `stephen listen`.").font(.title3)
+        Image(systemName: "bolt.horizontal.circle").font(.largeTitle).foregroundColor(.secondary)
+        Text(verbatim: "Can't reach Stephen. Run `stephen listen`.").font(.title3)
         if let reason = model.offlineReason {
           Text(verbatim: reason).font(.caption).foregroundColor(.secondary)
         }
         Button("Retry") { model.retry() }
-        Text(verbatim: "Retrying by itself every few seconds while this window is open.")
-          .font(.caption)
-          .foregroundColor(.secondary)
       }
       Spacer()
     }
@@ -153,6 +169,7 @@ struct ChatView: View {
 
   var body: some View {
     VStack(spacing: 0) {
+      TodayCardView(model: model)
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 8) {
@@ -195,6 +212,28 @@ struct ChatView: View {
   private func scrollToEnd(_ proxy: ScrollViewProxy) {
     guard let last = model.chat.last else { return }
     proxy.scrollTo(last.id, anchor: .bottom)
+  }
+}
+
+/** Header card on the Chat tab: one button that sends APP_TODAY_PROMPT through the normal chat request. */
+struct TodayCardView: View {
+  @ObservedObject var model: AppModel
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "sun.max").font(.title2).foregroundColor(.accentColor)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(verbatim: "Today").font(.headline)
+        Text(verbatim: "Ask: what's my day?").font(.caption).foregroundColor(.secondary)
+      }
+      Spacer()
+      Button("What's my day?") { model.sendChat(APP_TODAY_PROMPT) }
+        .disabled(model.isWorking || model.connection != .online)
+    }
+    .padding(10)
+    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
+    .padding(.horizontal, 12)
+    .padding(.top, 10)
   }
 }
 
@@ -254,9 +293,7 @@ struct MemoryView: View {
       }
       Divider()
       if model.memory.isEmpty {
-        Spacer()
-        Text(verbatim: "Nothing saved yet. Say \"remember …\" or add something above.").foregroundColor(.secondary)
-        Spacer()
+        EmptyStateView(symbol: "lightbulb", text: "No memories yet. Say \"remember …\" or add one above.")
       } else {
         List {
           ForEach(model.memory) { item in
@@ -341,9 +378,7 @@ struct HistoryView: View {
         Divider()
       }
       if model.history.isEmpty {
-        Spacer()
-        Text(verbatim: "No history yet.").foregroundColor(.secondary)
-        Spacer()
+        EmptyStateView(symbol: "clock", text: "No history yet. Commands you give Stephen show up here.")
       } else {
         List {
           ForEach(model.historyDays) { day in
@@ -465,6 +500,86 @@ struct SettingsView: View {
   }
 }
 
+// ───────────────────────────── accounts ─────────────────────────────
+
+struct AccountsView: View {
+  @ObservedObject var model: AppModel
+
+  var body: some View {
+    VStack(spacing: 0) {
+      if let notice = model.accountsNotice {
+        NoticeView(text: notice)
+        Divider()
+      }
+      if model.accounts.isEmpty {
+        EmptyStateView(symbol: "key", text: "No account information yet. Press Refresh.")
+      } else {
+        List {
+          ForEach(model.accounts) { account in
+            AccountRowView(account: account)
+          }
+        }
+      }
+      Divider()
+      HStack(spacing: 8) {
+        Text(verbatim: "Secrets stay in the Keychain or .env. Only where they were found is shown.")
+          .font(.caption)
+          .foregroundColor(.secondary)
+        Spacer()
+        Button("Refresh") { model.refreshAccounts() }
+      }
+      .padding(10)
+    }
+    .onAppear { model.refreshAccounts() }
+  }
+}
+
+struct AccountRowView: View {
+  let account: AccountRow
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: symbol).foregroundColor(tint).frame(width: 20)
+      VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 6) {
+          Text(verbatim: account.name).bold()
+          Text(verbatim: status).font(.caption).foregroundColor(.secondary)
+        }
+        Text(verbatim: account.hint).font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .padding(.vertical, 3)
+  }
+
+  private var symbol: String {
+    switch account.state {
+    case "connected": return "checkmark.circle.fill"
+    case "off": return "minus.circle"
+    default: return "exclamationmark.circle"
+    }
+  }
+
+  private var tint: Color {
+    switch account.state {
+    case "connected": return Color.green
+    case "off": return Color.secondary
+    default: return Color.orange
+    }
+  }
+
+  private var status: String {
+    var parts: [String] = []
+    switch account.state {
+    case "connected": parts.append("Connected")
+    case "off": parts.append("Turned off")
+    default: parts.append("Not set")
+    }
+    if let source = account.source { parts.append(source == "keychain" ? "Keychain" : source) }
+    if let detail = account.detail, !detail.isEmpty { parts.append(detail) }
+    return parts.joined(separator: " · ")
+  }
+}
+
 // ───────────────────────────── audit ─────────────────────────────
 
 struct AuditView: View {
@@ -477,9 +592,7 @@ struct AuditView: View {
         Divider()
       }
       if model.audit.isEmpty {
-        Spacer()
-        Text(verbatim: "No browser actions logged yet.").foregroundColor(.secondary)
-        Spacer()
+        EmptyStateView(symbol: "list.bullet", text: "No browser actions logged yet.")
       } else {
         List {
           ForEach(model.audit.indices, id: \.self) { i in
