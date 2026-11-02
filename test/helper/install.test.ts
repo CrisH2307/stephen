@@ -222,7 +222,7 @@ describe('doctor: helper lines', () => {
   it('installed + running + granted → ✓ lines from hello', async () => {
     const c = await helperDoctorChecks('/h', doctorDeps({ files: [exe, sock], probe: async () => ({ running: true, hello: { type: 'hello', version: '1', inputMonitoring: true } }) }));
     expect(c.map((x) => [x.label, x.ok])).toEqual([
-      ['Stephen Helper installed (push-to-talk: hold Fn+Option)', true],
+      ['Stephen Helper installed (push-to-talk: hold F5 or Fn+Option)', true],
       ['Xcode command line tools (Swift compiler, to build the helper)', true],
       ['Stephen Helper running', true],
       ['Input Monitoring granted to Stephen Helper', true],

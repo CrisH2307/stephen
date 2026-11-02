@@ -66,8 +66,8 @@ describe('push-to-talk (Fn+Option)', () => {
     expect(t.listener.wakes).toBe(0);
     expect(t.speaker.said).toEqual(['Opened open youtube.']);
     expect(t.chimes.played).toEqual(['wake', 'done']);
-    expect(t.lines).toEqual(expect.arrayContaining(['Recording… (release Fn+Option to send)', 'Heard: "open youtube"', 'Working…']));
-    expect(t.lines[0]).toBe('Listening for "hey stephen" (or hold Fn+Option) on script… (Ctrl-C to quit)');
+    expect(t.lines).toEqual(expect.arrayContaining(['Recording… (release F5 to send)', 'Heard: "open youtube"', 'Working…']));
+    expect(t.lines[0]).toBe('Listening for "hey stephen" (or hold F5) on script… (Ctrl-C to quit)');
     // Only the audio from the key press on, minus silence at the edges (VAD-trimmed): less than the 85 frames held,
     // more than the 30 frames of speech.
     const heard = t.transcriber.heard[0]!;
@@ -90,7 +90,7 @@ describe('push-to-talk (Fn+Option)', () => {
     await t.listener.run();
     expect(t.transcriber.heard).toEqual([]);
     expect(t.runner.prompts).toEqual([]);
-    expect(t.lines).toContain('Ignored a 190 ms tap — hold Fn+Option while you speak.');
+    expect(t.lines).toContain('Ignored a 190 ms tap — hold F5 while you speak.');
     expect(t.fake.states).toEqual(['listening', 'recording', 'listening', 'idle']);
   });
 
@@ -106,7 +106,7 @@ describe('push-to-talk (Fn+Option)', () => {
     await t.listener.run();
     expect(t.transcriber.heard).toEqual([]);
     expect(t.runner.prompts).toEqual([]);
-    expect(t.lines).toContain('Push-to-talk was interrupted (the helper disconnected) — nothing was sent. Hold Fn+Option and try again.');
+    expect(t.lines).toContain('Push-to-talk was interrupted (the helper disconnected) — nothing was sent. Hold F5 and try again.');
   });
 
   it('a press with no speech in it sends nothing', async () => {
@@ -308,7 +308,7 @@ describe('wake-word gating with the helper', () => {
     expect(t.listener.wakes).toBe(2);
     expect(t.listener.wakesIgnored).toBe(1);
     expect(t.transcriber.heard).toHaveLength(2);
-    expect(t.lines).toContain('Ignored "hey stephen" — sound is playing (it may be a video talking). Hold Fn+Option to talk.');
+    expect(t.lines).toContain('Ignored "hey stephen" — sound is playing (it may be a video talking). Hold F5 to talk.');
   });
 
   it('"Stephen stop" still works while audio is playing', async () => {
@@ -406,8 +406,8 @@ describe('wake-word gating with the helper', () => {
     expect(t.transcriber.heard).toHaveLength(1); // only the push-to-talk recording
     expect(runner.prompts).toEqual(['open youtube']);
     expect(runner.cancels).toBe(1);
-    expect(t.lines[0]).toBe('Ready on script — hold Fn+Option to talk… (Ctrl-C to quit)');
-    expect(t.lines).toContain('Ready — hold Fn+Option to talk…');
+    expect(t.lines[0]).toBe('Ready on script — hold F5 to talk… (Ctrl-C to quit)');
+    expect(t.lines).toContain('Ready — hold F5 to talk…');
   });
 });
 

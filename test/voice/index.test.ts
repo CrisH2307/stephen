@@ -199,7 +199,7 @@ describe('stephen listen: push-to-talk only needs the helper', () => {
     await runListen(['--help'], t.e);
     expect(t.out[0]).toMatch(/--ptt-only/);
     expect(t.out[0]).toMatch(/--no-helper/);
-    expect(t.out[0]).toMatch(/hold Fn\+Option/);
+    expect(t.out[0]).toMatch(/hold F5 \(or Fn\+Option\)/);
   });
 });
 

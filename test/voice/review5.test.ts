@@ -161,7 +161,7 @@ describe('R5-5: wake-word forget asks first; wake-word list says only the count'
     await h.store.add('my prof for sofe 3980 is dr patel', 'cli');
     await h.store.add('my prof for math is dr chen', 'cli');
     const list = await h.say('what do you remember', 'voice-wake');
-    expect(list).toBe('I remember 2 things. Hold Fn+Option and ask again, or open the Stephen app, to hear them.');
+    expect(list).toBe('I remember 2 things. Hold F5 and ask again, or open the Stephen app, to hear them.');
     const tie = await h.say('forget my prof', 'voice-wake');
     expect(tie).not.toContain('patel');
     expect(tie).not.toContain('chen');
