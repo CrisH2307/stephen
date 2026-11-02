@@ -1,5 +1,5 @@
 /**
- * `stephen accounts` — which account secrets Stephen can find (never their values), and
+ * `stephen accounts` — which account secrets Stephen can find (never their values) and which Gmail labels are connected, and
  * `stephen accounts test canvas|calendar|notion|weather` — one real read-only call each (e.g. how many items are due this week).
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -12,7 +12,7 @@ import { NO_TODO_DATABASE, NotionClient } from './notion.js';
 import { field } from './result.js';
 import { parseAccountsConfig } from './config.js';
 import { WEATHER_ORIGIN, fetchWeather, formatWeather } from './weather.js';
-import { lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from './secrets.js';
+import { lookupGmailToken, lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from './secrets.js';
 
 export const ACCOUNTS_HELP = `stephen accounts              Show which account secrets Stephen finds (Keychain or .env; never the values)
 stephen accounts test canvas  Read your Canvas once: your name and what's due in the next 7 days
@@ -20,7 +20,9 @@ stephen accounts test calendar  Read your Google Calendar feed once: events in t
 stephen accounts test notion  Read your Notion to-do database once: how many open to-dos
 stephen accounts weather      Show the place the weather tool uses (default Toronto, ON)
 stephen accounts weather set <latitude> <longitude> [label…]  Save your place in config.json (e.g. set 43.9 -78.9 Oshawa, ON)
-stephen accounts test weather  Read the weather once for that place`;
+stephen accounts test weather  Read the weather once for that place
+stephen connect gmail <label>  Sign in to a Gmail account once (read-only; label like "personal"; needs accounts.gmail.clientId)
+stephen disconnect gmail <label>  Forget that Gmail account (Keychain item and config entry)`;
 
 export interface AccountsCliEnv {
   out?: (l: string) => void;
@@ -37,8 +39,11 @@ export interface AccountsCliEnv {
   notionOrigin?: string;
 }
 
-/** Set `accounts.weather` in config.json, keeping everything else (and comments are not supported: it is plain JSON). */
-function saveWeatherPlace(file: string, place: { latitude: number; longitude: number; label: string }): void {
+/**
+ * Change the `"accounts"` section of config.json, keeping everything else (plain JSON, so no comments). Written to a
+ * temporary 0600 file and renamed. Used by `accounts weather set` and `stephen connect|disconnect gmail`.
+ */
+export function updateAccountsConfig(file: string, change: (accounts: Record<string, unknown>) => Record<string, unknown>): void {
   let root: Record<string, unknown> = {};
   if (existsSync(file)) {
     const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
@@ -46,13 +51,23 @@ function saveWeatherPlace(file: string, place: { latitude: number; longitude: nu
     root = parsed as Record<string, unknown>;
   }
   const accounts = root.accounts && typeof root.accounts === 'object' && !Array.isArray(root.accounts) ? (root.accounts as Record<string, unknown>) : {};
-  const old = accounts.weather && typeof accounts.weather === 'object' ? (accounts.weather as Record<string, unknown>) : {};
-  root.accounts = { ...accounts, weather: { ...old, ...place } };
+  root.accounts = change(accounts);
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, file);
+}
+
+/** A sub-object of `accounts` ({} when absent or not an object). */
+export const section = (accounts: Record<string, unknown>, name: string): Record<string, unknown> => {
+  const v = accounts[name];
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+};
+
+/** Set `accounts.weather` in config.json. */
+function saveWeatherPlace(file: string, place: { latitude: number; longitude: number; label: string }): void {
+  updateAccountsConfig(file, (accounts) => ({ ...accounts, weather: { ...section(accounts, 'weather'), ...place } }));
 }
 
 export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Promise<number> {
@@ -67,6 +82,16 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
       const r = await lookupSecret(name, e.secrets);
       out(`${name.padEnd(13)} ${r.source ? `found (${r.source})` : 'not set'}${r.notes.length ? ` — ${r.notes.join('; ')}` : ''}`);
     }
+    let gmail;
+    try {
+      gmail = parseAccountsConfig(e.accounts !== undefined ? e.accounts : loadConfig().accounts).gmail;
+    } catch (x) {
+      err((x as Error).message);
+      return 0;
+    }
+    const states: string[] = [];
+    for (const label of gmail.accounts) states.push(`${label} (${(await lookupGmailToken(label, e.secrets)).value ? 'connected' : 'not in the Keychain: run stephen connect gmail ' + label})`);
+    out(`gmail         ${states.length ? states.join(', ') : 'no accounts (run stephen connect gmail <label>)'}; client id ${gmail.clientId ? 'set' : 'not set (accounts.gmail.clientId)'}`);
     return 0;
   }
   if (argv[0] === 'test' && argv[1] === 'canvas' && argv.length === 2) {

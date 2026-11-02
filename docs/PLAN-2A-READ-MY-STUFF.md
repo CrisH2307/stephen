@@ -1,6 +1,6 @@
 # Phase 2a — "read my stuff" (read-only) — plan
 
-Date: 2026-11-01. Status: subtasks 1, 3, 4, 5 built (gate, shared kit, Canvas, Google Calendar); next Notion → Gmail.
+Date: 2026-11-01. Status: subtasks 1, 3, 4, 5, 6, 7 built (gate, shared kit, Canvas, Google Calendar, Notion, Gmail).
 Overrides ROADMAP.md phase 2a where they differ.
 
 ## 1. What the owner gets
@@ -55,8 +55,15 @@ deleted. Maps is already done (phase 1.8: directions/search via `open_url`).
 4. ← built. Canvas tools (src/accounts/canvas.ts; base URL default https://learn.ontariotechu.ca): `canvas_due` (to-dos / planner items for N days), `canvas_announcements`. Fake Canvas server tests.
 5. ← built. Calendar tool (src/accounts/calendar.ts; secret `GOOGLE_CALENDAR_ICS` in .env): `calendar_events` (today / tomorrow / N days) from the iCal feed (RRULE basics). Fixture tests.
 6. ← built. Notion tools (src/accounts/notion.ts; token `NOTION_API` in .env or Keychain `stephen-notion`; optional `accounts.notion.todoDatabase`, else the first shared database titled like "To-do"/"Tasks"): `notion_todos` (open items), `notion_search` (titles only). Fake Notion server tests.
-7. Gmail tools: `gmail_search` (from/subject/newer_than, snippets), `gmail_read` (one message, plain text). OAuth
-   `stephen connect gmail` (loopback + PKCE). Fake Gmail server tests.
+7. ← built (2026-11-02). Gmail tools (src/accounts/gmail.ts): `gmail_search {account?, from?, subject?,
+   newer_than_days? 1–30, unread_only?, limit? 1–10}` (the Gmail `q` is built in code from these fields, values
+   reduced to plain words and quoted; sender = name + domain), `gmail_read {account?, id}` (only ids gmail_search
+   returned in this process; text/plain preferred, HTML as text). OAuth `stephen connect gmail <label>` /
+   `stephen disconnect gmail <label>` (src/connect/gmail-oauth.ts, owner-only, not reachable from serve): loopback on
+   127.0.0.1, PKCE S256, state, scope exactly gmail.readonly, refresh token in Keychain `stephen-gmail-<label>`
+   (via `security -i` stdin), labels in `accounts.gmail.accounts`, client id in `accounts.gmail.clientId`, optional
+   client secret `GOOGLE_OAUTH_CLIENT_SECRET` (.env) or Keychain `stephen-google-oauth`. Access tokens in memory only.
+   Fake Google server tests (test/accounts/gmail.test.ts, gmail-oauth.test.ts). Design: SYSTEM-DESIGN §4.11.
 8. Persona 2a block + voice allow-list (`--allowedTools` gets the exact new tool names) + eval cases.
 9. Security review #6 (fresh subagent), fixes.
 
@@ -77,3 +84,22 @@ deleted. Maps is already done (phase 1.8: directions/search via `open_url`).
 
 Network note: learn.ontariotechu.ca is blocked from the cloud workspace and from the desktop VM shell (proxy 403), so
 the real Canvas call is checked on the Mac with `node dist/cli.js accounts test canvas`.
+
+## 7. Gmail: owner setup (once)
+1. Google Cloud console (console.cloud.google.com), signed in with a personal Google account: create a project
+   ("Stephen"), then APIs & Services → Library → **Gmail API** → Enable.
+2. Google Auth Platform (OAuth consent screen): User type **External**, app name "Stephen", your email as support
+   and developer contact. Data access → add the scope `https://www.googleapis.com/auth/gmail.readonly`. Audience →
+   **Test users**: add both personal Gmail addresses. While the app is in "Testing", Google expires the refresh token
+   after 7 days (you then run `stephen connect gmail <label>` again). To avoid that, set Publishing status to
+   "In production" without verification: Google then shows an "unverified app" warning at sign-in (Advanced → Go
+   to Stephen), which is fine for an app only you use.
+3. Clients → Create client → Application type **Desktop app** → name "Stephen". Copy the client id and the client
+   secret.
+4. On the Mac: put the id in `~/.stephen/config.json` (or `$STEPHEN_CONFIG`):
+   `"accounts": { "gmail": { "clientId": "<id>.apps.googleusercontent.com" } }`. Put the secret in Stephen's `.env`
+   (`GOOGLE_OAUTH_CLIENT_SECRET=<secret>`, file mode 600) or the Keychain:
+   `security add-generic-password -U -s stephen-google-oauth -a "$USER" -w` (prompts for it, so it stays off argv).
+5. `npm run build`, then `node dist/cli.js connect gmail personal` and `node dist/cli.js connect gmail personal2`
+   (one browser sign-in each; pick the right account). Check with `node dist/cli.js accounts`. Restart Stephen.
+6. Try "any email from my prof?", "do I have unread emails?", "read me the first one".

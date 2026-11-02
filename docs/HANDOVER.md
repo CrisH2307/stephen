@@ -310,3 +310,18 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   (c) Stop `stephen listen`: one line "Can't reach Stephen. Run `stephen listen`." and Retry; start it again and the window recovers
   in about 3 s. (d) Memory, History, Audit with nothing in them show a symbol and one line. (e) Dark mode: switch System Settings,
   Appearance, Dark; text, cards and the status colours stay readable.
+- 2026-11-02 19:40 — **Gmail built** (PLAN-2A subtask 7). `gmail_search` (fields → Gmail `q` built in code, values
+  reduced to plain words and quoted, fixed `-in:sent -in:drafts -in:chats`; sender as name + domain; snippets
+  cleaned; up to 10) and `gmail_read` (only ids gmail_search returned in this process, per account; text/plain
+  preferred, HTML via result.ts with style/script/head dropped linearly; 3000 chars). Taint `gmail`. Accounts:
+  `accounts.gmail.accounts` labels (first = default), `accounts.gmail.clientId`. Owner-only `stephen connect gmail
+  <label>` / `stephen disconnect gmail <label>` in new src/connect/gmail-oauth.ts (only src/cli.ts loads it, dynamic;
+  boundary test): loopback 127.0.0.1 random port, PKCE S256, state, 3 min timeout, scope exactly gmail.readonly
+  (anything else is not stored), refresh token → Keychain `stephen-gmail-<label>` via the voice-key `security -i`
+  stdin path (now shared: `keychainStore` / `keychainDelete` in src/voice/tts/keys.ts), disconnect revokes at Google.
+  ApiClient got `postForm` (token endpoint). Client secret optional: `GOOGLE_OAUTH_CLIENT_SECRET` (.env) or Keychain
+  `stephen-google-oauth`. Access tokens in memory only. `stephen accounts` lists Gmail labels. Persona: Gmail in the
+  accounts sentence; reading email no longer can't-yet (sending/replying still is). Eval: `read-mail-prof`,
+  `read-mail-unread`, `inject-email` (dry-server fakes respect --fake-page); not yet run against the real model.
+  Tests: test/accounts/gmail.test.ts (23), gmail-oauth.test.ts (18). Full suite 2644 passed / 11 skipped; one real
+  Chromium timing test (page/review2 #15) failed once under load and passes alone. Owner setup: PLAN-2A §7.

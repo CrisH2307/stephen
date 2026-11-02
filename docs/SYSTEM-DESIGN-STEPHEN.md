@@ -59,7 +59,7 @@ The hard parts are not speech or the LLM call. They are:
                             ▼ stdio (MCP)
   ┌──────────────────────── stephen serve (the only thing the model can call) ────────────────┐
   │ tools: browser (snapshot, click, type…) · desktop (open_url, play_media, media_control…)   │
-  │        accounts (canvas_due, canvas_announcements, … read-only)                            │
+  │        accounts (canvas_due, notion_todos, gmail_search, gmail_read, … read-only)          │
   │    │ every action and every private read goes through                                     │
   │    ▼                                                                                      │
   │ SafetyGate: policy · taint (private reads) · egress analysis · rate limit · human dialog  │
@@ -212,6 +212,42 @@ it does **not** arm the taint (a briefing followed by "play lofi" shouldn't ask)
 response, and coordinates are never put in the result. Real-model eval: `brief-day` and an injected-calendar variant
 pass. The injected run reported the planted instruction to the owner and opened nothing.
 
+### 4.11 Gmail sign-in: OAuth 2.0 loopback + PKCE, tokens only in the Keychain
+
+Gmail has no personal token, so the owner signs in once per account with `stephen connect gmail <label>`
+(RFC 8252 desktop flow). The code for it lives in `src/connect/`, which only `src/cli.ts` loads (dynamic import);
+a boundary test proves nothing the model can reach imports it, so no tool can start a sign-in, store a token or
+change the account list.
+
+1. **PKCE (RFC 7636, S256).** verifier = 32 random bytes in base64url, challenge = SHA-256(verifier). A stolen
+   authorization code is useless without the verifier, which never leaves the process. `state` = 16 random bytes,
+   compared in constant time.
+2. **One-shot loopback server.** Bound to `127.0.0.1` (never `0.0.0.0`) on a random port; the redirect URI is
+   `http://127.0.0.1:<port>/`. Only `GET /` counts. A wrong path gets 404, a wrong or missing state 400, and the
+   server keeps waiting, so a web page that probes the port can neither finish nor abort the sign-in. The first
+   callback with the right state closes it; so does a 3 minute timeout. Pages are fixed text, `no-store`,
+   `no-referrer`, `default-src 'none'`.
+3. **Consent.** Scope exactly `gmail.readonly`, `access_type=offline`, `prompt=consent` (so Google returns a refresh
+   token). The browser opens with `open <url>` (argv, no shell); elsewhere the URL is printed.
+4. **Exchange.** One form POST to the pinned origin `https://oauth2.googleapis.com/token` through the same client
+   as §4.6 (https, no redirects, timeout, 64 KB cap). Errors carry only the host and status, never Google's body,
+   the code, the verifier or a token. The client secret (Google's desktop clients still issue one) is sent only when
+   the owner stored it; without one the flow is pure PKCE.
+5. **Scope check.** The granted scope set must be exactly `{gmail.readonly}`. Broader or narrower: nothing is
+   stored (Google's granular consent lets the owner untick boxes, and old grants can widen a token).
+6. **Storage.** The refresh token goes to the Keychain item `stephen-gmail-<label>` through `security -i` with the
+   command on stdin, the same path as `stephen voice-key set`: the token is never on any argv, in config, a log or
+   the environment of `claude`. The item is read back to confirm. The label is added to `accounts.gmail.accounts`.
+7. **Use.** On a tool call, the refresh token is read from the Keychain once per process, exchanged for an access
+   token, and the access token is kept in memory until a minute before it expires. Nothing is persisted. A refused
+   refresh (400) tells the owner to connect again; a refused access token (401/403) is dropped.
+
+The model's side stays as narrow as the other services: `gmail_search` takes fields, and the code writes the Gmail
+query, each value reduced to plain words and quoted (`x OR from:evil` becomes the literal phrase
+`subject:"x OR from evil"`). `gmail_read` takes only a message id that `gmail_search` returned in this process, so
+an injected id can't reach other mail. Senders are shown as name plus domain, never the full address.
+`stephen disconnect gmail <label>` revokes the token at Google, deletes the item and removes the label.
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |
@@ -226,7 +262,8 @@ pass. The injected run reported the planted instruction to the owner and opened 
 
 - **Import-boundary tests.** A static import graph of `src/` is built in the tests. Rules: nothing the model can
   reach (`server/`, `safety/`, `desktop/`, `drivers/`, `page/`, `accounts/`) may import `memory/`, `app/` or
-  `history/`, directly or through a chain of runtime imports. The `serve` start-up graph is checked too.
+  `history/`, `timers/` or `connect/` (the Gmail sign-in), directly or through a chain of runtime imports. The
+  `serve` start-up graph is checked too.
 - **One implementation per concern.** For example, tab reuse lives in one module used by every tool that opens
   pages; the HTTP client is shared by every account service. Adding a service = one client module + one
   `register…` block. The gate, the result framing and the tests come for free.

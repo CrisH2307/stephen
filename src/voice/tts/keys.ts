@@ -235,13 +235,13 @@ export async function runVoiceKey(argv: string[], env: VoiceKeyEnv = {}): Promis
     return 1;
   }
   if (sub === 'delete') {
-    const r = await exec('security', ['delete-generic-password', '-s', KEYCHAIN_SERVICE, '-a', user], { timeoutMs: 15_000 });
-    if (r.code === ERR_SEC_ITEM_NOT_FOUND) {
+    const r = await keychainDelete(KEYCHAIN_SERVICE, { exec, user });
+    if (r === 'missing') {
       out('There was no ElevenLabs key in the Keychain.');
       return 0;
     }
-    if (r.code !== 0) {
-      err(`Could not delete the key: ${r.stderr.trim().split('\n')[0] || `security exit ${r.code}`}`);
+    if (r !== 'deleted') {
+      err(`Could not delete the key: ${r}`);
       return 1;
     }
     out(`Deleted the ElevenLabs key from the Keychain (service "${KEYCHAIN_SERVICE}").`);
@@ -265,20 +265,45 @@ export async function runVoiceKey(argv: string[], env: VoiceKeyEnv = {}): Promis
     err('That does not look like an ElevenLabs API key (expected one word like "sk_…", no spaces or quotes). Nothing was stored.');
     return 1;
   }
-  // `security -i` reads commands from stdin, so the key never appears in any process's argv (see the header).
-  const command = `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${user} -l "Stephen ElevenLabs API key" -w ${key}\n`;
-  const r = await exec('security', ['-i'], { input: command, timeoutMs: 30_000 });
-  if (r.code !== 0 || /error|usage/i.test(r.stderr)) {
-    err(`Could not store the key: ${(r.stderr.split(key).join(redactKey(key)).trim().split('\n')[0] || `security exit ${r.code}`)}`);
-    return 1;
-  }
-  // `security -i` can exit 0 even when a command failed: read the item back to be sure.
-  const check = await keychainLookup({ ...env, exec, user });
-  if (check.key !== key) {
-    err('The key was not found in the Keychain after storing it. Nothing changed.');
+  const bad = await keychainStore(KEYCHAIN_SERVICE, 'Stephen ElevenLabs API key', key, { exec, user });
+  if (bad) {
+    err(bad);
     return 1;
   }
   out(`Stored the ElevenLabs API key ${redactKey(key)} in the Keychain (service "${KEYCHAIN_SERVICE}", account "${user}").`);
   out('Check it with `stephen doctor --network`. If this key was ever pasted into a chat or a file, rotate it at elevenlabs.io → API keys.');
   return 0;
+}
+
+// ───────────────────────────── shared Keychain writes (voice-key, stephen connect) ─────────────────────────────
+
+/** What `keychainStore` accepts: a token-like word (no space, quote or leading dash), so it can't change the `security -i` command line. */
+const STORABLE_SECRET = /^[A-Za-z0-9][A-Za-z0-9._~+/=-]{0,4095}$/;
+const SERVICE_NAME = /^[a-z0-9-]{1,64}$/;
+
+/**
+ * Store a generic password without exposing it (see the header): `security -i` gets the add command on STDIN, so
+ * the secret is never on any process's argv. Then the item is read back, because `security -i` exits 0 even when a
+ * command failed. Returns null when stored, else a message that never contains the secret.
+ */
+export async function keychainStore(service: string, label: string, secret: string, deps: { exec?: ExecFn; user: string }): Promise<string | null> {
+  if (!SERVICE_NAME.test(service) || !/^[A-Za-z0-9 ()._-]{1,80}$/.test(label) || !/^[A-Za-z0-9._-]{1,64}$/.test(deps.user)) return 'Could not store it: unsupported Keychain item name.';
+  if (!STORABLE_SECRET.test(secret)) return 'Could not store it: the value has characters Stephen does not store.';
+  const exec = deps.exec ?? defaultExec;
+  const command = `add-generic-password -U -s ${service} -a ${deps.user} -l "${label}" -w ${secret}\n`;
+  const r = await exec('security', ['-i'], { input: command, timeoutMs: 30_000 });
+  if (r.code !== 0 || /error|usage/i.test(r.stderr)) {
+    return `Could not store it: ${r.stderr.split(secret).join('[secret]').trim().split('\n')[0] || `security exit ${r.code}`}`;
+  }
+  const check = await exec('security', ['find-generic-password', '-s', service, '-a', deps.user, '-w'], { timeoutMs: 10_000 });
+  if (check.code !== 0 || check.stdout.trim() !== secret) return 'It was not found in the Keychain after storing it. Nothing changed.';
+  return null;
+}
+
+/** Delete a generic password: 'deleted', 'missing', or an error message. */
+export async function keychainDelete(service: string, deps: { exec?: ExecFn; user: string }): Promise<'deleted' | 'missing' | string> {
+  const r = await (deps.exec ?? defaultExec)('security', ['delete-generic-password', '-s', service, '-a', deps.user], { timeoutMs: 15_000 });
+  if (r.code === ERR_SEC_ITEM_NOT_FOUND) return 'missing';
+  if (r.code !== 0) return r.stderr.trim().split('\n')[0] || `security exit ${r.code}`;
+  return 'deleted';
 }

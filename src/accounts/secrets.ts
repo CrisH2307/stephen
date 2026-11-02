@@ -1,11 +1,14 @@
 /**
  * Account secrets for phase 2a (docs/PLAN-2A-READ-MY-STUFF.md): Canvas token, Notion token, calendar feed URL,
- * Gmail refresh token. Looked up in this order, first hit wins:
+ * Google OAuth client secret. Looked up in this order, first hit wins:
  *   1. macOS Keychain, service `stephen-<name>` (`security find-generic-password -s … -a <user> -w`, argv only);
  *   2. Stephen's `.env` file (the repo root, next to package.json; the owner's choice), ONLY the known key names
  *      for that secret, and only if the file is a regular file owned by this user with no group/other access.
  * Secrets are never put in process.env, logs, results or argv of other processes. Values are returned to the
  * caller (the account client) and nowhere else.
+ *
+ * Gmail refresh tokens are per account label and live ONLY in the Keychain (`stephen-gmail-<label>`, written by
+ * `stephen connect gmail <label>`): lookupGmailToken.
  */
 import { lstatSync, readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
@@ -19,6 +22,8 @@ export const SECRET_SPECS = {
   'canvas-url': { keychain: 'stephen-canvas-url', env: ['CANVAS_URL', 'STEPHEN_CANVAS_URL'] },
   'notion-token': { keychain: 'stephen-notion', env: ['NOTION_API', 'NOTION_TOKEN', 'STEPHEN_NOTION_TOKEN'] },
   'calendar-ics': { keychain: 'stephen-calendar-ics', env: ['GOOGLE_CALENDAR_ICS', 'CALENDAR_ICS_URL', 'STEPHEN_CALENDAR_ICS'] },
+  /** The Google OAuth desktop client's secret (optional: PKCE works without it, but Google's desktop clients ask for it). */
+  'google-oauth-client-secret': { keychain: 'stephen-google-oauth', env: ['GOOGLE_OAUTH_CLIENT_SECRET'] },
 } as const;
 export type SecretName = keyof typeof SECRET_SPECS;
 
@@ -107,17 +112,8 @@ export function readEnvFile(path: string, wanted: readonly string[], deps: Secre
 export async function lookupSecret(name: SecretName, deps: SecretDeps = {}): Promise<SecretLookup> {
   const spec = SECRET_SPECS[name];
   const notes: string[] = [];
-  if ((deps.platform ?? process.platform) === 'darwin') {
-    const exec = deps.exec ?? defaultExec;
-    const r = await exec('security', ['find-generic-password', '-s', spec.keychain, '-a', deps.user ?? userInfo().username, '-w'], { timeoutMs: 10_000 });
-    const v = r.stdout.trim();
-    if (r.code === 0 && v) {
-      const bad = checkSecretValue(name, v);
-      if (!bad) return { value: v, source: 'keychain', notes };
-      notes.push(`Keychain ${spec.keychain}: ${bad}`);
-    }
-    if (r.code !== 0 && r.code !== 44) notes.push(`Keychain lookup for ${spec.keychain} failed: ${r.stderr.trim().split('\n')[0] || `exit ${r.code}`}`);
-  }
+  const kc = await keychainFind(spec.keychain, (v) => checkSecretValue(name, v), deps, notes);
+  if (kc) return { value: kc, source: 'keychain', notes };
   const file = deps.envFile === undefined ? DEFAULT_ENV_FILE : deps.envFile;
   if (file) {
     const { values, note } = readEnvFile(file, spec.env, deps);
@@ -131,4 +127,36 @@ export async function lookupSecret(name: SecretName, deps: SecretDeps = {}): Pro
     }
   }
   return { value: null, source: null, notes };
+}
+
+/** One Keychain item (macOS only; argv only, never a shell), checked by `check`; null when absent or bad. */
+async function keychainFind(service: string, check: (v: string) => string | null, deps: SecretDeps, notes: string[]): Promise<string | null> {
+  if ((deps.platform ?? process.platform) !== 'darwin') return null;
+  const exec = deps.exec ?? defaultExec;
+  const r = await exec('security', ['find-generic-password', '-s', service, '-a', deps.user ?? userInfo().username, '-w'], { timeoutMs: 10_000 });
+  const v = r.stdout.trim();
+  if (r.code === 0 && v) {
+    const bad = check(v);
+    if (!bad) return v;
+    notes.push(`Keychain ${service}: ${bad}`);
+  }
+  if (r.code !== 0 && r.code !== 44) notes.push(`Keychain lookup for ${service} failed: ${r.stderr.trim().split('\n')[0] || `exit ${r.code}`}`);
+  return null;
+}
+
+/** A Gmail account label: what `stephen connect gmail <label>` takes and `accounts.gmail.accounts` lists. */
+export const GMAIL_LABEL_RE = /^[a-z0-9-]{1,20}$/;
+/** The Keychain service holding that account's refresh token. */
+export const gmailKeychainService = (label: string): string => {
+  if (!GMAIL_LABEL_RE.test(label)) throw new Error('a Gmail account label is 1 to 20 of a-z, 0-9 and -');
+  return `stephen-gmail-${label}`;
+};
+/** What a Google OAuth token looks like (refresh "1//0g…", access "ya29.…"): a token word, nothing else. */
+export const GOOGLE_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,2047}$/;
+
+/** A Gmail account's refresh token: Keychain only (never .env, config or the environment). */
+export async function lookupGmailToken(label: string, deps: SecretDeps = {}): Promise<SecretLookup> {
+  const notes: string[] = [];
+  const v = await keychainFind(gmailKeychainService(label), (x) => (GOOGLE_TOKEN_RE.test(x) ? null : 'it does not look like a Google token (connect again)'), deps, notes);
+  return v ? { value: v, source: 'keychain', notes } : { value: null, source: null, notes };
 }

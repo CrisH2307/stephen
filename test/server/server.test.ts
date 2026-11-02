@@ -15,6 +15,8 @@ const EXPECTED_TOOLS = [
   'calendar_events',
   'notion_todos',
   'notion_search',
+  'gmail_search',
+  'gmail_read',
   'weather_now',
   'browser_status',
   'browser_connect',
