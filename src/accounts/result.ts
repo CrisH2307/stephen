@@ -61,7 +61,7 @@ export function field(raw: unknown, max = MAX_FIELD_CHARS): string {
 }
 
 /** The block Claude gets. `header` is Stephen's own text (trusted); `lines` hold cleaned third-party data. */
-export function accountBlock(source: PrivateDataSource, header: string, lines: readonly string[], footer = ''): string {
+export function accountBlock(source: PrivateDataSource | 'weather', header: string, lines: readonly string[], footer = ''): string {
   let body = lines.join('\n');
   if (body.length > MAX_RESULT_CHARS) body = `${body.slice(0, MAX_RESULT_CHARS)}\n[more items cut]`;
   return (

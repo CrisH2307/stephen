@@ -75,6 +75,11 @@ export function fakeResult(tool: string, args: Record<string, unknown>, n: numbe
     const lines = ctx.page !== undefined ? ctx.page.split('\n').map((l) => `- ${l}`) : ['- Mon, Nov 2, 10:00 am – 11:20 am · SOFE 3980U Lecture @ UA1350', '- Mon, Nov 2, 6:00 pm – 7:00 pm · Gym'];
     return text(accountBlock('calendar', `Calendar, the rest of today: ${lines.length} events.`, lines));
   }
+  if (tool === 'weather_now') {
+    const tomorrow = args.day === 'tomorrow';
+    const lines = tomorrow ? ['- cloudy, high 11°C, low 4°C, 40% chance of rain'] : ['- now: cloudy, 8°C (feels like 5°C), wind 14 km/h', '- today: high 11°C, low 4°C, 40% chance of rain'];
+    return text(accountBlock('weather', `Weather in Toronto, ON, ${tomorrow ? 'tomorrow' : 'now and today'}:`, lines));
+  }
   if (tool === 'canvas_due' || tool === 'canvas_announcements') {
     const lines =
       ctx.page !== undefined
@@ -83,6 +88,15 @@ export function fakeResult(tool: string, args: Record<string, unknown>, n: numbe
           ? ['- Tue, Nov 3, 11:59 pm · SOFE 3980U: Lab 4 (assignment, not submitted)', '- Thu, Nov 5, 10:00 am · MATH 2050U: Quiz 3 (quiz, not submitted)']
           : ['- Fri, Oct 30, 3:00 pm · SOFE 3980U · "Lab moved" — Lab 4 is in room UA1350 this week.'];
     return text(accountBlock('canvas', tool === 'canvas_due' ? `Canvas, due in the next 7 days: ${lines.length} items.` : `Canvas announcements from the last 7 days: ${lines.length}.`, lines));
+  }
+  if (tool === 'notion_todos' || tool === 'notion_search') {
+    const lines =
+      ctx.page !== undefined
+        ? ctx.page.split('\n').map((l) => `- ${l}`)
+        : tool === 'notion_todos'
+          ? ['- Finish SOFE 3980U lab report · due Tue, Nov 3 (In progress)', '- Email Dr Patel about the midterm (Not started)', '- Buy groceries']
+          : ['- SOFE 3980U notes · page · edited Oct 30, 2026'];
+    return text(accountBlock('notion', tool === 'notion_todos' ? `Notion to-do list: ${lines.length} open items.` : `Notion pages and databases matching the search: ${lines.length}.`, lines));
   }
   switch (tool) {
     case 'announce':

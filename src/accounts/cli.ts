@@ -1,18 +1,26 @@
 /**
  * `stephen accounts` — which account secrets Stephen can find (never their values), and
- * `stephen accounts test canvas` — a real read-only call (your name + how many items are due this week).
+ * `stephen accounts test canvas|calendar|notion|weather` — one real read-only call each (e.g. how many items are due this week).
  */
-import { loadConfig } from '../config.js';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { configFilePath, loadConfig } from '../config.js';
 import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow } from './calendar.js';
 import { CanvasClient, DEFAULT_CANVAS_URL, formatDue } from './canvas.js';
 import { ApiClient } from './http.js';
+import { NO_TODO_DATABASE, NotionClient } from './notion.js';
 import { field } from './result.js';
 import { parseAccountsConfig } from './config.js';
+import { WEATHER_ORIGIN, fetchWeather, formatWeather } from './weather.js';
 import { lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from './secrets.js';
 
 export const ACCOUNTS_HELP = `stephen accounts              Show which account secrets Stephen finds (Keychain or .env; never the values)
 stephen accounts test canvas  Read your Canvas once: your name and what's due in the next 7 days
-stephen accounts test calendar  Read your Google Calendar feed once: events in the next 7 days`;
+stephen accounts test calendar  Read your Google Calendar feed once: events in the next 7 days
+stephen accounts test notion  Read your Notion to-do database once: how many open to-dos
+stephen accounts weather      Show the place the weather tool uses (default Toronto, ON)
+stephen accounts weather set <latitude> <longitude> [label…]  Save your place in config.json (e.g. set 43.9 -78.9 Oshawa, ON)
+stephen accounts test weather  Read the weather once for that place`;
 
 export interface AccountsCliEnv {
   out?: (l: string) => void;
@@ -21,6 +29,30 @@ export interface AccountsCliEnv {
   accounts?: unknown;
   /** Tests only. */
   allowLoopbackHttp?: boolean;
+  /** Tests only: a fake Open-Meteo origin (needs allowLoopbackHttp). */
+  weatherOrigin?: string;
+  /** Tests only: the config.json to read and write (default: Stephen's). */
+  configPath?: string;
+  /** Tests only: a fake Notion server. */
+  notionOrigin?: string;
+}
+
+/** Set `accounts.weather` in config.json, keeping everything else (and comments are not supported: it is plain JSON). */
+function saveWeatherPlace(file: string, place: { latitude: number; longitude: number; label: string }): void {
+  let root: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('config.json is not a JSON object');
+    root = parsed as Record<string, unknown>;
+  }
+  const accounts = root.accounts && typeof root.accounts === 'object' && !Array.isArray(root.accounts) ? (root.accounts as Record<string, unknown>) : {};
+  const old = accounts.weather && typeof accounts.weather === 'object' ? (accounts.weather as Record<string, unknown>) : {};
+  root.accounts = { ...accounts, weather: { ...old, ...place } };
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, file);
 }
 
 export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Promise<number> {
@@ -93,6 +125,91 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
       return 0;
     } catch (x) {
       err(`Calendar test failed: ${(x as Error).message}`);
+      return 1;
+    }
+  }
+  if (argv[0] === 'weather' && argv.length === 1) {
+    try {
+      const w = parseAccountsConfig(e.accounts !== undefined ? e.accounts : loadConfig().accounts).weather;
+      out(`Weather place: ${w.label} (${w.latitude}, ${w.longitude})${w.enabled ? '' : ' — the weather tool is turned off in config.json'}.`);
+      out('Change it with: stephen accounts weather set <latitude> <longitude> [label]');
+      return 0;
+    } catch (x) {
+      err((x as Error).message);
+      return 2;
+    }
+  }
+  if (argv[0] === 'weather' && argv[1] === 'set') {
+    const latitude = Number(argv[2]);
+    const longitude = Number(argv[3]);
+    const label = argv.slice(4).join(' ').trim();
+    if (argv.length < 4 || argv[2] === '' || argv[3] === '' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      err('Usage: stephen accounts weather set <latitude> <longitude> [label…]   e.g. weather set 43.6532 -79.3832 Toronto, ON');
+      return 2;
+    }
+    const place = { latitude, longitude, label: label || `${latitude}, ${longitude}` };
+    try {
+      parseAccountsConfig({ weather: place }); // range and length checks, same as at startup
+    } catch (x) {
+      err((x as Error).message);
+      return 2;
+    }
+    const file = e.configPath ?? configFilePath();
+    try {
+      saveWeatherPlace(file, place);
+    } catch (x) {
+      err(`Could not update ${file}: ${(x as Error).message}`);
+      return 1;
+    }
+    out(`Saved: ${place.label} (${latitude}, ${longitude}) in ${file}. Restart Stephen to use it.`);
+    return 0;
+  }
+  if (argv[0] === 'test' && argv[1] === 'notion' && argv.length === 2) {
+    let cfg;
+    try {
+      cfg = parseAccountsConfig(e.accounts !== undefined ? e.accounts : loadConfig().accounts);
+    } catch (x) {
+      err((x as Error).message);
+      return 2;
+    }
+    const token = await lookupSecret('notion-token', e.secrets);
+    if (!token.value) {
+      err(`No Notion token found. Put NOTION_API=<internal integration token> in Stephen's .env (chmod 600) or the Keychain item "stephen-notion", and share the to-do database with the integration.${token.notes.length ? ` (${token.notes.join('; ')})` : ''}`);
+      return 1;
+    }
+    try {
+      const c = new NotionClient({ token: token.value, ...(e.notionOrigin ? { origin: e.notionOrigin } : {}), ...(e.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
+      const r = await c.todos(cfg.notion.todoDatabase, cfg.timeZone ? { timeZone: cfg.timeZone } : {});
+      if (!r) {
+        err(NO_TODO_DATABASE);
+        return 1;
+      }
+      out(`Notion OK (token from ${token.source}). To-do database: "${field(r.title, 80)}"${r.picked ? ' (picked by its name; set accounts.notion.todoDatabase to choose another)' : ''}.`);
+      out(`Open to-dos: ${r.lines.length}${r.truncated ? '+' : ''}.`);
+      return 0;
+    } catch (x) {
+      err(`Notion test failed: ${(x as Error).message}`);
+      return 1;
+    }
+  }
+  if (argv[0] === 'test' && argv[1] === 'weather' && argv.length === 2) {
+    let cfg;
+    try {
+      cfg = parseAccountsConfig(e.accounts !== undefined ? e.accounts : loadConfig().accounts);
+    } catch (x) {
+      err((x as Error).message);
+      return 2;
+    }
+    try {
+      const api = new ApiClient({ origin: e.allowLoopbackHttp && e.weatherOrigin ? e.weatherOrigin : WEATHER_ORIGIN, ...(e.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
+      const w = await fetchWeather(api, cfg.weather, 'today', cfg.timeZone);
+      const f = formatWeather(w, cfg.weather, 'today');
+      out(`Weather OK at ${api.origin}.`);
+      out(f.header);
+      for (const l of f.lines) out(`  ${l}`);
+      return 0;
+    } catch (x) {
+      err(`Weather test failed: ${(x as Error).message}`);
       return 1;
     }
   }

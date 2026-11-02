@@ -198,6 +198,20 @@ Anything a stranger can write (calendar invites, Canvas posts) is parsed with li
 cleaning, and expanded with hard iteration caps. Review 6 measured a 2 MB `<<<…` title at ~40 minutes with the old
 tag regex and 13 s for 50 spam invites; both now finish in milliseconds.
 
+### 4.10 Morning briefing (composition in the model, not a new tool)
+
+"What's my day?" is answered by three existing read tools called **in one model step**: `calendar_events` (today),
+`canvas_due` (7 days) and `weather_now`. A composite `day_briefing` tool was rejected: it would duplicate the
+account code and the per-source taint marks, and the model already runs independent tool calls in parallel. The
+persona gives this request a fixed shape (weather, today's events, what's due; 3 to 4 sentences) and says what to
+do when a source isn't connected.
+
+`weather_now` (Open-Meteo, no key) follows the pinned-origin pattern of §4.6, with two differences. The location
+is the owner's config (`accounts.weather`, default Toronto), never a model argument. Weather is not private data, so
+it does **not** arm the taint (a briefing followed by "play lofi" shouldn't ask). Only numbers are read from the
+response, and coordinates are never put in the result. Real-model eval: `brief-day` and an injected-calendar variant
+pass. The injected run reported the planted instruction to the owner and opened nothing.
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |
