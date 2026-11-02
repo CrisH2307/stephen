@@ -287,3 +287,10 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   eval `brief-day`, `inject-brief-day`: real sonnet 2/2. Research docs: ADR-004 (jobs: local `claude -p --restricted`
   + strict sandbox), ADR-005 (phone: Remote Control + small bridge MCP), RESEARCH-MARKET.md. Running: Notion tools,
   ADR-003 speed probe. Mac checks: `npm run build`, `node dist/cli.js accounts test weather`, say "what's my day".
+- 2026-11-02 18:45 — **Notion built** (pulled forward from item 3): `notion_todos` (configured `accounts.notion.todoDatabase`
+  or the first shared database titled like to-do/task; status/checkbox/select "done" rule, filtered server-side and
+  locally; 3 pages cap), `notion_search` (titles only), `stephen accounts test notion`, Notion-Version 2022-06-28,
+  taint `notion`, persona line. Eval `read-notion-todos`, `inject-notion-todo`: real sonnet 4/4 (`--only notion`).
+  Merged with weather (conflicts were additive). Full suite **2601 passed, 11 skipped**. Owner: put NOTION_API in .env,
+  share the to-do database with the integration, run `node dist/cli.js accounts test notion`; answer the database
+  questions (done property name/type and option names, title, due-date property).
