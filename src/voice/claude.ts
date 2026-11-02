@@ -241,14 +241,23 @@ export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptio
     if (!s.followUps) throw new Error('--resume needs follow-ups (voice.followUpWindowSec > 0)');
     if (!SESSION_ID_RE.test(run.resume)) throw new Error('invalid session id');
   }
+  return ['-p', safePrompt, '--output-format', 'json', ...(run.resume ? ['--resume', run.resume] : []), ...lockedArgs(s, run.memory)];
+}
+
+/**
+ * The argv for the long-lived warm process (docs/ADR-003, src/voice/warm-claude.ts): the SAME lock-down as
+ * buildClaudeArgs, but no prompt, no `--resume`, and stream-json in and out (`--verbose` is required with
+ * stream-json output). Prompts go to stdin as one JSON line each. Pure; unit-tested.
+ */
+export function buildWarmArgs(s: ClaudeSettings, memory?: readonly string[]): string[] {
+  return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', ...lockedArgs(s, memory)];
+}
+
+/** Everything after the prompt / output format: MCP config, lock-down, tool rules, persona, turn cap, model. */
+function lockedArgs(s: ClaudeSettings, memory: readonly string[] | undefined): string[] {
   const lockdown: string[] = [...LOCKDOWN_ARGS];
   if (!s.followUps) lockdown.push(NO_SESSION_PERSISTENCE);
   const args = [
-    '-p',
-    safePrompt,
-    '--output-format',
-    'json',
-    ...(run.resume ? ['--resume', run.resume] : []),
     '--mcp-config',
     s.mcpConfigPath,
     ...lockdown.filter((a) => !s.unsupportedOptionalFlags?.has(a)),
@@ -256,7 +265,7 @@ export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptio
     ALLOWED_TOOLS.join(','),
     '--disallowedTools',
     DISALLOWED_TOOLS.join(','),
-    ...(s.personaFile ? ['--append-system-prompt-file', s.personaFile] : ['--append-system-prompt', personaFor(s.aboutMe, run.memory)]),
+    ...(s.personaFile ? ['--append-system-prompt-file', s.personaFile] : ['--append-system-prompt', personaFor(s.aboutMe, memory)]),
     '--max-turns',
     String(s.maxTurns),
   ];
@@ -382,7 +391,7 @@ export type ClaudeOutcome =
   | { kind: 'error'; message: string; sessionId: string | null }
   | { kind: 'cancelled' };
 
-interface ResultJson {
+export interface ResultJson {
   type?: string;
   subtype?: string;
   is_error?: boolean;
@@ -421,6 +430,14 @@ export function parseClaudeOutput(stdout: string, exitCode: number | null, stder
     const why = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? `exit code ${exitCode}`;
     return { kind: 'error', message: `Claude Code didn't return a result (${why.slice(0, 300)}).`, sessionId: null };
   }
+  return outcomeFromResult(res);
+}
+
+/**
+ * One `result` object → ClaudeOutcome. Shared by the one-shot runner (parseClaudeOutput) and the warm process
+ * (warm-claude.ts, which then turns the cumulative cost / api time into per-command differences).
+ */
+export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
@@ -447,16 +464,32 @@ export interface ClaudeTiming {
   /** Claude Code's duration_api_ms: time waiting for the model. */
   apiMs: number | null;
   turns: number | null;
+  /**
+   * The warm path (WarmConversationRunner): `wallMs` is run() → result, so "start-up + MCP" (wall − duration_ms) is
+   * whatever start-up the command still waited for (0 when the pre-warm hid it), comparable with the one-shot line.
+   * `command`: 1 = the first command of this process, 2+ = a follow-up on it. `leadMs` (first command only): how long
+   * before the command the process was spawned (the pre-warm lead; ~0 when nothing was pre-warmed).
+   */
+  warm?: { command: number; leadMs: number | null };
 }
 
-/** One log line: "claude: 4.2 s (start-up + MCP 1.1 s, model 2.6 s in 3 turns, tools + overhead 0.5 s)". */
+/**
+ * One log line, e.g. one-shot "claude: 4.2 s (start-up + MCP 1.1 s, model 2.6 s in 3 turns, tools + overhead 0.5 s)",
+ * warm "claude: 1.9 s (warm, spawned 3.0 s ahead; start-up + MCP 0.0 s, model 1.8 s in 1 turn, tools + overhead 0.1 s)"
+ * or "claude: 1.7 s (warm, follow-up 2 on this process; start-up + MCP 0.0 s, …)".
+ */
 export function formatTiming(t: ClaudeTiming): string {
   const s = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
   const parts: string[] = [];
   if (t.durationMs !== null) parts.push(`start-up + MCP ${s(Math.max(0, t.wallMs - t.durationMs))}`);
   if (t.apiMs !== null) parts.push(`model ${s(t.apiMs)}${t.turns !== null ? ` in ${t.turns} turn${t.turns === 1 ? '' : 's'}` : ''}`);
   if (t.durationMs !== null && t.apiMs !== null) parts.push(`tools + overhead ${s(Math.max(0, t.durationMs - t.apiMs))}`);
-  return `claude: ${s(t.wallMs)}${parts.length ? ` (${parts.join(', ')})` : ''}`;
+  const split = parts.join(', ');
+  if (t.warm) {
+    const how = t.warm.command > 1 ? `follow-up ${t.warm.command} on this process` : `spawned ${s(Math.max(0, t.warm.leadMs ?? 0))} ahead`;
+    return `claude: ${s(t.wallMs)} (warm, ${how}${split ? `; ${split}` : ''})`;
+  }
+  return `claude: ${s(t.wallMs)}${split ? ` (${split})` : ''}`;
 }
 
 // ───────────────────────────── running ─────────────────────────────

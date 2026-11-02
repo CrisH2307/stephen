@@ -16,7 +16,8 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { SESSION_STATE_FILE, readPrivateJsonFile, removeSessionStateFile, writePrivateJsonFileSync } from '../safety/session-state.js';
 import type { CommandRunner } from './assistant.js';
-import { SESSION_ID_RE, type ClaudeOutcome, type RunOptions } from './claude.js';
+import { SESSION_ID_RE, type ClaudeOutcome, type ClaudeTiming, type RunOptions } from './claude.js';
+import type { WarmProcess } from './warm-claude.js';
 
 export const CONVERSATION_FILE = 'conversation.json';
 /** Default and maximum `voice.followUpWindowSec`. */
@@ -68,6 +69,11 @@ export class Conversation {
     return this.o.windowSec > 0;
   }
 
+  /** voice.followUpWindowSec. */
+  get windowSec(): number {
+    return this.o.windowSec;
+  }
+
   private now(): number {
     return (this.o.now ?? Date.now)();
   }
@@ -94,13 +100,21 @@ export class Conversation {
    * reset first (state file deleted, session id forgotten). Throws if the reset fails (the command must not run).
    */
   begin(): string | null {
-    if (this.enabled) {
-      const s = this.load();
-      const age = s ? this.now() - s.endedAt : -1;
-      if (s && age >= 0 && age <= this.o.windowSec * 1000 && this.sameMemory(s)) return s.sessionId;
-    }
+    const id = this.peek();
+    if (id !== null) return id;
     this.reset();
     return null;
+  }
+
+  /**
+   * The session id begin() would resume (inside the window, same memory key, valid file), without changing anything.
+   * The warm runner uses it to decide whether its live process may take the next command.
+   */
+  peek(): string | null {
+    if (!this.enabled) return null;
+    const s = this.load();
+    const age = s ? this.now() - s.endedAt : -1;
+    return s && age >= 0 && age <= this.o.windowSec * 1000 && this.sameMemory(s) ? s.sessionId : null;
   }
 
   /** The memory key right now (taken right before a run, so the saved key matches that run's system prompt). */
@@ -130,6 +144,11 @@ export class Conversation {
     return this.enabled ? (this.load()?.sessionId ?? null) : null;
   }
 
+  /** Drop a session id that will never be resumed (its transcript is deleted). Never throws. */
+  drop(id: string): void {
+    this.dropped(id);
+  }
+
   private dropped(id: string | null | undefined): void {
     if (!id || !this.o.onSessionDropped) return;
     try {
@@ -141,20 +160,29 @@ export class Conversation {
 
   /** Called with every finished run: OK with a session id → remember it (and now as the end); else end the conversation. */
   finish(out: ClaudeOutcome, memory: string | undefined = this.currentMemoryKey()): void {
-    if (this.enabled && out.kind === 'ok' && out.sessionId && SESSION_ID_RE.test(out.sessionId)) {
-      const before = this.load()?.sessionId ?? null;
-      try {
-        writePrivateJsonFileSync(this.filePath, this.saved(out.sessionId, this.now(), memory));
-        if (before !== out.sessionId) this.dropped(before);
-        return;
-      } catch (e) {
-        this.o.log?.(`could not save the conversation (${(e as Error).message}) — the next command starts fresh`);
-      }
-    }
+    if (out.kind === 'ok' && out.sessionId && this.remember(out.sessionId, memory)) return;
     this.end();
     // A failed or cancelled run may still have written a transcript under its own id.
     const failedId = 'sessionId' in out ? out.sessionId : null;
     if (failedId && SESSION_ID_RE.test(failedId)) this.dropped(failedId);
+  }
+
+  /**
+   * Save `sessionId` (ended now, built with memory key `memory`) as the live conversation; a replaced id is dropped.
+   * False when follow-ups are off, the id is invalid or the file can't be written: nothing is reset here, the
+   * caller ends the conversation (the warm runner kills its process first).
+   */
+  remember(sessionId: string, memory: string | undefined): boolean {
+    if (!this.enabled || !SESSION_ID_RE.test(sessionId)) return false;
+    const before = this.load()?.sessionId ?? null;
+    try {
+      writePrivateJsonFileSync(this.filePath, this.saved(sessionId, this.now(), memory));
+    } catch (e) {
+      this.o.log?.(`could not save the conversation (${(e as Error).message}) — the next command starts fresh`);
+      return false;
+    }
+    if (before !== sessionId) this.dropped(before);
+    return true;
   }
 
   /** The command's reply finished (spoken or shown): the window counts from now. No-op if the conversation ended. */
@@ -239,5 +267,231 @@ export class ConversationRunner implements CommandRunner {
 
   commandEnded(): void {
     this.conversation.touch();
+  }
+}
+
+// ───────────────────────────── the warm runner (phase 3, docs/ADR-003) ─────────────────────────────
+
+/** An unused pre-warmed process is killed after this long. */
+export const PREWARM_UNUSED_MS = 60_000;
+/** A live process ends after this many commands… */
+export const MAX_WARM_COMMANDS = 25;
+/** …or once it is this old (checked between commands; an idle one ends with the follow-up window first). */
+export const MAX_WARM_AGE_MS = MAX_FOLLOW_UP_WINDOW_SEC * 1000;
+
+export interface WarmRunnerOptions {
+  conversation: Conversation;
+  /** Start one warm process whose persona is built with the memory as it is now (`memoryKey` = its key). */
+  start: (memoryKey: string | undefined) => WarmProcess;
+  /** Called after every OK command with where the time went. */
+  onTiming?: (t: ClaudeTiming) => void;
+  now?: () => number;
+  log?: (line: string) => void;
+}
+
+const CANCELLED: ClaudeOutcome = { kind: 'cancelled' };
+
+/**
+ * A CommandRunner over ONE long-lived warm process per conversation (src/voice/warm-claude.ts). It owns the end
+ * rules, always in this order: kill the process group → wait until it is gone → Conversation.end() (session id first,
+ * then the state file, then the transcript). The next process is spawned only by the next prewarm() (wake word, F5)
+ * or run(). Kill before reset: a serve that is still alive could write the state file again after it was deleted,
+ * and the next serve would import that old taint. A conversation ends on:
+ *  - the follow-up window running out (a timer after each command and touch(), checked again before a command);
+ *  - a memory change (endConversation() from the router, or a memory key that differs from the process's);
+ *  - a cancel (cancel() / endConversation(): Esc, "Stephen stop", wake word while running, F5 while busy, Ctrl-C);
+ *  - any error (an error result, a protocol error, an exit, MCP not connected) and a state save that failed;
+ *  - the caps: an unused pre-warm after PREWARM_UNUSED_MS, MAX_WARM_COMMANDS commands, MAX_WARM_AGE_MS, listener exit.
+ * Window 0: the process ends after every command (the next one is still pre-warmed).
+ */
+export class WarmConversationRunner implements CommandRunner {
+  private proc: WarmProcess | null = null;
+  /** Commands finished OK on `proc`. */
+  private commands = 0;
+  private sessionId: string | null = null;
+  private busy = false;
+  private cancelRequested = false;
+  private ending: Promise<void> = Promise.resolve();
+  private unusedTimer: NodeJS.Timeout | null = null;
+  private windowTimer: NodeJS.Timeout | null = null;
+  constructor(private readonly o: WarmRunnerOptions) {}
+
+  private now(): number {
+    return (this.o.now ?? Date.now)();
+  }
+
+  private get conversation(): Conversation {
+    return this.o.conversation;
+  }
+
+  /** May the live process take the next command? Pure: nothing is killed or reset here. */
+  private reusable(): boolean {
+    const p = this.proc;
+    if (!p || p.exited) return false;
+    const key = this.conversation.currentMemoryKey();
+    if (key === 'unreadable' || key !== p.memoryKey) return false;
+    const age = this.now() - p.spawnedAt;
+    if (this.commands >= MAX_WARM_COMMANDS || age >= MAX_WARM_AGE_MS) return false;
+    if (this.commands === 0) return age < PREWARM_UNUSED_MS;
+    return this.sessionId !== null && this.conversation.peek() === this.sessionId;
+  }
+
+  /** The wake word fired or F5 went down: start a process now, unless one that can take the command is up. */
+  prewarm(): void {
+    if (this.busy) return;
+    if (this.proc && this.reusable()) return;
+    if (this.proc) void this.endProcess();
+    this.ending = this.ending.then(() => {
+      if (this.proc || this.busy) return;
+      try {
+        this.spawn();
+      } catch (e) {
+        this.o.log?.(`could not pre-warm Claude Code (${(e as Error).message})`);
+      }
+    });
+  }
+
+  followUp(): boolean {
+    return this.commands > 0 && this.reusable();
+  }
+
+  async run(prompt: string): Promise<ClaudeOutcome> {
+    if (this.busy) throw new Error('a command is already running');
+    this.busy = true;
+    this.cancelRequested = false;
+    this.clearTimers();
+    const t0 = this.now();
+    try {
+      let p: WarmProcess | null = null;
+      // At most twice: if the memory changes while a process starts, it is replaced once.
+      for (let attempt = 0; attempt < 2 && !p; attempt++) {
+        await this.ending;
+        if (this.cancelRequested) return CANCELLED;
+        if (this.proc && !this.reusable()) await this.endProcess();
+        if (this.cancelRequested) return CANCELLED;
+        const next = this.proc ?? this.spawn();
+        try {
+          await next.ready();
+        } catch (e) {
+          if (this.cancelRequested) return CANCELLED;
+          if (this.proc === next) void this.endProcess();
+          return { kind: 'error', message: (e as Error).message, sessionId: null };
+        }
+        if (this.cancelRequested || this.proc !== next) return CANCELLED;
+        if (this.reusable()) p = next;
+      }
+      if (!p) {
+        void this.endProcess();
+        return { kind: 'error', message: 'Your memory changed while Claude Code was starting. Try again.', sessionId: null };
+      }
+      const command = this.commands + 1;
+      const out = await p.turn(prompt);
+      if (this.cancelRequested || out.kind === 'cancelled') return CANCELLED;
+      if (out.kind === 'ok') {
+        this.o.onTiming?.({
+          wallMs: this.now() - t0,
+          durationMs: out.durationMs ?? null,
+          apiMs: out.apiMs ?? null,
+          turns: out.turns,
+          warm: { command, leadMs: command === 1 ? t0 - p.spawnedAt : null },
+        });
+      }
+      const kept = out.kind === 'ok' && this.proc === p && out.sessionId !== null && this.conversation.remember(out.sessionId, p.memoryKey);
+      if (!kept) {
+        // An error, window 0, a failed save: the conversation ends (a failed run's own id is dropped too).
+        const failedId = out.kind === 'error' ? out.sessionId : null;
+        if (this.proc === p) void this.endProcess();
+        if (failedId && SESSION_ID_RE.test(failedId)) this.ending = this.ending.then(() => this.conversation.drop(failedId));
+        return out;
+      }
+      this.commands = command;
+      this.sessionId = out.sessionId;
+      if (!this.reusable()) void this.endProcess(); // a cap was reached
+      else this.armWindow();
+      return out;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Kill the running command's process group; the conversation ends with it. */
+  cancel(): boolean {
+    if (!this.busy) return false;
+    this.cancelRequested = true;
+    void this.endProcess();
+    return true;
+  }
+
+  /** Esc, "Stephen stop", a memory change, the app's "new conversation": kill the process (if any), then reset. */
+  endConversation(): void {
+    void this.endProcess();
+  }
+
+  commandEnded(): void {
+    this.conversation.touch();
+    if (this.proc && this.commands > 0 && !this.busy) this.armWindow();
+  }
+
+  /** Listener exit: end the conversation (kill → close → reset). */
+  shutdown(): Promise<void> {
+    return this.endProcess();
+  }
+
+  /** Synchronous last resort (process exit handler). */
+  killNow(): void {
+    this.clearTimers();
+    this.proc?.killNow();
+  }
+
+  /** The live process, if any (tests). */
+  get process(): WarmProcess | null {
+    return this.proc;
+  }
+
+  private spawn(): WarmProcess {
+    this.conversation.reset(); // fresh gate, no session id; throws if that fails, and then nothing runs
+    const p = this.o.start(this.conversation.currentMemoryKey());
+    this.proc = p;
+    this.commands = 0;
+    this.sessionId = null;
+    // An exit while idle ends the conversation now (while busy, run() gets the error and ends it).
+    p.onExit(() => {
+      if (this.proc === p && !this.busy) void this.endProcess();
+    });
+    this.unusedTimer = setTimeout(() => {
+      if (this.proc === p && this.commands === 0 && !this.busy) void this.endProcess();
+    }, PREWARM_UNUSED_MS);
+    this.unusedTimer.unref?.();
+    return p;
+  }
+
+  /** End the conversation in the safe order: kill → gone → reset (session id, state file, transcript). */
+  private endProcess(): Promise<void> {
+    const p = this.proc;
+    this.proc = null;
+    this.commands = 0;
+    this.sessionId = null;
+    this.clearTimers();
+    this.ending = this.ending.then(async () => {
+      if (p) await p.kill();
+      this.conversation.end();
+    });
+    return this.ending;
+  }
+
+  private armWindow(): void {
+    if (this.windowTimer) clearTimeout(this.windowTimer);
+    this.windowTimer = setTimeout(() => {
+      this.windowTimer = null;
+      if (!this.busy && this.proc && !this.reusable()) void this.endProcess();
+    }, this.conversation.windowSec * 1000 + 1);
+    this.windowTimer.unref?.();
+  }
+
+  private clearTimers(): void {
+    if (this.unusedTimer) clearTimeout(this.unusedTimer);
+    if (this.windowTimer) clearTimeout(this.windowTimer);
+    this.unusedTimer = null;
+    this.windowTimer = null;
   }
 }

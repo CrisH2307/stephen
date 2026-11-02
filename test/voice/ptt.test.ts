@@ -215,6 +215,31 @@ describe('push-to-talk (Fn+Option)', () => {
   });
 });
 
+describe('push-to-talk pre-warm (phase 3)', () => {
+  it('F5 down pre-warms Claude; F5 while Claude runs cancels first, so the runner is never asked to pre-warm while busy', async () => {
+    const runner = new FakeRunner(true);
+    const t = setup({
+      pattern: '.'.repeat(40) + 's'.repeat(30) + '.'.repeat(140),
+      texts: ['Open YouTube.'],
+      runner,
+      gates: (t) => [
+        [5, down(t)],
+        [90, up(t, 85 * MS_PER_FRAME)],
+        [
+          120,
+          async () => {
+            await waitFor(() => runner.pending, 5000, 'claude running');
+            down(t)();
+          },
+        ],
+        [180, up(t, 60 * MS_PER_FRAME)],
+      ],
+    });
+    await t.listener.run();
+    expect(runner.calls).toEqual(['prewarm', 'run:open youtube', 'cancel', 'prewarm']);
+  });
+});
+
 describe('Esc (helper)', () => {
   it('cancels a running command, like "stephen stop"', async () => {
     const runner = new FakeRunner(true);

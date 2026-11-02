@@ -86,13 +86,23 @@ export class FakeRunner implements CommandRunner {
   /** endConversation() calls (Esc / "Stephen stop" / cancel end the follow-up conversation). */
   conversationEnds = 0;
   commandEnds = 0;
+  /** prewarm(), run, cancel calls in order ("prewarm", "run:<prompt>", "cancel"). */
+  readonly calls: string[] = [];
   private release: ((o: ClaudeOutcome) => void) | null = null;
   constructor(private readonly hold = false) {}
   get pending() {
     return this.release !== null;
   }
+  /** prewarm() calls (the warm runner starts Claude on wake / F5). */
+  get prewarms() {
+    return this.calls.filter((c) => c === 'prewarm').length;
+  }
+  prewarm() {
+    this.calls.push(this.pending ? 'prewarm-while-running' : 'prewarm');
+  }
   run(prompt: string): Promise<ClaudeOutcome> {
     this.prompts.push(prompt);
+    this.calls.push(`run:${prompt}`);
     if (!this.hold) return Promise.resolve({ kind: 'ok', text: `**Opened** ${prompt}.`, sessionId: 's', costUsd: 0, turns: 1 });
     return new Promise((r) => (this.release = r));
   }
@@ -102,6 +112,7 @@ export class FakeRunner implements CommandRunner {
   }
   cancel() {
     this.cancels++;
+    this.calls.push('cancel');
     this.release?.({ kind: 'cancelled' });
     this.release = null;
     return true;

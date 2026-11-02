@@ -405,6 +405,7 @@ export class Listener {
     this.wakeCount++;
     this.bareWake = !!hit.bare;
     this.d.chimes.play('wake');
+    this.d.assistant.prewarm(); // start Claude while the user talks (phase 3; recording + ASR take ≥ 2 s)
     this.d.status('Wake word heard — listening…');
     const pre = Math.min(hit.startAgoSec + PREROLL_MARGIN_SEC + (hit.bare ? BARE_PREROLL_EXTRA_SEC : 0), MAX_PREROLL_SEC);
     // Keep the audio from just before the wake phrase: "Hey Stephen open YouTube" in one breath must not
@@ -467,6 +468,7 @@ export class Listener {
     this.d.vad.reset();
     this.state = 'recording';
     this.d.chimes.play('wake');
+    this.d.assistant.prewarm(); // a no-op while the runner is still busy (right after the cancel above)
     this.menu('recording');
     this.d.status('Recording… (release F5 to send)');
   }
