@@ -329,6 +329,10 @@ export class FakeGate implements ISafetyGate {
   noteRead(url: string): void {
     this.reads.push(url);
   }
+  dataReads: string[] = [];
+  notePrivateData(source: string): void {
+    this.dataReads.push(source);
+  }
   isPrivate(url: string): boolean {
     return this.privateHosts.has(hostOf(url));
   }
