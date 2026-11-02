@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runAccountsCli } from '../../src/accounts/cli.js';
+import { runAccountsCli } from '../../src/connect/accounts-cli.js';
 import { parseAccountsConfig } from '../../src/accounts/config.js';
 import { ACCOUNT_TOOLS } from '../../src/accounts/index.js';
 import { formatWeather, parseWeather, weatherWord } from '../../src/accounts/weather.js';

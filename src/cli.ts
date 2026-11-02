@@ -6,7 +6,7 @@ import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
-import { parseTtsConfig, runVoiceKey } from './voice/tts/index.js';
+import { parseTtsConfig } from './voice/tts/index.js';
 import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
 import { helperDoctorChecks } from './helper/doctor.js';
 import { runInstallHelper } from './helper/install.js';
@@ -474,7 +474,8 @@ async function main(argv: string[]): Promise<number> {
     case 'app':
       return (await import('./app/cli.js')).runAppCli(rest);
     case 'accounts':
-      return (await import('./accounts/cli.js')).runAccountsCli(rest);
+      // Owner-only (it writes config.json): loaded on demand, never by `stephen serve` (review 7, R7-8).
+      return (await import('./connect/accounts-cli.js')).runAccountsCli(rest);
     case 'connect':
     case 'disconnect':
       // Owner-only sign-in (OAuth + Keychain write): loaded on demand, never by `stephen serve` (boundary test).
@@ -482,7 +483,8 @@ async function main(argv: string[]): Promise<number> {
     case 'voice-setup':
       return isTtsSetupArgs(rest) ? runTtsSetup(rest, { home: loadConfig().home }) : (await import('./voice/index.js')).runVoiceSetup(rest);
     case 'voice-key':
-      return runVoiceKey(rest, { ttsConfig: () => parseTtsConfig(loadConfig().voice) });
+      // Owner-only Keychain write: loaded on demand (review 7, R7-8).
+      return (await import('./connect/voice-key.js')).runVoiceKey(rest, { ttsConfig: () => parseTtsConfig(loadConfig().voice) });
     case 'help':
     case '--help':
     case '-h':

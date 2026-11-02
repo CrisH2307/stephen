@@ -333,6 +333,14 @@ export class FakeGate implements ISafetyGate {
   notePrivateData(source: string): void {
     this.dataReads.push(source);
   }
+  accountCalls = 0;
+  /** Refusal text countAccountCall returns (null = allowed). */
+  accountLimit: string | null = null;
+  countAccountCall(): string | null {
+    if (this.accountLimit) return this.accountLimit;
+    this.accountCalls += 1;
+    return null;
+  }
   isPrivate(url: string): boolean {
     return this.privateHosts.has(hostOf(url));
   }

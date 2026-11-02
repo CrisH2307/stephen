@@ -9,9 +9,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { describe, expect, it, vi } from 'vitest';
 import { buildServer, type ServerDeps } from '../../src/server/index.js';
 import type { ServerDepsWithVoice } from '../../src/voice/announce.js';
-import { CLAUDE_REACHABLE, directViolations, importsOf, scanSrc, staticReach, transitiveViolations, SRC_ROOT, type Boundary } from '../helpers/import-scan.js';
+import { CLAUDE_REACHABLE, REPO_ROOT, directViolations, importsOf, listTsFiles, scanSrc, staticReach, transitiveViolations, SRC_ROOT, type Boundary } from '../helpers/import-scan.js';
 import { FakeAudit, FakeGate, FakeManager, makeEngine, setup } from '../server/fakes.js';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 
 vi.mock('../../src/safety/index.js', () => import('../server/safety-mock.js'));
 
@@ -60,8 +61,29 @@ describe('the stephen serve process (review 5, R5-7)', () => {
     const loaded = [...staticReach('src/cli.ts')];
     expect(loaded).toContain('src/server/index.ts'); // the scan works
     expect(loaded.filter((f) => /^src\/(memory|app|history|timers|connect)\//.test(f))).toEqual([]);
-    // The connect flow is reached only through a dynamic import from src/cli.ts.
-    expect(scanSrc().filter((r) => r.resolved?.startsWith('src/connect/')).map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`)).toEqual(['src/cli.ts (dynamic)']);
+    // The owner-only CLIs (connect, accounts, voice-key) are reached only through dynamic imports from src/cli.ts.
+    const fromOutside = scanSrc().filter((r) => r.resolved?.startsWith('src/connect/') && !r.from.startsWith('src/connect/'));
+    expect(fromOutside.length).toBeGreaterThanOrEqual(3);
+    expect([...new Set(fromOutside.map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`))]).toEqual(['src/cli.ts (dynamic)']);
+  });
+
+  it('R7-8: no Keychain write/delete or config writer is in serve\'s start-up graph or anywhere Claude can reach', () => {
+    const WRITERS = /export\s+(?:async\s+)?function\s+(keychainStore|keychainDelete|updateAccountsConfig|runVoiceKey)\b/;
+    const definedIn = listTsFiles()
+      .map((abs) => ({ file: relative(REPO_ROOT, abs).split(sep).join('/'), src: readFileSync(abs, 'utf8') }))
+      .filter((f) => WRITERS.test(f.src))
+      .map((f) => f.file)
+      .sort();
+    expect(definedIn).toEqual(['src/connect/accounts-cli.ts', 'src/connect/keychain-write.ts', 'src/connect/voice-key.ts']);
+    const loaded = staticReach('src/cli.ts');
+    expect(definedIn.filter((f) => loaded.has(f))).toEqual([]);
+    // Nothing Claude-reachable gets to them at runtime, through any chain (src/connect/ is a boundary target above).
+    for (const f of definedIn) expect(transitiveViolations({ target: f, importers: CLAUDE_REACHABLE }, scanSrc()).map((c) => c.join(' -> '))).toEqual([]);
+    // The read-only helpers serve does load have no write path left.
+    for (const f of ['src/voice/tts/keys.ts', 'src/accounts/secrets.ts']) {
+      expect(loaded.has(f), f).toBe(true);
+      expect(readFileSync(join(REPO_ROOT, f), 'utf8')).not.toMatch(/add-generic-password|delete-generic-password|writeFileSync|renameSync/);
+    }
   });
 });
 

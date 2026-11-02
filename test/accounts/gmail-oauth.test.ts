@@ -7,9 +7,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GMAIL_SCOPE } from '../../src/accounts/gmail.js';
-import { CONNECT_TIMEOUT_MS, GOOGLE_AUTH_URL, consentUrl, pkceChallenge, pkcePair, runConnectCli, startLoopback, type ConnectEnv } from '../../src/connect/gmail-oauth.js';
+import { CONNECT_TIMEOUT_MS, CONNECT_USAGE, GOOGLE_AUTH_URL, consentUrl, pkceChallenge, pkcePair, runConnectCli, startLoopback, type ConnectEnv } from '../../src/connect/gmail-oauth.js';
 import { FakeSecurity } from '../voice/tts/helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-gmail-oauth-'));
@@ -80,14 +81,26 @@ const envFile = (body = `GOOGLE_OAUTH_CLIENT_SECRET=${CLIENT_SECRET}\n`) => {
   return f;
 };
 
-function run(argv: string[], o: { sec?: FakeSecurity; cfg?: string; env?: string | null; open?: (u: string) => Promise<void>; platform?: NodeJS.Platform; accounts?: unknown; timeoutMs?: number } = {}) {
+/** A fake terminal: isTTY, and `answer` typed once the question is asked (null = end of input, no answer). */
+const terminal = (answer: string | null = 'y', tty = true) => {
+  const s = new PassThrough() as PassThrough & { isTTY?: boolean };
+  s.isTTY = tty;
+  return { stream: s, answer: () => (answer === null ? s.end() : s.write(`${answer}\n`)) };
+};
+
+function run(argv: string[], o: { sec?: FakeSecurity; cfg?: string; env?: string | null; open?: (u: string) => Promise<void>; platform?: NodeJS.Platform; accounts?: unknown; timeoutMs?: number; stdin?: ReturnType<typeof terminal> } = {}) {
   seen = [];
   const out: string[] = [];
   const err: string[] = [];
   const sec = o.sec ?? new FakeSecurity();
   const cfg = o.cfg ?? configFile();
+  const term = o.stdin ?? terminal();
   const e: ConnectEnv = {
-    out: (l) => out.push(l),
+    out: (l) => {
+      out.push(l);
+      if (/\[y\/N\] $/.test(l)) term.answer();
+    },
+    stdin: term.stream,
     err: (l) => err.push(l),
     secrets: { platform: o.platform ?? 'darwin', exec: sec.exec, user: 'tester', envFile: o.env === undefined ? envFile() : o.env },
     accounts: o.accounts !== undefined ? o.accounts : (JSON.parse(readFileSync(cfg, 'utf8')) as { accounts?: unknown }).accounts,
@@ -305,6 +318,66 @@ describe('stephen connect gmail <label>', () => {
     expect((await run(['connect', 'gmail'], { open })).code).toBe(2);
     expect(opened).toBe(0);
     expect(seen).toEqual([]);
+  });
+});
+
+describe('R7-7: the owner confirms the signed-in address before anything is stored', () => {
+  it('asks "Save <address> as <label>? [y/N]"; y stores it', async () => {
+    const r = await run(['connect', 'gmail', 'personal'], { stdin: terminal('y') });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('Signed in as cris@gmail.com. Save cris@gmail.com as "personal"? [y/N] ');
+    expect(r.sec.items.get('stephen-gmail-personal|tester')).toBe(REFRESH);
+    expect(labelsIn(r.cfg)).toEqual(['school', 'personal']);
+  });
+
+  it('n, an empty line (the default) or end of input: nothing stored, the label is not added', async () => {
+    for (const answer of ['n', '', 'yolo', null]) {
+      const r = await run(['connect', 'gmail', 'personal'], { stdin: terminal(answer) });
+      expect(r.code, String(answer)).toBe(1);
+      expect(r.err.join('\n')).toMatch(/Not saved/);
+      expect(r.sec.calls.filter((c) => c.args[0] === '-i')).toEqual([]);
+      expect(r.sec.items.size).toBe(0);
+      expect(labelsIn(r.cfg)).toEqual(['school']);
+    }
+  });
+
+  it('no terminal: refused before any sign-in unless --yes', async () => {
+    let opened = 0;
+    const r = await run(['connect', 'gmail', 'personal'], { stdin: terminal('y', false), open: async () => void (opened += 1) });
+    expect(r.code).toBe(2);
+    expect(r.err[0]).toMatch(/--yes/);
+    expect(opened).toBe(0);
+    expect(seen).toEqual([]);
+    const y = await run(['connect', 'gmail', 'personal', '--yes'], { stdin: terminal(null, false) });
+    expect(y.code).toBe(0);
+    expect(y.out.join('\n')).toMatch(/Signed in as cris@gmail\.com\. Saving it as "personal" \(--yes\)/);
+    expect(y.sec.items.get('stephen-gmail-personal|tester')).toBe(REFRESH);
+    expect((await run(['connect', 'gmail', 'personal', '--force'])).code).toBe(2);
+  });
+
+  it('the address can\'t be read (no access token, Gmail API off): nothing stored', async () => {
+    tokenReply = (res) => json(res, { refresh_token: REFRESH, expires_in: 3599, scope: GMAIL_SCOPE });
+    const r = await run(['connect', 'gmail', 'personal']);
+    tokenReply = (res) => json(res, { access_token: ACCESS, refresh_token: REFRESH, expires_in: 3599, scope: GMAIL_SCOPE });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toMatch(/Could not read which Gmail address.*Nothing was stored/);
+    expect(r.sec.items.size).toBe(0);
+    expect(labelsIn(r.cfg)).toEqual(['school']);
+  });
+});
+
+describe('R7-12: usage text and disconnect', () => {
+  it('the usage text gives the real label rule (1 to 32 of a-z, 0-9, _ and -)', () => {
+    expect(CONNECT_USAGE).toContain('1 to 32 of a-z, 0-9, _ and -');
+    expect(CONNECT_USAGE).not.toContain('1 to 20');
+  });
+
+  it('disconnect tells the owner to restart Stephen (a running serve keeps its cached access token)', async () => {
+    const sec = new FakeSecurity();
+    sec.items.set('stephen-gmail-school|tester', REFRESH);
+    const r = await run(['disconnect', 'gmail', 'school'], { sec });
+    expect(r.code).toBe(0);
+    expect(r.out.join('\n')).toMatch(/Restart Stephen/);
   });
 });
 

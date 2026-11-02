@@ -1,18 +1,19 @@
 /**
+ * Owner-only CLI (in src/connect/ because it writes config.json; review 7, R7-8). Loaded on demand by src/cli.ts.
  * `stephen accounts` — which account secrets Stephen can find (never their values) and which Gmail labels are connected, and
  * `stephen accounts test canvas|calendar|notion|weather` — one real read-only call each (e.g. how many items are due this week).
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { configFilePath, loadConfig } from '../config.js';
-import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow } from './calendar.js';
-import { CanvasClient, DEFAULT_CANVAS_URL, formatDue } from './canvas.js';
-import { ApiClient } from './http.js';
-import { NO_TODO_DATABASE, NotionClient } from './notion.js';
-import { field } from './result.js';
-import { parseAccountsConfig } from './config.js';
-import { WEATHER_ORIGIN, fetchWeather, formatWeather } from './weather.js';
-import { lookupGmailToken, lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from './secrets.js';
+import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow } from '../accounts/calendar.js';
+import { CanvasClient, DEFAULT_CANVAS_URL, formatDue } from '../accounts/canvas.js';
+import { ApiClient } from '../accounts/http.js';
+import { NO_TODO_DATABASE, NotionClient } from '../accounts/notion.js';
+import { field } from '../accounts/result.js';
+import { parseAccountsConfig } from '../accounts/config.js';
+import { WEATHER_ORIGIN, fetchWeather, formatWeather } from '../accounts/weather.js';
+import { lookupGmailToken, lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from '../accounts/secrets.js';
 
 export const ACCOUNTS_HELP = `stephen accounts              Show which account secrets Stephen finds (Keychain or .env; never the values)
 stephen accounts test canvas  Read your Canvas once: your name and what's due in the next 7 days

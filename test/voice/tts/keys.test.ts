@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parseTtsConfig } from '../../../src/voice/tts/config.js';
-import { defaultExec, findApiKey, runVoiceKey, type VoiceKeyEnv } from '../../../src/voice/tts/keys.js';
+import { defaultExec, findApiKey } from '../../../src/voice/tts/keys.js';
+import { runVoiceKey, type VoiceKeyEnv } from '../../../src/connect/voice-key.js';
 import { redactKey, scrubKey } from '../../../src/voice/tts/redact.js';
 import { FAKE_KEY, FakeSecurity, OTHER_FAKE_KEY } from './helpers.js';
 

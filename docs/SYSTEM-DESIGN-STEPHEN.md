@@ -164,8 +164,14 @@ One small client is the only network path for account data:
   per request, a streamed byte cap.
 - RFC 8288 `Link: rel="next"` pagination, same origin only, page cap. A cross-origin `next` link stops it.
 - Error messages never include the token or the response body.
-- Results are cleaned before the model sees them: HTML → text, links → `[link: host]` (no ready-made exfiltration
-  URL), 6+ digit runs → `[code]`, delimiters escaped, size capped, wrapped in `<untrusted_account_data>`.
+- Results are cleaned before the model sees them: HTML → text (in email HTML, elements hidden by `hidden`,
+  `aria-hidden` or an inline `display:none` / `visibility:hidden` / zero-size style are dropped first, one linear
+  scan), links → `[link: host]` (no ready-made exfiltration URL), 6+ digit runs → `[code]`, and near a code word
+  (code, PIN, passcode, verification, OTP, 2FA, security, one-time, login, sign-in; within 40 characters, or anywhere
+  on a "verification code" line) also 4 to 5 digit runs and letter+digit tokens like `ABC123` → `[code]`;
+  delimiters escaped, size capped, wrapped in `<untrusted_account_data>`. All linear-time patterns.
+- Every account tool call counts as one action in the gate's per-minute rate limit (the same budget as clicks and
+  scrolls), so a looping model can't hammer an API.
 
 ### 4.7 Calendar recurrence without a library (RFC 5545 subset)
 
@@ -221,7 +227,11 @@ pass. The injected run reported the planted instruction to the owner and opened 
 Gmail has no personal token, so the owner signs in once per account with `stephen connect gmail <label>`
 (RFC 8252 desktop flow). The code for it lives in `src/connect/`, which only `src/cli.ts` loads (dynamic import);
 a boundary test proves nothing the model can reach imports it, so no tool can start a sign-in, store a token or
-change the account list.
+change the account list. The other write helpers live there too: the Keychain store/delete
+(`connect/keychain-write.ts`, also used by `stephen voice-key`), the config.json writer (`connect/accounts-cli.ts`,
+`stephen accounts`) and `stephen voice-key` itself, so `stephen serve`'s start-up graph holds only read-only secret
+lookups (boundary test, review 7 R7-8). The Stephen window's `accounts.status` checks presence only: the Keychain
+item's attributes (`security find-generic-password` without `-w`) and `.env` key names, never a value.
 
 1. **PKCE (RFC 7636, S256).** verifier = 32 random bytes in base64url, challenge = SHA-256(verifier). A stolen
    authorization code is useless without the verifier, which never leaves the process. `state` = 16 random bytes,
@@ -239,18 +249,26 @@ change the account list.
    the owner stored it; without one the flow is pure PKCE.
 5. **Scope check.** The granted scope set must be exactly `{gmail.readonly}`. Broader or narrower: nothing is
    stored (Google's granular consent lets the owner untick boxes, and old grants can widen a token).
-6. **Storage.** The refresh token goes to the Keychain item `stephen-gmail-<label>` through `security -i` with the
+6. **The owner confirms the mailbox.** The access token from the exchange reads the signed-in address (Gmail
+   `users/me/profile`), and Terminal asks `Save <address> as "<label>"? [y/N]` (default no; end of input = no). No
+   terminal: refused before the browser opens unless `--yes`. This catches another local user who read the consent
+   URL from `ps` and finished the sign-in with their own Google account. If the address can't be read, nothing is
+   stored.
+7. **Storage.** The refresh token goes to the Keychain item `stephen-gmail-<label>` through `security -i` with the
    command on stdin, the same path as `stephen voice-key set`: the token is never on any argv, in config, a log or
    the environment of `claude`. The item is read back to confirm. The label is added to `accounts.gmail.accounts`.
-7. **Use.** On a tool call, the refresh token is read from the Keychain once per process, exchanged for an access
+8. **Use.** On a tool call, the refresh token is read from the Keychain once per process, exchanged for an access
    token, and the access token is kept in memory until a minute before it expires. Nothing is persisted. A refused
    refresh (400) tells the owner to connect again; a refused access token (401/403) is dropped.
 
 The model's side stays as narrow as the other services: `gmail_search` takes fields, and the code writes the Gmail
 query, each value reduced to plain words and quoted (`x OR from:evil` becomes the literal phrase
 `subject:"x OR from evil"`). `gmail_read` takes only a message id that `gmail_search` returned in this process, so
-an injected id can't reach other mail. Senders are shown as name plus domain, never the full address.
-`stephen disconnect gmail <label>` revokes the token at Google, deletes the item and removes the label.
+an injected id can't reach other mail. Senders are shown as name plus the real domain, `Dr Patel <evil.com>`, never
+the full address; the display name loses any domain-looking word, `@` word, parentheses and brackets first (after
+NFKC), so `"Dr Patel (ontariotechu.ca)" <x@evil.com>` can't pose as the school. `stephen disconnect gmail <label>`
+revokes the token at Google, deletes the item and removes the label, and tells the owner to restart Stephen: a
+running serve keeps its cached access token (up to an hour) until then.
 
 ### 4.12 Warm Claude session (phase 3)
 
@@ -262,7 +280,10 @@ wake word fires or F5 goes down. Recording and speech-to-text take at least 2 s,
 
 - **Same lock-down.** The argv is the one-shot argv without the prompt and without `--resume` (a test compares them
   flag by flag). Each command goes to stdin as `JSON.stringify` of one user message, one line. Claude Code exits on
-  a malformed line, so text is never pasted into JSON by hand.
+  a malformed line, so text is never pasted into JSON by hand. The environment is the same as the one-shot one too
+  (`withoutSecrets`): no ElevenLabs or account secret names, no `CLAUDECODE`, and no `CLAUDE_CODE_*` variable except
+  the sign-in and provider ones (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK|VERTEX|FOUNDRY`, their `SKIP_*_AUTH`,
+  `CLAUDE_CODE_CLIENT_*`), so a `stephen listen` started inside a Claude Code session doesn't run as part of it.
 - **Ready, then checked before every command.** Ready means `initialize` answered (then the persona file is deleted:
   Claude Code has read it, and the system prompt is a snapshot from now on), `mcp_status` says `stephen` is
   `connected`, and the serve's pid has been read from its instance lock (below). Before each command the memory key

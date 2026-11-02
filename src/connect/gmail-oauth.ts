@@ -13,26 +13,32 @@
  *   4. The code is exchanged at https://oauth2.googleapis.com/token (pinned origin, no redirects, timeout, byte cap)
  *      with the verifier; the client secret is sent only when the owner stored one.
  *   5. The granted scopes must be exactly gmail.readonly, else nothing is stored.
- *   6. The refresh token goes to the Keychain item `stephen-gmail-<label>` via `security -i` on stdin (never argv,
+ *   6. The signed-in address is read (Gmail users/me/profile) and the owner confirms it in Terminal:
+ *      `Save <address> as "<label>"? [y/N]` (default no; no terminal → refused unless --yes). Another local user who
+ *      raced the loopback with their own Google sign-in shows up here as the wrong address (review 7, R7-7).
+ *   7. The refresh token goes to the Keychain item `stephen-gmail-<label>` via `security -i` on stdin (never argv,
  *      config, logs or the environment), and the label is added to accounts.gmail.accounts in config.json.
- * The access token from the exchange is used once (to show which address was connected) and then dropped.
+ * The access token from the exchange is used once (to read the address) and then dropped.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { createInterface } from 'node:readline';
 import { userInfo } from 'node:os';
 import { configFilePath, loadConfig } from '../config.js';
-import { section, updateAccountsConfig } from '../accounts/cli.js';
+import { section, updateAccountsConfig } from './accounts-cli.js';
 import { parseAccountsConfig } from '../accounts/config.js';
 import { GMAIL_SCOPE, GmailClient, googleTokenCall, grantedScopes, type GoogleTokenResponse } from '../accounts/gmail.js';
 import { AccountHttpError, type FetchFn } from '../accounts/http.js';
 import { GMAIL_LABEL_RE, GOOGLE_TOKEN_RE, gmailKeychainService, lookupGmailToken, lookupSecret, type SecretDeps } from '../accounts/secrets.js';
-import { defaultExec, keychainDelete, keychainStore } from '../voice/tts/keys.js';
+import { defaultExec } from '../voice/tts/keys.js';
+import { keychainDelete, keychainStore } from './keychain-write.js';
 
 export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const CONNECT_TIMEOUT_MS = 3 * 60_000;
 
-export const CONNECT_USAGE = `stephen connect gmail <label>     Sign in to one Gmail account, read-only (label: 1 to 20 of a-z, 0-9, -; e.g. personal)
+export const CONNECT_USAGE = `stephen connect gmail <label> [--yes]  Sign in to one Gmail account, read-only (label: 1 to 32 of a-z, 0-9, _ and -; e.g. personal).
+                                       Asks you to confirm the signed-in address; --yes skips that (needed without a terminal)
 stephen disconnect gmail <label>  Revoke and forget it (Keychain item stephen-gmail-<label> and the config entry)`;
 
 // ───────────── PKCE and the consent URL ─────────────
@@ -165,11 +171,30 @@ export interface ConnectEnv {
   /** Default: macOS `open <url>`; elsewhere nothing (the URL is printed). */
   openBrowser?: (url: string) => Promise<void> | void;
   timeoutMs?: number;
+  /** Where the "Save <address>?" answer is read (default: process.stdin). Not a terminal → refused unless --yes. */
+  stdin?: NodeJS.ReadableStream & { isTTY?: boolean };
   /** Tests only: fake Google servers on loopback. */
   allowLoopbackHttp?: boolean;
   tokenOrigin?: string;
   gmailOrigin?: string;
   fetch?: FetchFn;
+}
+
+/** Print `question`, then read one line; null on end of input (EOF counts as "no"). */
+function askLine(input: NodeJS.ReadableStream, question: string, out: (l: string) => void): Promise<string | null> {
+  out(question);
+  const rl = createInterface({ input, terminal: false });
+  return new Promise<string | null>((resolve) => {
+    let done = false;
+    const finish = (v: string | null) => {
+      if (done) return;
+      done = true;
+      rl.close();
+      resolve(v);
+    };
+    rl.once('line', (l) => finish(l));
+    rl.once('close', () => finish(null));
+  });
 }
 
 /** A token-endpoint failure in plain words (never Google's body, the code, the verifier or a token). */
@@ -187,7 +212,8 @@ export async function runConnectCli(cmd: 'connect' | 'disconnect', argv: string[
     out(CONNECT_USAGE);
     return 0;
   }
-  if (argv[0] !== 'gmail' || argv.length !== 2) {
+  const yes = cmd === 'connect' && argv.length === 3 && argv[2] === '--yes';
+  if (argv[0] !== 'gmail' || (argv.length !== 2 && !yes)) {
     err(`Usage:\n${CONNECT_USAGE}\n(Canvas, Notion and the calendar use Stephen's .env file instead; see stephen accounts.)`);
     return 2;
   }
@@ -241,6 +267,8 @@ export async function runConnectCli(cmd: 'connect' | 'disconnect', argv: string[
       return 1;
     }
     out(d === 'deleted' ? `Disconnected Gmail "${label}" (Keychain item ${service} deleted, removed from ${file}).` : `Gmail "${label}" was not in the Keychain; removed it from ${file}.`);
+    // A running `stephen serve` keeps its cached access token (up to an hour) until it restarts (review 7, R7-12).
+    out('Restart Stephen (quit and start stephen listen or the app again) so a running Stephen stops using this account now.');
     return 0;
   }
 
@@ -255,6 +283,11 @@ export async function runConnectCli(cmd: 'connect' | 'disconnect', argv: string[
   if (!clientId) {
     err(`No Google OAuth client id yet. Create a "Desktop app" OAuth client in Google Cloud (see docs/PLAN-2A-READ-MY-STUFF.md), then put its id in ${file} as "accounts": { "gmail": { "clientId": "<id>" } }.`);
     return 1;
+  }
+  const stdin = e.stdin ?? process.stdin;
+  if (!yes && !stdin.isTTY) {
+    err('Run this in Terminal: Stephen asks you to confirm the signed-in address before saving it (or add --yes to skip that question).');
+    return 2;
   }
   const clientSecret = (await lookupSecret('google-oauth-client-secret', secrets)).value;
 
@@ -301,12 +334,23 @@ export async function runConnectCli(cmd: 'connect' | 'disconnect', argv: string[
     err('Google did not return a refresh token. Remove Stephen at https://myaccount.google.com/permissions and connect again. Nothing was stored.');
     return 1;
   }
-  if (typeof tok.access_token === 'string' && GOOGLE_TOKEN_RE.test(tok.access_token)) {
-    try {
-      const gmail = new GmailClient({ token: tok.access_token, ...http, ...(e.allowLoopbackHttp && e.gmailOrigin ? { origin: e.gmailOrigin } : {}) });
-      out(`Signed in as ${await gmail.profile()}.`);
-    } catch (x) {
-      out(`Note: the Gmail check failed (${x instanceof AccountHttpError ? x.message : 'unknown error'}). Is the Gmail API enabled in your Google Cloud project? The sign-in is stored anyway.`);
+  // Which mailbox is this? The owner must recognise it before anything is stored (review 7, R7-7).
+  let address = '';
+  try {
+    if (typeof tok.access_token !== 'string' || !GOOGLE_TOKEN_RE.test(tok.access_token)) throw new AccountHttpError('Google did not return an access token');
+    const gmail = new GmailClient({ token: tok.access_token, ...http, ...(e.allowLoopbackHttp && e.gmailOrigin ? { origin: e.gmailOrigin } : {}) });
+    address = await gmail.profile();
+    if (address === 'unknown address') throw new AccountHttpError('Gmail did not say which address signed in');
+  } catch (x) {
+    err(`Could not read which Gmail address signed in (${x instanceof AccountHttpError ? x.message : 'unknown error'}). Is the Gmail API enabled in your Google Cloud project? Nothing was stored.`);
+    return 1;
+  }
+  if (yes) out(`Signed in as ${address}. Saving it as "${label}" (--yes).`);
+  else {
+    const answer = await askLine(stdin, `Signed in as ${address}. Save ${address} as "${label}"? [y/N] `, out);
+    if (!/^\s*y(es)?\s*$/i.test(answer ?? '')) {
+      err(`Not saved. If ${address} is not the account you picked, someone else may have finished this sign-in: run the connect command again.`);
+      return 1;
     }
   }
   const bad = await keychainStore(service, `Stephen Gmail refresh token (${label})`, refresh, keychain);

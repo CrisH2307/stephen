@@ -1,10 +1,11 @@
 /**
  * What `accounts.status` shows in the Stephen window: for each account, connected / not set / turned off, where the
- * secret was found (Keychain or .env, never the value) and a one-line hint. No network calls. Built on lookupSecret
- * and parseAccountsConfig; a missing or broken "accounts" config is tolerated (the problem goes in `note`).
+ * secret was found (Keychain or .env, never the value) and a one-line hint. No network calls. Presence only
+ * (secretPresent / gmailTokenPresent: Keychain attributes without `-w`, `.env` key names; review 7, R7-9), so no secret
+ * value is fetched on a window refresh. Built on parseAccountsConfig; a missing or broken "accounts" config is tolerated (the problem goes in `note`).
  */
 import { AccountsConfigError, parseAccountsConfig, type AccountsConfig } from '../accounts/config.js';
-import { lookupGmailToken, lookupSecret, type SecretDeps, type SecretName } from '../accounts/secrets.js';
+import { gmailTokenPresent, secretPresent, type SecretDeps, type SecretName } from '../accounts/secrets.js';
 
 export type AccountState = 'connected' | 'not_set' | 'off';
 
@@ -46,8 +47,8 @@ export async function accountsStatus(rawAccounts: unknown, deps: SecretDeps = {}
   const row = async (id: 'canvas' | 'calendar' | 'notion', name: string, secret: SecretName, on: boolean, detail?: string): Promise<AccountRow> => {
     const hint = ACCOUNT_HINTS[id];
     if (!cfg.enabled || !on) return { id, name, state: 'off', source: null, hint };
-    const r = await lookupSecret(secret, deps);
-    return { id, name, state: r.value ? 'connected' : 'not_set', source: r.source, ...(detail ? { detail } : {}), hint };
+    const r = await secretPresent(secret, deps);
+    return { id, name, state: r.present ? 'connected' : 'not_set', source: r.source, ...(detail ? { detail } : {}), hint };
   };
   const rows: AccountRow[] = [
     await row('canvas', 'Canvas', 'canvas-token', cfg.canvas.enabled),
@@ -64,8 +65,8 @@ export async function accountsStatus(rawAccounts: unknown, deps: SecretDeps = {}
   ];
   const gmailOn = cfg.enabled && cfg.gmail.enabled;
   for (const [i, label] of cfg.gmail.accounts.entries()) {
-    const r = gmailOn ? await lookupGmailToken(label, deps) : null;
-    rows.push({ id: `gmail:${i + 1}`, name: 'Gmail', state: !gmailOn ? 'off' : r?.value ? 'connected' : 'not_set', source: r?.value ? r.source : null, detail: label, hint: ACCOUNT_HINTS.gmail });
+    const r = gmailOn ? await gmailTokenPresent(label, deps) : null;
+    rows.push({ id: `gmail:${i + 1}`, name: 'Gmail', state: !gmailOn ? 'off' : r?.present ? 'connected' : 'not_set', source: r?.present ? r.source : null, detail: label, hint: ACCOUNT_HINTS.gmail });
   }
   return { accounts: rows, ...(note ? { note } : {}) };
 }
