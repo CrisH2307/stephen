@@ -1,6 +1,6 @@
 # Phase 2a — "read my stuff" (read-only) — plan
 
-Date: 2026-11-01. Status: plan + subtask 1 built; the rest waits for the owner's answers (section 5).
+Date: 2026-11-01. Status: subtasks 1, 3, 4, 5 built (gate, shared kit, Canvas, Google Calendar); next Notion → Gmail.
 Overrides ROADMAP.md phase 2a where they differ.
 
 ## 1. What the owner gets
@@ -50,10 +50,10 @@ deleted. Maps is already done (phase 1.8: directions/search via `open_url`).
 1. **Gate: `notePrivateData(source)`** + synthetic scope `<source>.private.stephen.invalid`, nice wording in prompts,
    saved in session state, `serve --assume-private-read`. ← built (2026-11-01)
 2. Keychain secrets + `stephen connect / disconnect` (generalize `voice-key`; macOS `security`, argv only).
-3. Shared read-tool kit: fixed-host HTTPS client (timeout, size cap, no redirects off-host), result wrapper
+3. ← built. Shared read-tool kit (src/accounts/: secrets.ts, http.ts, result.ts, config.ts, index.ts, cli.ts): fixed-host HTTPS client (timeout, size cap, no redirects off-host), result wrapper
    (untrusted header, caps, code masking), tool registration only when the secret exists.
-4. Canvas tools: `canvas_due` (to-dos / planner items for N days), `canvas_announcements`. Fake Canvas server tests.
-5. Calendar tool: `calendar_events` (today / tomorrow / N days) from the iCal feed (RRULE basics). Fixture tests.
+4. ← built. Canvas tools (src/accounts/canvas.ts; base URL default https://learn.ontariotechu.ca): `canvas_due` (to-dos / planner items for N days), `canvas_announcements`. Fake Canvas server tests.
+5. ← built. Calendar tool (src/accounts/calendar.ts; secret `GOOGLE_CALENDAR_ICS` in .env): `calendar_events` (today / tomorrow / N days) from the iCal feed (RRULE basics). Fixture tests.
 6. Notion tools: `notion_todos` (configured database, open items), `notion_search` (titles only).
 7. Gmail tools: `gmail_search` (from/subject/newer_than, snippets), `gmail_read` (one message, plain text). OAuth
    `stephen connect gmail` (loopback + PKCE). Fake Gmail server tests.
@@ -66,3 +66,14 @@ deleted. Maps is already done (phase 1.8: directions/search via `open_url`).
 3. Notion: which page/database is the to-do list? OK to create an internal integration and share that page with it?
 4. Calendar: Google Calendar (which account?) or Notion Calendar? OK to use the secret iCal address?
 5. Order: Canvas → Calendar → Notion → Gmail (easiest first) OK?
+
+## 6. Owner answers (2026-11-01) and what they changed
+1. Canvas token is in the repo's `.env` (`CANVAS_API`, gitignored, 0600). → Secrets are looked up in the Keychain
+   first, then that `.env` (only known key names; refused unless owner-only). `stephen accounts` shows which are found.
+2. Email: 3 Gmail accounts (2 personal, 1 school) → personal first; the tools will take an account label.
+3. Notion: full access OK (still read-only tools in 2a).
+4. Calendar: Google Calendar is primary.
+5. Order Canvas → Calendar → Notion → Gmail: OK.
+
+Network note: learn.ontariotechu.ca is blocked from the cloud workspace and from the desktop VM shell (proxy 403), so
+the real Canvas call is checked on the Mac with `node dist/cli.js accounts test canvas`.

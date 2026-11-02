@@ -237,3 +237,28 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   cli/memory/eval suites 1180 green). Grapuco (owner asked to use it) isn't reachable: api.grapuco.com is blocked
   (403) from the cloud and there's no grapuco tool/CLI here. Waiting on the owner's answers (plan §5: Canvas URL +
   token, which email account, Notion to-do page, calendar) before subtasks 2–7.
+- 2026-11-01 22:50 — **Phase 2a: Canvas built.** Owner answers in PLAN-2A §6 (Canvas token in repo `.env` as
+  CANVAS_API; personal Gmail first; Notion full access; Google Calendar; order Canvas → Calendar → Notion → Gmail).
+  New `src/accounts/`: `secrets.ts` (Keychain `stephen-<name>` → repo `.env`, known keys only, owner-only file),
+  `http.ts` (ApiClient pinned to one origin: https, GET, no redirects, timeout, byte cap, same-origin Link paging),
+  `result.ts` (`<untrusted_account_data>`, HTML→text, links→host, codes masked, caps), `canvas.ts`
+  (`canvas_due` = planner items, `canvas_announcements`), `index.ts` (registered from server/tools.ts; secret read on
+  first call; `gate.notePrivateData('canvas')` before returning), `cli.ts` (`stephen accounts`,
+  `stephen accounts test canvas`). Config `"accounts"` (enabled, timeZone, canvas.url; default learn.ontariotechu.ca).
+  Persona: Canvas via the tools (emails/Notion/calendar still can't-yet). Eval: `read` category (3) +
+  `inject-canvas-announcement`; cant-canvas cases now expect canvas_due. Real eval (sonnet, cloud): read 3/3, cant 4/4,
+  inject 4/4. src/accounts is in CLAUDE_REACHABLE (boundary). New docs/SYSTEM-DESIGN-STEPHEN.md (showcase doc).
+  learn.ontariotechu.ca is blocked from cloud + VM shell, so the owner runs `node dist/cli.js accounts test canvas`.
+  Next: Google Calendar (secret iCal URL → `GOOGLE_CALENDAR_ICS` in .env), then Notion, then Gmail (OAuth).
+- 2026-11-01 23:30 — **Phase 2a: Google Calendar built.** `src/accounts/calendar.ts`: RFC 5545 subset parser
+  (unfold, quoted params, unescape), DATE/UTC/TZID/floating times (wall clock → UTC by fixed-point offset iteration),
+  RRULE DAILY/WEEKLY+BYDAY/MONTHLY+BYMONTHDAY/YEARLY with INTERVAL/COUNT/UNTIL expanded on the event zone's wall
+  clock (DST-correct, tested across 2026-11-01), EXDATE, RECURRENCE-ID overrides, CANCELLED, bounded expansion.
+  Tool `calendar_events {range: today|tomorrow|week}`; secret `GOOGLE_CALENDAR_ICS` (the calendar's "Secret address in
+  iCal format", webcal ok) in .env or Keychain `stephen-calendar-ics`; `stephen accounts test calendar`. Persona:
+  calendar via the tool (sentence placed after the Maps block: placed earlier it made mis-lofi fail more often).
+  Eval: read 5/5, cant 4/4, inject 4/4; full eval 50/52 (open-spotify asked a trailing question once, passes on
+  rerun; mis-lofi is borderline: "low fly girl" → "Low" by Flo Rida in 2 of 3 runs). Suite 2534 passed / 11 skipped
+  (fixed a 1-in-1000 flake in audit.test.ts: a timestamp ending in 999). Owner: add GOOGLE_CALENDAR_ICS to .env, run
+  `npm run build`, `node dist/cli.js accounts test canvas` and `… test calendar`, then try "what's due this week" and
+  "what's on my calendar today". Next: Notion (NOTION_API integration token), then Gmail (OAuth, personal accounts).
