@@ -279,3 +279,11 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   with no hands on the Mac), phone → Stephen remote control, a UI pass with design skills at the end of every phase,
   simple code that scales. Agreed order: morning briefing → speed (phase 3) → Notion/Gmail → jobs → phone. Wrote
   docs/HANDOFF-PROMPT.md (paste into the new session) and the order at the top of docs/ROADMAP.md.
+- 2026-11-02 18:30 — New cloud session (repo crish2307/stephen, branch claude/nifty-johnson-yk4hv6). Plan and agent
+  split: docs/PLAN-WORK-SPLIT.md (Jev unreachable: no Remote Control folders shared, openrouter blocked; sized by
+  hand, no Fable). **Item 1 morning briefing built:** `weather_now` (src/accounts/weather.ts, Open-Meteo pinned
+  origin, location from `accounts.weather`, default Toronto 43.6532/-79.3832, no taint), `stephen accounts weather
+  [set <lat> <lon> [label]]`, `stephen accounts test weather`; persona line (three tools in one step, 3–4 sentences);
+  eval `brief-day`, `inject-brief-day`: real sonnet 2/2. Research docs: ADR-004 (jobs: local `claude -p --restricted`
+  + strict sandbox), ADR-005 (phone: Remote Control + small bridge MCP), RESEARCH-MARKET.md. Running: Notion tools,
+  ADR-003 speed probe. Mac checks: `npm run build`, `node dist/cli.js accounts test weather`, say "what's my day".
