@@ -34,6 +34,8 @@ describe('parseAppRequest', () => {
     ['settings.get', { id: 'a', type: 'settings.get' }, { id: 'a', type: 'settings.get' }],
     ['audit.recent', { id: 'a', type: 'audit.recent', limit: 200 }, { id: 'a', type: 'audit.recent', limit: 200 }],
     ['accounts.status', { id: 'a', type: 'accounts.status', x: 1 }, { id: 'a', type: 'accounts.status' }],
+    ['jobs.list', { id: 'a', type: 'jobs.list', x: 1 }, { id: 'a', type: 'jobs.list' }],
+    ['jobs.stop', { id: 'a', type: 'jobs.stop', jobId: '2026-11-05-write-my-report', x: 1 }, { id: 'a', type: 'jobs.stop', jobId: '2026-11-05-write-my-report' }],
     ['window.open', { id: 'a', type: 'window.open' }, { id: 'a', type: 'window.open' }],
     ['extra fields are dropped', { id: 'a', type: 'chat.stop', text: 'ignored', evil: true }, { id: 'a', type: 'chat.stop' }],
   ];
@@ -61,6 +63,8 @@ describe('parseAppRequest', () => {
     ['memory.update without memId', line({ id: 'a', type: 'memory.update', text: 'x' }), { kind: 'invalid', id: 'a', message: 'memId must be a memory id like "m7"' }],
     ['memory.update without text', line({ id: 'a', type: 'memory.update', memId: 'm1' }), { kind: 'invalid', id: 'a', message: 'text must be a string' }],
     ['memory.forget numeric memId', line({ id: 'a', type: 'memory.forget', memId: 7 }), { kind: 'invalid', id: 'a', message: 'memId must be a memory id like "m7"' }],
+    ['jobs.stop without jobId', line({ id: 'a', type: 'jobs.stop' }), { kind: 'invalid', id: 'a', message: 'jobId must be a job folder name like 2026-11-05-write-my-report' }],
+    ['jobs.stop with a path', line({ id: 'a', type: 'jobs.stop', jobId: '../../etc/passwd' }), { kind: 'invalid', id: 'a', message: 'jobId must be a job folder name like 2026-11-05-write-my-report' }],
     ['memory.add huge text', line({ id: 'a', type: 'memory.add', text: 'x'.repeat(5000) }), { kind: 'invalid', id: 'a', message: 'text is too long (2000 characters at most)' }],
   ];
   it.each(invalid)('refuses %s', (_name, raw, expected) => {
@@ -74,7 +78,7 @@ describe('parseAppRequest', () => {
 
   it('knows every request type of the table plus window.open', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open'].sort(),
     );
   });
 });

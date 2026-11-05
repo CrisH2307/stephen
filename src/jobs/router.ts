@@ -7,6 +7,7 @@
 import { quoteUntrusted } from '../safety/confirm.js';
 import { clean } from '../safety/text.js';
 import type { ConfirmPrompt, Confirmer } from '../types.js';
+import { spokenShow } from './finish.js';
 import { parseJobIntent } from './intent.js';
 import type { JobManager, JobPlan } from './manager.js';
 import { TASK_MAX } from './spec.js';
@@ -24,6 +25,8 @@ export interface JobRouterOptions {
   /** The native dialog (src/safety/confirm.ts DialogConfirmer); anything but "approved" starts nothing. */
   confirmer: Confirmer;
   now?: () => number;
+  /** Prints a line to the terminal (the folder path of "show my job"); not spoken. */
+  print?: (line: string) => void;
   /** How long "stop the job" waits for the job to end before answering "stopping it". */
   stopWaitMs?: number;
 }
@@ -67,6 +70,8 @@ export class JobRouter {
           return await this.start(intent.task, opts.source);
         case 'list':
           return { reply: this.listReply(wake), changed: false };
+        case 'show':
+          return this.show(wake);
         case 'stop':
           return await this.stop(intent.which, opts.source, wake);
       }
@@ -129,6 +134,17 @@ export class JobRouter {
     if (wake) return `You've got ${plural(running.length, 'job')} running${recent.length ? ` and ${recent.length} finished recently` : ''}. Hold F5 and ask again to hear them.`;
     const shown = [...running, ...recent].slice(0, 4).map((j) => this.describe(j));
     return `${shown.join('. ')}.`;
+  }
+
+  /** "show my job": the latest finished job's cleaned summary, capped. No Claude. After the wake word: a count only. */
+  private show(wake: boolean): JobRoute {
+    const finished = this.o.jobs.list().filter((j) => isFinal(j.status)).sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+    const j = finished[0];
+    if (!j) return { reply: this.o.jobs.running().length ? "Your job hasn't finished yet." : 'No finished jobs yet.', changed: false };
+    if (wake) return { reply: 'Hold F5 and ask again to hear what the job said. It is also in the Jobs tab.', changed: false };
+    const s = spokenShow(j);
+    this.o.print?.(s.print);
+    return { reply: s.say, changed: false };
   }
 
   private async stop(which: 'one' | 'all' | { query: string }, source: string, wake: boolean): Promise<JobRoute> {

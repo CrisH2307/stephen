@@ -29,6 +29,8 @@ const RESPONSES: Record<string, string[]> = {
   'settings.get': ['settings', 'error'],
   'audit.recent': ['audit', 'error'],
   'accounts.status': ['accounts', 'error'],
+  'jobs.list': ['jobs', 'error'],
+  'jobs.stop': ['job', 'error'],
   // Sent by `stephen app` (src/app/cli.ts), not by the window: the listener forwards open_window to the helper.
   'window.open': ['ok', 'error'],
 };
@@ -165,6 +167,17 @@ describe('app.sock protocol v1 fixture', () => {
             expect(typeof a.hint).toBe('string');
           }
           break;
+        case 'jobs':
+          for (const j of msg.jobs as Record<string, unknown>[]) {
+            expect(Object.keys(j).sort()).toEqual(['costUsd', 'createdAt', 'endedAt', 'error', 'folder', 'id', 'startedAt', 'status', 'summary', 'task', 'turns']);
+            expect(['queued', 'running', 'done', 'failed', 'stopped', 'timeout']).toContain(j.status);
+            expect((j.summary as string).length).toBeLessThanOrEqual(1500);
+            expect((j.task as string).length).toBeLessThanOrEqual(120);
+          }
+          break;
+        case 'job':
+          expect(typeof (msg.job as Record<string, unknown>).id).toBe('string');
+          break;
         case 'audit':
           for (const a of msg.entries as Record<string, unknown>[]) {
             expect(typeof a.ts).toBe('string');
@@ -213,6 +226,20 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(client).toContain('AppRequest.accountsStatus(newId())');
     // Only system colours.
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
+  });
+
+  it('Jobs tab is wired to the protocol and shows job text verbatim', () => {
+    expect(window).toContain('case .jobs: JobsView(model: model)');
+    expect(window).toContain('model.refreshJobs()');
+    expect(window).toContain('model.stopJob(');
+    expect(client).toContain('AppRequest.jobsList(newId())');
+    expect(client).toContain('AppRequest.jobsStop(newId(), jobId:');
+    expect(window).toContain('NSWorkspace.shared.activateFileViewerSelecting');
+    expect(window).toContain("No jobs yet. Say 'while I'm cooking, …' or 'start a job to …'");
+    // Refresh every 5 s while visible.
+    expect(window).toContain('Timer.publish(every: 5');
+    // Stop only for a job that has not ended.
+    expect(window).toMatch(/if job\.isRunning/);
   });
 
   it('the window opens from the menu, --open-window and the open_window command', () => {

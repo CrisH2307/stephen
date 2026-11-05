@@ -394,3 +394,18 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   (`STEPHEN_REAL_CLAUDE=1 npx vitest run test/jobs/real-claude.test.ts`, 2.1.318 here): sandbox on refuses to start
   (fail closed), test-only no-sandbox shows exactly the 6 tools and 0 MCP. Full suite **2900 passed, 15 skipped**;
   typecheck 0 errors. Docs: SYSTEM-DESIGN §4.13 (new), §3, §5, §6; ADR-004 Implementation; MAC-TEST-PLAN §8.
+- 2026-11-05: **Item 4, jobs while away: ADR-004 subtask 4 built (finish flow and UI).** New `src/jobs/finish.ts`
+  (`FinishWatcher`: polls the job states every 10 s, announces each newly final job once through a macOS notification
+  "Stephen job done/failed/stopped/timed out" and a spoken summary through the idle-only timer alert queue; announced
+  ids in `~/.stephen/jobs/.announced.json` 0600, so a restart doesn't repeat; jobs older than 12 h are marked seen
+  silently), `purgeJobs(keepDays)` at listener start, `show` intent ("show my job", "what did the job say") in
+  `intent.ts` / `router.ts` (speaks the latest finished summary, prints the folder, no Claude), `src/timers/notify.ts`
+  gained `notifyArgv` / `macNotifyTitled`. app.sock (additive to v1): `jobs.list` / `jobs.stop {jobId}` with
+  `src/app/jobs-status.ts` (types) and `src/voice/job-rows.ts` (rows from the cleaned state file, summary capped 1500, no pid or session id), fixture
+  lines a21 to a23. Swift: Jobs tab in `AppWindow.swift` (`JobsView`, rows, summary, Reveal in Finder, Stop, 5 s
+  refresh) and `JobRow` / `jobsList` / `jobsStop` / `refreshJobs` / `stopJob` in `AppClient.swift`; not compiled here
+  (Linux), checked by source-text tests only. Bug fixed on the way: `pump` in `src/voice/index.ts` joined `pending`
+  after clearing it, so spoken timer alerts were an empty string. Tests: `test/jobs/finish.test.ts`,
+  `finish.int.test.ts`, plus updates to `test/app/protocol.test.ts` and `test/helper/app-protocol.test.ts`. Docs:
+  HELPER.md (Jobs tab), SYSTEM-DESIGN §4.13 finish flow, ADR-004 subtask 4, MAC-TEST-PLAN §8 additions. Next: subtask
+  5 (Mac checklist run, review #8).

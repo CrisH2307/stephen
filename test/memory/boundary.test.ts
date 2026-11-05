@@ -97,9 +97,9 @@ describe('import boundaries', () => {
 describe('src/jobs (docs/ADR-004)', () => {
   const refs = scanSrc();
 
-  it('is loaded only by the listener (src/voice/index.ts) and, on demand, by src/cli.ts', () => {
+  it('is loaded only by the listener (src/voice/index.ts, job-rows.ts) and, on demand, by src/cli.ts', () => {
     const from = [...new Set(refs.filter((r) => r.resolved?.startsWith('src/jobs/') && !r.from.startsWith('src/jobs/')).map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`))].sort();
-    expect(from).toEqual(['src/cli.ts (dynamic)', 'src/voice/index.ts']);
+    expect(from).toEqual(['src/cli.ts (dynamic)', 'src/voice/index.ts', 'src/voice/job-rows.ts']);
     expect([...staticReach('src/cli.ts')].filter((f) => f.startsWith('src/jobs/'))).toEqual([]);
   });
 

@@ -440,7 +440,17 @@ SIGTERM to claude's group and SIGKILL 10 s later. Statuses: queued, running, don
 reader (`stephen jobs`, the listener) that finds a non-final job whose supervisor pid is gone, or that is far past
 its deadline, marks it failed and kills a claude group it left behind; so the state files are the registry and
 survive restarts and reboots. At most 2 jobs run at once and 10 start per local day (`jobs.*`, zod-strict); finished
-jobs' logs and state go after `keepDays`, the job folders never.
+jobs' logs and state go after `keepDays` (purged at listener start), the job folders never.
+
+**Finish flow.** While `stephen listen` runs, a watcher (`src/jobs/finish.ts`) looks at the state files every 10 s.
+A job that has become final and is not in `jobs/.announced.json` (0600) gets a macOS notification (the text goes in
+as argv, like timers) and a spoken line that waits in the timer alert queue until the listener is idle, so it is
+never said over a recording: "Your job '<task>' is done: <first sentence of the summary>. Say 'show my job' or open
+the Jobs tab for the rest." The ids are saved first, so a restart does not repeat it, and a job that ended over 12 h
+ago is marked seen without a word. "Show my job" (F5 or typed) speaks the latest finished job's summary and prints its
+folder, with no Claude run. The Jobs tab of the Stephen window uses `jobs.list` and `jobs.stop` on app.sock (rows
+built from the cleaned state file; no pid or session id); the Stop button is the owner's click and is audited as
+`by: app`.
 
 **Output is untrusted (rule 6).** The result text is cleaned before it is stored: cut first, control and bidi
 characters removed, links reduced to their host, key-shaped tokens (`sk-…`, `ghp_…`, long mixed-case tokens)

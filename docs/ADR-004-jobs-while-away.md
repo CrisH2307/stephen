@@ -1,6 +1,6 @@
 # ADR-004: Jobs while away ("go cook" mode) run as local, sandboxed `claude -p` runs
 
-**Status:** Accepted. Subtasks 1 to 3 built 2026-11-05 (see Implementation); 4 and 5 open
+**Status:** Accepted. Subtasks 1 to 4 built 2026-11-05 (see Implementation); 5 open
 **Date:** 2026-11-02
 **Deciders:** Cris (owner), Claude (researcher)
 
@@ -179,7 +179,7 @@ the sandbox (e.g. LaTeX or Python for a lab report). None of the sandbox behavio
 5. **Mac checklist + docs:** sandbox probes on macOS (`touch ~/probe` and `curl` inside a job must fail), an
    update to SYSTEM-DESIGN §3/§5, and input for review #8.
 
-## Implementation (2026-11-05, subtasks 1 to 3)
+## Implementation (2026-11-05, subtasks 1 to 4)
 
 Code in `src/jobs/` (only `stephen listen` and, on demand, `src/cli.ts` load it; boundary test):
 
@@ -217,6 +217,27 @@ Decisions and differences from the text above:
 6. **New open question:** how should the owner hand a job its inputs (lab handout PDF, data)? Options: a fixed
    `~/Stephen Jobs/inbox/` copied into `input/` at start, or naming a file in the request. Not built.
 
-Left for subtask 4 (finish flow): the notification, the spoken summary when the owner is back (read the state file,
-speak `untrustedJobOutput`), the Swift Jobs tab over app.sock. Subtask 5: the Mac checklist (docs/MAC-TEST-PLAN.md
-§8 is written) and review #8.
+### Subtask 4 (finish flow and UI, 2026-11-05)
+
+- `src/jobs/finish.ts` `FinishWatcher`: the listener polls `listJobStates` every 10 s (no fs.watch). A job that is
+  final and not yet in `~/.stephen/jobs/.announced.json` (0600) gets a macOS notification ("Stephen job done / failed
+  / stopped / timed out", body = the short task; `src/timers/notify.ts`, text only as argv) and a spoken line: "Your
+  job '<task>' is done: <first sentence of the cleaned summary, at most 200 characters>. Say 'show my job' or open
+  the Jobs tab for the rest." It is spoken through the same idle-only queue as timer alerts
+  (`Listener.submit`), so never during a recording or a command. The ids are saved before speaking, so a restart does
+  not repeat it. Jobs that ended more than 12 h ago are marked seen silently; at most 3 are told per poll. The
+  summary is only the cleaned text of the state file; it is never a prompt.
+- `purgeJobs(keepDays)` runs once at listener start.
+- "show my job" / "what did the job say" (`intent.ts` kind `show`): `JobRouter` speaks the latest finished job's
+  summary (first sentence, 600 characters) and prints `Job folder: <path>`. No Claude. After the wake word it only
+  says to hold F5.
+- app.sock (additive to v1): `jobs.list` → `jobs` (rows: id, task, status, createdAt, startedAt, endedAt, turns,
+  costUsd, folder, summary cleaned and capped at 1500, error), `jobs.stop {jobId}` → `job` or an error (unknown id,
+  jobs off). Stopping from the window is the owner's own click, so it has no dialog; it is audited as `by: app`.
+  No pid, session id or log path is sent.
+- Swift: a Jobs tab (`JobsView`): rows with a status symbol, task, duration and cost; the detail pane shows the
+  summary, the folder, **Reveal in Finder** and, for a running job, **Stop**. Refreshes every 5 s while visible.
+- Found on the way: the spoken timer alert read `pending` after clearing it (so it spoke an empty string); the text is
+  now read before `submit`.
+
+Subtask 5 is left: the Mac checklist (docs/MAC-TEST-PLAN.md §8) and review #8.

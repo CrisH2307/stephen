@@ -5,11 +5,12 @@
  *           "in the background, <task>"        (the task starts with a work verb: write, research, fix, …)
  *           "while I'm <doing x>, <task>"      (same; the comma is optional: "while i'm cooking write my report")
  *   stop:   "stop the job" / "cancel the job" / "stop all jobs" / "stop the job about <words>"
+ *   show:   "show my job" / "what did the job say" (speaks the latest finished job's summary)
  *   list:   "what are my jobs" / "how's the job going" / "is the job done" / "list my jobs"
  * The work-verb rule keeps "while I'm cooking, play some lofi" and "in the background play music" for Claude.
  */
 
-export type JobIntent = { kind: 'start'; task: string } | { kind: 'stop'; which: 'one' | 'all' | { query: string } } | { kind: 'list' };
+export type JobIntent = { kind: 'start'; task: string } | { kind: 'stop'; which: 'one' | 'all' | { query: string } } | { kind: 'list' } | { kind: 'show' };
 
 /** A task after "in the background" / "while I'm …" must start with one of these (or a WORK_PHRASES pair). */
 export const WORK_VERBS: ReadonlySet<string> = new Set([
@@ -49,12 +50,21 @@ export function startsWithWork(task: string): boolean {
 
 const STOP_VERB = '(?:stop|cancel|kill|end|abort|halt)';
 const JOB = '(?:background )?jobs?';
+const JOB_ONE = '(?:background )?job';
 
 export function parseJobIntent(command: string): JobIntent | null {
   const t = tidy(command);
   if (!t) return null;
   const w = words(t);
 
+  // show the latest finished job's summary (singular; "show my jobs" is the list)
+  if (
+    new RegExp(`^(?:show|show me|read|read me|open) (?:my |the |that |last |latest |the last |the latest |my last |my latest )?(?:finished |completed )?${JOB_ONE}(?: (?:summary|result|results|output))?$`).test(w) ||
+    new RegExp(`^what did (?:the |my |that )?(?:latest |last )?${JOB_ONE} (?:say|find|find out|do|make|write|come up with|produce|turn up)$`).test(w) ||
+    new RegExp(`^(?:the |my )?${JOB_ONE} (?:summary|result|results|output)$`).test(w)
+  ) {
+    return { kind: 'show' };
+  }
   // list / status
   if (
     new RegExp(`^(?:what|which) (?:are )?(?:my |the )?${JOB}(?: (?:are )?(?:running|there|going|do i have|have i got))?$`).test(w) ||

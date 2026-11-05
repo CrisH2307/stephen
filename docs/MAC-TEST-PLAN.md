@@ -106,5 +106,20 @@ Watch `node dist/cli.js jobs` in a second terminal while you test.
 - [ ] Code job (if configured): F5 "start a job to add a short comment to the README in stephen" → the dialog shows
       the worktree and branch `stephen/job-…`; afterwards `git -C <repo> log stephen/job-… -1` shows its commit and
       nothing was pushed. Remove it with `git worktree remove` when done.
+- [ ] Finish notification and spoken summary: start a short job ("start a job to write two sentences about rivers
+      into SUMMARY.md"), then leave the Mac idle. When it finishes a macOS notification "Stephen job done" shows the
+      task, and within ~10 s Stephen says "Your job '…' is done: <first sentence>. Say 'show my job' or open the Jobs
+      tab for the rest." Repeat while you hold F5 or are mid-command: nothing is spoken over you; it waits until
+      Stephen is idle. Quit and restart `stephen listen`: the same job is NOT announced again.
+- [ ] "show my job" / "what did the job say" (F5): Stephen speaks the latest finished job's summary (capped), the
+      terminal prints `Job folder: …`, and no Claude run starts (History shows no tool calls). After the wake word it
+      only says to hold F5.
+- [ ] Jobs tab (Stephen window): the finished job is listed with a green check, its task, duration and cost; select it
+      to read the summary and the folder; **Reveal in Finder** opens the folder. With nothing in `~/.stephen/jobs/` the
+      tab shows the empty text. A running job shows a blue symbol and the list refreshes by itself every 5 s.
+- [ ] Stop button: start a long job, open the Jobs tab, select it, press **Stop**: the row turns to Stopped within a
+      few seconds, `jobs` agrees, no job claude is left. **Stop** is absent for finished jobs.
+- [ ] Old logs: a job that ended more than `jobs.keepDays` days ago (default 30) loses its `~/.stephen/jobs/<id>.json` and
+      meta folder at the next `stephen listen` start; its job folder stays.
 - [ ] Toolchains (ADR open question 1): does a job that needs `python3` or `pdflatex` work under the sandbox? Say
       "start a job to make a small PDF with pdflatex"; send me SUMMARY.md either way.
