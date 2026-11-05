@@ -25,7 +25,7 @@ import { open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Browser } from 'puppeteer-core';
 import { HubError } from '../errors.js';
-import type { BrowserDriver, BrowserStatus, ProfileMode, ResolvedConfig } from '../types.js';
+import type { ProfileMode, ResolvedConfig } from '../types.js';
 import type { ZenLaunch } from '../config.js';
 import { isProcessRunning, parseBidiListening, resolveZenRealProfile } from './macos.js';
 import {
@@ -41,6 +41,7 @@ import {
   realClock,
   withTimeout,
 } from './util.js';
+import { DriverBase, watchLaunch } from './common.js';
 import { ensurePrivateDir, isExecutable } from '../lib/fs.js';
 import { isPidAlive } from '../lib/process.js';
 
@@ -315,69 +316,32 @@ async function isDir(p: string): Promise<boolean> {
   }
 }
 
-export class ZenDriver implements BrowserDriver {
+export class ZenDriver extends DriverBase {
   readonly name = 'zen' as const;
   readonly protocol = 'webDriverBiDi' as const;
 
   readonly #cfg: ResolvedConfig;
   readonly #deps: ZenDriverDeps;
-  #browser: Browser | null = null;
-  #mode: ProfileMode | null = null;
-  #version: string | null = null;
-  #detail = 'Not connected.';
-  #pending: { mode: ProfileMode; promise: Promise<Browser> } | null = null;
 
   constructor(cfg: ResolvedConfig, deps: Partial<ZenDriverDeps> = {}) {
+    super();
     this.#cfg = cfg;
     this.#deps = { ...DEFAULT_DEPS, ...deps };
-    if (isZenAttachOnly(cfg)) this.#detail = `Not connected (${ZEN_ATTACH_ONLY_LABEL}).`;
+    if (isZenAttachOnly(cfg)) this.detail = `Not connected (${ZEN_ATTACH_ONLY_LABEL}).`;
   }
 
   get statePath(): string {
     return join(this.#cfg.stateDir, 'zen.json');
   }
 
-  current(): Browser | null {
-    return this.#browser?.connected ? this.#browser : null;
-  }
-
-  status(): BrowserStatus {
-    const connected = this.current() !== null;
-    return {
-      name: this.name,
-      connected,
-      mode: connected ? this.#mode : null,
-      protocol: this.protocol,
-      version: connected ? this.#version : null,
-      detail: this.#detail,
-    };
-  }
-
-  async connect(mode: ProfileMode): Promise<Browser> {
-    const live = this.current();
-    if (live && this.#mode === mode) return live;
-    if (this.#pending) {
-      if (this.#pending.mode === mode) return this.#pending.promise;
-      await this.#pending.promise.catch(() => undefined);
-      return this.connect(mode);
-    }
-    const promise = this.#doConnect(mode);
-    this.#pending = { mode, promise };
-    try {
-      return await promise;
-    } finally {
-      if (this.#pending?.promise === promise) this.#pending = null;
-    }
-  }
-
   async disconnect(): Promise<void> {
-    const b = this.#browser;
-    this.#browser = null;
-    this.#mode = null;
-    this.#version = null;
+    const b = this.browser;
+    this.browser = null;
+    this.mode = null;
+    this.version = null;
     if (!b) return;
     await this.#releaseOwnership();
-    this.#detail = 'Disconnected by Stephen (BiDi session ended, Zen left running).';
+    this.detail = 'Disconnected by Stephen (BiDi session ended, Zen left running).';
     // What puppeteer-core 25.16.0 does over BiDi (lib/puppeteer/bidi/Browser.js):
     //   BidiBrowser.disconnect() → `await this.#browserCore.session.end()` — sends the BiDi
     //   `session.end` command (core/Session.js end()) — then `this.connection.dispose()` closes
@@ -394,8 +358,8 @@ export class ZenDriver implements BrowserDriver {
     }
   }
 
-  async #doConnect(mode: ProfileMode): Promise<Browser> {
-    if (this.#browser) await this.disconnect();
+  protected async doConnect(mode: ProfileMode): Promise<Browser> {
+    if (this.browser) await this.disconnect();
     const profileDir = await this.#profileFor(mode);
     const attachOnly = isZenAttachOnly(this.#cfg);
 
@@ -420,7 +384,7 @@ export class ZenDriver implements BrowserDriver {
     // 3) Launch.
     if (mode === 'real') {
       if (await this.#deps.isProcessRunning('zen')) {
-        this.#detail = 'Zen is running without remote control; it must be quit first.';
+        this.detail = 'Zen is running without remote control; it must be quit first.';
         throw new HubError('NEEDS_USER', `${ZEN_RUNNING_MESSAGE}${this.#agentHint(state)}`);
       }
       await ensureUserJsBlock(profileDir, REAL_BLOCK);
@@ -437,16 +401,16 @@ export class ZenDriver implements BrowserDriver {
       const browser = await this.#connectBidi(state.wsUrl, this.#deps.reattachTimeoutMs);
       this.#adopt(browser, mode);
       await this.#writeState({ ...state, ownerPid: this.#deps.ownerPid });
-      this.#detail = `${isZenAttachOnly(this.#cfg) ? 'Attached to your open Zen' : 'Reattached to the running Zen'} (pid ${state.pid}, ${mode} profile ${profileDir}).`;
+      this.detail = `${isZenAttachOnly(this.#cfg) ? 'Attached to your open Zen' : 'Reattached to the running Zen'} (pid ${state.pid}, ${mode} profile ${profileDir}).`;
       return browser;
     } catch (e) {
       if (isSessionLimitError(e)) {
         const owner = state.ownerPid;
         if (owner !== undefined && owner !== this.#deps.ownerPid && this.#deps.isPidAlive(owner)) {
-          this.#detail = `Zen's automation session is in use by another Stephen server (pid ${owner}).`;
+          this.detail = `Zen's automation session is in use by another Stephen server (pid ${owner}).`;
           throw otherSessionError(mode, owner, e);
         }
-        this.#detail = 'A previous automation session is still open in Zen.';
+        this.detail = 'A previous automation session is still open in Zen.';
         throw sessionLimitError(mode, e, isZenAttachOnly(this.#cfg));
       }
       return null;
@@ -462,7 +426,7 @@ export class ZenDriver implements BrowserDriver {
   /** Attach-only and nothing to attach to: the NEEDS_USER error for this situation. Never spawns or quits anything. */
   async #notReadyError(mode: ProfileMode, state: ZenState | null): Promise<HubError> {
     if (mode === 'agent') {
-      this.#detail = 'zen.launch is "never": the agent Zen is not started by Stephen.';
+      this.detail = 'zen.launch is "never": the agent Zen is not started by Stephen.';
       return new HubError(
         'NEEDS_USER',
         'The Stephen agent Zen is not running, and "zen.launch" is "never", so Stephen will not start it. ' +
@@ -472,10 +436,10 @@ export class ZenDriver implements BrowserDriver {
       );
     }
     if (await this.#deps.isProcessRunning('zen')) {
-      this.#detail = `Zen is open without Stephen access (${ZEN_ATTACH_ONLY_LABEL}).`;
+      this.detail = `Zen is open without Stephen access (${ZEN_ATTACH_ONLY_LABEL}).`;
       return new HubError('NEEDS_USER', `${ZEN_NOT_CLAUDE_READY_MESSAGE}${this.#agentHint(state)}${ATTACH_ONLY_MODEL_HINT}`);
     }
-    this.#detail = `Zen is not open (${ZEN_ATTACH_ONLY_LABEL}).`;
+    this.detail = `Zen is not open (${ZEN_ATTACH_ONLY_LABEL}).`;
     return new HubError('NEEDS_USER', `${ZEN_NOT_RUNNING_MESSAGE}${ATTACH_ONLY_MODEL_HINT}`);
   }
 
@@ -510,13 +474,13 @@ export class ZenDriver implements BrowserDriver {
       const logPath = state.logPath ?? this.#logPath(mode);
       const wsUrl = await this.#waitForListening(logPath, state.pid, null, mode, profileDir);
       await this.#writeState({ pid: state.pid, wsUrl, profileDir, mode });
-      this.#detail = `Zen (pid ${state.pid}) finished starting with remote control on.`;
+      this.detail = `Zen (pid ${state.pid}) finished starting with remote control on.`;
       return { pid: state.pid, wsUrl, profileDir, logPath, resumed: true };
     }
     await ensureUserJsBlock(profileDir, REAL_BLOCK);
     const { pid, wsUrl } = await this.#launch(profileDir, mode);
     await this.#writeState({ pid, wsUrl, profileDir, mode });
-    this.#detail = `Started Zen (pid ${pid}, real profile ${profileDir}) with remote control on.`;
+    this.detail = `Started Zen (pid ${pid}, real profile ${profileDir}) with remote control on.`;
     return { pid, wsUrl, profileDir, logPath: this.#logPath(mode), resumed: false };
   }
 
@@ -527,10 +491,10 @@ export class ZenDriver implements BrowserDriver {
     } catch (e) {
       await this.#writeState({ pid, wsUrl, profileDir, mode }); // reattachable later
       if (isSessionLimitError(e)) {
-        this.#detail = 'A previous automation session is still open in Zen.';
+        this.detail = 'A previous automation session is still open in Zen.';
         throw sessionLimitError(mode, e, isZenAttachOnly(this.#cfg));
       }
-      this.#detail = `Launched Zen but could not connect: ${errText(e)}`;
+      this.detail = `Launched Zen but could not connect: ${errText(e)}`;
       throw new HubError(
         'NOT_CONNECTED',
         `Launched Zen (pid ${pid}) but could not open a WebDriver BiDi session at ${wsUrl} (${errText(e).split('\n')[0]}). Retry browser_connect.`,
@@ -539,7 +503,7 @@ export class ZenDriver implements BrowserDriver {
     }
     this.#adopt(browser, mode);
     await this.#writeState({ pid, wsUrl, profileDir, mode, ownerPid: this.#deps.ownerPid });
-    this.#detail = `${verb} (pid ${pid}, ${mode} profile ${profileDir}) and connected over WebDriver BiDi.`;
+    this.detail = `${verb} (pid ${pid}, ${mode} profile ${profileDir}) and connected over WebDriver BiDi.`;
     return browser;
   }
 
@@ -564,7 +528,7 @@ export class ZenDriver implements BrowserDriver {
     }
     const dir = await this.#deps.resolveRealProfile(this.#cfg);
     if (!dir) {
-      this.#detail = 'Could not find the real Zen profile.';
+      this.detail = 'Could not find the real Zen profile.';
       throw new HubError(
         'NEEDS_USER',
         `Could not find your Zen profile (no usable profiles.ini in ${this.#cfg.zen.zenAppSupportDir}). ` +
@@ -572,7 +536,7 @@ export class ZenDriver implements BrowserDriver {
       );
     }
     if (!(await isDir(dir))) {
-      this.#detail = `Zen profile ${dir} does not exist.`;
+      this.detail = `Zen profile ${dir} does not exist.`;
       throw new HubError(
         'NEEDS_USER',
         `The Zen profile ${dir} does not exist. Check "zen.profilePath" in ~/.stephen/config.json against the "Root Directory" shown in Zen's about:profiles.`,
@@ -582,23 +546,11 @@ export class ZenDriver implements BrowserDriver {
   }
 
   #adopt(browser: Browser, mode: ProfileMode): void {
-    this.#browser = browser;
-    this.#mode = mode;
-    browser.once('disconnected', () => {
-      if (this.#browser !== browser) return;
-      this.#browser = null;
-      this.#mode = null;
-      this.#version = null;
-      this.#detail = isZenAttachOnly(this.#cfg)
+    super.adopt(browser, mode, () =>
+      isZenAttachOnly(this.#cfg)
         ? "Zen connection lost (Zen was closed or the connection dropped). Reopen Zen with the 'Zen for Stephen' app."
-        : 'Zen connection lost (Zen was closed or the connection dropped). It relaunches on next use.';
-    });
-    void browser
-      .version()
-      .then((v) => {
-        if (this.#browser === browser) this.#version = v;
-      })
-      .catch(() => undefined);
+        : 'Zen connection lost (Zen was closed or the connection dropped). It relaunches on next use.',
+    );
   }
 
   #connectBidi(wsUrl: string, timeoutMs: number): Promise<Browser> {
@@ -625,7 +577,7 @@ export class ZenDriver implements BrowserDriver {
   async #launch(profileDir: string, mode: ProfileMode): Promise<{ pid: number; wsUrl: string }> {
     const exe = this.#cfg.zen.executablePath;
     if (!(await this.#deps.isExecutable(exe))) {
-      this.#detail = `Zen binary not found at ${exe}.`;
+      this.detail = `Zen binary not found at ${exe}.`;
       throw new HubError(
         'NOT_CONNECTED',
         `Zen was not found at ${exe}. Install Zen (zen-browser.app), or set "zen.executablePath" in ~/.stephen/config.json to the binary inside Zen.app/Contents/MacOS/.`,
@@ -643,15 +595,7 @@ export class ZenDriver implements BrowserDriver {
     } finally {
       await log.close();
     }
-    const launch: { exited: string | null } = { exited: null };
-    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
-      launch.exited = signal ? `signal ${signal}` : `exit code ${code}`;
-    };
-    const onError = (err: Error): void => {
-      launch.exited = `spawn error: ${err.message}`;
-    };
-    child.on('exit', onExit);
-    child.on('error', onError);
+    const { launch, stop } = watchLaunch(child);
     child.unref();
     try {
       if (child.pid === undefined) {
@@ -662,8 +606,7 @@ export class ZenDriver implements BrowserDriver {
       const wsUrl = await this.#waitForListening(logPath, child.pid, launch, mode, profileDir);
       return { pid: child.pid, wsUrl };
     } finally {
-      child.off('exit', onExit);
-      child.off('error', onError);
+      stop();
     }
   }
 
@@ -691,7 +634,7 @@ export class ZenDriver implements BrowserDriver {
       if (exited) {
         await rm(this.statePath, { force: true }).catch(() => undefined);
         const tail = lastLines(text, 5);
-        this.#detail = `Zen exited before enabling remote control (${exited}).`;
+        this.detail = `Zen exited before enabling remote control (${exited}).`;
         if (mode === 'real' || /already running|is already open|profile.*(locked|in use)/i.test(text)) {
           throw new HubError(
             'NEEDS_USER',
@@ -705,7 +648,7 @@ export class ZenDriver implements BrowserDriver {
       }
       if (this.#deps.clock.now() >= deadline) {
         await this.#writeState({ pid, wsUrl: '', profileDir, mode, starting: true, logPath });
-        this.#detail = `Zen (pid ${pid}) is still starting; it has not enabled remote control yet.`;
+        this.detail = `Zen (pid ${pid}) is still starting; it has not enabled remote control yet.`;
         throw new HubError(
           'NOT_CONNECTED',
           `Zen (pid ${pid}) was started but has not enabled remote control within ${Math.round(this.#deps.listenTimeoutMs / 1000)} s — ` +

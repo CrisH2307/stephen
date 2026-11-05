@@ -9,6 +9,7 @@
  *  - Pagination by RFC 8288 `Link: <…>; rel="next"` (Canvas), same origin only, at most `maxPages`.
  *  - The bearer token goes in the Authorization header only; error messages never contain it or the response body.
  */
+import { readCappedBody } from '../lib/http-body.js';
 
 export class AccountHttpError extends Error {
   constructor(
@@ -111,7 +112,7 @@ export class ApiClient {
       if (res.status === 401 || res.status === 403) throw new AccountHttpError(`${u.host} refused the token (${res.status}) — check it is still valid`, res.status);
       if (res.status === 429) throw new AccountHttpError(`${u.host} says too many requests — try again in a minute`, 429);
       if (!res.ok) throw new AccountHttpError(`${u.host} answered ${res.status}`, res.status);
-      const text = await readCapped(res, this.o.maxBytes ?? DEFAULT_MAX_BYTES, u.host);
+      const text = await readCappedBody(res, this.o.maxBytes ?? DEFAULT_MAX_BYTES, () => new AccountHttpError(`${u.host} sent too much data`));
       return { text, res };
     } finally {
       clearTimeout(timer);
@@ -176,22 +177,3 @@ function parseJson<T>(text: string, origin: string): T {
   }
 }
 
-async function readCapped(res: Response, maxBytes: number, host: string): Promise<string> {
-  const len = Number(res.headers.get('content-length') ?? '0');
-  if (len > maxBytes) throw new AccountHttpError(`${host} sent too much data`);
-  if (!res.body) return '';
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => {});
-      throw new AccountHttpError(`${host} sent too much data`);
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
