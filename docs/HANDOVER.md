@@ -409,3 +409,10 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   `finish.int.test.ts`, plus updates to `test/app/protocol.test.ts` and `test/helper/app-protocol.test.ts`. Docs:
   HELPER.md (Jobs tab), SYSTEM-DESIGN §4.13 finish flow, ADR-004 subtask 4, MAC-TEST-PLAN §8 additions. Next: subtask
   5 (Mac checklist run, review #8).
+- 2026-11-05 — **Item 4 (jobs while away) built** (ADR-004 subtasks 1–4): src/jobs (spec, supervisor per job,
+  registry, `stephen jobs list|status|show|stop`, deterministic router + native dialog for every start, finish
+  watcher with notification + spoken summary, `show my job`), Jobs tab in the Stephen window (jobs.list / jobs.stop
+  over app.sock), timer-alert empty-text bug fixed. Owner answers: inputs through `~/Stephen Jobs/inbox/` (moved into
+  the job's input/ on start, listed in the dialog); normal claude.ai login (jobs get no token env vars). Real eval
+  `--only job` 3/3. Mac checks: docs/MAC-TEST-PLAN.md §8 (sandbox probes first). Next: item 5 (phone, ADR-005), then
+  review #8.

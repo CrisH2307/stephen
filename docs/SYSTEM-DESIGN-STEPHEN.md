@@ -464,6 +464,13 @@ same argv with the test-only no-sandbox switch reports exactly the 6 tools, `mcp
 dontAsk`. The Seatbelt behaviour (`touch ~/probe` and `curl` must fail) can only be checked on the Mac
 (docs/MAC-TEST-PLAN.md §8).
 
+
+**Inputs.** The sandbox only sees the job folder, so inputs come through one explicit door: the owner drops files
+in `<jobs root>/inbox/`. Planning lists the regular files there (no folders, symlinks or dot files; at most 20 files
+and 100 MB), the start dialog names them, and starting **moves** them into the job's `input/` (re-checked with
+`lstat` at move time, so a file swapped for a symlink after the dialog is skipped). The inbox is then empty for the
+next job. Code jobs use the repo worktree instead and leave the inbox alone.
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |

@@ -42,6 +42,11 @@ export function startPrompt(plan: JobPlan, source: string): ConfirmPrompt {
     `Task: ${quoteUntrusted(plan.task, TASK_MAX)}`,
     `Folder: ${plan.folder}`,
     ...(plan.repo ? [`Code: a new git worktree of "${plan.repo.name}" (${plan.repo.path}) on branch ${plan.repo.branch}. Nothing is pushed.`] : []),
+    plan.repo
+      ? 'Input: the repo itself (the inbox is not used for code jobs).'
+      : plan.inputs?.length
+        ? `Input files (moved from your jobs inbox): ${plan.inputs.slice(0, 8).map((n) => quoteUntrusted(n, 60)).join(', ')}${plan.inputs.length > 8 ? ` and ${plan.inputs.length - 8} more` : ''}.`
+        : 'Input files: none (put files in the inbox folder inside your jobs folder before starting).',
     `Budgets: up to ${plural(minutes(plan.wallClockMs), 'minute')}, ${plural(plan.maxTurns, 'turn')}, $${plan.maxBudgetUsd}.`,
     plan.web ? 'Web: ON. The job may search and read web pages (WebSearch, WebFetch); its shell stays offline.' : 'Web: off. The job has no internet.',
     `Model: ${clean(plan.model, 40)}`,

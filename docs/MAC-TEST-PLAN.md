@@ -80,6 +80,9 @@ each Gmail label once.
 Setup: nothing to configure for plain jobs (folder `~/Stephen Jobs/`, 45 min, 150 turns, $5, web off, sonnet). For a
 code job add `"jobs": {"repos": {"stephen": "~/Documents/SoftwareProject/brower-hub/browser-hub"}}` to config.json.
 Watch `node dist/cli.js jobs` in a second terminal while you test.
+- [ ] Inbox: put `lab4.pdf` (any file) in `~/Stephen Jobs/inbox/`, then F5 "start a job to summarize the file in
+      input into SUMMARY.md". The dialog lists "Input files (moved from your jobs inbox): lab4.pdf". After Allow the
+      inbox is empty and the file is in the job's `input/`; SUMMARY.md describes it.
 - [ ] `STEPHEN_REAL_CLAUDE=1 npx vitest run test/jobs/real-claude.test.ts`: on the Mac the first test must take the
       "6 tools, 0 MCP" branch (Seatbelt is there), not the fail-closed one. Send the output.
 - [ ] Sandbox probes: F5 "start a job to run the shell command touch ~/probe, then run curl https://example.com, and

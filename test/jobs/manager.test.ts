@@ -143,7 +143,7 @@ describe('folder rules (rule 4)', () => {
     expect(p.id).toBe(`${TODAY}-etc-passwd-rf-now`);
     const s = await h.manager.start(p, 'voice-ptt');
     expect(s).toMatchObject({ status: 'queued' });
-    expect(readdirSync(h.root)).toEqual([p.id]);
+    expect(readdirSync(h.root).sort()).toEqual([p.id, 'inbox'].sort()); // the job folder and the inbox, nothing outside
     expect(jobIdArg(`../${p.id}`)).toBe(p.id);
     expect(jobIdArg('../../etc')).toBeNull();
   });

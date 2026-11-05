@@ -9,7 +9,7 @@
  */
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,6 +92,39 @@ export interface JobPlan {
   maxBudgetUsd: number;
   wallClockMs: number;
   repo?: { name: string; path: string; branch: string };
+  /** Files in `<root>/inbox/` that start() moves into the job's input/ (plain jobs only), shown in the dialog. */
+  inputs?: string[];
+}
+
+/** The owner's drop folder for job inputs (owner, 2026-11-05): `<jobs root>/inbox/`. */
+export const INBOX_DIR = 'inbox';
+export const MAX_INBOX_FILES = 20;
+export const MAX_INBOX_BYTES = 100 * 1024 * 1024;
+
+/**
+ * Regular files directly in the inbox (no folders, no symlinks, no dot files), sorted. Over the caps → an error
+ * for the owner. A missing inbox is just empty.
+ */
+export function inboxFiles(inbox: string): string[] | { error: string } {
+  let names: string[];
+  try {
+    if (lstatSync(inbox).isSymbolicLink()) return { error: `${inbox} is a symlink; make it a plain folder.` };
+    names = readdirSync(inbox);
+  } catch {
+    return [];
+  }
+  const files: string[] = [];
+  let bytes = 0;
+  for (const n of names.sort()) {
+    if (n.startsWith('.')) continue;
+    const st = lstatSync(join(inbox, n));
+    if (!st.isFile()) continue; // symlinks, folders and the rest stay where they are
+    files.push(n);
+    bytes += st.size;
+  }
+  if (files.length > MAX_INBOX_FILES) return { error: `The job inbox has ${files.length} files; at most ${MAX_INBOX_FILES} per job.` };
+  if (bytes > MAX_INBOX_BYTES) return { error: `The job inbox holds more than ${MAX_INBOX_BYTES / 1024 / 1024} MB; move some files out first.` };
+  return files;
 }
 
 export class JobManager {
@@ -183,11 +216,14 @@ export class JobManager {
         const b = await (this.o.git ?? defaultGit)(['-C', repo.path, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
         if (b.code === 0) continue; // that branch exists: next suffix
       }
+      const inbox = repo ? [] : inboxFiles(join(realRoot, INBOX_DIR));
+      if (!Array.isArray(inbox)) return { error: inbox.error };
       return {
         id,
         task,
         folder,
         cwd: repo ? join(folder, 'repo') : folder,
+        ...(inbox.length ? { inputs: inbox } : {}),
         web: wantsWeb(task),
         model: this.o.config.model,
         maxTurns: this.o.config.maxTurns,
@@ -238,7 +274,23 @@ export class JobManager {
       const r = await (this.o.git ?? defaultGit)(['-C', plan.repo.path, 'worktree', 'add', join(folder, 'repo'), '-b', plan.repo.branch]);
       if (r.code !== 0) return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
     } else {
-      mkdirSync(join(folder, 'input'), { mode: 0o700 });
+      const input = join(folder, 'input');
+      mkdirSync(input, { mode: 0o700 });
+      // Move (not copy) what the dialog listed: the inbox is empty again for the next job. Re-checked here: a file
+      // that became a symlink or disappeared since the dialog is skipped.
+      const inbox = join(dirname(folder), INBOX_DIR);
+      for (const n of plan.inputs ?? []) {
+        try {
+          if (lstatSync(join(inbox, n)).isFile()) renameSync(join(inbox, n), join(input, n));
+        } catch {
+          /* gone or changed since the dialog: skipped */
+        }
+      }
+    }
+    try {
+      mkdirSync(join(dirname(folder), INBOX_DIR), { mode: 0o700 }); // there for the next job
+    } catch {
+      /* exists */
     }
     const spec: JobSpec = {
       id: plan.id,
