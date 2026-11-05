@@ -19,7 +19,8 @@
  */
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { SESSION_STATE_FILE, readPrivateJsonFile, removeSessionStateFile, writePrivateJsonFileSync } from '../safety/session-state.js';
+import { readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
+import { SESSION_STATE_FILE, removeSessionStateFile } from '../safety/session-state.js';
 import type { CommandRunner, RunHooks, Trust } from './assistant.js';
 import { SESSION_ID_RE, type ClaudeOutcome, type ClaudeTiming, type RunOptions } from './claude.js';
 import type { WarmProcess } from './warm-claude.js';

@@ -23,13 +23,12 @@ import {
   connectWithTimeout,
   defaultConnect,
   defaultSpawn,
-  ensurePrivateDir,
   errText,
-  isExecutable,
   killProcessGroup,
   realClock,
   withTimeout,
 } from './util.js';
+import { ensurePrivateDir, isExecutable } from '../lib/fs.js';
 
 export interface ChromeDriverDeps {
   connect: ConnectFn;

@@ -5,12 +5,12 @@
  * process group so a cancel kills Claude and the `stephen serve` child it started.
  */
 import { ACCOUNT_ENV_NAMES } from '../accounts/secrets.js';
-import { randomBytes } from 'node:crypto';
-import { constants as fsConstants, existsSync, unlinkSync } from 'node:fs';
-import { chmod, lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
+import { existsSync, unlinkSync } from 'node:fs';
+import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writePrivateFileAtomicSync } from '../lib/fs.js';
 import { stripUnsafe, truncate } from '../safety/text.js';
 import { removeServeLock } from '../server/instance.js';
 import { toolLogServeArgs } from '../server/tool-log.js';
@@ -335,10 +335,9 @@ export function mcpConfig(
 export const MCP_CONFIG_FILE = 'mcp-config.json';
 
 /**
- * Write `content` to `<dir>/<name>` atomically and privately: the folder is made (and re-chmodded) 0700, the text
- * goes to a fresh temp file in that folder (O_EXCL|O_NOFOLLOW, mode 0600) and is renamed over the destination.
- * rename() replaces a symlink at the destination instead of writing through it, so a planted link can't
- * redirect the write. A folder that is a symlink, or a destination that is a directory, is refused.
+ * Write `content` to `<dir>/<name>` atomically and privately: the folder is made (and re-chmodded) 0700, then
+ * src/lib/fs.ts writePrivateFileAtomicSync (temp file O_EXCL|O_NOFOLLOW 0600, fsync, rename; never through a
+ * symlink). A folder that is a symlink, or a destination that is a directory, is refused.
  */
 async function writePrivateFile(dir: string, name: string, content: string): Promise<string> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -348,21 +347,7 @@ async function writePrivateFile(dir: string, name: string, content: string): Pro
   const file = join(dir, name);
   const existing = await lstat(file).catch(() => null);
   if (existing?.isDirectory()) throw new Error(`${file} is a folder`);
-  const tmp = join(dir, `.${name}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
-  const fh = await open(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
-  try {
-    try {
-      await fh.writeFile(content);
-      await fh.chmod(0o600); // exactly 0600, whatever the umask
-      await fh.sync();
-    } finally {
-      await fh.close();
-    }
-    await rename(tmp, file);
-  } catch (e) {
-    await unlink(tmp).catch(() => undefined);
-    throw e;
-  }
+  writePrivateFileAtomicSync(file, content);
   return file;
 }
 

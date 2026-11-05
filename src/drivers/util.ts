@@ -1,12 +1,10 @@
-/** Small helpers shared by the drivers (timeouts, clock, spawn typing). */
+/** Small helpers shared by the drivers (timeouts, clock, spawn typing). Generic file and process helpers are in src/lib/. */
 import { spawn as nodeSpawn, type SpawnOptions } from 'node:child_process';
-import { constants as fsConstants } from 'node:fs';
-import { access, chmod, mkdir } from 'node:fs/promises';
 import { createConnection } from 'node:net';
-import { homedir } from 'node:os';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { dirname } from 'node:path';
 import type { Readable } from 'node:stream';
 import puppeteer, { type Browser, type ConnectOptions } from 'puppeteer-core';
+import { ensurePrivateDir, isInside } from '../lib/fs.js';
 import type { ResolvedConfig } from '../types.js';
 
 /** The subset of a ChildProcess the drivers use (lets tests pass a fake). */
@@ -85,15 +83,6 @@ export function connectWithTimeout(connect: ConnectFn, options: ConnectOptions, 
   });
 }
 
-export async function isExecutable(file: string): Promise<boolean> {
-  try {
-    await access(file, fsConstants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function errText(e: unknown): string {
   if (e instanceof Error) {
     const code = (e as NodeJS.ErrnoException).code;
@@ -101,17 +90,6 @@ export function errText(e: unknown): string {
     return `${code ? `${code} ` : ''}${e.message}${cause}`;
   }
   return String(e);
-}
-
-/** True if a process with this pid exists (signal 0 probe). EPERM means it exists but isn't ours. */
-export function isPidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM';
-  }
 }
 
 /**
@@ -159,39 +137,7 @@ export function killProcessGroup(pid: number): void {
   }
 }
 
-// ───────────── private directories (D3) ─────────────
-
-/** Directories we must never chmod even if a config points there. */
-function isProtectedDir(dir: string): boolean {
-  const d = resolve(dir);
-  return d === resolve(homedir()) || d === resolve('/') || dirname(d) === d;
-}
-
-function isInside(dir: string, root: string): boolean {
-  const rel = relative(resolve(root), resolve(dir));
-  return rel === '' || (!rel.startsWith('..') && !rel.startsWith(sep) && rel !== '..');
-}
-
-/**
- * mkdir -p `dir` with mode 0700 and chmod it (and, when it lies inside `root`, every directory
- * between `root` and `dir`, root included) to 0700 — profile, state and output dirs hold cookies,
- * session state and page content that other local users must not read.
- */
-export async function ensurePrivateDir(dir: string, root?: string): Promise<void> {
-  const target = resolve(dir);
-  await mkdir(target, { recursive: true, mode: 0o700 });
-  const chain: string[] = [target];
-  if (root && isInside(target, root)) {
-    for (let d = dirname(target); isInside(d, root); d = dirname(d)) {
-      chain.push(d);
-      if (resolve(d) === resolve(root)) break;
-    }
-  }
-  for (const d of chain) {
-    if (isProtectedDir(d)) continue;
-    await chmod(d, 0o700);
-  }
-}
+// ───────────── private directories (D3; helpers in src/lib/fs.ts) ─────────────
 
 /** Create/lock down Stephen's own directories (home, state, output, agent profiles, audit dir). */
 export async function securePrivateDirs(cfg: ResolvedConfig): Promise<void> {

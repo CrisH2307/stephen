@@ -3,8 +3,9 @@
  * `stephen accounts` — which account secrets Stephen can find (never their values) and which Gmail labels are connected, and
  * `stephen accounts test canvas|calendar|notion|weather` — one real read-only call each (e.g. how many items are due this week).
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { writePrivateFileAtomicSync } from '../lib/fs.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow } from '../accounts/calendar.js';
 import { CanvasClient, DEFAULT_CANVAS_URL, formatDue } from '../accounts/canvas.js';
@@ -42,7 +43,7 @@ export interface AccountsCliEnv {
 
 /**
  * Change the `"accounts"` section of config.json, keeping everything else (plain JSON, so no comments). Written to a
- * temporary 0600 file and renamed. Used by `accounts weather set` and `stephen connect|disconnect gmail`.
+ * temporary 0600 file and renamed (src/lib/fs.ts writePrivateFileAtomicSync). Used by `accounts weather set` and `stephen connect|disconnect gmail`.
  */
 export function updateAccountsConfig(file: string, change: (accounts: Record<string, unknown>) => Record<string, unknown>): void {
   let root: Record<string, unknown> = {};
@@ -54,10 +55,7 @@ export function updateAccountsConfig(file: string, change: (accounts: Record<str
   const accounts = root.accounts && typeof root.accounts === 'object' && !Array.isArray(root.accounts) ? (root.accounts as Record<string, unknown>) : {};
   root.accounts = change(accounts);
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, file);
+  writePrivateFileAtomicSync(file, `${JSON.stringify(root, null, 2)}\n`);
 }
 
 /** A sub-object of `accounts` ({} when absent or not an object). */

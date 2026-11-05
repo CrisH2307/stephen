@@ -2,7 +2,7 @@ import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Page } from 'puppeteer-core';
-import { ensurePrivateDir } from '../drivers/util.js';
+import { ensurePrivateDir } from '../lib/fs.js';
 import { HubError, errorMessage } from '../errors.js';
 import { wrapUntrusted } from '../safety/index.js';
 import type { ElementInfo, TabId } from '../types.js';

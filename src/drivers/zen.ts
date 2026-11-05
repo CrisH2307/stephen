@@ -36,14 +36,13 @@ import {
   connectWithTimeout,
   defaultConnect,
   defaultSpawn,
-  ensurePrivateDir,
   errText,
-  isExecutable,
-  isPidAlive,
   probeWsEndpoint,
   realClock,
   withTimeout,
 } from './util.js';
+import { ensurePrivateDir, isExecutable } from '../lib/fs.js';
+import { isPidAlive } from '../lib/process.js';
 
 export interface ZenDriverDeps {
   connect: ConnectFn;

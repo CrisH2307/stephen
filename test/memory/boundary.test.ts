@@ -39,7 +39,7 @@ describe('import boundaries', () => {
     const dry = importsOf(join(SRC_ROOT, 'eval', 'dry-server.ts'));
     expect(dry).toContainEqual(expect.objectContaining({ resolved: 'src/voice/announce.ts', typeOnly: true }));
     expect(refs).toContainEqual(expect.objectContaining({ from: 'src/cli.ts', resolved: 'src/memory/cli.ts', typeOnly: false }));
-    expect(refs).toContainEqual(expect.objectContaining({ from: 'src/memory/store.ts', resolved: 'src/safety/session-state.ts' }));
+    expect(refs).toContainEqual(expect.objectContaining({ from: 'src/memory/store.ts', resolved: 'src/safety/text.ts' }));
     // The rule itself fires: memory → safety would be a violation if the roles were swapped.
     expect(directViolations({ target: 'src/safety/', importers: ['src/memory/'] }, refs).length).toBeGreaterThan(0);
     expect(transitiveViolations({ target: 'src/server/util.ts', importers: ['src/server/tools.ts'] }, refs)[0]?.at(-1)).toBe('src/server/util.ts');
