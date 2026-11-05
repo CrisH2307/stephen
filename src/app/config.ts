@@ -4,6 +4,7 @@
  *   speakReplies  replies to typed chat are spoken too (default false: shown in the window only)
  */
 import { z } from 'zod';
+import { ConfigError } from '../lib/errors.js';
 
 const AppConfigSchema = z.strictObject({
   enabled: z.boolean().default(true),
@@ -12,7 +13,7 @@ const AppConfigSchema = z.strictObject({
 
 export type AppConfig = z.output<typeof AppConfigSchema>;
 
-export class AppConfigError extends Error {
+export class AppConfigError extends ConfigError {
   constructor(message: string) {
     super(message);
     this.name = 'AppConfigError';

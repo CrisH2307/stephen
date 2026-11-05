@@ -10,6 +10,7 @@ import { checkOrigin } from './http.js';
 import { DEFAULT_WEATHER } from './weather.js';
 import { normalizeNotionId } from './notion.js';
 import { GMAIL_LABEL_RE } from './secrets.js';
+import { ConfigError } from '../lib/errors.js';
 
 const service = z.object({ enabled: z.boolean().default(true) }).strict();
 
@@ -47,7 +48,7 @@ const schema = z
 
 export type AccountsConfig = z.infer<typeof schema>;
 
-export class AccountsConfigError extends Error {}
+export class AccountsConfigError extends ConfigError {}
 
 export function parseAccountsConfig(raw: unknown): AccountsConfig {
   const r = schema.safeParse(raw ?? {});

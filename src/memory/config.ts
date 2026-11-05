@@ -1,6 +1,7 @@
 /** The `memory` section of config.json (docs/PLAN-1.9-MEMORY-DASHBOARD.md section 9). */
 import { z } from 'zod';
 import { MAX_MEMORY_ITEMS } from './store.js';
+import { ConfigError } from '../lib/errors.js';
 
 const MemoryConfigSchema = z.strictObject({
   /** Use saved memories and the "remember …" / "forget …" voice commands. */
@@ -13,7 +14,7 @@ const MemoryConfigSchema = z.strictObject({
 
 export type MemoryConfig = z.output<typeof MemoryConfigSchema>;
 
-export class MemoryConfigError extends Error {
+export class MemoryConfigError extends ConfigError {
   constructor(message: string) {
     super(message);
     this.name = 'MemoryConfigError';
