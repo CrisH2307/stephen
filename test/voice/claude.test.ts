@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -19,7 +19,7 @@ import {
 import { claimServeInstance, newServeInstance, serveLockPath } from '../../src/server/instance.js';
 import { fakeClaudePath, isAlive, readFakeLog, waitFor } from './helpers.js';
 
-const tmp = mkdtempSync(join(tmpdir(), 'stephen-claude-'));
+const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-claude-'))); // macOS: /var is a symlink to /private/var
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 const settings = { claudePath: 'claude', maxTurns: 15, model: null, mcpConfigPath: '/h/voice/mcp-config.json' };

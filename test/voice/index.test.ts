@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -10,7 +10,7 @@ import { ASR_ARCHIVES, KWS_MODEL, VAD_MODEL } from '../../src/voice/models.js';
 import { FakeHelper } from './fakes.js';
 import { fakeClaudePath, fakeInstall, prepareKwsModel, readFakeLog, RecordingChimes, RecordingSpeaker } from './helpers.js';
 
-const tmp = mkdtempSync(join(tmpdir(), 'stephen-listen-'));
+const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-listen-')));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 function env(voice: Record<string, unknown> = {}, extra: Partial<ListenEnv> = {}, home = join(tmp, 'home')) {

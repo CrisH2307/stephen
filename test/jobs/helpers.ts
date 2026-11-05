@@ -1,6 +1,6 @@
 /** Shared set-up for the job tests: a temp Stephen home and job root, a JobManager, the fake claude, spawn recorders. */
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,8 @@ export const NOW = Date.parse('2026-11-05T15:00:00Z');
 export const TODAY = '2026-11-05';
 
 export function tempRoot(name: string): { tmp: string; cleanup: () => void } {
-  const tmp = mkdtempSync(join(tmpdir(), `stephen-${name}-`));
+  // realpath: macOS tmpdir() is a /var symlink to /private/var, and job folders are realpath-checked (rule 4).
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), `stephen-${name}-`)));
   return { tmp, cleanup: () => rmSync(tmp, { recursive: true, force: true }) };
 }
 

@@ -416,3 +416,14 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   the job's input/ on start, listed in the dialog); normal claude.ai login (jobs get no token env vars). Real eval
   `--only job` 3/3. Mac checks: docs/MAC-TEST-PLAN.md §8 (sandbox probes first). Next: item 5 (phone, ADR-005), then
   review #8.
+- 2026-11-05: **First run on the owner's Mac (session now runs on the Mac itself).** `npm install && npm run build`
+  clean; `install-helper` compiled the Swift (Accounts, Today card, Jobs tab) first try; Swift harness 11/11;
+  typecheck 0 errors; `doctor` 4 non-blocking (Input Monitoring off after rebuild, Zen open without Stephen access,
+  ElevenLabs key can't read account/voice). Jobs sandbox probe took the macOS branch (Seatbelt on, exactly 6 tools,
+  0 MCP). Full suite first run: 34 failures, all test-environment issues on macOS, fixed in tests only (branch
+  `mac-test-fixes`): test Chromium = installed Google Chrome on darwin (@sparticuz is Linux-only); temp roots
+  realpath'd (/var → /private/var); `__CF_USER_TEXT_ENCODING` ignored in the job env check (macOS adds it to every
+  process); select-all test uses `ControlOrMeta+A`; follow-up taint test uses `mail.gmx.net` (google.com is HSTS
+  preloaded in real Chrome); the no-Zen flow test is skipped while a real Zen is open. Selftest check 7 (checkbox)
+  failed once under full load, passes 16/16 alone. Result: **2942 passed, 5 skipped** on the Mac. Note: no
+  `config.json` yet, so accounts (Notion, Calendar, Canvas URL, Gmail client id) are unset for MAC-TEST-PLAN §1.

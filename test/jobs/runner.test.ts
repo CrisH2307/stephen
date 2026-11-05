@@ -83,7 +83,7 @@ describe('JobSupervisor with a fake claude', () => {
     const run = JSON.parse(readFileSync(join(plan.folder, 'fake-run.json'), 'utf8')) as { argv: string[]; cwd: string; envKeys: string[]; env: Record<string, string> };
     expect(run.argv).toEqual(buildJobArgs(sup.spec));
     expect(run.cwd).toBe(plan.folder);
-    const inherited = run.envKeys.filter((k) => !(JOB_ENV_KEYS as readonly string[]).includes(k) && !/^(PWD|SHLVL|_|OLDPWD)$/.test(k));
+    const inherited = run.envKeys.filter((k) => !(JOB_ENV_KEYS as readonly string[]).includes(k) && !/^(PWD|SHLVL|_|OLDPWD|__CF_USER_TEXT_ENCODING)$/.test(k));
     expect(inherited).toEqual([]);
     expect(JSON.stringify(run.env)).not.toMatch(/LEAK/);
     expect(existsSync(join(plan.folder, 'draft.md'))).toBe(true);
