@@ -70,6 +70,9 @@ what will be sent/changed.
 AX-first clicking in approved apps, swallowed Esc stop key, secure-input/frontmost checks, "Stephen is controlling"
 indicator, helper socket authentication (review #4 #6). Then the logo.
 
+## Later
+- Canvas inbox (conversations API) and more Canvas pages, read-only like the rest of 2a.
+
 ## Known open items
 - Helper socket not authenticated (review #4 #6); Keychain item readable by same-user processes (#5).
 - Real-Mac-only checks still pending: helper on every macOS update, Kokoro latency, YouTube page-format drift.
