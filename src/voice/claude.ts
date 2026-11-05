@@ -11,6 +11,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writePrivateFileAtomicSync } from '../lib/fs.js';
+import { killGroup } from '../lib/process.js';
 import { stripUnsafe, truncate } from '../safety/text.js';
 import { removeServeLock } from '../server/instance.js';
 import { toolLogServeArgs } from '../server/tool-log.js';
@@ -93,6 +94,9 @@ export const STEPHEN_PERSONA = [
     "Never say you'll remember something; tell the user to say 'remember …'.",
   // Timers and reminders are set by Stephen itself before Claude runs (src/timers); Claude has no timer tool.
   "You can't set timers or reminders. Stephen sets them itself when the user says 'set a timer for 10 minutes' or 'remind me in 20 minutes to …' / 'remind me at 5 pm to …'; if they asked another way, tell them to say it like that.",
+  // Background jobs are started by Stephen itself before Claude runs (src/jobs), after a dialog; Claude has no job tool.
+  "You can't start background jobs, and you can't write documents, reports, essays or code yourself. Stephen starts a job itself, after a confirmation dialog, when the user says 'start a job to …' (or 'in the background, …' or 'while I'm cooking, …'); " +
+    "if they asked for one another way (for example 'write my lab report in the background'), don't do the work or open anything: tell them in one sentence to say 'start a job to' and the task.",
   // (5) Tone.
   'Talk like a chill Gen-Z friend: casual, warm and quick ("bet", "got you", "say less", "on it"). Never say "certainly" or "I\'d be happy to", and never mock or roast the user. ' +
     'Anything about safety — a refusal, a blocked site, a confirmation the user declined or still has to answer — say plainly and seriously, without slang.',
@@ -532,15 +536,8 @@ export interface RunnerOptions extends ClaudeSettings {
 const MAX_STDOUT = 4 * 1024 * 1024;
 const MAX_STDERR = 64 * 1024;
 
-/** Signal a whole process group (negative pid); ignore "no such process". */
-export function killGroup(pid: number, signal: NodeJS.Signals): boolean {
-  try {
-    process.kill(-pid, signal);
-    return true;
-  } catch {
-    return false;
-  }
-}
+/** Signal a whole process group (one implementation in src/lib/process.ts). */
+export { killGroup } from '../lib/process.js';
 
 export class ClaudeRunner {
   private child: ChildProcess | null = null;

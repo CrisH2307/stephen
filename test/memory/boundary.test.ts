@@ -26,7 +26,16 @@ const BOUNDARIES: readonly Boundary[] = [
   { target: 'src/timers/', importers: CLAUDE_REACHABLE },
   // `stephen connect gmail` (OAuth sign-in, Keychain write, config change) is owner-only: no tool may reach it.
   { target: 'src/connect/', importers: CLAUDE_REACHABLE },
+  // Background jobs (docs/ADR-004 rule 1): the model never starts one, so nothing it can reach may load src/jobs.
+  { target: 'src/jobs/', importers: CLAUDE_REACHABLE },
 ];
+
+/**
+ * A job gets no memory, no history, no account data and none of Stephen's tools (ADR-004 rule 3): src/jobs may not
+ * load those. One file of src/accounts is allowed: result.ts, the pure text cleaner (reduceLinks) for job output.
+ */
+const JOB_FORBIDDEN = ['src/memory/', 'src/history/', 'src/app/', 'src/server/', 'src/connect/', 'src/timers/', 'src/desktop/', 'src/drivers/', 'src/page/', 'src/voice/'];
+const JOB_ACCOUNTS_OK = 'src/accounts/result.ts';
 
 const MEMORY_TOOL_RE = /remember|memor|forget/i;
 
@@ -85,11 +94,36 @@ describe('import boundaries', () => {
   }
 });
 
+describe('src/jobs (docs/ADR-004)', () => {
+  const refs = scanSrc();
+
+  it('is loaded only by the listener (src/voice/index.ts) and, on demand, by src/cli.ts', () => {
+    const from = [...new Set(refs.filter((r) => r.resolved?.startsWith('src/jobs/') && !r.from.startsWith('src/jobs/')).map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`))].sort();
+    expect(from).toEqual(['src/cli.ts (dynamic)', 'src/voice/index.ts']);
+    expect([...staticReach('src/cli.ts')].filter((f) => f.startsWith('src/jobs/'))).toEqual([]);
+  });
+
+  it('no job tool exists: no MCP tool is registered from src/jobs, and no tool name says "job"', () => {
+    for (const abs of listTsFiles(join(SRC_ROOT, 'jobs'))) expect(readFileSync(abs, 'utf8'), abs).not.toMatch(/registerTool|McpServer|server\.tool\(/);
+    for (const abs of listTsFiles(join(SRC_ROOT, 'server'))) expect(readFileSync(abs, 'utf8'), abs).not.toMatch(/['"`][a-z_]*job[a-z_]*['"`]\s*,\s*\{/i);
+  });
+
+  it('loads no memory, history, app, server, timer, voice or account-service code (rule 3)', () => {
+    for (const target of JOB_FORBIDDEN) {
+      const b: Boundary = { target, importers: ['src/jobs/'] };
+      expect(directViolations(b, refs).map((r) => `${r.from} imports ${r.spec}`), target).toEqual([]);
+      expect(transitiveViolations(b, refs).map((c) => c.join(' -> ')), target).toEqual([]);
+    }
+    const accounts = transitiveViolations({ target: 'src/accounts/', importers: ['src/jobs/'] }, refs).filter((c) => c.at(-1) !== JOB_ACCOUNTS_OK);
+    expect(accounts.map((c) => c.join(' -> '))).toEqual([]);
+  });
+});
+
 describe('the stephen serve process (review 5, R5-7)', () => {
   it('src/cli.ts loads no memory, app or history code at start-up (listen/memory/history/app load it on demand)', () => {
     const loaded = [...staticReach('src/cli.ts')];
     expect(loaded).toContain('src/server/index.ts'); // the scan works
-    expect(loaded.filter((f) => /^src\/(memory|app|history|timers|connect)\//.test(f))).toEqual([]);
+    expect(loaded.filter((f) => /^src\/(memory|app|history|timers|connect|jobs)\//.test(f))).toEqual([]);
     // The owner-only CLIs (connect, accounts, voice-key) are reached only through dynamic imports from src/cli.ts.
     const fromOutside = scanSrc().filter((r) => r.resolved?.startsWith('src/connect/') && !r.from.startsWith('src/connect/'));
     expect(fromOutside.length).toBeGreaterThanOrEqual(3);

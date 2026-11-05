@@ -2,7 +2,10 @@
  * docs/ADR-004 "Exact launch", flag by flag: the job argv, settings.json, the scratch environment, the persona and
  * framed task, slugs and ids, the jobs config, and how job output is cleaned. Pure; no claude runs.
  */
+import { readFileSync } from 'node:fs';
+import { relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, listTsFiles } from '../helpers/import-scan.js';
 import { parseJobsConfig } from '../../src/jobs/config.js';
 import {
   JOB_ENV_KEYS,
@@ -148,6 +151,11 @@ describe('settings.json (ADR-004)', () => {
         deny: ['Bash(git push *)', 'Bash(open *)', 'Bash(osascript *)'],
       },
     });
+  });
+
+  it('the test switch is not a user option: only src/jobs/spec.ts and manager.ts name it, and the listener never sets it', () => {
+    const users = listTsFiles().filter((f) => readFileSync(f, 'utf8').includes('testOnlyNoSandbox')).map((f) => relative(REPO_ROOT, f));
+    expect(users.sort()).toEqual(['src/jobs/manager.ts', 'src/jobs/spec.ts']);
   });
 
   it('only the test switch turns the sandbox off, and failIfUnavailable stays on', () => {

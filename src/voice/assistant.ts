@@ -1,5 +1,5 @@
 /**
- * One command end to end after transcription: memory router → Claude → reply → `say` → chime. Shared by the mic,
+ * One command end to end after transcription: memory, timer and job routers → Claude → reply → `say` → chime. Shared by the mic,
  * `--text` and the Stephen app's typed chat (src/app/server.ts): call command(text, {source, raw}).
  */
 import { newHistoryId } from '../history/store.js';
@@ -45,6 +45,11 @@ export interface RunHooks {
    * nothing of an earlier, cancelled command can still write after this point (docs/REVIEW-7.md R7-10).
    */
   beforeSend?: () => void;
+}
+
+/** A deterministic router that runs before Claude (timers, jobs): a reply, or null when the text isn't its command. */
+export interface LocalRouter {
+  route(text: string, opts: { source: CommandSource; raw?: string }): Promise<{ reply: string; changed: false; rest?: string; said?: string } | null>;
 }
 
 export type Phase = 'idle' | 'running' | 'speaking';
@@ -98,7 +103,12 @@ export interface AssistantOptions {
   /** Memory commands, handled before Claude (absent or memory.enabled false: everything goes to Claude). */
   memory?: MemoryRouter | null;
   /** Timer / reminder commands, handled before Claude like memory (src/timers/router.ts). */
-  timers?: { route(text: string, opts: { source: CommandSource; raw?: string }): Promise<{ reply: string; changed: false; rest?: string; said?: string } | null> } | null;
+  timers?: LocalRouter | null;
+  /**
+   * Job commands ("start a job to …", "stop the job"), handled before Claude after memory and timers
+   * (src/jobs/router.ts). Claude has no job tool: a start always goes through the router's native dialog.
+   */
+  jobs?: LocalRouter | null;
   /** Called once per command with its report (history). A throwing hook is logged, never fails the command. */
   onDone?: (r: CommandReport) => void;
   /** Called when a command starts, before the memory router (the Stephen app shows voice commands live). Same rules. */
@@ -165,9 +175,11 @@ export class Assistant {
     try {
       let prefix = '';
       let prompt = text;
+      const local = { source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) };
       const route =
         (this.o.memory ? await this.o.memory.route(text, { source, raw: opts.raw }) : null) ??
-        (this.o.timers ? await this.o.timers.route(text, { source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) }) : null);
+        (this.o.timers ? await this.o.timers.route(text, local) : null) ??
+        (this.o.jobs ? await this.o.jobs.route(text, local) : null);
       if (route) {
         if (route.said !== undefined) said = route.said;
         // A memory change ends the conversation BEFORE anything else runs: a resumed session would keep the old

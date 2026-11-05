@@ -60,6 +60,10 @@ import { accountsStatus } from '../app/accounts-status.js';
 import { macNotify, type NotifyFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
+import { JobsConfigError, parseJobsConfig, type JobsConfig } from '../jobs/config.js';
+import { JobManager } from '../jobs/manager.js';
+import { JobRouter } from '../jobs/router.js';
+import type { SpawnFn as JobSpawnFn } from '../jobs/runner.js';
 
 export { LISTEN_USAGE } from './args.js';
 
@@ -82,6 +86,7 @@ export interface ListenEnv {
     history?: Record<string, unknown>;
     app?: Record<string, unknown>;
     accounts?: Record<string, unknown>;
+    jobs?: Record<string, unknown>;
     auditLogPath?: string;
   };
   /** Shown in the Stephen window's Settings (default: configFilePath()). */
@@ -121,6 +126,8 @@ export interface ListenEnv {
   confirmer?: Confirmer;
   /** Clock for memory and history (tests). */
   date?: () => Date;
+  /** Starts a job's supervisor (tests); default: `node dist/cli.js jobs _run <meta folder>`, detached. */
+  jobSpawn?: JobSpawnFn;
 }
 
 /** How long the memory dialogs wait before they count as Deny. */
@@ -193,6 +200,7 @@ interface LoadedVoice {
   memory: MemoryConfig;
   history: HistoryConfig;
   app: AppConfig;
+  jobs: JobsConfig;
   /** Raw "accounts" section (accounts.status). */
   accounts: unknown;
   auditLogPath: string | null;
@@ -208,11 +216,12 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null
       memory: parseMemoryConfig(c.memory),
       history: parseHistoryConfig(c.history),
       app: parseAppConfig(c.app),
+      jobs: parseJobsConfig(c.jobs),
       accounts: c.accounts ?? {},
       auditLogPath: c.auditLogPath ?? null,
     };
   } catch (e) {
-    const known = e instanceof VoiceConfigError || e instanceof MemoryConfigError || e instanceof HistoryConfigError || e instanceof AppConfigError;
+    const known = e instanceof VoiceConfigError || e instanceof MemoryConfigError || e instanceof HistoryConfigError || e instanceof AppConfigError || e instanceof JobsConfigError;
     err(known ? (e as Error).message : `Config: ${(e as Error).message}`);
     return null;
   }
@@ -453,6 +462,27 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         ...(env.now ? { now: env.now } : {}),
       })
     : null;
+  // Background jobs ("start a job to …", docs/ADR-004): handled before Claude, and every start asks in a native dialog.
+  // A dry run changes nothing.
+  const jobRouter =
+    args.dryRun || !loaded.jobs.enabled
+      ? null
+      : new JobRouter({
+          jobs: new JobManager({
+            home,
+            config: loaded.jobs,
+            timeZone: loaded.timeZone,
+            claudePath: cfg.claudePath,
+            auditLogPath: loaded.auditLogPath,
+            audit,
+            env: env.env ?? process.env,
+            cliPath,
+            ...(env.jobSpawn ? { spawn: env.jobSpawn } : {}),
+            ...(env.now ? { now: env.now } : {}),
+          }),
+          confirmer: env.confirmer ?? new DialogConfirmer({ timeoutSec: MEMORY_DIALOG_TIMEOUT_SEC }),
+          ...(env.now ? { now: env.now } : {}),
+        });
   const makeAssistant = (bridge: HelperBridge | null) => {
     const hooks = assistantHooks(bridge);
     return new Assistant({
@@ -463,6 +493,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       status: out,
       memory: memoryRouter,
       timers: timerRouter,
+      jobs: jobRouter,
       onDone,
       onStart: (c) => app?.heard(c.said, c.source),
       ...hooks,
