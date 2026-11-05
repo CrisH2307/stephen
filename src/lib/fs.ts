@@ -112,7 +112,7 @@ export function isInside(dir: string, root: string): boolean {
 
 /**
  * mkdir -p `dir` with mode 0700 and chmod it (and, when it lies inside `root`, every directory
- * between `root` and `dir`, root included) to 0700 — profile, state and output dirs hold cookies,
+ * between `root` and `dir`, root included) to 0700: profile, state and output dirs hold cookies,
  * session state and page content that other local users must not read.
  */
 export async function ensurePrivateDir(dir: string, root?: string): Promise<void> {

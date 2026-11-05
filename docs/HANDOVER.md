@@ -364,3 +364,16 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   address, R7-8 write helpers moved to src/connect (boundary test), R7-9 status reads no secret values, R7-10/11/12.
   Full suite **2771 passed, 13 skipped**; real eval 59/60 before the fixes, wake/notion/mail cases pass after.
   **Owner next: docs/MAC-TEST-PLAN.md.** Then items 4 (jobs, ADR-004) and 5 (phone, ADR-005) on the owner's go.
+- 2026-11-05: **One implementation per concern (pure refactor, no behaviour change).** New `src/lib/`: `fs.ts`
+  (`writePrivateFileAtomicSync`, the one atomic private write, replacing the copies in safety/session-state,
+  history/store, voice/claude and connect/accounts-cli; `readPrivateJsonFile` / `writePrivateJsonFileSync` moved from
+  session-state; `ensurePrivateDir`, `isExecutable` moved from drivers/util), `process.ts` (`isPidAlive`),
+  `keychain.ts` (`defaultExec`, `keychainRead`, `keychainHas`: the Keychain READ path, replacing the lookups in
+  voice/tts/keys.ts and accounts/secrets.ts; writes stay in connect/keychain-write.ts), `http-body.ts`
+  (`readCappedBody`, accounts/http + desktop/media), `zone.ts` and `secret-fields.ts` (were src/util/zone.ts and
+  src/shared/secrets.ts; both folders gone), `errors.ts` (`ConfigError`, base of the six *ConfigError classes).
+  `src/drivers/common.ts`: `DriverBase` (state, single-flight connect, status, adopt) and `watchLaunch` for Chrome and
+  Zen. voice/models.ts `downloadVerified` / `installStaged` shared with kokoro.ts. Boundary test: src/lib imports only
+  src/lib, is in CLAUDE_REACHABLE and holds no Keychain/config writer; accounts/connect don't import voice (except
+  connect/voice-key.ts). New `test/security/no-secret-leak.test.ts`. jscpd (8 lines / 70 tokens): 4 clones, 73 lines
+  before; 0 after. Full suite **2788 passed, 13 skipped**; typecheck 0 errors. Docs: SYSTEM-DESIGN §6.

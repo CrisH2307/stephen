@@ -378,10 +378,16 @@ serve) costs about 270 MB and 0.6 % of one core. The Mac numbers are still to be
 - **Import-boundary tests.** A static import graph of `src/` is built in the tests. Rules: nothing the model can
   reach (`server/`, `safety/`, `desktop/`, `drivers/`, `page/`, `accounts/`) may import `memory/`, `app/` or
   `history/`, `timers/` or `connect/` (the Gmail sign-in), directly or through a chain of runtime imports. The
-  `serve` start-up graph is checked too.
+  `serve` start-up graph is checked too. `src/lib/` imports nothing outside `src/lib/` (Node built-ins and packages
+  only), counts as model-reachable and holds no Keychain or config writer. `accounts/` and `connect/` don't import
+  `voice/` (one exception: `connect/voice-key.ts`, the ElevenLabs key CLI).
 - **One implementation per concern.** For example, tab reuse lives in one module used by every tool that opens
   pages; the HTTP client is shared by every account service. Adding a service = one client module + one
-  `register…` block. The gate, the result framing and the tests come for free.
+  `register…` block. The gate, the result framing and the tests come for free. Generic helpers live once in
+  `src/lib/`: `fs.ts` (the atomic private file write: temp file O_EXCL|O_NOFOLLOW 0600, fsync, rename; the private
+  JSON reader; `ensurePrivateDir`), `process.ts` (`isPidAlive`), `keychain.ts` (Keychain reads only; writes stay in
+  `connect/keychain-write.ts`), `http-body.ts` (capped body read), `zone.ts`, `secret-fields.ts` and `errors.ts`
+  (the `ConfigError` base). The Chrome and Zen drivers share `drivers/common.ts`.
 - **Contracts as fixtures.** The app protocol, the helper protocol and the PTT scenarios are shared fixtures that
   both sides (TypeScript and Swift) are tested against.
 - **Independent reviews.** After each phase, a fresh reviewer that didn't build it audits it (5 so far). Each
