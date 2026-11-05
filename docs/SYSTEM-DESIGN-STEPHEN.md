@@ -71,6 +71,19 @@ Two processes on purpose: **`listen`** holds the owner's trust (memory, history,
 the model talks to and holds nothing it could misuse. A test proves `serve` never even loads the memory, app or
 history modules (§6).
 
+Background jobs (§4.13) are a third kind of process, started only by the listener's job router after a native
+dialog, and never reachable from `serve`:
+
+```
+  listen: JobRouter (grammar) ─▶ native dialog ─▶ JobManager: ~/Stephen Jobs/<id>/ (0700), ~/.stephen/jobs/<id>/ (0700)
+                                                     │ spawn, detached, scratch env
+                                                     ▼
+          stephen jobs _run <meta> (supervisor, one per job; only writer of ~/.stephen/jobs/<id>.json)
+                                                     │ spawn, own process group (+ caffeinate -w on macOS)
+                                                     ▼
+          claude -p --restricted --tools Bash,Read,Edit,Write,Glob,Grep --strict-mcp-config, sandboxed Bash, no network
+```
+
 ## 4. Key algorithms
 
 ### 4.1 Information-flow egress control (taint tracking for an agent)
@@ -363,6 +376,84 @@ A lead of 2 s or more hides all of the start-up, 1 s hides part of it, 0 s none.
 serve) costs about 270 MB and 0.6 % of one core. The Mac numbers are still to be measured by the owner (the
 `formatTiming` line, one-shot vs warm).
 
+### 4.13 Background jobs: a sandboxed Claude Code run per job (docs/ADR-004)
+
+"Stephen, while I'm cooking, write my SOFE 3980 lab report draft." A job is long work done while the owner is away.
+It is the **opposite** of the voice session: the voice session has no built-in tools and only Stephen's gated MCP
+tools; a job has **only** built-in file and shell tools, inside one folder, and **no MCP server at all**. The task
+text comes from a microphone (low trust) and a research job may read hostile pages, so the job's power is bounded
+by Claude Code flags and the OS, never by its prompt.
+
+**Why the model can't start a job.** There is no job tool. Job phrases are matched by an anchored grammar in the
+listener before any model runs (`src/jobs/intent.ts`, like timers §4.8): "start a job to …" (any task), "in the
+background, …" and "while I'm …, …" (the task must start with a work verb, so "while I'm cooking, play some lofi"
+still goes to Claude), plus stop and list phrases. A boundary test proves nothing Claude can reach imports
+`src/jobs`, and `src/jobs` itself loads no memory, history, app, server, timer, voice or account code (a job gets
+no memory, no `aboutMe`, no account data). The persona tells Claude it can't start jobs and to tell the owner the
+phrase; eval cases check that a phrasing the grammar doesn't take ("write my lab report in the background") gets
+no tool call and that pointer.
+
+**Every start asks in a native dialog**, for push-to-talk and typed text too, not only after the wake word. The
+dialog shows the exact task (quoted like page text), the folder, the worktree and branch for a code job, the
+budgets, "Web: off/ON" and the model; after the wake word it adds a warning. Deny, a timeout or no dialog at all
+(not a Mac) creates nothing: the plan step that fills the dialog writes nothing to disk. A spoken "yes" never
+counts. After the wake word, stopping asks too and "what are my jobs" gives only a count (the timer rules).
+
+**The launch** (`buildJobArgs`, tested flag by flag): `claude -p <framed task> --output-format stream-json --verbose
+--restricted --tools Bash,Read,Edit,Write,Glob,Grep --allowedTools Read,Edit,Write,Glob,Grep --disallowedTools
+WebFetch,WebSearch,Agent,NotebookEdit --strict-mcp-config --no-chrome --setting-sources "" --settings <meta>/settings.json
+--permission-mode dontAsk --append-system-prompt-file <meta>/persona.md --max-turns 150 --max-budget-usd 5
+--session-id <uuid> --name stephen-job-<slug> --model sonnet`, cwd = the job folder, argv only, no shell.
+- `--restricted` confines the file tools to the cwd (probed: a Write outside is refused and counted as a denial).
+- Bash is **not** pre-approved: `sandbox.autoAllowBashIfSandboxed` approves it only while it runs inside the OS
+  sandbox (Seatbelt on macOS), with `failIfUnavailable: true` and `allowUnsandboxedCommands: false`. Without a
+  sandbox the run refuses to start (probed on Linux: `sandbox_required_unavailable`), and with the sandbox off Bash
+  is simply denied (probed with a test-only switch that is no config option).
+- The sandbox's network allow-list is empty (`strictAllowlist`), `denyRead` covers Stephen's home, `~/.ssh`,
+  `~/.aws`, `~/.config`, the Keychains and the Stephen repo's `.env`, and `git push`, `open` and `osascript` are
+  denied. Web research is the owner's opt-in ("with web", "search the web"), shown in the dialog: it adds
+  WebSearch and WebFetch; the shell stays offline.
+- settings.json, persona.md and spec.json live in `~/.stephen/jobs/<id>/` (0700, files 0600 through
+  `writePrivateFileAtomicSync`), outside the job folder, so the job can't edit its own rules.
+- The environment is built from an allow-list, not by deleting secrets: `PATH`, `HOME`, `LANG`, `TMPDIR`, `USER`,
+  `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, `BASH_MAX_TIMEOUT_MS=600000`. Nothing else of Stephen's environment
+  (account tokens, a parent Claude Code session, proxies, `NODE_OPTIONS`) reaches the job.
+- The task is framed as `<owner_request>` that can't change the rules (`<` `>` become look-alikes); the persona says
+  folder only, no network, never send or push, inputs in `input/`, write SUMMARY.md, a spoken-style final reply.
+
+**Folders (rule 4).** The id is `<date>-<slug>`, slug `[a-z0-9-]{1,40}` from the task's words, so `..`, `/` and a
+leading `-` can't reach a path, a branch name or argv. The root (default `~/Stephen Jobs`) must be a real folder
+(not a symlink), not `/`, not the home folder, not inside or around Stephen's home. The job folder is made with a
+plain `mkdir` (EEXIST = refused: one job, one folder, so a symlink planted between the dialog and the start fails),
+0700, and its realpath must be exactly the planned path. A request that names a configured repo (`jobs.repos`) gets
+`git worktree add <folder>/repo -b stephen/job-<slug>` as its cwd; commits work, pushing fails twice.
+
+**Process and state.** The listener writes a `queued` state and spawns a **supervisor** (`stephen jobs _run
+<meta folder>`), detached and with the same scratch environment, so a listener restart or Ctrl-C doesn't reach it.
+From then on the supervisor is the only writer of `~/.stephen/jobs/<id>.json`. It spawns claude in its own process
+group (and `caffeinate -i -w <pid>` on macOS), appends the stream to `log.jsonl` (0600, 20 MB cap), and parses it:
+the init line must list exactly the job's tools and no MCP server, or the job is killed at once (a runtime check of
+the lock-down); assistant messages count turns, tool uses and `permission_denied` events count; the result gives
+cost, turns, denials and the summary. It writes progress every few seconds and every status change. At the
+deadline (45 min default, 3 h hard cap) or on SIGTERM (`stephen jobs stop`, "Stephen, stop the job") it sends
+SIGTERM to claude's group and SIGKILL 10 s later. Statuses: queued, running, done, failed, stopped, timeout. A
+reader (`stephen jobs`, the listener) that finds a non-final job whose supervisor pid is gone, or that is far past
+its deadline, marks it failed and kills a claude group it left behind; so the state files are the registry and
+survive restarts and reboots. At most 2 jobs run at once and 10 start per local day (`jobs.*`, zod-strict); finished
+jobs' logs and state go after `keepDays`, the job folders never.
+
+**Output is untrusted (rule 6).** The result text is cleaned before it is stored: cut first, control and bidi
+characters removed, links reduced to their host, key-shaped tokens (`sk-…`, `ghp_…`, long mixed-case tokens)
+replaced by `[secret]`, `<untrusted_…` tags escaped, capped at 2000 characters. It is only shown (`stephen jobs
+show`) or, later, spoken inside `<untrusted_job_output>`; it never becomes a voice-session prompt by itself. Start,
+decline, stop and end (status, turns, cost, denials) go to the audit log.
+
+Probes with the real Claude Code here (Linux, 2.1.318, `STEPHEN_REAL_CLAUDE=1 npx vitest run
+test/jobs/real-claude.test.ts`): the shipped settings refuse to start without bubblewrap (the fail-closed pass); the
+same argv with the test-only no-sandbox switch reports exactly the 6 tools, `mcp_servers: []`, `permissionMode:
+dontAsk`. The Seatbelt behaviour (`touch ~/probe` and `curl` must fail) can only be checked on the Mac
+(docs/MAC-TEST-PLAN.md §8).
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |
@@ -371,13 +462,15 @@ serve) costs about 270 MB and 0.6 % of one core. The Mac numbers are still to be
 | The model itself (confused or injected) | Call any Stephen tool | Gate on every action; no shell or file tools (`--tools ""`, strict MCP config); no tool takes a URL for account data |
 | Bystander / video saying "Hey Stephen" | Speak commands | Wake-word trust is lower: dialogs for memory changes, counts instead of contents for memory and timers, email as who and when only (`serve --trust wake`, no `gmail_read`); a wake-word command never continues an F5 conversation (§4.2, §4.12). Canvas, Calendar, Notion and weather are still read in full (owner's choice) |
 | Other macOS users | Read files | 0700 dirs / 0600 files, `O_NOFOLLOW`, socket peer checks |
+| A job's task text, or a page a research job reads | Steer a background job | Only built-in file tools confined to the job folder (`--restricted`), Bash only inside the OS sandbox with no network, no MCP, init tool list checked at run time, scratch environment, rules files outside the folder, budgets and a wall-clock kill; output cleaned and framed as `<untrusted_job_output>` (§4.13) |
+| The model starting work behind the owner's back | Start a job | No job tool; job phrases are routed before Claude; every start needs the native dialog, whatever the source (§4.13) |
 | Same-user malware | Everything the user can | Out of scope (documented). Remaining hardening: helper.sock nonce |
 
 ## 6. Keeping a growing codebase honest
 
 - **Import-boundary tests.** A static import graph of `src/` is built in the tests. Rules: nothing the model can
   reach (`server/`, `safety/`, `desktop/`, `drivers/`, `page/`, `accounts/`) may import `memory/`, `app/` or
-  `history/`, `timers/` or `connect/` (the Gmail sign-in), directly or through a chain of runtime imports. The
+  `history/`, `timers/`, `connect/` (the Gmail sign-in) or `jobs/` (background jobs), directly or through a chain of runtime imports. `src/jobs/` in turn loads no memory, history, app, server, timer, voice or account-service code. The
   `serve` start-up graph is checked too. `src/lib/` imports nothing outside `src/lib/` (Node built-ins and packages
   only), counts as model-reachable and holds no Keychain or config writer. `accounts/` and `connect/` don't import
   `voice/` (one exception: `connect/voice-key.ts`, the ElevenLabs key CLI).
@@ -385,7 +478,7 @@ serve) costs about 270 MB and 0.6 % of one core. The Mac numbers are still to be
   pages; the HTTP client is shared by every account service. Adding a service = one client module + one
   `register…` block. The gate, the result framing and the tests come for free. Generic helpers live once in
   `src/lib/`: `fs.ts` (the atomic private file write: temp file O_EXCL|O_NOFOLLOW 0600, fsync, rename; the private
-  JSON reader; `ensurePrivateDir`), `process.ts` (`isPidAlive`), `keychain.ts` (Keychain reads only; writes stay in
+  JSON reader; `ensurePrivateDir`), `process.ts` (`isPidAlive`, `killGroup`), `keychain.ts` (Keychain reads only; writes stay in
   `connect/keychain-write.ts`), `http-body.ts` (capped body read), `zone.ts`, `secret-fields.ts` and `errors.ts`
   (the `ConfigError` base). The Chrome and Zen drivers share `drivers/common.ts`.
 - **Contracts as fixtures.** The app protocol, the helper protocol and the PTT scenarios are shared fixtures that
@@ -425,4 +518,5 @@ the owner instead of following.
 Phase 2a continues with the same pattern: Google Calendar (secret iCal feed, RRULE expansion), Notion (to-do
 database), and Gmail (OAuth desktop flow with PKCE, `gmail.readonly`). Then phase 2b (careful writes: every send or
 change is shown verbatim in a native dialog), phase 3 (built: one warm Claude Code per conversation, §4.12; Mac
-measurements pending) and phase 4 (accessibility-based control of approved apps).
+measurements pending) and phase 4 (accessibility-based control of approved apps). Background jobs (§4.13) are built
+up to the start flow; the finish flow (notification, spoken summary, the Jobs tab) comes next.

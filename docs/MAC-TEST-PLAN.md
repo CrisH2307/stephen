@@ -1,4 +1,4 @@
-# Mac test plan (items 1–3 + review 7 fixes)
+# Mac test plan (items 1–4 + review 7 fixes)
 
 Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suite green (2771 passed, 13 skipped) (the real-Chromium timing test
 `review2.int #15` is flaky under load and passes alone), real-model eval 59/60 (`mis-lofi` borderline).
@@ -75,3 +75,36 @@ Tick each box; send me the output of anything that fails.
 
 When all of §1–§7 pass: switch the Google consent screen from Testing to In production (unverified) and reconnect
 each Gmail label once.
+
+## 8. Background jobs (item 4, docs/ADR-004)
+Setup: nothing to configure for plain jobs (folder `~/Stephen Jobs/`, 45 min, 150 turns, $5, web off, sonnet). For a
+code job add `"jobs": {"repos": {"stephen": "~/Documents/SoftwareProject/brower-hub/browser-hub"}}` to config.json.
+Watch `node dist/cli.js jobs` in a second terminal while you test.
+- [ ] `STEPHEN_REAL_CLAUDE=1 npx vitest run test/jobs/real-claude.test.ts`: on the Mac the first test must take the
+      "6 tools, 0 MCP" branch (Seatbelt is there), not the fail-closed one. Send the output.
+- [ ] Sandbox probes: F5 "start a job to run the shell command touch ~/probe, then run curl https://example.com, and
+      write what happened to SUMMARY.md". Allow the dialog. When `jobs` says done: `ls ~/probe` must fail (no such
+      file), and `node dist/cli.js jobs show <id>` / SUMMARY.md must say both commands were denied or failed.
+      `node dist/cli.js jobs status <id>` should show denials ≥ 1. Send the summary.
+- [ ] Real job: F5 "while I'm cooking, write my SOFE 3980 lab report draft". The dialog shows the exact task, the
+      folder `~/Stephen Jobs/2026-11-…-write-my-sofe-3980-lab-report-draft`, "up to 45 minutes, 150 turns, $5" and
+      "Web: off". Allow. Check: the folder is 0700 (`ls -ld`), `~/.stephen/jobs/<id>/` holds settings.json,
+      persona.md, spec.json, log.jsonl (all `-rw-------`), `pmset -g assertions | grep caffeinate` shows one while it
+      runs, and at the end a draft plus SUMMARY.md are in the folder. "how's the job going" during the run gives
+      minutes and turns.
+- [ ] Deny: wake word "Hey Stephen, start a job to write a poem" → the dialog appears (also after the wake word, with
+      the wake-word warning). Deny → "Okay, I didn't start it." and no new folder in `~/Stephen Jobs/`.
+- [ ] Claude can't start one: F5 "write my lab report in the background" → no dialog, no tool, Stephen tells you to
+      say "start a job to …". Same for `node dist/cli.js eval --only job --model sonnet` (3 cases, expect 3/3).
+- [ ] Stop: start "start a job to research the history of the printing press", then F5 "stop the job" → "Stopped the
+      job …" within ~10 s; `jobs` shows `stopped`; `ps -ax | grep claude` shows no job claude left.
+- [ ] Timeout: set `"jobs": {"wallClockMin": 1}`, start "start a job to write a 20 page essay on rivers", wait 2
+      minutes → `jobs` shows `timeout`. Put wallClockMin back.
+- [ ] Listener restart: start a job, quit `stephen listen` (Ctrl-C twice), `jobs` still shows it running; it finishes
+      on its own. Then `kill -9` the supervisor pid of another running job (`jobs status <id>` shows nothing; use
+      `ps -ax | grep "jobs _run"`): the next `jobs` marks it failed and its claude is gone.
+- [ ] Code job (if configured): F5 "start a job to add a short comment to the README in stephen" → the dialog shows
+      the worktree and branch `stephen/job-…`; afterwards `git -C <repo> log stephen/job-… -1` shows its commit and
+      nothing was pushed. Remove it with `git worktree remove` when done.
+- [ ] Toolchains (ADR open question 1): does a job that needs `python3` or `pdflatex` work under the sandbox? Say
+      "start a job to make a small PDF with pdflatex"; send me SUMMARY.md either way.

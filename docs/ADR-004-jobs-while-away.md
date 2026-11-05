@@ -1,6 +1,6 @@
 # ADR-004: Jobs while away ("go cook" mode) run as local, sandboxed `claude -p` runs
 
-**Status:** Proposed (research done, not built)
+**Status:** Accepted. Subtasks 1 to 3 built 2026-11-05 (see Implementation); 4 and 5 open
 **Date:** 2026-11-02
 **Deciders:** Cris (owner), Claude (researcher)
 
@@ -178,3 +178,45 @@ the sandbox (e.g. LaTeX or Python for a lab report). None of the sandbox behavio
    Jobs tab mirrored by a TypeScript model test.
 5. **Mac checklist + docs:** sandbox probes on macOS (`touch ~/probe` and `curl` inside a job must fail), an
    update to SYSTEM-DESIGN §3/§5, and input for review #8.
+
+## Implementation (2026-11-05, subtasks 1 to 3)
+
+Code in `src/jobs/` (only `stephen listen` and, on demand, `src/cli.ts` load it; boundary test):
+
+| File | What |
+|---|---|
+| `config.ts` | The `jobs` section (zod, strict). Owner defaults: root `~/Stephen Jobs`, model sonnet, 45 min (hard cap 180), 150 turns, $5, 2 at once (hard cap 2), 10 starts a day, keepDays 30, `repos: {name: path}`, `enabled` |
+| `spec.ts` | Pure: `buildJobArgs` (the launch above, flag by flag), `jobSettings` (the settings above), `buildJobEnv` (allow-list), `jobPersona`, `framedTask`, `jobSlug` / `jobIdFor` / `isJobId`, `wantsWeb`, `reposNamed`, `cleanJobOutput`, `untrustedJobOutput` |
+| `state.ts` | The registry: `~/.stephen/jobs/<id>.json` per job, `listJobStates` (with reconcile), `purgeJobs` |
+| `runner.ts` | The supervisor `stephen jobs _run <meta folder>`: spawn, caffeinate, stream parsing, init tool check, wall clock, stop, audit |
+| `manager.ts` | `JobManager`: `plan` (no side effects), `start`, `declined`, `list`, `get`, `running`, `stop`, the caps and folder rules |
+| `intent.ts`, `router.ts` | The grammar and `JobRouter` (Assistant `jobs` option, after memory and timers): dialog, list, stop |
+| `cli.ts` | `stephen jobs [list] / status <id> / show <id> / stop <id>` |
+
+Decisions and differences from the text above:
+- **A supervisor process per job.** The listener doesn't hold the claude child: it starts `stephen jobs _run`,
+  detached, which holds it and is the only writer of the state file. So a listener restart or Ctrl-C doesn't touch a
+  job, and the wall clock is enforced even with the listener gone. If the supervisor dies, the next reader marks the
+  job failed and kills the claude group it left (within the deadline window only, so a reused pid is not hit).
+- **Init check at run time.** The supervisor kills the job if the init line lists other tools than the job's (6, or
+  8 with web) or any MCP server.
+- **Environment.** `PATH`, `HOME`, `LANG`, `TMPDIR` plus `USER` (the Keychain lookup may need it) and the two
+  `CLAUDE_CODE_*`/`BASH_*` values. Claude sign-in variables (`CLAUDE_CODE_OAUTH_TOKEN`, Bedrock, Vertex) are NOT
+  passed: the job's shell would see them. Jobs need the normal Keychain login.
+- **Job output cleaning** reuses `reduceLinks` from `src/accounts/result.ts` but not `maskCodes`: it would mask
+  dates and job ids, and a job reads no mail, so it has no one-time codes. Key-shaped tokens become `[secret]`.
+- **Code jobs.** Branch `stephen/job-<slug>`; if the branch exists the id gets the next suffix (`-2`), so folder and
+  branch always match. Two configured repos named in one request are refused.
+- **Every start asks**, F5 and typed text included (ADR rule 2 as the owner restated it). After the wake word,
+  stopping asks too and the list is a count only.
+- **Input files.** A job folder is new, so `input/` starts empty (open question 6 below).
+- Probed again here with 2.1.318 through `test/jobs/real-claude.test.ts` (opt-in): sandbox on → refuses to start
+  (`sandbox_required_unavailable`); the test-only no-sandbox switch (not a config option; a test checks only
+  `src/jobs/spec.ts` and `manager.ts` name it) → exactly the 6 tools, `mcp_servers: []`, `dontAsk`.
+
+6. **New open question:** how should the owner hand a job its inputs (lab handout PDF, data)? Options: a fixed
+   `~/Stephen Jobs/inbox/` copied into `input/` at start, or naming a file in the request. Not built.
+
+Left for subtask 4 (finish flow): the notification, the spoken summary when the owner is back (read the state file,
+speak `untrustedJobOutput`), the Swift Jobs tab over app.sock. Subtask 5: the Mac checklist (docs/MAC-TEST-PLAN.md
+§8 is written) and review #8.
