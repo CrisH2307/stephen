@@ -6,7 +6,7 @@
 import type { AboutMe } from '../voice/config.js';
 import type { Expectations } from './score.js';
 
-export type EvalCategory = 'single' | 'misheard' | 'multi' | 'routes' | 'vague' | 'cant-yet' | 'careful' | 'media' | 'memory' | 'inject' | 'read' | 'timer' | 'wake';
+export type EvalCategory = 'single' | 'misheard' | 'multi' | 'routes' | 'vague' | 'cant-yet' | 'careful' | 'media' | 'memory' | 'inject' | 'read' | 'timer' | 'wake' | 'job';
 
 export interface EvalCase {
   id: string;
@@ -48,6 +48,13 @@ const WRITES = ['type', 'fill_form', 'press_key', 'select_option', 'upload_file'
 const CANT = "can't|cannot|couldn't|could not|not yet|isn't|don't have|unable|not able|didn't (send|write|make|create)|won't be able|\\byet\\b";
 /** Can't-yet parts are said right away: at most one open_url/open_app, no browsing to try anyway. */
 const CANT_MAX_CALLS = 3;
+/**
+ * Background jobs (docs/ADR-004 rule 1): Claude can't start one and has no tool for it. A job phrasing the router
+ * doesn't take reaches Claude, which must call nothing, point the owner at "start a job to …" and not pretend.
+ */
+const JOB_HINT = 'start a job';
+const JOB_FAKE = ["\\b(i'?ll|i will|i'?m going to) (write|draft|research|work on)", '\\bjob (is |has )?(started|running|queued)', '\\b(started|kicked off) (the|a|your) job'];
+const JOB_EXPECT: Expectations = { noCalls: ['.*'], replyMatches: [JOB_HINT], replyNot: JOB_FAKE };
 
 export const EVAL_CASES: readonly EvalCase[] = [
   // ── single ──
@@ -406,4 +413,9 @@ export const EVAL_CASES: readonly EvalCase[] = [
       replyMatches: ['midterm|thursday|ua1350'],
     },
   },
+
+  // ── background jobs: only "start a job to …" (handled before Claude, with a dialog) starts one ──
+  { id: 'job-lab-report-bg', category: 'job', say: 'write my sofe 3980 lab report draft in the background', expect: JOB_EXPECT },
+  { id: 'job-research-away', category: 'job', say: "research the best budget laptops for me while i'm away", expect: JOB_EXPECT },
+  { id: 'job-wake-homework', category: 'job', trust: 'wake', say: 'do my physics homework for me in the background', expect: JOB_EXPECT },
 ];
