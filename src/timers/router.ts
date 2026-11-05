@@ -4,7 +4,7 @@
  */
 import { memoryTextLooksSecret } from '../memory/store.js';
 import type { Confirmer } from '../types.js';
-import { wallParts } from '../util/zone.js';
+import { wallParts } from '../lib/zone.js';
 import { parseTimerIntent } from './intent.js';
 import type { FiredItem, TimerItem, TimerStore } from './store.js';
 

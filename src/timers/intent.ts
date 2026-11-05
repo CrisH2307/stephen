@@ -9,7 +9,7 @@
  * Pure functions; times are computed in the owner's zone.
  */
 import { COMMAND_VERBS } from '../memory/intent.js';
-import { wallParts, zonedToUtc } from '../util/zone.js';
+import { wallParts, zonedToUtc } from '../lib/zone.js';
 
 export const MAX_AHEAD_MS = 48 * 3600 * 1000;
 export const MIN_TIMER_MS = 1000;

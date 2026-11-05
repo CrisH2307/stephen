@@ -17,7 +17,7 @@ import {
   producedChar,
   wordsOf,
 } from '../../src/safety/classify.js';
-import * as shared from '../../src/shared/secrets.js';
+import * as shared from '../../src/lib/secret-fields.js';
 import { button, el, req } from './fixtures.js';
 
 describe('wordsOf', () => {
@@ -96,7 +96,7 @@ describe('isSecretField', () => {
     expect(isSecretField(el(over))).toBe(false);
   });
 
-  it('#13: uses the ONE shared definition (src/shared/secrets.ts)', async () => {
+  it('#13: uses the ONE shared definition (src/lib/secret-fields.ts)', async () => {
     const classify = await import('../../src/safety/classify.js');
     expect(classify.SECRET_TEXT_RE).toBe(shared.SECRET_TEXT_RE);
     expect(classify.wordsOf).toBe(shared.wordsOf);

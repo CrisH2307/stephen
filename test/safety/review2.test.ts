@@ -10,7 +10,7 @@ import { parseUrl } from '../../src/safety/domains.js';
 import { SafetyGate } from '../../src/safety/gate.js';
 import { evaluateLanding } from '../../src/safety/index.js';
 import { compileLists, evaluate, landingVerdict, type PrivateRead, privateReadOf } from '../../src/safety/policy.js';
-import { textLooksSecret } from '../../src/shared/secrets.js';
+import { textLooksSecret } from '../../src/lib/secret-fields.js';
 import type { AuditEntry, ConfirmOutcome, IAuditLog } from '../../src/types.js';
 import { button, el, FakeConfirmer, req, safetyCfg, state } from './fixtures.js';
 

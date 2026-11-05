@@ -39,7 +39,7 @@ Drafted by an Opus planning agent from the code, checked against `claude --help`
   0600 checks, temp + rename).
 - Memory text is cleaned with `stripUnsafe` (`src/safety/text.ts`): control/bidi removed, whitespace collapsed,
   `<` `>` become `‹` `›`.
-- Secret-looking text is refused (`textLooksSecret` in `src/shared/secrets.ts` **and** a run of 4+ digits):
+- Secret-looking text is refused (`textLooksSecret` in `src/lib/secret-fields.ts` **and** a run of 4+ digits):
   "I don't save passwords, codes or card numbers." Reason: memory goes to Anthropic with every command.
 - `voice.aboutMe` stays as is (owner-written config). Memory is a separate list.
 
