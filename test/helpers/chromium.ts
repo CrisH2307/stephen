@@ -10,15 +10,21 @@ export const PROTOCOLS: TestProtocol[] = ['cdp', 'webDriverBiDi'];
 
 let exePromise: Promise<string> | null = null;
 
+/**
+ * @sparticuz/chromium ships a Linux-only binary. On macOS use the installed Google Chrome instead (override with
+ * STEPHEN_TEST_CHROME); puppeteer and the drivers give it a throwaway --user-data-dir, never the owner's profile.
+ */
+const MAC_CHROME = process.env.STEPHEN_TEST_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
 /** Absolute path to the Chromium binary (extracted once per process). */
 export function chromiumPath(): Promise<string> {
-  exePromise ??= chromium.executablePath();
+  exePromise ??= process.platform === 'darwin' ? Promise.resolve(MAC_CHROME) : chromium.executablePath();
   return exePromise;
 }
 
-/** Flags needed to run this Chromium in the sandbox-less CI container. */
+/** Flags needed to run this Chromium in the sandbox-less CI container (none for the Mac's own Chrome). */
 export function chromiumArgs(): string[] {
-  return [...chromium.args];
+  return process.platform === 'darwin' ? [] : [...chromium.args];
 }
 
 export async function launchTestBrowser(protocol: TestProtocol): Promise<Browser> {

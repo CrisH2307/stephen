@@ -157,11 +157,11 @@ describe.each(PROTOCOLS)('page engine actions over %s', (protocol) => {
       'Escape',
       'x',
     ]);
-    // select-all via Control+A on a non-mac page, then replace by typing
+    // select-all (Control+A, or Cmd+A on a Mac where Control+A means line start), then replace by typing
     await page.evaluate(() => {
       (document.getElementById('keys') as HTMLInputElement).value = 'abc';
     });
-    await pe.pressKey(page, 'Control+A');
+    await pe.pressKey(page, 'ControlOrMeta+A');
     await page.keyboard.type('z');
     expect(await val(page, 'keys')).toBe('z');
     expect(await code(pe.pressKey(page, 'Hyper+Q'))).toBe('INVALID_ARG');

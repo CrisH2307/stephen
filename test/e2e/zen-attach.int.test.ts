@@ -18,12 +18,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import puppeteer from 'puppeteer-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { readDevToolsActivePort } from '../../src/drivers/macos.js';
+import { isProcessRunning, readDevToolsActivePort } from '../../src/drivers/macos.js';
 import { isPidAlive } from '../../src/lib/process.js';
 import { chromiumArgs, chromiumPath } from '../helpers/chromium.js';
 import { writeFakeZen } from '../helpers/fake-zen.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
+// The owner's own Zen open on a dev Mac makes zen-launch rightly refuse (exit 2), so the no-Zen flow can't run then.
+const REAL_ZEN_OPEN = await isProcessRunning('zen');
 const CLI = join(ROOT, 'dist/cli.js');
 
 type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> };
@@ -120,7 +122,7 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
     rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
-  it('never launches Zen itself; zen-launch makes the user\'s Zen Stephen-ready; serve attaches to it and leaves it running', async () => {
+  it.skipIf(REAL_ZEN_OPEN)('never launches Zen itself; zen-launch makes the user\'s Zen Stephen-ready; serve attaches to it and leaves it running', async () => {
     const srv = await startServe();
     try {
       // 1) Default config, no Zen: status says attach-only, and a Zen tool explains what to do — nothing spawned.
