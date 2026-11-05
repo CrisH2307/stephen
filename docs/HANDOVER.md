@@ -377,3 +377,20 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   src/lib, is in CLAUDE_REACHABLE and holds no Keychain/config writer; accounts/connect don't import voice (except
   connect/voice-key.ts). New `test/security/no-secret-leak.test.ts`. jscpd (8 lines / 70 tokens): 4 clones, 73 lines
   before; 0 after. Full suite **2788 passed, 13 skipped**; typecheck 0 errors. Docs: SYSTEM-DESIGN §6.
+- 2026-11-05: **Item 4, jobs while away: ADR-004 subtasks 1 to 3 built** (start flow; finish flow and UI next).
+  New `src/jobs/`: `config.ts` (`jobs` section, zod strict: root `~/Stephen Jobs`, sonnet, 45 min with a 3 h hard
+  cap, 150 turns, $5, 2 at once, 10 a day, keepDays 30, `repos`), `spec.ts` (pure: the ADR argv flag by flag,
+  settings.json, the allow-list env, persona, framed task, slug/id rules, output cleaning), `state.ts` (registry
+  `~/.stephen/jobs/<id>.json`, reconcile: a job whose supervisor is gone is marked failed and its claude group
+  killed), `runner.ts` (one detached supervisor per job, `stephen jobs _run <meta>`: claude in its own group,
+  caffeinate on macOS, stream-json progress, init tool check, wall clock SIGTERM then SIGKILL 10 s, audit),
+  `manager.ts` (plan without side effects, start: fresh 0700 folder or git worktree on `stephen/job-<slug>`, 0600
+  meta files outside the folder, caps), `intent.ts` + `router.ts` (anchored grammar before Claude after memory and
+  timers; the native dialog for EVERY start, F5 included; wake word: stop asks, list is a count), `cli.ts`
+  (`stephen jobs list|status|show|stop`). `killGroup` moved to `src/lib/process.ts`. Persona: Claude can't start
+  jobs, tells the owner to say "start a job to …". Eval: 3 `job` cases (not yet run against the real model: run
+  `node dist/cli.js eval --only job --model sonnet`). Boundary: nothing Claude-reachable loads src/jobs; src/jobs
+  loads no memory/history/app/server/timer/voice/account code (only accounts/result.ts). Real probe
+  (`STEPHEN_REAL_CLAUDE=1 npx vitest run test/jobs/real-claude.test.ts`, 2.1.318 here): sandbox on refuses to start
+  (fail closed), test-only no-sandbox shows exactly the 6 tools and 0 MCP. Full suite **2900 passed, 15 skipped**;
+  typecheck 0 errors. Docs: SYSTEM-DESIGN §4.13 (new), §3, §5, §6; ADR-004 Implementation; MAC-TEST-PLAN §8.
