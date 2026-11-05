@@ -3,7 +3,8 @@
  * demand by src/cli.ts (review 7, R7-8: the Keychain writes are not in `stephen serve`'s module graph).
  */
 import type { TtsConfig } from '../voice/tts/config.js';
-import { KEY_ENV, KEYCHAIN_SERVICE, account, defaultExec, findApiKey, isMac, type KeyDeps } from '../voice/tts/keys.js';
+import { defaultExec, isMac, keychainAccount } from '../lib/keychain.js';
+import { KEY_ENV, KEYCHAIN_SERVICE, findApiKey, type KeyDeps } from '../voice/tts/keys.js';
 import { API_KEY_RE, redactKey } from '../voice/tts/redact.js';
 import { keychainDelete, keychainStore } from './keychain-write.js';
 
@@ -78,7 +79,7 @@ export async function runVoiceKey(argv: string[], env: VoiceKeyEnv = {}): Promis
     return 2;
   }
   const exec = env.exec ?? defaultExec;
-  const user = account(env);
+  const user = keychainAccount(env);
   if (sub === 'status') {
     let cfg: Pick<TtsConfig, 'elevenlabs'> = { elevenlabs: { voiceId: '', modelId: '', timeoutSec: 8, apiKeyFile: null } };
     try {

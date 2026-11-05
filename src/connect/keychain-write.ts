@@ -8,7 +8,7 @@
  * Stephen runs `security -i` (interactive mode) and writes the add command to its STDIN: the secret travels only
  * through a pipe between the two processes, never through argv or a file.
  */
-import { defaultExec, ERR_SEC_ITEM_NOT_FOUND, type ExecFn } from '../voice/tts/keys.js';
+import { defaultExec, ERR_SEC_ITEM_NOT_FOUND, type ExecFn } from '../lib/keychain.js';
 
 /** What `keychainStore` accepts: a token-like word (no space, quote or leading dash), so it can't change the `security -i` command line. */
 const STORABLE_SECRET = /^[A-Za-z0-9][A-Za-z0-9._~+/=-]{0,4095}$/;

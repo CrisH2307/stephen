@@ -1,49 +1,21 @@
 /**
- * ElevenLabs API key lookup (Keychain → $ELEVENLABS_API_KEY → voice.elevenlabs.apiKeyFile). Every process runs
- * through ExecFn with an argv array (never a shell), so tests use a fake `security`.
+ * ElevenLabs API key lookup (Keychain → $ELEVENLABS_API_KEY → voice.elevenlabs.apiKeyFile). The Keychain read itself
+ * (argv-only `security`, a fake one in tests) is src/lib/keychain.ts.
  *
  * Read-only on purpose: this file is loaded by `stephen serve` (the process Claude talks to). Storing and deleting
  * Keychain items (`stephen voice-key set|delete`, `stephen connect gmail`) lives in src/connect/, which only CLI
  * paths load on demand (review 7, R7-8; boundary test in test/memory/boundary.test.ts).
  */
-import { spawn } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
-import { userInfo } from 'node:os';
+import { keychainRead, type KeychainDeps } from '../../lib/keychain.js';
 import { expandHome, type TtsConfig } from './config.js';
 import { API_KEY_RE, redactKey } from './redact.js';
 
 export const KEYCHAIN_SERVICE = 'stephen-elevenlabs';
 export const KEY_ENV = 'ELEVENLABS_API_KEY';
-/** `security` exit code for "The specified item could not be found in the keychain." */
-export const ERR_SEC_ITEM_NOT_FOUND = 44;
 
-export interface ExecResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-export type ExecFn = (file: string, args: string[], opts: { input?: string; timeoutMs: number }) => Promise<ExecResult>;
-
-/** spawn with an argv array; resolves with the exit code (null on a signal); `code: -1` when the binary is missing. */
-export const defaultExec: ExecFn = (file, args, opts) =>
-  new Promise((resolve) => {
-    const child = spawn(file, args, { stdio: ['pipe', 'pipe', 'pipe'], shell: false, timeout: opts.timeoutMs });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8').on('data', (d: string) => (stdout += d));
-    child.stderr.setEncoding('utf8').on('data', (d: string) => (stderr += d));
-    child.once('error', (e: NodeJS.ErrnoException) => resolve({ code: -1, stdout, stderr: e.code === 'ENOENT' ? `${file} not found` : e.message }));
-    child.once('close', (code) => resolve({ code, stdout, stderr }));
-    child.stdin.on('error', () => {});
-    child.stdin.end(opts.input ?? '');
-  });
-
-export interface KeyDeps {
-  exec?: ExecFn;
+export interface KeyDeps extends KeychainDeps {
   env?: NodeJS.ProcessEnv;
-  platform?: NodeJS.Platform;
-  /** Keychain account (default: the login user name). */
-  user?: string;
   home?: string;
   /** For the key-file check (default: process.getuid()). */
   uid?: number | null;
@@ -64,23 +36,13 @@ export interface KeyLookup {
   notes: string[];
 }
 
-export function account(deps: KeyDeps): string {
-  return deps.user ?? userInfo().username;
-}
-
-export const isMac = (deps: KeyDeps): boolean => (deps.platform ?? process.platform) === 'darwin';
-
+/** The Keychain item holding the key: service "stephen-elevenlabs", account = the login user (src/lib/keychain.ts). */
 export async function keychainLookup(deps: KeyDeps): Promise<{ key: string | null; note?: string }> {
-  if (!isMac(deps)) return { key: null };
-  const exec = deps.exec ?? defaultExec;
-  const r = await exec('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', account(deps), '-w'], { timeoutMs: 10_000 });
-  if (r.code === 0) {
-    const key = r.stdout.trim();
-    if (API_KEY_RE.test(key)) return { key };
-    return { key: null, note: `the Keychain item "${KEYCHAIN_SERVICE}" does not look like an API key — run \`stephen voice-key set\` again` };
-  }
-  if (r.code === ERR_SEC_ITEM_NOT_FOUND) return { key: null };
-  return { key: null, note: `Keychain lookup failed: ${r.stderr.trim().split('\n')[0] || `exit ${r.code}`}` };
+  const r = await keychainRead(KEYCHAIN_SERVICE, deps);
+  if (r.error) return { key: null, note: `Keychain lookup failed: ${r.error}` };
+  if (r.value === null) return { key: null };
+  if (API_KEY_RE.test(r.value)) return { key: r.value };
+  return { key: null, note: `the Keychain item "${KEYCHAIN_SERVICE}" does not look like an API key — run \`stephen voice-key set\` again` };
 }
 
 /** Read a key file; refused unless it is a regular file owned by this user with no group/other permissions. */

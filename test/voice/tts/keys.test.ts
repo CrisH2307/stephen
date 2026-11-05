@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parseTtsConfig } from '../../../src/voice/tts/config.js';
-import { defaultExec, findApiKey } from '../../../src/voice/tts/keys.js';
+import { findApiKey } from '../../../src/voice/tts/keys.js';
 import { runVoiceKey, type VoiceKeyEnv } from '../../../src/connect/voice-key.js';
 import { redactKey, scrubKey } from '../../../src/voice/tts/redact.js';
 import { FAKE_KEY, FakeSecurity, OTHER_FAKE_KEY } from './helpers.js';
@@ -186,13 +186,5 @@ describe('stephen voice-key', () => {
     expect(await runVoiceKey(['set', FAKE_KEY], env(sec).e)).toBe(2); // a key on argv is refused, not stored
     expect(sec.calls).toEqual([]);
     expect(await runVoiceKey(['--help'], env(sec).e)).toBe(0);
-  });
-});
-
-describe('defaultExec', () => {
-  it('pipes input to stdin and reports exit codes; a missing binary is code -1', async () => {
-    const r = await defaultExec(process.execPath, ['-e', 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{process.stdout.write(d.toUpperCase());process.exit(3)})'], { input: 'abc', timeoutMs: 10_000 });
-    expect(r).toEqual({ code: 3, stdout: 'ABC', stderr: '' });
-    expect((await defaultExec(join(tmp, 'no-such-bin'), [], { timeoutMs: 1000 })).code).toBe(-1);
   });
 });

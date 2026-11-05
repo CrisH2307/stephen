@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ExecFn, ExecResult } from '../../../src/voice/tts/keys.js';
+import type { ExecFn, ExecResult } from '../../../src/lib/keychain.js';
 
 export const FAKE_KEY = 'sk_fake0000000000000000000000000000000000000000beef';
 export const OTHER_FAKE_KEY = 'sk_fake1111111111111111111111111111111111111111cafe';

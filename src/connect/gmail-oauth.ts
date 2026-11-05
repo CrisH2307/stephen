@@ -31,7 +31,7 @@ import { parseAccountsConfig } from '../accounts/config.js';
 import { GMAIL_SCOPE, GmailClient, googleTokenCall, grantedScopes, type GoogleTokenResponse } from '../accounts/gmail.js';
 import { AccountHttpError, type FetchFn } from '../accounts/http.js';
 import { GMAIL_LABEL_RE, GOOGLE_TOKEN_RE, gmailKeychainService, lookupGmailToken, lookupSecret, type SecretDeps } from '../accounts/secrets.js';
-import { defaultExec } from '../voice/tts/keys.js';
+import { defaultExec } from '../lib/keychain.js';
 import { keychainDelete, keychainStore } from './keychain-write.js';
 
 export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
