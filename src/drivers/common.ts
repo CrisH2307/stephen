@@ -15,13 +15,16 @@ export abstract class DriverBase implements BrowserDriver {
   protected version: string | null = null;
   protected detail = 'Not connected.';
   #pending: { mode: ProfileMode; promise: Promise<Browser> } | null = null;
+  #lostDetail: () => string = () => 'Not connected.';
 
   /** Attach or launch for `mode` (no other connect runs at the same time). */
   protected abstract doConnect(mode: ProfileMode): Promise<Browser>;
   abstract disconnect(): Promise<void>;
 
   current(): Browser | null {
-    return this.browser?.connected ? this.browser : null;
+    const b = this.browser;
+    if (b && !isLive(b)) this.#forget(b);
+    return this.browser;
   }
 
   status(): BrowserStatus {
@@ -57,19 +60,37 @@ export abstract class DriverBase implements BrowserDriver {
   protected adopt(browser: Browser, mode: ProfileMode, lostDetail: () => string): void {
     this.browser = browser;
     this.mode = mode;
-    browser.once('disconnected', () => {
-      if (this.browser !== browser) return;
-      this.browser = null;
-      this.mode = null;
-      this.version = null;
-      this.detail = lostDetail();
-    });
+    this.#lostDetail = lostDetail;
+    browser.once('disconnected', () => this.#forget(browser));
     void browser
       .version()
       .then((v) => {
         if (this.browser === browser) this.version = v;
       })
       .catch(() => undefined);
+  }
+
+  /** The adopted browser is gone: clear the state so the next connect() attaches again. */
+  #forget(browser: Browser): void {
+    if (this.browser !== browser) return;
+    this.browser = null;
+    this.mode = null;
+    this.version = null;
+    this.detail = this.#lostDetail();
+  }
+}
+
+/**
+ * puppeteer 25 over WebDriver BiDi (Zen): when the socket drops (Zen quit or crashed), the connection marks itself
+ * closed but `connected` stays true and 'disconnected' never fires, so every call fails with "Connection closed."
+ * until the server restarts. `connection.closed` is the only signal; CDP browsers have no such getter.
+ */
+export function isLive(browser: Browser): boolean {
+  if (!browser.connected) return false;
+  try {
+    return (browser as unknown as { connection?: { closed?: boolean } }).connection?.closed !== true;
+  } catch {
+    return true;
   }
 }
 
