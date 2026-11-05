@@ -13,15 +13,15 @@
  *  - Secret-looking text (passwords, codes, card numbers, 6+ digits in a row) is refused: memory is sent to
  *    Anthropic with every command.
  *  - Every change takes `memory.json.lock` (O_EXCL, pid inside; a lock whose pid is gone or that is older than
- *    LOCK_STALE_MS is removed) and writes atomically, 0600 (src/safety/session-state.ts helpers: O_NOFOLLOW reads,
+ *    LOCK_STALE_MS is removed) and writes atomically, 0600 (src/lib/fs.ts helpers: O_NOFOLLOW reads,
  *    owner + mode checks, temp file + rename).
  *  - Every change (and refusal) is audited with the text's length only, never the text.
  */
 import { randomBytes } from 'node:crypto';
 import { closeSync, constants as fsConstants, lstatSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
-import { isPidAlive } from '../drivers/util.js';
-import { readPrivateJsonFile, writePrivateJsonFileSync } from '../safety/session-state.js';
+import { isPidAlive } from '../lib/process.js';
+import { readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
 import { charLength, stripUnsafe } from '../safety/text.js';
 import type { IAuditLog } from '../types.js';
 

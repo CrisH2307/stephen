@@ -35,6 +35,7 @@ import {
 } from './protocol.js';
 import type { AppSettings } from './settings.js';
 import type { AccountsStatus } from './accounts-status.js';
+import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -79,6 +80,8 @@ export interface AppServerOptions {
   settings: () => AppSettings;
   /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
   accounts?: () => Promise<AccountsStatus>;
+  /** jobs.list / jobs.stop (background jobs). Absent = jobs are off. */
+  jobs?: AppJobs;
   /** app.speakReplies: speak typed-chat replies too. */
   speakReplies: boolean;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
@@ -409,6 +412,25 @@ export class AppServer {
         } catch {
           return { id, type: 'error', message: 'could not read the accounts status' };
         }
+      case 'jobs.list': {
+        const jobs = this.o.jobs;
+        if (!jobs) return { id, type: 'jobs', jobs: [] };
+        try {
+          const rows = jobs.list().slice(0, APP_JOBS_MAX);
+          return fitList(rows, (r) => ({ id, type: 'jobs', jobs: r }));
+        } catch {
+          return { id, type: 'error', message: 'could not read the jobs' };
+        }
+      }
+      case 'jobs.stop': {
+        if (!this.o.jobs) return { id, type: 'error', message: 'jobs are turned off' };
+        try {
+          const r = await this.o.jobs.stop(req.jobId, 'app');
+          return 'refused' in r ? { id, type: 'error', message: r.refused } : { id, type: 'job', job: r };
+        } catch {
+          return { id, type: 'error', message: 'could not stop the job' };
+        }
+      }
       case 'window.open': {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };

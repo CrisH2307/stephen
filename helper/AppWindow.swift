@@ -11,7 +11,7 @@ import AppKit
 import SwiftUI
 
 enum AppTab: String, CaseIterable, Identifiable {
-  case chat, memory, history, settings, accounts, audit
+  case chat, memory, history, settings, accounts, jobs, audit
 
   var id: String { return rawValue }
 
@@ -22,6 +22,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case .history: return "History"
     case .settings: return "Settings"
     case .accounts: return "Accounts"
+    case .jobs: return "Jobs"
     case .audit: return "Audit"
     }
   }
@@ -33,6 +34,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case .history: return "clock"
     case .settings: return "gearshape"
     case .accounts: return "key"
+    case .jobs: return "tray.full"
     case .audit: return "list.bullet"
     }
   }
@@ -75,6 +77,7 @@ struct AppRootView: View {
       case .history: HistoryView(model: model)
       case .settings: SettingsView(model: model)
       case .accounts: AccountsView(model: model)
+      case .jobs: JobsView(model: model)
       case .audit: AuditView(model: model)
       }
     }
@@ -577,6 +580,148 @@ struct AccountRowView: View {
     if let source = account.source { parts.append(source == "keychain" ? "Keychain" : source) }
     if let detail = account.detail, !detail.isEmpty { parts.append(detail) }
     return parts.joined(separator: " · ")
+  }
+}
+
+// ───────────────────────────── jobs ─────────────────────────────
+
+struct JobsView: View {
+  @ObservedObject var model: AppModel
+  @State private var selectedId: String? = nil
+  private let ticker = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+
+  private var selected: JobRow? {
+    guard let id = selectedId else { return nil }
+    return model.jobs.first(where: { $0.id == id })
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      if let notice = model.jobsNotice {
+        NoticeView(text: notice)
+        Divider()
+      }
+      if model.jobs.isEmpty {
+        EmptyStateView(symbol: "tray.full", text: "No jobs yet. Say 'while I'm cooking, …' or 'start a job to …'")
+      } else {
+        HStack(spacing: 0) {
+          List {
+            ForEach(model.jobs) { job in
+              JobRowView(job: job, selected: job.id == selectedId)
+                .contentShape(Rectangle())
+                .onTapGesture { selectedId = job.id }
+            }
+          }
+          .frame(minWidth: 260)
+          Divider()
+          if let job = selected {
+            JobDetailView(job: job, onStop: { model.stopJob(job.id) })
+          } else {
+            EmptyStateView(symbol: "doc.text", text: "Select a job to see its summary.")
+          }
+        }
+      }
+      Divider()
+      HStack(spacing: 8) {
+        Text(verbatim: "The summary is written by the job itself, so check it before you rely on it.")
+          .font(.caption)
+          .foregroundColor(.secondary)
+        Spacer()
+        Button("Refresh") { model.refreshJobs() }
+      }
+      .padding(10)
+    }
+    .onAppear { model.refreshJobs() }
+    .onReceive(ticker) { _ in model.refreshJobs() }
+  }
+}
+
+/** "3 min", "1 h 05 min": whole minutes between two epoch-millisecond times. */
+func jobDurationText(from: Double, to: Double) -> String {
+  let minutes = max(0, Int((to - from) / 60000.0))
+  if minutes < 60 { return "\(minutes) min" }
+  let rest = minutes % 60
+  return "\(minutes / 60) h \(rest < 10 ? "0" : "")\(rest) min"
+}
+
+struct JobRowView: View {
+  let job: JobRow
+  let selected: Bool
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: symbol).foregroundColor(tint).frame(width: 20)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(verbatim: job.task).bold().lineLimit(2)
+        Text(verbatim: detail).font(.caption).foregroundColor(.secondary)
+      }
+    }
+    .padding(.vertical, 3)
+    .background(selected ? Color.accentColor.opacity(0.15) : Color.clear)
+  }
+
+  private var symbol: String {
+    switch job.status {
+    case "done": return "checkmark.circle.fill"
+    case "running": return "arrow.triangle.2.circlepath"
+    case "queued": return "clock"
+    case "stopped": return "stop.circle"
+    default: return "exclamationmark.triangle.fill"
+    }
+  }
+
+  private var tint: Color {
+    switch job.status {
+    case "done": return Color.green
+    case "running", "queued": return Color.blue
+    case "stopped": return Color.secondary
+    default: return Color.orange
+    }
+  }
+
+  private var detail: String {
+    var parts: [String] = [job.status.capitalized]
+    if let started = job.startedAt {
+      let end = job.endedAt ?? Date().timeIntervalSince1970 * 1000.0
+      parts.append(jobDurationText(from: started, to: end))
+    }
+    if let cost = job.costUsd { parts.append(String(format: "$%.2f", cost)) }
+    return parts.joined(separator: " · ")
+  }
+}
+
+struct JobDetailView: View {
+  let job: JobRow
+  let onStop: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text(verbatim: job.task).font(.headline).fixedSize(horizontal: false, vertical: true)
+      Text(verbatim: "\(job.status.capitalized) · \(job.turns) turns").font(.caption).foregroundColor(.secondary)
+      ScrollView {
+        Text(verbatim: bodyText)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      Text(verbatim: job.folder).font(.caption).foregroundColor(.secondary).lineLimit(2)
+      HStack(spacing: 8) {
+        Button("Reveal in Finder") {
+          NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.folder)])
+        }
+        .disabled(job.folder.isEmpty)
+        if job.isRunning {
+          Button("Stop") { onStop() }
+        }
+        Spacer()
+      }
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+
+  private var bodyText: String {
+    if !job.summary.isEmpty { return job.summary }
+    if !job.error.isEmpty { return job.error }
+    return job.isRunning ? "Still working. The summary appears here when it finishes." : "(no summary)"
   }
 }
 

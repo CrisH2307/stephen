@@ -21,11 +21,11 @@ import {
   openSync,
   readdirSync,
   readFileSync,
-  renameSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { writePrivateFileAtomicSync } from '../lib/fs.js';
 import { truncate } from '../safety/text.js';
 import { parseToolCallRecord, type ToolCallRecord } from '../server/tool-log.js';
 
@@ -277,14 +277,7 @@ export class HistoryStore {
         unlinkSync(file);
         return;
       }
-      const tmp = join(this.dir, `.${date}.${randomBytes(6).toString('hex')}.tmp`);
-      const fd = openSync(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
-      try {
-        writeSync(fd, keep.map((l) => `${l}\n`).join(''));
-      } finally {
-        closeSync(fd);
-      }
-      renameSync(tmp, file);
+      writePrivateFileAtomicSync(file, keep.map((l) => `${l}\n`).join(''));
     } catch {
       // best effort: the next purge tries again; list() hides expired entries anyway
     }

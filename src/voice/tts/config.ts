@@ -6,6 +6,7 @@
  */
 import { homedir } from 'node:os';
 import { z } from 'zod';
+import { ConfigError } from '../../lib/errors.js';
 
 /** The owner's ElevenLabs voice ("Noah Yang"). */
 export const DEFAULT_ELEVENLABS_VOICE_ID = 'YEBbZ0itqHW31uoXSBns';
@@ -86,7 +87,7 @@ export interface TtsConfig {
   rate: number | null;
 }
 
-export class TtsConfigError extends Error {
+export class TtsConfigError extends ConfigError {
   constructor(message: string) {
     super(message);
     this.name = 'TtsConfigError';

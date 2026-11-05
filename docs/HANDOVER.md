@@ -364,3 +364,55 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   address, R7-8 write helpers moved to src/connect (boundary test), R7-9 status reads no secret values, R7-10/11/12.
   Full suite **2771 passed, 13 skipped**; real eval 59/60 before the fixes, wake/notion/mail cases pass after.
   **Owner next: docs/MAC-TEST-PLAN.md.** Then items 4 (jobs, ADR-004) and 5 (phone, ADR-005) on the owner's go.
+- 2026-11-05: **One implementation per concern (pure refactor, no behaviour change).** New `src/lib/`: `fs.ts`
+  (`writePrivateFileAtomicSync`, the one atomic private write, replacing the copies in safety/session-state,
+  history/store, voice/claude and connect/accounts-cli; `readPrivateJsonFile` / `writePrivateJsonFileSync` moved from
+  session-state; `ensurePrivateDir`, `isExecutable` moved from drivers/util), `process.ts` (`isPidAlive`),
+  `keychain.ts` (`defaultExec`, `keychainRead`, `keychainHas`: the Keychain READ path, replacing the lookups in
+  voice/tts/keys.ts and accounts/secrets.ts; writes stay in connect/keychain-write.ts), `http-body.ts`
+  (`readCappedBody`, accounts/http + desktop/media), `zone.ts` and `secret-fields.ts` (were src/util/zone.ts and
+  src/shared/secrets.ts; both folders gone), `errors.ts` (`ConfigError`, base of the six *ConfigError classes).
+  `src/drivers/common.ts`: `DriverBase` (state, single-flight connect, status, adopt) and `watchLaunch` for Chrome and
+  Zen. voice/models.ts `downloadVerified` / `installStaged` shared with kokoro.ts. Boundary test: src/lib imports only
+  src/lib, is in CLAUDE_REACHABLE and holds no Keychain/config writer; accounts/connect don't import voice (except
+  connect/voice-key.ts). New `test/security/no-secret-leak.test.ts`. jscpd (8 lines / 70 tokens): 4 clones, 73 lines
+  before; 0 after. Full suite **2788 passed, 13 skipped**; typecheck 0 errors. Docs: SYSTEM-DESIGN §6.
+- 2026-11-05: **Item 4, jobs while away: ADR-004 subtasks 1 to 3 built** (start flow; finish flow and UI next).
+  New `src/jobs/`: `config.ts` (`jobs` section, zod strict: root `~/Stephen Jobs`, sonnet, 45 min with a 3 h hard
+  cap, 150 turns, $5, 2 at once, 10 a day, keepDays 30, `repos`), `spec.ts` (pure: the ADR argv flag by flag,
+  settings.json, the allow-list env, persona, framed task, slug/id rules, output cleaning), `state.ts` (registry
+  `~/.stephen/jobs/<id>.json`, reconcile: a job whose supervisor is gone is marked failed and its claude group
+  killed), `runner.ts` (one detached supervisor per job, `stephen jobs _run <meta>`: claude in its own group,
+  caffeinate on macOS, stream-json progress, init tool check, wall clock SIGTERM then SIGKILL 10 s, audit),
+  `manager.ts` (plan without side effects, start: fresh 0700 folder or git worktree on `stephen/job-<slug>`, 0600
+  meta files outside the folder, caps), `intent.ts` + `router.ts` (anchored grammar before Claude after memory and
+  timers; the native dialog for EVERY start, F5 included; wake word: stop asks, list is a count), `cli.ts`
+  (`stephen jobs list|status|show|stop`). `killGroup` moved to `src/lib/process.ts`. Persona: Claude can't start
+  jobs, tells the owner to say "start a job to …". Eval: 3 `job` cases (not yet run against the real model: run
+  `node dist/cli.js eval --only job --model sonnet`). Boundary: nothing Claude-reachable loads src/jobs; src/jobs
+  loads no memory/history/app/server/timer/voice/account code (only accounts/result.ts). Real probe
+  (`STEPHEN_REAL_CLAUDE=1 npx vitest run test/jobs/real-claude.test.ts`, 2.1.318 here): sandbox on refuses to start
+  (fail closed), test-only no-sandbox shows exactly the 6 tools and 0 MCP. Full suite **2900 passed, 15 skipped**;
+  typecheck 0 errors. Docs: SYSTEM-DESIGN §4.13 (new), §3, §5, §6; ADR-004 Implementation; MAC-TEST-PLAN §8.
+- 2026-11-05: **Item 4, jobs while away: ADR-004 subtask 4 built (finish flow and UI).** New `src/jobs/finish.ts`
+  (`FinishWatcher`: polls the job states every 10 s, announces each newly final job once through a macOS notification
+  "Stephen job done/failed/stopped/timed out" and a spoken summary through the idle-only timer alert queue; announced
+  ids in `~/.stephen/jobs/.announced.json` 0600, so a restart doesn't repeat; jobs older than 12 h are marked seen
+  silently), `purgeJobs(keepDays)` at listener start, `show` intent ("show my job", "what did the job say") in
+  `intent.ts` / `router.ts` (speaks the latest finished summary, prints the folder, no Claude), `src/timers/notify.ts`
+  gained `notifyArgv` / `macNotifyTitled`. app.sock (additive to v1): `jobs.list` / `jobs.stop {jobId}` with
+  `src/app/jobs-status.ts` (types) and `src/voice/job-rows.ts` (rows from the cleaned state file, summary capped 1500, no pid or session id), fixture
+  lines a21 to a23. Swift: Jobs tab in `AppWindow.swift` (`JobsView`, rows, summary, Reveal in Finder, Stop, 5 s
+  refresh) and `JobRow` / `jobsList` / `jobsStop` / `refreshJobs` / `stopJob` in `AppClient.swift`; not compiled here
+  (Linux), checked by source-text tests only. Bug fixed on the way: `pump` in `src/voice/index.ts` joined `pending`
+  after clearing it, so spoken timer alerts were an empty string. Tests: `test/jobs/finish.test.ts`,
+  `finish.int.test.ts`, plus updates to `test/app/protocol.test.ts` and `test/helper/app-protocol.test.ts`. Docs:
+  HELPER.md (Jobs tab), SYSTEM-DESIGN §4.13 finish flow, ADR-004 subtask 4, MAC-TEST-PLAN §8 additions. Next: subtask
+  5 (Mac checklist run, review #8).
+- 2026-11-05 — **Item 4 (jobs while away) built** (ADR-004 subtasks 1–4): src/jobs (spec, supervisor per job,
+  registry, `stephen jobs list|status|show|stop`, deterministic router + native dialog for every start, finish
+  watcher with notification + spoken summary, `show my job`), Jobs tab in the Stephen window (jobs.list / jobs.stop
+  over app.sock), timer-alert empty-text bug fixed. Owner answers: inputs through `~/Stephen Jobs/inbox/` (moved into
+  the job's input/ on start, listed in the dialog); normal claude.ai login (jobs get no token env vars). Real eval
+  `--only job` 3/3. Mac checks: docs/MAC-TEST-PLAN.md §8 (sandbox probes first). Next: item 5 (phone, ADR-005), then
+  review #8.

@@ -4,6 +4,7 @@
  * existing day files are deleted on the next purge).
  */
 import { z } from 'zod';
+import { ConfigError } from '../lib/errors.js';
 
 export const DEFAULT_HISTORY_RETENTION_DAYS = 1;
 export const MAX_HISTORY_RETENTION_DAYS = 30;
@@ -16,7 +17,7 @@ export interface HistoryConfig {
   retentionDays: number;
 }
 
-export class HistoryConfigError extends Error {
+export class HistoryConfigError extends ConfigError {
   constructor(message: string) {
     super(message);
     this.name = 'HistoryConfigError';

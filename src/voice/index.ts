@@ -57,9 +57,16 @@ import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } 
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
 import { accountsStatus } from '../app/accounts-status.js';
-import { macNotify, type NotifyFn } from '../timers/notify.js';
+import { macNotify, macNotifyTitled, type NotifyFn, type NotifyTitledFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
+import { JobsConfigError, parseJobsConfig, type JobsConfig } from '../jobs/config.js';
+import { appJobs } from './job-rows.js';
+import { FinishWatcher } from '../jobs/finish.js';
+import { JobManager } from '../jobs/manager.js';
+import { purgeJobs } from '../jobs/state.js';
+import { JobRouter } from '../jobs/router.js';
+import type { SpawnFn as JobSpawnFn } from '../jobs/runner.js';
 
 export { LISTEN_USAGE } from './args.js';
 
@@ -82,6 +89,7 @@ export interface ListenEnv {
     history?: Record<string, unknown>;
     app?: Record<string, unknown>;
     accounts?: Record<string, unknown>;
+    jobs?: Record<string, unknown>;
     auditLogPath?: string;
   };
   /** Shown in the Stephen window's Settings (default: configFilePath()). */
@@ -110,6 +118,10 @@ export interface ListenEnv {
   keys?: (onEnter: () => void) => () => void;
   /** Timer/reminder notification (tests); default: macOS notification. */
   notify?: (text: string) => void;
+  /** Job-finished notification (tests); default: macOS notification with a title. */
+  jobNotify?: NotifyTitledFn;
+  /** How often finished jobs are looked for, ms (tests); default 10 s. */
+  jobPollMs?: number;
   /**
    * Stephen Helper (push-to-talk, Esc, audio.playing, menu-bar state): returns an un-started link, or null when
    * there is none. Default: the real client from src/helper/client.ts, loaded lazily (missing → null).
@@ -121,6 +133,8 @@ export interface ListenEnv {
   confirmer?: Confirmer;
   /** Clock for memory and history (tests). */
   date?: () => Date;
+  /** Starts a job's supervisor (tests); default: `node dist/cli.js jobs _run <meta folder>`, detached. */
+  jobSpawn?: JobSpawnFn;
 }
 
 /** How long the memory dialogs wait before they count as Deny. */
@@ -193,6 +207,7 @@ interface LoadedVoice {
   memory: MemoryConfig;
   history: HistoryConfig;
   app: AppConfig;
+  jobs: JobsConfig;
   /** Raw "accounts" section (accounts.status). */
   accounts: unknown;
   auditLogPath: string | null;
@@ -208,11 +223,12 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null
       memory: parseMemoryConfig(c.memory),
       history: parseHistoryConfig(c.history),
       app: parseAppConfig(c.app),
+      jobs: parseJobsConfig(c.jobs),
       accounts: c.accounts ?? {},
       auditLogPath: c.auditLogPath ?? null,
     };
   } catch (e) {
-    const known = e instanceof VoiceConfigError || e instanceof MemoryConfigError || e instanceof HistoryConfigError || e instanceof AppConfigError;
+    const known = e instanceof VoiceConfigError || e instanceof MemoryConfigError || e instanceof HistoryConfigError || e instanceof AppConfigError || e instanceof JobsConfigError;
     err(known ? (e as Error).message : `Config: ${(e as Error).message}`);
     return null;
   }
@@ -453,6 +469,39 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         ...(env.now ? { now: env.now } : {}),
       })
     : null;
+  // Background jobs ("start a job to …", docs/ADR-004): handled before Claude, and every start asks in a native dialog.
+  // A dry run changes nothing.
+  const jobManager =
+    args.dryRun || !loaded.jobs.enabled
+      ? null
+      : new JobManager({
+          home,
+          config: loaded.jobs,
+          timeZone: loaded.timeZone,
+          claudePath: cfg.claudePath,
+          auditLogPath: loaded.auditLogPath,
+          audit,
+          env: env.env ?? process.env,
+          cliPath,
+          ...(env.jobSpawn ? { spawn: env.jobSpawn } : {}),
+          ...(env.now ? { now: env.now } : {}),
+        });
+  if (jobManager) {
+    try {
+      purgeJobs(home, loaded.jobs.keepDays, env.now?.());
+    } catch (e) {
+      err(`Note: couldn't clear old job logs (${(e as Error).message}).`);
+    }
+  }
+  const jobRouter = jobManager
+    ? new JobRouter({
+        jobs: jobManager,
+        confirmer: env.confirmer ?? new DialogConfirmer({ timeoutSec: MEMORY_DIALOG_TIMEOUT_SEC }),
+        print: out,
+        ...(env.now ? { now: env.now } : {}),
+      })
+    : null;
+  let finishWatcher: FinishWatcher | null = null;
   const makeAssistant = (bridge: HelperBridge | null) => {
     const hooks = assistantHooks(bridge);
     return new Assistant({
@@ -463,6 +512,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       status: out,
       memory: memoryRouter,
       timers: timerRouter,
+      jobs: jobRouter,
       onDone,
       onStart: (c) => app?.heard(c.said, c.source),
       ...hooks,
@@ -487,6 +537,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       audit,
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
       accounts: () => accountsStatus(loaded.accounts),
+      ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
       log: err,
@@ -614,7 +665,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         const deadline = Date.now() + 10 * 60_000;
         while (pending.length && Date.now() < deadline) {
           const l = listener;
-          const run = l ? l.submit(() => assistant.announce(pending.join(' '))) : null;
+          const text = pending.join(' '); // read now: submit() runs the callback later, after pending is cleared
+          const run = l ? l.submit(() => assistant.announce(text)) : null;
           if (run) {
             pending.length = 0;
             await run.catch(() => undefined);
@@ -631,6 +683,25 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       pending.push(text);
       void pump();
     };
+    // A job that finished while you were away (or just now): a notification, then the spoken summary when idle. The
+    // summary is the job's own words (cleaned, untrusted): shown and spoken only, never given to Claude.
+    const jobNotify: NotifyTitledFn = env.jobNotify ?? macNotifyTitled;
+    if (jobManager) {
+      finishWatcher = new FinishWatcher({
+        home,
+        list: () => jobManager.list(),
+        notify: jobNotify,
+        say: (text) => {
+          out(`Job: ${text}`);
+          pending.push(text);
+          void pump();
+        },
+        log: err,
+        ...(env.now ? { now: env.now } : {}),
+        ...(env.jobPollMs ? { pollMs: env.jobPollMs } : {}),
+      });
+      finishWatcher.start();
+    }
     timerStore?.start();
     const keys = env.keys ?? (signals ? watchEnterKey : null);
     const current = listener;
@@ -642,6 +713,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     }
   } finally {
     timerStore?.stop();
+    finishWatcher?.stop();
     await warm?.shutdown(); // listener exit ends the conversation: kill → close → reset
     if (settings.personaFile) removePersonaFile(settings.personaFile);
     await app?.close();

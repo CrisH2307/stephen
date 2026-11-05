@@ -1,5 +1,5 @@
 /**
- * Timers and reminders: `<home>/timers.json` (0600, atomic writes, O_NOFOLLOW reads via the session-state helpers)
+ * Timers and reminders: `<home>/timers.json` (0600, atomic writes, O_NOFOLLOW reads via the src/lib/fs.ts helpers)
  * plus an in-process scheduler that fires the earliest due item. Lives in `stephen listen` only.
  *
  *  - At most MAX_TIMERS items; label/text ≤ MAX_TEXT chars, cleaned like memory text.
@@ -8,7 +8,7 @@
  *  - One setTimeout for the earliest item (re-armed after every change; long waits are chunked below the 2^31 ms limit).
  */
 import { join } from 'node:path';
-import { readPrivateJsonFile, writePrivateJsonFileSync } from '../safety/session-state.js';
+import { readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
 import { cleanMemoryText } from '../memory/store.js';
 
 export const TIMERS_FILE = 'timers.json';

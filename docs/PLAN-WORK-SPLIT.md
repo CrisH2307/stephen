@@ -128,3 +128,12 @@ Lead: 1c persona, 1d eval cases, merges, full suite, real eval, docs.
 | G1 gmail | opus / high | 3b + 3c + 3d (OAuth PKCE connect, gmail_search, gmail_read, eval) |
 | U1 ui | sonnet / medium | Accounts status in the window, Today card, empty/error states |
 Then: review #7 (fresh opus / high) over items 1–3, fixes, then items 4–5 per ADR-004/005 after the owner's go.
+
+## 10. Owner notes (2026-11-05)
+- Items 1–3 accepted ("good to go"); Mac tests run by the owner.
+- Future: Canvas inbox (conversations) and other Canvas pages beyond due items and announcements.
+- **Code-quality loop with Grapuco:** after each implementation, the owner shares a short summary of how Grapuco
+  evaluates the code (graph, domains, duplication, coupling, data flow). The next session starts by turning that into
+  a ranked list of refactors (remove duplicates, reduce coupling, fix wasteful patterns), each with tests, before new
+  features. The cloud can't reach api.grapuco.com, so the owner pushes to Grapuco from the Mac and shares exports or
+  screenshots.

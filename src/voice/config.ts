@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TTS_CONFIG_SHAPE } from './tts/config.js';
+import { ConfigError } from '../lib/errors.js';
 
 /** Offline speech-to-text models the listener can use (see models.ts for the pinned archives). */
 export const ASR_MODELS = [
@@ -200,7 +201,7 @@ export type VoiceConfig = Omit<
   rate: number | null;
 };
 
-export class VoiceConfigError extends Error {
+export class VoiceConfigError extends ConfigError {
   constructor(message: string) {
     super(message);
     this.name = 'VoiceConfigError';

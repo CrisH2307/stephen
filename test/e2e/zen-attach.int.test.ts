@@ -19,7 +19,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import puppeteer from 'puppeteer-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readDevToolsActivePort } from '../../src/drivers/macos.js';
-import { isPidAlive } from '../../src/drivers/util.js';
+import { isPidAlive } from '../../src/lib/process.js';
 import { chromiumArgs, chromiumPath } from '../helpers/chromium.js';
 import { writeFakeZen } from '../helpers/fake-zen.js';
 

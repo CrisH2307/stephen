@@ -4,12 +4,12 @@
  * `stephen voice-setup --tts kokoro`. The archive is pinned by sha256 like the speech-to-text models.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import type { SpeakHandle } from '../speech.js';
-import { curlDownloader, isInstalled, sha256File, tarExtractor, type EnsureOptions, type ModelArchive } from '../models.js';
+import { curlDownloader, downloadVerified, installStaged, isInstalled, tarExtractor, type EnsureOptions, type ModelArchive } from '../models.js';
 import { encodeWav16 } from '../wav.js';
 import { playBuffer, TtsFailure, type PlayFn, type PlayHandle, type TtsProvider } from './player.js';
 
@@ -24,8 +24,6 @@ export const KOKORO_MODEL: ModelArchive = {
   keep: ['model.int8.onnx', 'voices.bin', 'tokens.txt', 'espeak-ng-data/phontab', 'LICENSE'],
   license: 'Apache-2.0',
 };
-
-const MARKER = '.stephen-model.json';
 
 export function kokoroDir(modelsRoot: string): string {
   return join(modelsRoot, KOKORO_MODEL.dir);
@@ -48,9 +46,7 @@ export async function ensureKokoro(modelsRoot: string, opts: EnsureOptions = {})
   const work = await mkdtemp(join(modelsRoot, `.tmp-${m.id}-`));
   try {
     const archive = join(work, 'archive.tar.bz2');
-    await (opts.download ?? curlDownloader)(m.url, archive);
-    const got = await sha256File(archive);
-    if (got !== m.sha256) throw new Error(`${m.id}: checksum mismatch (expected ${m.sha256}, got ${got}). The download was deleted.`);
+    await downloadVerified(m, archive, opts.download ?? curlDownloader);
     const unpack = join(work, 'unpack');
     await mkdir(unpack);
     log(`Extracting ${m.id}…`);
@@ -60,10 +56,7 @@ export async function ensureKokoro(modelsRoot: string, opts: EnsureOptions = {})
     if (!existsSync(top) || !(await stat(top)).isDirectory()) throw new Error(`${m.id}: archive has no ${m.dir}/ folder`);
     for (const k of m.keep) if (!existsSync(join(top, k))) throw new Error(`${m.id}: archive is missing ${k}`);
     await rm(join(top, 'README.md'), { force: true });
-    await writeFile(join(top, MARKER), JSON.stringify({ id: m.id, url: m.url, sha256: m.sha256, installedAt: new Date().toISOString() }, null, 2) + '\n');
-    const dest = kokoroDir(modelsRoot);
-    await rm(dest, { recursive: true, force: true });
-    await rename(top, dest);
+    await installStaged(m, top, kokoroDir(modelsRoot));
     log(`Installed ${m.id} (local voice).`);
     return true;
   } finally {

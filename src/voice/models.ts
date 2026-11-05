@@ -243,6 +243,20 @@ export interface EnsureOptions {
   log?: (line: string) => void;
 }
 
+/** Download `m.url` to `file` and check its sha256 (throws on a mismatch; the caller deletes its temp folder). */
+export async function downloadVerified(m: ModelArchive, file: string, download: Downloader): Promise<void> {
+  await download(m.url, file);
+  const got = await sha256File(file);
+  if (got !== m.sha256) throw new Error(`${m.id}: checksum mismatch (expected ${m.sha256}, got ${got}). The download was deleted.`);
+}
+
+/** Write the install marker into the staged folder, then move it into place at `dest` (replacing an old copy). */
+export async function installStaged(m: ModelArchive, staged: string, dest: string): Promise<void> {
+  await writeFile(join(staged, MARKER), JSON.stringify({ id: m.id, url: m.url, sha256: m.sha256, installedAt: new Date().toISOString() }, null, 2) + '\n');
+  await rm(dest, { recursive: true, force: true });
+  await rename(staged, dest);
+}
+
 /**
  * Make sure each archive is installed under `root`: download → verify sha256 → extract into a temp folder
  * → keep only the needed files → move into place → write the marker. Already-installed archives are never
@@ -261,9 +275,7 @@ export async function ensureModels(root: string, archives: readonly ModelArchive
     const work = await mkdtemp(join(root, `.tmp-${m.id}-`));
     try {
       const file = join(work, m.kind === 'file' ? m.keep[0]! : 'archive.tar.bz2');
-      await download(m.url, file);
-      const got = await sha256File(file);
-      if (got !== m.sha256) throw new Error(`${m.id}: checksum mismatch (expected ${m.sha256}, got ${got}). The download was deleted.`);
+      await downloadVerified(m, file, download);
       const staged = join(work, 'staged');
       if (m.kind === 'file') {
         await mkdir(staged);
@@ -285,10 +297,7 @@ export async function ensureModels(root: string, archives: readonly ModelArchive
         for (const k of m.keep) if (!existsSync(join(top, k))) throw new Error(`${m.id}: archive is missing ${k}`);
         await rename(top, staged);
       }
-      await writeFile(join(staged, MARKER), JSON.stringify({ id: m.id, url: m.url, sha256: m.sha256, installedAt: new Date().toISOString() }, null, 2) + '\n');
-      const dest = join(root, m.dir);
-      await rm(dest, { recursive: true, force: true });
-      await rename(staged, dest);
+      await installStaged(m, staged, join(root, m.dir));
       installed.push(m.id);
       log(`Installed ${m.id}.`);
     } finally {

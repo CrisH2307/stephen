@@ -1,4 +1,4 @@
-# Mac test plan (items 1–3 + review 7 fixes)
+# Mac test plan (items 1–4 + review 7 fixes)
 
 Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suite green (2771 passed, 13 skipped) (the real-Chromium timing test
 `review2.int #15` is flaky under load and passes alone), real-model eval 59/60 (`mis-lofi` borderline).
@@ -75,3 +75,54 @@ Tick each box; send me the output of anything that fails.
 
 When all of §1–§7 pass: switch the Google consent screen from Testing to In production (unverified) and reconnect
 each Gmail label once.
+
+## 8. Background jobs (item 4, docs/ADR-004)
+Setup: nothing to configure for plain jobs (folder `~/Stephen Jobs/`, 45 min, 150 turns, $5, web off, sonnet). For a
+code job add `"jobs": {"repos": {"stephen": "~/Documents/SoftwareProject/brower-hub/browser-hub"}}` to config.json.
+Watch `node dist/cli.js jobs` in a second terminal while you test.
+- [ ] Inbox: put `lab4.pdf` (any file) in `~/Stephen Jobs/inbox/`, then F5 "start a job to summarize the file in
+      input into SUMMARY.md". The dialog lists "Input files (moved from your jobs inbox): lab4.pdf". After Allow the
+      inbox is empty and the file is in the job's `input/`; SUMMARY.md describes it.
+- [ ] `STEPHEN_REAL_CLAUDE=1 npx vitest run test/jobs/real-claude.test.ts`: on the Mac the first test must take the
+      "6 tools, 0 MCP" branch (Seatbelt is there), not the fail-closed one. Send the output.
+- [ ] Sandbox probes: F5 "start a job to run the shell command touch ~/probe, then run curl https://example.com, and
+      write what happened to SUMMARY.md". Allow the dialog. When `jobs` says done: `ls ~/probe` must fail (no such
+      file), and `node dist/cli.js jobs show <id>` / SUMMARY.md must say both commands were denied or failed.
+      `node dist/cli.js jobs status <id>` should show denials ≥ 1. Send the summary.
+- [ ] Real job: F5 "while I'm cooking, write my SOFE 3980 lab report draft". The dialog shows the exact task, the
+      folder `~/Stephen Jobs/2026-11-…-write-my-sofe-3980-lab-report-draft`, "up to 45 minutes, 150 turns, $5" and
+      "Web: off". Allow. Check: the folder is 0700 (`ls -ld`), `~/.stephen/jobs/<id>/` holds settings.json,
+      persona.md, spec.json, log.jsonl (all `-rw-------`), `pmset -g assertions | grep caffeinate` shows one while it
+      runs, and at the end a draft plus SUMMARY.md are in the folder. "how's the job going" during the run gives
+      minutes and turns.
+- [ ] Deny: wake word "Hey Stephen, start a job to write a poem" → the dialog appears (also after the wake word, with
+      the wake-word warning). Deny → "Okay, I didn't start it." and no new folder in `~/Stephen Jobs/`.
+- [ ] Claude can't start one: F5 "write my lab report in the background" → no dialog, no tool, Stephen tells you to
+      say "start a job to …". Same for `node dist/cli.js eval --only job --model sonnet` (3 cases, expect 3/3).
+- [ ] Stop: start "start a job to research the history of the printing press", then F5 "stop the job" → "Stopped the
+      job …" within ~10 s; `jobs` shows `stopped`; `ps -ax | grep claude` shows no job claude left.
+- [ ] Timeout: set `"jobs": {"wallClockMin": 1}`, start "start a job to write a 20 page essay on rivers", wait 2
+      minutes → `jobs` shows `timeout`. Put wallClockMin back.
+- [ ] Listener restart: start a job, quit `stephen listen` (Ctrl-C twice), `jobs` still shows it running; it finishes
+      on its own. Then `kill -9` the supervisor pid of another running job (`jobs status <id>` shows nothing; use
+      `ps -ax | grep "jobs _run"`): the next `jobs` marks it failed and its claude is gone.
+- [ ] Code job (if configured): F5 "start a job to add a short comment to the README in stephen" → the dialog shows
+      the worktree and branch `stephen/job-…`; afterwards `git -C <repo> log stephen/job-… -1` shows its commit and
+      nothing was pushed. Remove it with `git worktree remove` when done.
+- [ ] Finish notification and spoken summary: start a short job ("start a job to write two sentences about rivers
+      into SUMMARY.md"), then leave the Mac idle. When it finishes a macOS notification "Stephen job done" shows the
+      task, and within ~10 s Stephen says "Your job '…' is done: <first sentence>. Say 'show my job' or open the Jobs
+      tab for the rest." Repeat while you hold F5 or are mid-command: nothing is spoken over you; it waits until
+      Stephen is idle. Quit and restart `stephen listen`: the same job is NOT announced again.
+- [ ] "show my job" / "what did the job say" (F5): Stephen speaks the latest finished job's summary (capped), the
+      terminal prints `Job folder: …`, and no Claude run starts (History shows no tool calls). After the wake word it
+      only says to hold F5.
+- [ ] Jobs tab (Stephen window): the finished job is listed with a green check, its task, duration and cost; select it
+      to read the summary and the folder; **Reveal in Finder** opens the folder. With nothing in `~/.stephen/jobs/` the
+      tab shows the empty text. A running job shows a blue symbol and the list refreshes by itself every 5 s.
+- [ ] Stop button: start a long job, open the Jobs tab, select it, press **Stop**: the row turns to Stopped within a
+      few seconds, `jobs` agrees, no job claude is left. **Stop** is absent for finished jobs.
+- [ ] Old logs: a job that ended more than `jobs.keepDays` days ago (default 30) loses its `~/.stephen/jobs/<id>.json` and
+      meta folder at the next `stephen listen` start; its job folder stays.
+- [ ] Toolchains (ADR open question 1): does a job that needs `python3` or `pdflatex` work under the sandbox? Say
+      "start a job to make a small PDF with pdflatex"; send me SUMMARY.md either way.

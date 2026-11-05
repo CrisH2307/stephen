@@ -78,6 +78,7 @@ describe('loadConfig', () => {
       history: {},
       app: {},
       accounts: {},
+      jobs: {},
     });
   });
 

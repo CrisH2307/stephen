@@ -114,6 +114,7 @@ again brings the same one to the front. Size and position are remembered.
 | **History** | Recent commands grouped by day, with **Load older** and **Clear history…** (asks first). |
 | **Settings** | The resolved voice / memory / history settings, read-only, and **Open config file** (opens the `.json` file in its default app). |
 | **Accounts** | Canvas, Calendar, Notion, Weather (and Gmail labels, if configured): connected, not set or turned off, where the secret was found (Keychain or .env, never the value) and a one-line hint to connect it. |
+| **Jobs** | Background jobs (docs/ADR-004), newest first, with a status symbol, the task, how long it ran and its cost. Select one to read its summary (written by the job itself, shown as plain text), see its folder, **Reveal in Finder**, and **Stop** while it runs (your own click, so no extra question). Refreshes every 5 s while the tab is open. Empty: *No jobs yet. Say 'while I'm cooking, …' or 'start a job to …'*. |
 | **Audit** | The latest browser actions from the audit log. |
 
 If `stephen listen` isn't running the window says *Can't reach Stephen. Run `stephen listen`.* with **Retry**;

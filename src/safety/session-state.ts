@@ -17,22 +17,9 @@
  *    atomically (temp file + rename, 0600, O_EXCL|O_NOFOLLOW), merged with what is on disk (so two servers can only
  *    add to the taint). If it can't be written, the server exits instead of returning the data (fail closed).
  */
-import { randomBytes } from 'node:crypto';
-import {
-  closeSync,
-  constants as fsConstants,
-  fchmodSync,
-  fstatSync,
-  fsyncSync,
-  lstatSync,
-  openSync,
-  readSync,
-  realpathSync,
-  renameSync,
-  unlinkSync,
-  writeSync,
-} from 'node:fs';
+import { lstatSync, realpathSync, unlinkSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
+import { MAX_PRIVATE_JSON_BYTES, readPrivateJsonFile, writePrivateJsonFileSync, type ReadPrivateJsonResult } from '../lib/fs.js';
 import type { IAuditLog, ISafetyGate, ResolvedConfig } from '../types.js';
 import { SafetyGate, type GateState } from './gate.js';
 import type { SafetyDeps } from './index.js';
@@ -40,7 +27,7 @@ import type { SafetyDeps } from './index.js';
 /** The file name the voice listener uses (in `<home>/voice/`). */
 export const SESSION_STATE_FILE = 'conversation-state.json';
 /** A state file larger than this is not read (the caps keep a real one far below it). */
-export const MAX_SESSION_STATE_BYTES = 512 * 1024;
+export const MAX_SESSION_STATE_BYTES = MAX_PRIVATE_JSON_BYTES;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.json$/;
 
 /** `<home>/voice` — the only folder a session-state file may live in. */
@@ -99,76 +86,16 @@ export function checkVoiceFilePath(
   return { path: p };
 }
 
-export type ReadStateResult = { state: unknown } | { missing: true } | { error: string };
+export type ReadStateResult = ReadPrivateJsonResult;
 
-/** Read a session-state file (see readPrivateJsonFile). Never throws. */
+/** Read a session-state file (src/lib/fs.ts readPrivateJsonFile). Never throws. */
 export function readSessionStateFile(path: string): ReadStateResult {
   return readPrivateJsonFile(path);
 }
 
-/** Read a private JSON file: O_NOFOLLOW, regular file, this user's, mode 0600, ≤ MAX_SESSION_STATE_BYTES. Never throws. */
-export function readPrivateJsonFile(path: string): ReadStateResult {
-  let fd: number;
-  try {
-    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0));
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return { missing: true };
-    if (code === 'ELOOP') return { error: 'is a symlink' };
-    return { error: `could not be opened (${code ?? (e as Error).message})` };
-  }
-  try {
-    const st = fstatSync(fd);
-    if (!st.isFile()) return { error: 'is not a regular file' };
-    const uid = myUid();
-    if (uid !== null && st.uid !== uid) return { error: 'belongs to another user' };
-    if ((st.mode & 0o777) !== 0o600) return { error: `has mode ${(st.mode & 0o777).toString(8)}, not 600` };
-    if (st.size > MAX_SESSION_STATE_BYTES) return { error: 'is too large' };
-    const buf = Buffer.alloc(st.size);
-    let off = 0;
-    while (off < st.size) {
-      const n = readSync(fd, buf, off, st.size - off, off);
-      if (n <= 0) break;
-      off += n;
-    }
-    try {
-      return { state: JSON.parse(buf.subarray(0, off).toString('utf8')) as unknown };
-    } catch {
-      return { error: 'is not valid JSON' };
-    }
-  } catch (e) {
-    return { error: `could not be read (${(e as Error).message})` };
-  } finally {
-    closeSync(fd);
-  }
-}
-
-/** Write a gate state atomically (see writePrivateJsonFileSync). Throws. */
+/** Write a gate state atomically (src/lib/fs.ts writePrivateJsonFileSync). Throws. */
 export function writeSessionStateFileSync(path: string, state: GateState): void {
   writePrivateJsonFileSync(path, state);
-}
-
-/** Write JSON atomically: temp file in the same folder (O_EXCL|O_NOFOLLOW, 0600) → fsync → rename. Throws. */
-export function writePrivateJsonFileSync(path: string, state: unknown): void {
-  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
-  const fd = openSync(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
-  try {
-    try {
-      writeSync(fd, JSON.stringify(state) + '\n');
-      fchmodSync(fd, 0o600); // exactly 0600, whatever the umask
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(tmp, path); // replaces a symlink at `path` instead of writing through it
-  } catch (e) {
-    try {
-      unlinkSync(tmp);
-    } catch {
-      /* already gone */
-    }
-    throw e;
-  }
 }
 
 /** Delete a state file (listener: new conversation). Missing is fine; anything else throws. */

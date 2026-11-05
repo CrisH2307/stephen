@@ -4,7 +4,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, normalize } from 'node:path';
 import type { ResolvedConfig } from '../types.js';
-import { isExecutable } from './util.js';
+import { isExecutable } from '../lib/fs.js';
 
 export interface DevToolsActivePort {
   port: number;

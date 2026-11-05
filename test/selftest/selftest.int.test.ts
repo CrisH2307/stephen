@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
-import { isPidAlive } from '../../src/drivers/util.js';
+import { isPidAlive } from '../../src/lib/process.js';
 import { defaultSelftestDeps, runSelftest, type SelftestReport } from '../../src/selftest/index.js';
 import { chromiumArgs, chromiumPath } from '../helpers/chromium.js';
 import { writeFakeZen } from '../helpers/fake-zen.js';

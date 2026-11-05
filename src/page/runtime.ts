@@ -8,7 +8,7 @@
  *
  * It MUST be self-contained: no imports, no references to module scope, no TS-only runtime helpers.
  * Everything it needs comes in through its three parameters — including the shared secret-field
- * rules of src/shared/secrets.ts (finding #13) and the element-number seed that keeps refs unique
+ * rules of src/lib/secret-fields.ts (finding #13) and the element-number seed that keeps refs unique
  * per tab across documents (finding #8).
  *
  * It returns STRUCTURED data only. Every line the model sees is rendered (and escaped) in Node.
@@ -21,13 +21,13 @@
 export interface RtConfig {
   /** Element numbers issued by this document start at seed + 1 (the tab's high-water mark for this frame). */
   seed: number;
-  /** src/shared/secrets.ts SECRET_TEXT_SOURCE / SECRET_TEXT_FLAGS. */
+  /** src/lib/secret-fields.ts SECRET_TEXT_SOURCE / SECRET_TEXT_FLAGS. */
   secretSource: string;
   secretFlags: string;
-  /** src/shared/secrets.ts SECRET_AUTOCOMPLETE / SECRET_AUTOCOMPLETE_PREFIX. */
+  /** src/lib/secret-fields.ts SECRET_AUTOCOMPLETE / SECRET_AUTOCOMPLETE_PREFIX. */
   secretAutocomplete: string[];
   secretAutocompletePrefix: string;
-  /** src/shared/secrets.ts PAYMENT_FRAME_DOMAINS ('d' = d + subdomains, '*.d' = subdomains only). */
+  /** src/lib/secret-fields.ts PAYMENT_FRAME_DOMAINS ('d' = d + subdomains, '*.d' = subdomains only). */
   paymentDomains: string[];
 }
 
@@ -219,7 +219,7 @@ export function bhRuntime(KEY: string, VERSION: string, CFG: RtConfig): boolean 
   const byEl = new WeakMap<Element, { n: number; sig: string }>();
   let findCands: Array<{ el: Element; sig: string }> = [];
 
-  // ---- shared secret rules (src/shared/secrets.ts) ----
+  // ---- shared secret rules (src/lib/secret-fields.ts) ----
   const SECRET_RE = new RegExp(CFG.secretSource, (CFG.secretFlags || '').replace(/[gy]/g, ''));
   const SECRET_AC = (CFG.secretAutocomplete || []).map((s) => String(s).toLowerCase());
   const SECRET_AC_PREFIX = String(CFG.secretAutocompletePrefix || '').toLowerCase();
@@ -692,7 +692,7 @@ export function bhRuntime(KEY: string, VERSION: string, CFG: RtConfig): boolean 
     return '';
   }
 
-  // ---- secrets & values (rules: src/shared/secrets.ts) ----
+  // ---- secrets & values (rules: src/lib/secret-fields.ts) ----
   /** Same rules as secrets.ts wordsOf(). */
   function wordsOf(s: string | null | undefined): string {
     if (!s) return '';

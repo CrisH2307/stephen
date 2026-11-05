@@ -1,4 +1,4 @@
-/** Review #1 driver fixes: D2 (Zen session owner), D3 (0700 dirs), D4 (Chrome Allow wait, many tabs). */
+/** Review #1 driver fixes: D2 (Zen session owner), D3 (0700 dirs; ensurePrivateDir itself: test/lib/fs.test.ts), D4 (Chrome Allow wait, many tabs). */
 import { EventEmitter } from 'node:events';
 import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,7 +6,7 @@ import type { ConnectOptions } from 'puppeteer-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChromeDriver } from '../../src/drivers/chrome.js';
 import { BrowserManager } from '../../src/drivers/manager.js';
-import { ensurePrivateDir, securePrivateDirs, type SpawnedProcess } from '../../src/drivers/util.js';
+import { securePrivateDirs, type SpawnedProcess } from '../../src/drivers/util.js';
 import { ZenDriver, type ZenDriverDeps } from '../../src/drivers/zen.js';
 import { HubError } from '../../src/errors.js';
 import type { BrowserDriver, BrowserName, BrowserStatus, ProfileMode } from '../../src/types.js';
@@ -115,25 +115,6 @@ describe('D2 two Claude Code sessions vs one agent Zen', () => {
 });
 
 describe('D3 private directories', () => {
-  it('ensurePrivateDir creates 0700 dirs and tightens existing ones up to the root', async () => {
-    tc = makeTestConfig();
-    const root = join(tc.home, 'hub');
-    mkdirSync(join(root, 'profiles'), { recursive: true, mode: 0o755 });
-    chmodSync(root, 0o755);
-    chmodSync(join(root, 'profiles'), 0o755);
-    await ensurePrivateDir(join(root, 'profiles', 'zen'), root);
-    expect(mode(root)).toBe(0o700);
-    expect(mode(join(root, 'profiles'))).toBe(0o700);
-    expect(mode(join(root, 'profiles', 'zen'))).toBe(0o700);
-    // Outside the root only the leaf is touched.
-    const outside = join(tc.home, 'elsewhere');
-    mkdirSync(outside, { mode: 0o755 });
-    chmodSync(outside, 0o755);
-    await ensurePrivateDir(join(outside, 'out'), root);
-    expect(mode(outside)).toBe(0o755);
-    expect(mode(join(outside, 'out'))).toBe(0o700);
-  });
-
   it('securePrivateDirs locks down home, state, output and agent profiles', async () => {
     tc = makeTestConfig();
     chmodSync(tc.home, 0o755);

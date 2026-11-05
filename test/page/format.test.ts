@@ -19,7 +19,7 @@ import {
 } from '../../src/page/format.js';
 import { hostLabel, isPaymentFrame } from '../../src/page/frames.js';
 import { MAX_CAPTURE_PIXELS, MAX_OUTPUT_DIM, planCapture } from '../../src/page/png.js';
-import { PAYMENT_FRAME_DOMAINS } from '../../src/shared/secrets.js';
+import { PAYMENT_FRAME_DOMAINS } from '../../src/lib/secret-fields.js';
 
 describe('summaryLine', () => {
   it('pluralises and appends optional parts', () => {
@@ -174,7 +174,7 @@ describe('frame helpers', () => {
     expect(hostLabel('about:blank')).toBe('about:blank');
     expect(hostLabel('')).toBe('about:blank');
   });
-  it('recognises payment-processor frames from the shared list (src/shared/secrets.ts)', () => {
+  it('recognises payment-processor frames from the shared list (src/lib/secret-fields.ts)', () => {
     expect(isPaymentFrame('https://js.stripe.com/v3/elements-inner-card.html')).toBe(true);
     expect(isPaymentFrame('https://www.paypal.com/sdk')).toBe(true);
     expect(isPaymentFrame('https://pay.google.com/gp/p/ui/pay')).toBe(true);

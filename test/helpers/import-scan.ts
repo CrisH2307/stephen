@@ -77,7 +77,8 @@ export interface Boundary {
 }
 
 /** Code Claude's tools run in: it must never reach the memory store (or, later, the app socket). */
-export const CLAUDE_REACHABLE: readonly string[] = ['src/server/', 'src/safety/', 'src/desktop/', 'src/drivers/', 'src/page/', 'src/accounts/', 'src/eval/dry-server.ts'];
+/** src/lib/ is listed too: the shared helpers are loaded by serve, so they may hold no memory, Keychain-write or config-write code. */
+export const CLAUDE_REACHABLE: readonly string[] = ['src/server/', 'src/safety/', 'src/desktop/', 'src/drivers/', 'src/page/', 'src/accounts/', 'src/lib/', 'src/eval/dry-server.ts'];
 
 const under = (path: string, prefix: string) => (prefix.endsWith('/') ? path.startsWith(prefix) : path === prefix);
 

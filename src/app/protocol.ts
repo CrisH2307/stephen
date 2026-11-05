@@ -9,6 +9,9 @@
  *
  * Additive: `{id, type:"accounts.status"}` → `{id, type:"accounts", accounts:[{id,name,state,source,detail?,hint}], note?}`
  * (which accounts are connected; never a secret value).
+ * Additive: `{id, type:"jobs.list"}` → `{id, type:"jobs", jobs:[JobRow]}` (newest first, summaries cleaned and capped) and
+ * `{id, type:"jobs.stop", jobId}` → `{id, type:"job", job:JobRow}` or an error (unknown job, jobs are off). Stopping
+ * from the window is the owner's own click, so it needs no dialog.
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
  */
@@ -16,6 +19,7 @@ import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import type { AuditEntry } from '../types.js';
 import type { AccountRow } from './accounts-status.js';
+import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
 /** Longest line in bytes, without its newline (both directions; AppClient.swift APP_MAX_LINE_BYTES). */
@@ -45,6 +49,8 @@ export type AppRequest =
   | { id: string; type: 'settings.get' }
   | { id: string; type: 'audit.recent'; limit?: number }
   | { id: string; type: 'accounts.status' }
+  | { id: string; type: 'jobs.list' }
+  | { id: string; type: 'jobs.stop'; jobId: string }
   | { id: string; type: 'window.open' };
 
 export type AppRequestType = AppRequest['type'];
@@ -63,6 +69,8 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'settings.get',
   'audit.recent',
   'accounts.status',
+  'jobs.list',
+  'jobs.stop',
   'window.open',
 ];
 
@@ -79,6 +87,8 @@ export type AppMessage =
   | { id: string; type: 'settings'; config: Record<string, unknown>; configPath: string }
   | { id: string; type: 'audit'; entries: AuditEntry[] }
   | { id: string; type: 'accounts'; accounts: AccountRow[]; note?: string }
+  | { id: string; type: 'jobs'; jobs: JobRow[] }
+  | { id: string; type: 'job'; job: JobRow }
   | { id?: string; type: 'error'; message: string }
   | { type: 'state'; state: AppState }
   | { type: 'heard'; text: string; source: string }
@@ -149,6 +159,8 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'settings.get': () => ok,
   'audit.recent': (o) => optionalLimit(o, APP_AUDIT_LIMIT_MAX),
   'accounts.status': () => ok,
+  'jobs.list': () => ok,
+  'jobs.stop': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? ok : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
   'window.open': () => ok,
 };
 
@@ -163,6 +175,8 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, text: o.text as string };
     case 'memory.update':
       return { id, type, memId: o.memId as string, text: o.text as string };
+    case 'jobs.stop':
+      return { id, type, jobId: o.jobId as string };
     case 'memory.forget':
       return { id, type, memId: o.memId as string };
     case 'history.list':

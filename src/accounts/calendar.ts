@@ -13,7 +13,7 @@
  *  4. Window query: instances overlapping [start, end), sorted.
  */
 
-import { tzOffset, validZone, wallParts, zonedToUtc } from '../util/zone.js';
+import { tzOffset, validZone, wallParts, zonedToUtc } from '../lib/zone.js';
 
 export { tzOffset, validZone, wallParts, zonedToUtc };
 export const MAX_INSTANCES = 2000;

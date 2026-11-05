@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { accountsStatus } from '../../src/app/accounts-status.js';
 import { AppServer } from '../../src/app/server.js';
-import type { ExecFn } from '../../src/voice/tts/keys.js';
+import type { ExecFn } from '../../src/lib/keychain.js';
 import { TestClient } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-accts-'));

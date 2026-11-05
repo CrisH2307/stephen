@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromiumArgs, chromiumPath } from '../helpers/chromium.js';
 import { readDevToolsActivePort, type DevToolsActivePort } from '../../src/drivers/macos.js';
-import { isPidAlive } from '../../src/drivers/util.js';
+import { isPidAlive } from '../../src/lib/process.js';
 
 /** Spawn Chromium detached with its own user-data-dir and a debugging port (writes DevToolsActivePort). */
 export async function spawnDetachedChromium(userDataDir: string, url = 'about:blank'): Promise<{ child: ChildProcess; port: DevToolsActivePort }> {

@@ -8,6 +8,7 @@
  * Everything returned (title, channel, duration) is page-controlled text: callers must wrap it as untrusted.
  * The video id is validated against `^[A-Za-z0-9_-]{11}$`, so the watch URL built from it is safe.
  */
+import { readCappedBody } from '../lib/http-body.js';
 
 export const YT_SEARCH_ORIGIN = 'https://www.youtube.com';
 export const YT_SEARCH_PATH = '/results';
@@ -104,29 +105,6 @@ export function isAllowedFetchUrl(url: string): boolean {
   }
 }
 
-/** Read a response body up to `max` bytes; throws ResolveError('too-large') beyond it (and cancels the stream). */
-async function readCapped(res: MediaResponse, max: number): Promise<string> {
-  const declared = Number(res.headers.get('content-length') ?? '');
-  if (Number.isFinite(declared) && declared > max) {
-    await res.body?.cancel().catch(() => undefined);
-    throw new ResolveError('too-large', `the results page is larger than ${max} bytes`);
-  }
-  if (!res.body) return '';
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel().catch(() => undefined);
-      throw new ResolveError('too-large', `the results page is larger than ${max} bytes`);
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks.map((c) => Buffer.from(c.buffer, c.byteOffset, c.byteLength))).toString('utf8');
-}
 
 /** Fetch the search results page: GET, no cookies, no redirects, desktop UA, timeout, size cap. */
 export async function fetchResultsPage(query: string, fetchFn: FetchFn, opts: { timeoutMs?: number; maxBytes?: number } = {}): Promise<string> {
@@ -158,7 +136,8 @@ export async function fetchResultsPage(query: string, fetchFn: FetchFn, opts: { 
       }
       if (res.status >= 300 && res.status < 400) throw new ResolveError('redirect', `YouTube redirected the search (HTTP ${res.status}), e.g. to a consent page`);
       if (res.status !== 200) throw new ResolveError('http', `YouTube answered HTTP ${res.status}`);
-      return readCapped(res, opts.maxBytes ?? MEDIA_MAX_BYTES);
+      const max = opts.maxBytes ?? MEDIA_MAX_BYTES;
+      return readCappedBody(res, max, () => new ResolveError('too-large', `the results page is larger than ${max} bytes`));
     })();
     return await Promise.race([work, timeout]);
   } finally {

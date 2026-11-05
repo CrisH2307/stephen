@@ -13,7 +13,7 @@ import {
   SECRET_AUTOCOMPLETE_PREFIX,
   SECRET_TEXT_FLAGS,
   SECRET_TEXT_SOURCE,
-} from '../shared/secrets.js';
+} from '../lib/secret-fields.js';
 import type { Ref } from '../types.js';
 import { PageTextError } from './page-error.js';
 import { bhRuntime, type RtApi, type RtConfig, type RtErr } from './runtime.js';
@@ -353,7 +353,7 @@ export function hostMatchesPattern(host: string, pattern: string): boolean {
   return !sub && h === d;
 }
 
-/** Frames hosted by payment processors (src/shared/secrets.ts): every value inside is redacted. */
+/** Frames hosted by payment processors (src/lib/secret-fields.ts): every value inside is redacted. */
 export function isPaymentFrame(url: string): boolean {
   let host: string;
   try {

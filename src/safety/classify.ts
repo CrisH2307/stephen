@@ -10,11 +10,11 @@ import {
   SECRET_TEXT_RE,
   textLooksSecret,
   wordsOf,
-} from '../shared/secrets.js';
+} from '../lib/secret-fields.js';
 import { compilePatterns, hostMatches, parseUrl } from './domains.js';
 import { clean, stripUnsafe } from './text.js';
 
-// ───────────────────────────── Secret fields (one definition: src/shared/secrets.ts) ─────────────────────────────
+// ───────────────────────────── Secret fields (one definition: src/lib/secret-fields.ts) ─────────────────────────────
 
 export { SECRET_TEXT_RE, wordsOf };
 

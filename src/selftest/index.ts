@@ -13,7 +13,7 @@ import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { ZEN_EXECUTABLE_CANDIDATES, configFilePath, loadConfig, type HubConfig, type ZenExtraPrefs } from '../config.js';
 import { findZenExecutable } from '../drivers/macos.js';
-import { ensurePrivateDir, isExecutable } from '../drivers/util.js';
+import { ensurePrivateDir, isExecutable } from '../lib/fs.js';
 import { isZenAttachOnly } from '../drivers/zen.js';
 import { errorMessage } from '../errors.js';
 import { packageVersion } from '../server/index.js';

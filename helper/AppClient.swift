@@ -137,6 +137,7 @@ struct AppRequest: Encodable {
   var memId: String? = nil
   var before: String? = nil
   var limit: Int? = nil
+  var jobId: String? = nil
 
   static func hello(_ id: String) -> AppRequest {
     return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION)
@@ -165,6 +166,48 @@ struct AppRequest: Encodable {
     return AppRequest(id: id, type: "audit.recent", limit: limit)
   }
   static func accountsStatus(_ id: String) -> AppRequest { return AppRequest(id: id, type: "accounts.status") }
+  static func jobsList(_ id: String) -> AppRequest { return AppRequest(id: id, type: "jobs.list") }
+  static func jobsStop(_ id: String, jobId: String) -> AppRequest {
+    return AppRequest(id: id, type: "jobs.stop", jobId: jobId)
+  }
+}
+
+/** One row of `jobs.list` / the `job` answer to `jobs.stop` (src/app/jobs-status.ts). Summary and task are the job's own words: shown verbatim. */
+struct JobRow: Decodable, Identifiable, Equatable {
+  var id: String = ""
+  var task: String = ""
+  /** "queued" | "running" | "done" | "failed" | "stopped" | "timeout" */
+  var status: String = ""
+  /** Epoch milliseconds. */
+  var createdAt: Double = 0
+  var startedAt: Double? = nil
+  var endedAt: Double? = nil
+  var turns: Int = 0
+  var costUsd: Double? = nil
+  var folder: String = ""
+  var summary: String = ""
+  var error: String = ""
+
+  var isRunning: Bool { return status == "queued" || status == "running" }
+
+  enum CodingKeys: String, CodingKey {
+    case id, task, status, createdAt, startedAt, endedAt, turns, costUsd, folder, summary, error
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? ""
+    task = (try? c.decodeIfPresent(String.self, forKey: .task)) ?? ""
+    status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? ""
+    createdAt = (try? c.decodeIfPresent(Double.self, forKey: .createdAt)) ?? 0
+    startedAt = (try? c.decodeIfPresent(Double.self, forKey: .startedAt)) ?? nil
+    endedAt = (try? c.decodeIfPresent(Double.self, forKey: .endedAt)) ?? nil
+    turns = (try? c.decodeIfPresent(Int.self, forKey: .turns)) ?? 0
+    costUsd = (try? c.decodeIfPresent(Double.self, forKey: .costUsd)) ?? nil
+    folder = (try? c.decodeIfPresent(String.self, forKey: .folder)) ?? ""
+    summary = (try? c.decodeIfPresent(String.self, forKey: .summary)) ?? ""
+    error = (try? c.decodeIfPresent(String.self, forKey: .error)) ?? ""
+  }
 }
 
 /** One row of `accounts.status` (src/app/accounts-status.ts). Never holds a secret, only where it was found. */
@@ -313,6 +356,9 @@ struct AppMessage: Decodable {
   // accounts
   var accounts: [AccountRow]? = nil
   var note: String? = nil
+  // jobs / job
+  var jobs: [JobRow]? = nil
+  var job: JobRow? = nil
   // state / heard pushes
   var state: String? = nil
   var text: String? = nil
@@ -320,7 +366,7 @@ struct AppMessage: Decodable {
 
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
-      configPath, state, text, source, accounts, note
+      configPath, state, text, source, accounts, note, jobs, job
   }
 
   init(localError: String, id: String?) {
@@ -353,6 +399,8 @@ struct AppMessage: Decodable {
     configPath = try? c.decodeIfPresent(String.self, forKey: .configPath)
     accounts = try? c.decodeIfPresent([AccountRow].self, forKey: .accounts)
     note = try? c.decodeIfPresent(String.self, forKey: .note)
+    jobs = try? c.decodeIfPresent([JobRow].self, forKey: .jobs)
+    job = try? c.decodeIfPresent(JobRow.self, forKey: .job)
     state = try? c.decodeIfPresent(String.self, forKey: .state)
     text = try? c.decodeIfPresent(String.self, forKey: .text)
     source = try? c.decodeIfPresent(String.self, forKey: .source)
@@ -577,6 +625,9 @@ final class AppModel: ObservableObject {
 
   @Published private(set) var accounts: [AccountRow] = []
   @Published private(set) var accountsNotice: String? = nil
+
+  @Published private(set) var jobs: [JobRow] = []
+  @Published private(set) var jobsNotice: String? = nil
 
   let socketPath: String
   private let log: (String) -> Void
@@ -928,6 +979,32 @@ final class AppModel: ObservableObject {
       } else {
         self.accountsNotice = msg.message ?? "error"
       }
+    }
+  }
+
+  func refreshJobs() {
+    request(AppRequest.jobsList(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "jobs" {
+        self.jobs = msg.jobs ?? []
+        self.jobsNotice = nil
+      } else {
+        self.jobsNotice = msg.message ?? "error"
+      }
+    }
+  }
+
+  /** Stop a running job (the owner's own click, so no extra question). The list is refreshed from the answer. */
+  func stopJob(_ jobId: String) {
+    request(AppRequest.jobsStop(newId(), jobId: jobId)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "job", let row = msg.job {
+        if let i = self.jobs.firstIndex(where: { $0.id == row.id }) { self.jobs[i] = row }
+        self.jobsNotice = nil
+      } else {
+        self.jobsNotice = msg.message ?? "error"
+      }
+      self.refreshJobs()
     }
   }
 

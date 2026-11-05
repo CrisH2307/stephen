@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
@@ -65,6 +65,8 @@ Usage:
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
                          Show your recent commands (kept on this Mac only), or delete them
+  stephen jobs [list] | status <id> | show <id> | stop <id>
+                         Background jobs ("Stephen, start a job to …"; each start asks in a dialog)
   stephen accounts [test canvas|calendar|notion|weather]
                          Which account secrets and Gmail accounts Stephen finds (never the values)
   stephen connect gmail <label> | disconnect gmail <label>
@@ -474,6 +476,9 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./memory/cli.js')).runMemoryCli(rest);
     case 'history':
       return (await import('./history/cli.js')).runHistoryCli(rest);
+    case 'jobs':
+      // Owner-only, and the per-job supervisor (`jobs _run`): loaded on demand, never by `stephen serve`.
+      return (await import('./jobs/cli.js')).runJobsCli(rest);
     case 'app':
       return (await import('./app/cli.js')).runAppCli(rest);
     case 'accounts':

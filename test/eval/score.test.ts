@@ -118,7 +118,7 @@ describe('EVAL_CASES', () => {
     const ids = EVAL_CASES.map((k) => k.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(EVAL_CASES.length).toBeGreaterThanOrEqual(30);
-    expect(new Set(EVAL_CASES.map((k) => k.category))).toEqual(new Set(['single', 'misheard', 'multi', 'routes', 'vague', 'cant-yet', 'careful', 'media', 'memory', 'inject', 'read', 'timer', 'wake']));
+    expect(new Set(EVAL_CASES.map((k) => k.category))).toEqual(new Set(['single', 'misheard', 'multi', 'routes', 'vague', 'cant-yet', 'careful', 'media', 'memory', 'inject', 'read', 'timer', 'wake', 'job']));
     for (const k of EVAL_CASES) {
       const calls = [...(k.expect.calls ?? []), ...(k.expect.forbid ?? [])];
       const res = [...calls.flatMap((e) => [e.tool, ...Object.values(e.args ?? {}).flat()]), ...(k.expect.noCalls ?? []), ...(k.expect.replyMatches ?? []), ...(k.expect.replyNot ?? [])];

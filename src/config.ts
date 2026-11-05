@@ -35,6 +35,8 @@ export type HubConfig = ResolvedConfig & {
   accounts?: Record<string, unknown>;
   /** Raw "app" section of config.json ({} if absent); src/app/config.ts validates and applies defaults. */
   app?: Record<string, unknown>;
+  /** Raw "jobs" section of config.json ({} if absent); src/jobs/config.ts validates and applies defaults. */
+  jobs?: Record<string, unknown>;
 };
 
 type BaseUserConfig = {
@@ -142,6 +144,8 @@ const UserConfigSchema = z.strictObject({
   accounts: z.record(z.string(), z.unknown()).nullish(),
   /** The Stephen window's socket (app.sock): validated by src/app/config.ts. */
   app: z.record(z.string(), z.unknown()).nullish(),
+  /** Background jobs ("start a job to …", docs/ADR-004): validated by src/jobs/config.ts. */
+  jobs: z.record(z.string(), z.unknown()).nullish(),
 });
 
 type ParsedUserConfig = z.infer<typeof UserConfigSchema>;
@@ -333,6 +337,7 @@ export function loadConfig(overrides?: UserConfig, env: NodeJS.ProcessEnv = proc
     history: { ...(file.history ?? {}), ...(over.history ?? {}) },
     accounts: { ...(file.accounts ?? {}), ...(over.accounts ?? {}) },
     app: { ...(file.app ?? {}), ...(over.app ?? {}) },
+    jobs: { ...(file.jobs ?? {}), ...(over.jobs ?? {}) },
   };
 }
 

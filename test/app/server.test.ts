@@ -119,6 +119,13 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     audit: { recent: async (n) => AUDIT.slice(0, n) },
     settings: () => settingsFor(),
     accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
+    jobs: {
+      list: () => [],
+      stop: async (id) => {
+        if (id !== '2026-11-05-write-my-lab-report') return { refused: `There's no job ${id}.` };
+        return { id, task: 'write my lab report draft', status: 'stopped', folder: `/Users/cris/Stephen Jobs/${id}`, createdAt: 1, startedAt: 2, endedAt: 3, turns: 9, costUsd: 0.25, summary: '', error: 'Stopped by the owner.' };
+      },
+    },
     speakReplies: false,
     openWindow: () => (calls.opens++, null),
     newId: () => `h_test${++ids}`,

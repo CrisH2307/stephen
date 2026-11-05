@@ -11,10 +11,9 @@
  * `stephen connect gmail <label>`): lookupGmailToken.
  */
 import { lstatSync, readFileSync } from 'node:fs';
-import { userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultExec, type ExecFn } from '../voice/tts/keys.js';
+import { keychainHas, keychainRead, type KeychainDeps } from '../lib/keychain.js';
 
 /** Each secret: Keychain service suffix and the `.env` names accepted for it (first present wins). */
 export const SECRET_SPECS = {
@@ -51,10 +50,7 @@ export const DEFAULT_ENV_FILE = join(REPO_ROOT, '.env');
 /** A `.env` larger than this is not read (it is a few lines). */
 const MAX_ENV_BYTES = 64 * 1024;
 
-export interface SecretDeps {
-  exec?: ExecFn;
-  platform?: NodeJS.Platform;
-  user?: string;
+export interface SecretDeps extends KeychainDeps {
   /** `.env` path (default: the repo root); null = don't use a file. */
   envFile?: string | null;
   uid?: number | null;
@@ -129,18 +125,15 @@ export async function lookupSecret(name: SecretName, deps: SecretDeps = {}): Pro
   return { value: null, source: null, notes };
 }
 
-/** One Keychain item (macOS only; argv only, never a shell), checked by `check`; null when absent or bad. */
+/** One Keychain item (src/lib/keychain.ts keychainRead), checked by `check`; null when absent or bad. */
 async function keychainFind(service: string, check: (v: string) => string | null, deps: SecretDeps, notes: string[]): Promise<string | null> {
-  if ((deps.platform ?? process.platform) !== 'darwin') return null;
-  const exec = deps.exec ?? defaultExec;
-  const r = await exec('security', ['find-generic-password', '-s', service, '-a', deps.user ?? userInfo().username, '-w'], { timeoutMs: 10_000 });
-  const v = r.stdout.trim();
-  if (r.code === 0 && v) {
-    const bad = check(v);
-    if (!bad) return v;
+  const r = await keychainRead(service, deps);
+  if (r.value) {
+    const bad = check(r.value);
+    if (!bad) return r.value;
     notes.push(`Keychain ${service}: ${bad}`);
   }
-  if (r.code !== 0 && r.code !== 44) notes.push(`Keychain lookup for ${service} failed: ${r.stderr.trim().split('\n')[0] || `exit ${r.code}`}`);
+  if (r.error) notes.push(`Keychain lookup for ${service} failed: ${r.error}`);
   return null;
 }
 
@@ -168,16 +161,10 @@ export interface SecretPresence {
   source: 'keychain' | '.env' | null;
 }
 
-/** Is there a Keychain item? `security find-generic-password` WITHOUT `-w`: attributes only, the value is never read. */
-async function keychainHas(service: string, deps: SecretDeps): Promise<boolean> {
-  if ((deps.platform ?? process.platform) !== 'darwin') return false;
-  const r = await (deps.exec ?? defaultExec)('security', ['find-generic-password', '-s', service, '-a', deps.user ?? userInfo().username], { timeoutMs: 10_000 });
-  return r.code === 0;
-}
-
 /**
  * Whether a secret is set (Keychain item exists, else a non-empty `.env` key in a private file of this user), without
- * reading the Keychain value. The `.env` file has to be read to see its key names, but only the names are kept.
+ * reading the Keychain value (keychainHas: `security find-generic-password` without `-w`, attributes only). The
+ * `.env` file has to be read to see its key names, but only the names are kept.
  * Never throws.
  */
 export async function secretPresent(name: SecretName, deps: SecretDeps = {}): Promise<SecretPresence> {
