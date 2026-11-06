@@ -253,7 +253,13 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
 
   log(`✓ Built ${plan.appPath} (version ${plan.version}, ad-hoc signed as ${HELPER_BUNDLE_ID})`);
   if (deps.openAfter) {
-    const o = await deps.run('/usr/bin/open', openHelperArgv(plan.appPath, plan.stephenHome), 30_000);
+    const openArgv = openHelperArgv(plan.appPath, plan.stephenHome);
+    let o = await deps.run('/usr/bin/open', openArgv, 30_000);
+    if (o.code !== 0) {
+      // -600 (procNotFound): the old helper is still exiting / LaunchServices still has the replaced bundle. Retry once.
+      await new Promise((r) => setTimeout(r, 2000));
+      o = await deps.run('/usr/bin/open', openArgv, 30_000);
+    }
     if (o.code !== 0) log(`Could not open it: ${(o.stderr || o.stdout).trim() || `exit code ${o.code}`}`);
   }
   log(['', ...nextSteps(plan)].join('\n'));
