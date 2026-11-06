@@ -56,6 +56,9 @@ export function startPrompt(plan: JobPlan, source: string): ConfirmPrompt {
   return { title: 'Stephen: start a background job?', body: lines.join('\n') };
 }
 
+export const PHONE_JOB_START_REPLY = 'To start a job from your phone, ask me to start it and approve the request on your phone.';
+export const PHONE_JOB_STOP_REPLY = "I can't stop a job from your phone yet. Stop it at the Mac (say \"stop the job\", or the Jobs tab).";
+
 export class JobRouter {
   constructor(private readonly o: JobRouterOptions) {}
 
@@ -68,16 +71,21 @@ export class JobRouter {
     // The task keeps the owner's own spelling ("SOFE 3980"): parse the original text when there is one.
     const intent = parseJobIntent(opts.raw ?? text);
     if (!intent) return null;
-    const wake = opts.source === 'voice-wake';
+    // The phone (docs/ADR-005) gets wake-word replies; nobody is at the Mac for a dialog, so start and stop are
+    // refused here (a phone job starts through the bridge's start_job, which the owner approves on the phone).
+    const phone = opts.source === 'phone';
+    const wake = opts.source === 'voice-wake' || phone;
     try {
       switch (intent.kind) {
         case 'start':
+          if (phone) return { reply: PHONE_JOB_START_REPLY, changed: false };
           return await this.start(intent.task, opts.source);
         case 'list':
           return { reply: this.listReply(wake), changed: false };
         case 'show':
           return this.show(wake);
         case 'stop':
+          if (phone) return { reply: PHONE_JOB_STOP_REPLY, changed: false };
           return await this.stop(intent.which, opts.source, wake);
       }
     } catch (e) {

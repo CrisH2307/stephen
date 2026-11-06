@@ -62,6 +62,9 @@ function atText(at: number, now: number, tz: string): string {
 
 const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
 
+/** The phone can't answer the cancel dialog at the Mac (docs/ADR-005). */
+export const PHONE_CANCEL_REPLY = "I can't cancel timers from your phone. Do that at the Mac.";
+
 export class TimerRouter {
   constructor(private readonly o: TimerRouterOptions) {}
 
@@ -72,7 +75,7 @@ export class TimerRouter {
   /** Handle `text` if it is a timer/reminder command; null = not one. Never throws. */
   async route(text: string, opts: { source: string; raw?: string } = { source: 'cli' }): Promise<TimerRoute | null> {
     const now = this.now();
-    const wake = opts.source === 'voice-wake';
+    const wake = opts.source === 'voice-wake' || opts.source === 'phone'; // the phone gets wake-word replies (ADR-005)
     const intent = parseTimerIntent(text, now, this.o.timeZone);
     if (!intent) return null;
     const store = this.o.store;
@@ -103,6 +106,7 @@ export class TimerRouter {
         const items = store.list();
         if (!items.length) return { reply: 'There are no timers or reminders to cancel.', changed: false };
         if (intent.which === 'all') {
+          if (opts.source === 'phone') return { reply: PHONE_CANCEL_REPLY, changed: false };
           if (wake && !(await this.confirm(`Cancel all ${items.length} timers and reminders?`))) return { reply: 'Okay, kept them.', changed: false };
           store.remove(items.map((i) => i.id));
           return { reply: `Cancelled all ${items.length}.`, changed: false };
@@ -117,6 +121,7 @@ export class TimerRouter {
           target = scored[0]?.i;
           if (!target) return { reply: `I don't have a reminder about ${intent.which.query}.`, changed: false };
         }
+        if (opts.source === 'phone') return { reply: PHONE_CANCEL_REPLY, changed: false };
         if (wake && !(await this.confirm(`Cancel ${this.describe(target!, now, false)}?`))) return { reply: 'Okay, kept it.', changed: false };
         store.remove([target!.id]);
         return { reply: `Cancelled ${this.describe(target!, now, false)}.`, changed: false };
