@@ -26,5 +26,4 @@ export function helperLogPath(stephenHome: string): string {
   return join(stephenHome, 'logs', 'helper.log');
 }
 
-/** Unix socket paths are limited to 104 bytes on macOS (including the NUL). */
-export const MAX_SOCKET_PATH_BYTES = 103;
+export { MAX_SOCKET_PATH_BYTES } from '../lib/private-socket.js';
