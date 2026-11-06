@@ -9,15 +9,16 @@ import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './s
 
 /**
  * How far a conversation is trusted (docs/REVIEW-7.md R7-2). `trusted`: push-to-talk (F5 / Fn+Option), typed text,
- * the app chat, `--text`. `wake`: the wake word, which anyone in the room or a video can say. A conversation has one
- * trust level: a command of another level always starts a fresh one, and a `wake` conversation's serve runs with
- * `--trust wake` (email shows only who and when).
+ * the app chat, `--text`. `wake`: the wake word, which anyone in the room or a video can say. `phone`: the owner's
+ * phone through Remote Control (docs/ADR-005): `wake` data rules, and nobody is at the Mac to answer a confirmation,
+ * so the serve declines every one. A conversation has one trust level: a command of another level always starts a
+ * fresh one, and a `wake` or `phone` conversation's serve runs with `--trust wake` (email shows only who and when).
  */
-export type Trust = 'trusted' | 'wake';
+export type Trust = 'trusted' | 'wake' | 'phone';
 
-/** The trust of a command from this source: only the wake word is `wake`. */
+/** The trust of a command from this source. */
 export function trustOf(source: CommandSource): Trust {
-  return source === 'voice-wake' ? 'wake' : 'trusted';
+  return source === 'voice-wake' ? 'wake' : source === 'phone' ? 'phone' : 'trusted';
 }
 
 export interface CommandRunner {

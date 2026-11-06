@@ -66,6 +66,8 @@ import { FinishWatcher } from '../jobs/finish.js';
 import { JobManager } from '../jobs/manager.js';
 import { purgeJobs } from '../jobs/state.js';
 import { JobRouter } from '../jobs/router.js';
+import { PhoneServer } from '../phone/server.js';
+import { isPhoneOn } from '../phone/setup.js';
 import type { SpawnFn as JobSpawnFn } from '../jobs/runner.js';
 
 export { LISTEN_USAGE } from './args.js';
@@ -120,6 +122,8 @@ export interface ListenEnv {
   notify?: (text: string) => void;
   /** Job-finished notification (tests); default: macOS notification with a title. */
   jobNotify?: NotifyTitledFn;
+  /** Notices for phone requests (tests); default macOS notifications. */
+  phoneNotify?: NotifyTitledFn;
   /** How often finished jobs are looked for, ms (tests); default 10 s. */
   jobPollMs?: number;
   /**
@@ -441,6 +445,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const recordHistory = args.dryRun ? undefined : historyRecorder(history, toolRunner ? () => toolRunner.tools() : null, err);
   // The Stephen window (app.sock): started once the listener exists; until then (and with --text) it stays null.
   let app: AppServer | null = null;
+  let phone: PhoneServer | null = null;
   const onDone = (r: CommandReport) => {
     recordHistory?.(r);
     app?.commandDone(r, r.ranClaude && toolRunner ? toolRunner.tools().map((t) => t.tool) : []);
@@ -550,6 +555,29 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     }
     return server;
   };
+  /**
+   * Serve <home>/run/phone.sock for the phone bridge (docs/ADR-005): phone commands go through the same listener queue
+   * as voice and typed ones, as source 'phone'. Requests are refused unless `stephen phone on`. null (with a note)
+   * when the socket can't be made.
+   */
+  const startPhone = async (l: Listener, a: Assistant): Promise<PhoneServer | null> => {
+    const server = new PhoneServer({
+      home,
+      isOn: () => isPhoneOn(home),
+      ask: (text) => l.submit(() => a.command(text, { source: 'phone', raw: text, speak: false }))?.then((r) => r.reply) ?? null,
+      ...(jobRouter ? { jobStatus: async () => (await jobRouter.route("how's the job going", { source: 'phone' }))?.reply ?? 'No jobs.' } : {}),
+      audit,
+      notify: env.phoneNotify ?? macNotifyTitled,
+      log: err,
+    });
+    try {
+      await server.start();
+    } catch (e) {
+      err(`Note: the phone link can't connect to this listener (${(e as Error).message}).`);
+      return null;
+    }
+    return server;
+  };
   let assistant = makeAssistant(null);
   let bridge: HelperBridge | null = null;
   let listener: Listener | null = null;
@@ -576,6 +604,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     claude?.killNow();
     warm?.killNow();
     app?.closeSync();
+    phone?.closeSync();
     if (settings.personaFile) removePersonaFile(settings.personaFile);
   };
   const signals = env.signals ?? true;
@@ -652,6 +681,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
+    phone = await startPhone(listener, assistant);
     // Fire timers only while listening. The notification shows at once; the spoken alert waits in ONE queue until the
     // listener is idle (not recording, no command, nobody talking) and runs through listener.submit, so it counts as
     // busy while it speaks (review 6, R6-5). Gives up speaking after 10 minutes (the notification already showed).
@@ -718,6 +748,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     if (settings.personaFile) removePersonaFile(settings.personaFile);
     await app?.close();
     app = null;
+    await phone?.close();
+    phone = null;
     bridge?.close();
     if (signals) {
       process.off('SIGINT', onSigint);

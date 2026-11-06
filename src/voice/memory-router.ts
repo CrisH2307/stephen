@@ -8,7 +8,9 @@
  *
  * Trust by channel: push-to-talk ('voice-ptt'), the Stephen app ('app') and `listen --text` ('cli') save directly.
  * A wake-word "remember …" ('voice-wake') asks in a macOS dialog first when memory.confirmWakeWord is on (a video
- * can say "Hey Stephen, remember …"). "Forget everything" always asks.
+ * can say "Hey Stephen, remember …"). "Forget everything" always asks. From the phone ('phone', docs/ADR-005) nobody is
+ * at the Mac to answer a dialog and the phone may not be in the owner's hands: every change is refused (a saved
+ * memory goes out with every later command), and listing gives the count only.
  *
  * "Remember X and play Y" (12.3): X is saved here and the route carries `rest` ("play Y") for the Assistant to run
  * as a normal Claude command in the same handle.
@@ -16,6 +18,8 @@
 import type { Confirmer } from '../types.js';
 import { matchForget, newestWithin, parseMemoryIntent, rawTail, type MemoryIntent } from '../memory/intent.js';
 import { MEMORY_MESSAGES, MemoryStoreError, type MemoryItem, type MemorySource, type MemoryStore } from '../memory/store.js';
+
+export const PHONE_MEMORY_REPLY = "I can't change my memory from your phone. Do that at the Mac (hold F5, or the Stephen app).";
 
 /** Where a command came from: push-to-talk, wake word, the Stephen app (typed), or `stephen listen --text`. */
 export type CommandSource = MemorySource;
@@ -72,6 +76,7 @@ export class MemoryRouter {
   }
 
   private async handle(intent: MemoryIntent, source: CommandSource, raw: string): Promise<MemoryRoute> {
+    if (source === 'phone' && intent.kind !== 'list') return { reply: PHONE_MEMORY_REPLY, changed: false };
     switch (intent.kind) {
       case 'remember':
         return this.remember(rawTail(raw, intent.text), source, intent.rest !== undefined ? rawTail(raw, intent.rest) : undefined);
@@ -110,7 +115,7 @@ export class MemoryRouter {
 
   /** Wake word with confirmWakeWord on: anyone in the room (or a video) could have said it (review 5, R5-5). */
   private untrusted(source: CommandSource): boolean {
-    return source === 'voice-wake' && this.o.confirmWakeWord;
+    return source === 'phone' || (source === 'voice-wake' && this.o.confirmWakeWord);
   }
 
   private async list(source: CommandSource): Promise<MemoryRoute> {
