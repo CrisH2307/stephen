@@ -481,6 +481,9 @@ async function main(argv: string[]): Promise<number> {
     case 'jobs':
       // Owner-only, and the per-job supervisor (`jobs _run`): loaded on demand, never by `stephen serve`.
       return (await import('./jobs/cli.js')).runJobsCli(rest);
+    case 'phone-bridge':
+      // The phone session's MCP server (docs/ADR-005): reaches the listener only through phone.sock.
+      return (await import('./phone/bridge.js')).runPhoneBridge();
     case 'phone':
       // Owner-only (writes the phone folder, starts claude for the lock-down check): loaded on demand.
       return (await import('./phone/cli.js')).runPhoneCli(rest);
