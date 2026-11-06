@@ -437,3 +437,19 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   435 extra and fails. Moved the stream-json parser to `src/lib/claude-stream.ts` and the repo root to
   `src/lib/repo.ts` (one copy each; src/jobs keeps its names) so src/phone loads no job code (boundary test).
   Tests: `test/phone/setup.test.ts`. Next: step 2 (phone.sock + listener side).
+- 2026-11-05: **Item 5 step 2: phone.sock + listener side** (ADR-005 Bridge rules). New `src/phone/server.ts`:
+  `<home>/run/phone.sock` (0600) with only `ask`, `job_status`, `start_job` (the last refused until step 4); refused
+  unless the `<home>/phone/.on` marker exists (`stephen phone on|off` in step 5); 6 asks a minute; every request
+  audited (type and size, never the text) and shown as a Mac notification. The listener starts it next to app.sock
+  and runs phone asks through the same queue as source `phone`. New trust `phone`: serve gets `--trust wake`
+  (email who/when) and `--confirm deny` (nobody at the Mac). From the phone: memory changes refused, memory and
+  timer lists are counts, timer cancel / job start / job stop refused without a dialog. `'phone'` added to the
+  memory/history sources and the Swift source label ("Phone"). Refactor: the app socket's lifecycle (stale check,
+  0700/0600, remove-if-ours) moved to `src/lib/private-socket.ts`, shared by app.sock and phone.sock.
+  Tests: `test/phone/server.test.ts`, `test/phone/routers.test.ts`. Next: step 3 (bridge MCP).
+- 2026-11-05: **Item 5 step 3: the bridge MCP** (`src/phone/bridge.ts`, `stephen phone-bridge`). Three tools (`ask`,
+  `job_status`, `start_job` with `_meta["anthropic/requiresUserInteraction"] = true`); one JSON line per call to
+  phone.sock, 5 min timeout, "listener not running" as a tool error. Claude-reachable: added to CLAUDE_REACHABLE in
+  `test/helpers/import-scan.ts` (loads no memory/app/history/timer/job/connect code). `phoneSocketPath` moved to
+  `src/phone/setup.ts`. Real `stephen phone check` on the Mac: locked, all 3 phone tools present.
+  Tests: `test/phone/bridge.test.ts`. Next: step 4 (jobs from the phone), step 5 (`stephen phone on|off|status`).
