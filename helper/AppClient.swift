@@ -1031,6 +1031,7 @@ final class AppModel: ObservableObject {
     case "voice-wake": return "Hey Stephen"
     case "app": return "Stephen app"
     case "cli": return "command line"
+    case "phone": return "Phone"
     default: return source
     }
   }
