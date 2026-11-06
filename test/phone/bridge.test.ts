@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildPhoneBridge, phoneRequest } from '../../src/phone/bridge.js';
-import { PHONE_NO_JOBS_YET, PhoneServer } from '../../src/phone/server.js';
+import { PHONE_JOBS_OFF, PhoneServer } from '../../src/phone/server.js';
 import { PHONE_TOOLS, phoneSocketPath } from '../../src/phone/setup.js';
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'spb-')));
@@ -54,7 +54,7 @@ describe('stephen phone-bridge', () => {
     expect(text(await c.callTool({ name: 'job_status', arguments: {} }))).toBe('No jobs.');
     const job = await c.callTool({ name: 'start_job', arguments: { task: 'write a poem' } });
     expect(job.isError).toBe(true);
-    expect(text(job)).toBe(PHONE_NO_JOBS_YET);
+    expect(text(job)).toBe(PHONE_JOBS_OFF);
   });
 
   it('the listener not running: a clear tool error, nothing else tried', async () => {

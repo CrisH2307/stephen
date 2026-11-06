@@ -565,7 +565,12 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       home,
       isOn: () => isPhoneOn(home),
       ask: (text) => l.submit(() => a.command(text, { source: 'phone', raw: text, speak: false }))?.then((r) => r.reply) ?? null,
-      ...(jobRouter ? { jobStatus: async () => (await jobRouter.route("how's the job going", { source: 'phone' }))?.reply ?? 'No jobs.' } : {}),
+      ...(jobRouter
+        ? {
+            jobStatus: async () => (await jobRouter.route("how's the job going", { source: 'phone' }))?.reply ?? 'No jobs.',
+            startJob: (task: string, web: boolean) => jobRouter.startFromPhone(task, web),
+          }
+        : {}),
       audit,
       notify: env.phoneNotify ?? macNotifyTitled,
       log: err,

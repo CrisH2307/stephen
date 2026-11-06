@@ -5,7 +5,7 @@
  *   {id, type: 'ask', text}            → {id, type: 'reply', text}   (runs as source 'phone': wake-word data rules,
  *                                                                     every confirmation declined, no memory writes)
  *   {id, type: 'job_status'}           → {id, type: 'reply', text}
- *   {id, type: 'start_job', task, web?} → {id, type: 'reply', text}   (build step 4; until then a refusal)
+ *   {id, type: 'start_job', task, web?} → {id, type: 'reply', text}   (the owner approved it on the phone)
  * Errors: {id, type: 'error', message}. Same-user only (src/lib/private-socket.ts). Every request is refused while
  * the phone is off (`stephen phone on` / `off`), rate limited, audited, and shown as a notification on the Mac.
  */
@@ -39,7 +39,7 @@ export type PhoneResponse = { id: string; type: 'reply'; text: string } | { id?:
 export const PHONE_OFF_MESSAGE = 'The phone link is off. Turn it on at the Mac with `stephen phone on`.';
 export const PHONE_BUSY_MESSAGE = 'Stephen is busy with something at the Mac. Try again in a moment.';
 export const PHONE_RATE_MESSAGE = `Too many requests from the phone (at most ${PHONE_ASKS_PER_MIN} a minute). Wait a minute and try again.`;
-export const PHONE_NO_JOBS_YET = "Starting jobs from the phone isn't built yet.";
+export const PHONE_JOBS_OFF = 'Background jobs are off on this Mac.';
 
 export interface PhoneServerOptions {
   home: string;
@@ -50,7 +50,7 @@ export interface PhoneServerOptions {
   ask: (text: string) => Promise<string> | null;
   /** The jobs summary at phone trust; absent = jobs are off. */
   jobStatus?: () => Promise<string>;
-  /** Build step 4. Absent = refused. */
+  /** Start a job the owner approved on the phone; absent = jobs are off. */
   startJob?: (task: string, web: boolean) => Promise<string>;
   audit: IAuditLog | null;
   /** A short notice on the Mac for every phone request. */
@@ -125,12 +125,12 @@ export class PhoneServer {
           return { id: req.id, type: 'reply', text: truncate(await run, PHONE_MAX_REPLY) };
         }
         case 'job_status': {
-          if (!this.o.jobStatus) return fail('Background jobs are off on this Mac.', 'error');
+          if (!this.o.jobStatus) return fail(PHONE_JOBS_OFF, 'error');
           await this.audited(req, 'ok');
           return { id: req.id, type: 'reply', text: truncate(await this.o.jobStatus(), PHONE_MAX_REPLY) };
         }
         case 'start_job': {
-          if (!this.o.startJob) return fail(PHONE_NO_JOBS_YET, 'denied');
+          if (!this.o.startJob) return fail(PHONE_JOBS_OFF, 'denied');
           this.notice(`Job requested from your phone: "${truncate(req.task, 80)}"`);
           await this.audited(req, 'ok');
           return { id: req.id, type: 'reply', text: truncate(await this.o.startJob(req.task, req.web === true), PHONE_MAX_REPLY) };

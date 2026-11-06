@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   PHONE_ASKS_PER_MIN,
   PHONE_BUSY_MESSAGE,
-  PHONE_NO_JOBS_YET,
+  PHONE_JOBS_OFF,
   PHONE_OFF_MESSAGE,
   PhoneServer,
   phoneSocketPath,
@@ -73,10 +73,19 @@ describe('PhoneServer requests', () => {
     expect((await t.req({ id: 'y', type: 'ask', text: 'hi' })).type).toBe('reply');
   });
 
-  it('job_status and start_job (step 4 not built yet)', async () => {
+  it('start_job passes the task and the web flag through; a notice on the Mac', async () => {
+    const started: [string, boolean][] = [];
+    const t = setup({ startJob: async (task, web) => (started.push([task, web]), 'Job started.') });
+    expect(await t.req({ id: '1', type: 'start_job', task: 'write a poem about rivers' })).toEqual({ id: '1', type: 'reply', text: 'Job started.' });
+    expect(await t.req({ id: '2', type: 'start_job', task: 'research rivers', web: true })).toMatchObject({ type: 'reply' });
+    expect(started).toEqual([['write a poem about rivers', false], ['research rivers', true]]);
+    expect(t.notes[0]).toBe('Job requested from your phone: "write a poem about rivers"');
+  });
+
+  it('job_status and start_job when jobs are off', async () => {
     expect(await setup().req({ id: '1', type: 'job_status' })).toMatchObject({ type: 'error', message: expect.stringMatching(/jobs are off/) });
     expect(await setup({ jobStatus: async () => 'No jobs.' }).req({ id: '1', type: 'job_status' })).toEqual({ id: '1', type: 'reply', text: 'No jobs.' });
-    expect(await setup().req({ id: '1', type: 'start_job', task: 'write a poem' })).toEqual({ id: '1', type: 'error', message: PHONE_NO_JOBS_YET });
+    expect(await setup().req({ id: '1', type: 'start_job', task: 'write a poem' })).toEqual({ id: '1', type: 'error', message: PHONE_JOBS_OFF });
   });
 
   it('anything else is a bad request: unknown types, extra fields, oversize text, not JSON', async () => {

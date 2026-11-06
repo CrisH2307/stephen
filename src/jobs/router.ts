@@ -56,6 +56,8 @@ export function startPrompt(plan: JobPlan, source: string): ConfirmPrompt {
   return { title: 'Stephen: start a background job?', body: lines.join('\n') };
 }
 
+/** Jobs a day from the phone (docs/ADR-005 Bridge rules), on top of jobs.dailyStarts. */
+export const PHONE_DAILY_JOBS = 3;
 export const PHONE_JOB_START_REPLY = 'To start a job from your phone, ask me to start it and approve the request on your phone.';
 export const PHONE_JOB_STOP_REPLY = "I can't stop a job from your phone yet. Stop it at the Mac (say \"stop the job\", or the Jobs tab).";
 
@@ -90,6 +92,27 @@ export class JobRouter {
       }
     } catch (e) {
       return { reply: `Something went wrong with the job (${clean((e as Error).message, 120)}).`, changed: false };
+    }
+  }
+
+  /**
+   * A job the owner approved on the phone (docs/ADR-005, owner decision 3): the phone's Allow tap, which showed the exact
+   * task, is the confirmation, so there is no Mac dialog. The same plan, folder, sandbox, budgets and caps as a job
+   * started at the Mac, plus: web only when the owner asked for it on the phone, and PHONE_DAILY_JOBS a day from the
+   * phone (counted from the job registry, so a listener restart doesn't reset it).
+   */
+  async startFromPhone(task: string, web: boolean): Promise<string> {
+    try {
+      const plan = await this.o.jobs.plan(task);
+      if ('error' in plan) return plan.error;
+      const day = plan.id.slice(0, 10); // ids start with the local date (YYYY-MM-DD)
+      const fromPhone = this.o.jobs.list().filter((j) => j.source === 'phone' && j.id.startsWith(day)).length;
+      if (fromPhone >= PHONE_DAILY_JOBS) return `That's ${PHONE_DAILY_JOBS} jobs from your phone today already, the phone limit. Start more at the Mac.`;
+      const r = await this.o.jobs.start({ ...plan, web }, 'phone');
+      if ('refused' in r) return r.refused;
+      return `Job started: ${said(plan.task)}. Up to ${plural(minutes(plan.wallClockMs), 'minute')}, web ${web ? 'on' : 'off'}; it'll be in your Stephen Jobs folder. Ask "how's my job going" to check on it.`;
+    } catch (e) {
+      return `Something went wrong with the job (${clean((e as Error).message, 120)}).`;
     }
   }
 

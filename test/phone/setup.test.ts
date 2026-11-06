@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { formatLockdown, runPhoneCli, type PhoneCliEnv } from '../../src/phone/cli.js';
-import { checkPhoneLockdown, compareTools, PHONE_AGENT, PHONE_TOOLS, phoneDir, phoneFiles, writePhoneFolder } from '../../src/phone/setup.js';
+import { checkPhoneLockdown, compareTools, isPhoneOn, PHONE_AGENT, PHONE_TOOLS, phoneDir, phoneFiles, phoneOnPath, writePhoneFolder } from '../../src/phone/setup.js';
 
 const FAKE = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude-init.mjs');
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-phone-')));
@@ -86,11 +87,74 @@ describe('stephen phone', () => {
   });
 
   it('unknown commands exit 2; help exits 0', async () => {
-    expect((await cli(['on'])).code).toBe(2);
+    expect((await cli(['launch'])).code).toBe(2);
+    expect((await cli(['on', 'now'])).code).toBe(2);
     expect((await cli([])).code).toBe(0);
   });
 
   it('formatLockdown: a probe error is never shown as locked', () => {
     expect(formatLockdown({ ...compareTools(PHONE_TOOLS), error: 'no init line from claude in time' })[0]).toMatch(/^✗ Not proven locked/);
+  });
+});
+
+describe('stephen phone on | off | status', () => {
+  const locked = async () => ({ ...compareTools(PHONE_TOOLS), error: '' });
+  const run = async (argv: string[], home: string, o: Partial<PhoneCliEnv> = {}) => {
+    const out: string[] = [];
+    const code = await runPhoneCli(argv, { home, check: locked, listening: async () => true, out: (l) => out.push(l), err: (l) => out.push(l), ...o });
+    return { code, text: out.join('\n') };
+  };
+
+  it('on: checks the lock, runs Remote Control in the phone folder with the marker set, clears it when it ends', async () => {
+    const home = join(tmp, 'on1');
+    const seen: { args: string[]; cwd: unknown; onDuring: boolean }[] = [];
+    const r = await run(['on'], home, {
+      spawn: (_cmd, args, opts) => {
+        const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300)'], { stdio: 'ignore' });
+        setTimeout(() => seen.push({ args, cwd: opts.cwd, onDuring: isPhoneOn(home) }), 100);
+        return child;
+      },
+    });
+    expect(r.code).toBe(0);
+    expect(seen).toEqual([{ args: ['remote-control', '--spawn', 'session', '--no-chrome', '--permission-mode', 'default', '--name', 'Stephen'], cwd: phoneDir(home), onDuring: true }]);
+    expect(isPhoneOn(home)).toBe(false);
+    expect(r.text).toMatch(/Phone link on[\s\S]*Phone link off\./);
+  });
+
+  it('on refuses unless locked AND complete; nothing is started', async () => {
+    let spawned = 0;
+    const spawnFn: PhoneCliEnv['spawn'] = () => (spawned++, spawn(process.execPath, ['-e', '']));
+    for (const check of [async () => ({ ...compareTools([]), error: '' }), async () => ({ ...compareTools([...PHONE_TOOLS, 'Bash']), error: '' })]) {
+      const r = await run(['on'], join(tmp, 'on2'), { check, spawn: spawnFn });
+      expect(r.code).toBe(1);
+      expect(r.text).toMatch(/stays off/);
+    }
+    expect(spawned).toBe(0);
+    expect(isPhoneOn(join(tmp, 'on2'))).toBe(false);
+  });
+
+  it('off: removes the marker and stops only a Remote Control process', async () => {
+    const home = join(tmp, 'off1');
+    const killed: number[] = [];
+    const mark = () => {
+      mkdirSync(phoneDir(home), { recursive: true });
+      writeFileSync(phoneOnPath(home), JSON.stringify({ pid: 1, rc: 4242 }));
+    };
+    mark();
+    expect((await run(['off'], home, { commandOf: () => 'claude remote-control --spawn session', kill: (p) => killed.push(p) })).text).toMatch(/Phone link off/);
+    expect(killed).toEqual([4242]);
+    expect(existsSync(phoneOnPath(home))).toBe(false);
+    mark();
+    await run(['off'], home, { commandOf: () => '/usr/bin/vim notes.txt', kill: (p) => killed.push(p) });
+    expect(killed).toEqual([4242]); // a reused pid that isn't Remote Control is left alone
+    expect((await run(['off'], home)).text).toMatch(/already off/);
+  });
+
+  it('status', async () => {
+    const home = join(tmp, 'st1');
+    expect((await run(['status'], home, { listening: async () => false })).text).toBe('Phone link: off.\n• stephen listen is not running: phone requests fail until you start it.');
+    mkdirSync(phoneDir(home), { recursive: true });
+    writeFileSync(phoneOnPath(home), JSON.stringify({ pid: 1, rc: 77 }));
+    expect((await run(['status'], home, { commandOf: () => 'claude remote-control' })).text).toBe('Phone link: on (Remote Control pid 77).\n✓ stephen listen answers phone requests.');
   });
 });

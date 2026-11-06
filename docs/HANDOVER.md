@@ -453,3 +453,16 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   `test/helpers/import-scan.ts` (loads no memory/app/history/timer/job/connect code). `phoneSocketPath` moved to
   `src/phone/setup.ts`. Real `stephen phone check` on the Mac: locked, all 3 phone tools present.
   Tests: `test/phone/bridge.test.ts`. Next: step 4 (jobs from the phone), step 5 (`stephen phone on|off|status`).
+- 2026-11-06: **Item 5 step 4: jobs from the phone.** `JobRouter.startFromPhone(task, web)`: the phone's Allow tap
+  (requiresUserInteraction, exact task shown) is the confirmation, so no Mac dialog (ADR-004 rule 2, ADR-005
+  decision 3). Same `plan()` / `start()` as a Mac job (folder, sandbox, budgets, jobs.maxRunning and dailyStarts), plus
+  web only when asked on the phone (not guessed from the words) and `PHONE_DAILY_JOBS` = 3 a day from the phone,
+  counted from the registry (`source: 'phone'`). The listener wires it as phone.sock's `start_job`. Tests in
+  `test/phone/routers.test.ts` and `server.test.ts`. Next: step 5 (`stephen phone on|off|status`, Remote Control).
+- 2026-11-06: **Item 5 step 5: `stephen phone on | off | status`.** `on` rewrites the folder, runs the lock-down
+  check (refuses unless locked AND complete), writes the `.on` marker (0600, `{pid, rc}`) and runs
+  `claude remote-control --spawn session --no-chrome --permission-mode default --name Stephen` in the phone folder in
+  the foreground (Ctrl-C ends it; the marker is removed when it exits). `off` removes the marker first (phone.sock
+  refuses at once), then SIGTERMs the recorded pid only if its command line is `claude … remote-control`. `status`:
+  on/off, Remote Control alive, listener answering phone.sock. Mac checks: MAC-TEST-PLAN §9. Next: the owner's phone
+  run of §9, then review #8 (items 4 and 5).

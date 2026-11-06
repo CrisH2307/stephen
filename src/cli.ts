@@ -67,8 +67,8 @@ Usage:
                          Show your recent commands (kept on this Mac only), or delete them
   stephen jobs [list] | status <id> | show <id> | stop <id>
                          Background jobs ("Stephen, start a job to …"; each start asks in a dialog)
-  stephen phone setup | check
-                         Phone link folder for Remote Control, and proof its session sees only Stephen's phone tools
+  stephen phone on | off | status | setup | check
+                         Talk to Stephen from your phone (Claude app, Remote Control), locked to Stephen's phone tools
   stephen accounts [test canvas|calendar|notion|weather]
                          Which account secrets and Gmail accounts Stephen finds (never the values)
   stephen connect gmail <label> | disconnect gmail <label>

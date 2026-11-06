@@ -2,18 +2,19 @@
  * Phone commands (source 'phone', docs/ADR-005): wake-word data rules, no confirmation dialogs (nobody is at the Mac),
  * no memory writes. Routers, trust and the serve argv.
  */
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { JobRouter, PHONE_JOB_START_REPLY, PHONE_JOB_STOP_REPLY } from '../../src/jobs/router.js';
+import { JobRouter, PHONE_DAILY_JOBS, PHONE_JOB_START_REPLY, PHONE_JOB_STOP_REPLY } from '../../src/jobs/router.js';
+import { writeJobState, type JobState } from '../../src/jobs/state.js';
 import { MemoryStore } from '../../src/memory/store.js';
 import { PHONE_CANCEL_REPLY, TimerRouter } from '../../src/timers/router.js';
 import { TimerStore } from '../../src/timers/store.js';
 import { trustOf } from '../../src/voice/assistant.js';
 import { mcpConfig } from '../../src/voice/claude.js';
 import { MemoryRouter, PHONE_MEMORY_REPLY } from '../../src/voice/memory-router.js';
-import { harness } from '../jobs/helpers.js';
+import { NOW, TODAY, harness } from '../jobs/helpers.js';
 import { FakeConfirmer } from '../server/fakes.js';
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-phone-routers-')));
@@ -80,5 +81,43 @@ describe('jobs from the phone (through ask)', () => {
     expect(await router.route('stop the job', { source: 'phone' })).toEqual({ reply: PHONE_JOB_STOP_REPLY, changed: false });
     expect((await router.route("how's the job going", { source: 'phone' }))?.reply).toBeTruthy();
     expect(confirmer.prompts).toEqual([]);
+  });
+});
+
+describe('a job approved on the phone (startFromPhone)', () => {
+  const done = (id: string, source: string): JobState => ({
+    version: 1, id, task: 'x y', status: 'done', folder: '/x', cwd: '/x', source, createdAt: NOW - 600_000, startedAt: NOW - 600_000, endedAt: NOW - 1000,
+    deadlineAt: NOW, pid: null, claudePid: null, sessionId: '', model: 'sonnet', web: false, maxTurns: 150, maxBudgetUsd: 5,
+    wallClockMs: 2_700_000, repo: null, turns: 1, toolCalls: 0, costUsd: 0.1, denials: 0, summary: '', error: '',
+  });
+
+  it('starts with no Mac dialog, source phone, web only as asked; same budgets as the Mac', async () => {
+    const h = harness(join(tmp, 'jobs2'));
+    const confirmer = new FakeConfirmer();
+    const router = new JobRouter({ jobs: h.manager, confirmer, stopWaitMs: 50 });
+    const reply = await router.startFromPhone('research the history of the printing press on the web', false);
+    expect(reply).toMatch(/^Job started: "research the history of the printing press on the web"\. Up to 45 minutes, web off/);
+    expect(confirmer.prompts).toEqual([]);
+    const [job] = h.manager.list();
+    expect(job).toMatchObject({ source: 'phone', web: false, maxTurns: 150, maxBudgetUsd: 5 });
+    expect(h.supervisor.calls).toHaveLength(1);
+    expect(await router.startFromPhone('find three articles about rivers', true)).toMatch(/web on/);
+    expect(h.manager.list().find((j) => j.task.startsWith('find'))).toMatchObject({ web: true, source: 'phone' });
+  });
+
+  it(`at most ${PHONE_DAILY_JOBS} a day from the phone (jobs from the Mac don't count)`, async () => {
+    const h = harness(join(tmp, 'jobs3'));
+    mkdirSync(join(h.home, 'jobs'), { recursive: true, mode: 0o700 });
+    for (let i = 1; i <= PHONE_DAILY_JOBS; i++) writeJobState(h.home, done(`${TODAY}-phone-job-${i}`, 'phone'));
+    writeJobState(h.home, done(`${TODAY}-mac-job`, 'voice-ptt'));
+    const router = new JobRouter({ jobs: h.manager, confirmer: new FakeConfirmer(), stopWaitMs: 50 });
+    expect(await router.startFromPhone('write a poem about rivers', false)).toMatch(/jobs from your phone today already/);
+    expect(h.supervisor.calls).toHaveLength(0);
+  });
+
+  it('the manager refusals pass through (too short, jobs off)', async () => {
+    const h = harness(join(tmp, 'jobs4'), { jobs: { enabled: false } });
+    const router = new JobRouter({ jobs: h.manager, confirmer: new FakeConfirmer(), stopWaitMs: 50 });
+    expect(await router.startFromPhone('write a poem', false)).toMatch(/turned off/);
   });
 });
