@@ -1,0 +1,122 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import {
+  PHONE_ASKS_PER_MIN,
+  PHONE_BUSY_MESSAGE,
+  PHONE_NO_JOBS_YET,
+  PHONE_OFF_MESSAGE,
+  PhoneServer,
+  phoneSocketPath,
+  type PhoneServerOptions,
+} from '../../src/phone/server.js';
+import { phoneOnPath } from '../../src/phone/setup.js';
+import { FakeAudit } from '../jobs/helpers.js';
+
+const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'sph-')));
+afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+
+function setup(o: Partial<PhoneServerOptions> = {}) {
+  let on = true;
+  const asked: string[] = [];
+  const notes: string[] = [];
+  const audit = new FakeAudit();
+  const clock = { t: 1_000_000 };
+  const server = new PhoneServer({
+    home: tmp,
+    isOn: () => on,
+    ask: (text) => {
+      asked.push(text);
+      return Promise.resolve(`reply to ${text}`);
+    },
+    audit,
+    notify: (_t, b) => notes.push(b),
+    now: () => clock.t,
+    ...o,
+  });
+  const req = (r: object) => server.handle(JSON.stringify(r));
+  return { server, req, asked, notes, audit, clock, setOn: (v: boolean) => (on = v) };
+}
+
+describe('PhoneServer requests', () => {
+  it('ask runs the cleaned text and returns the reply; audited by size only; a notice on the Mac', async () => {
+    const t = setup();
+    expect(await t.req({ id: '1', type: 'ask', text: '  what\u0007s my   day ' })).toEqual({ id: '1', type: 'reply', text: 'reply to what s my day' });
+    expect(t.asked).toEqual(['what s my day']);
+    expect(t.notes).toEqual(['From your phone: "what s my day"']);
+    expect(t.audit.entries).toEqual([{ tool: 'phone.ask', args: { chars: '  what\u0007s my   day '.length }, outcome: 'ok', intent: 'request from the phone (Remote Control)' }]);
+    expect(JSON.stringify(t.audit.entries)).not.toContain('day');
+  });
+
+  it('the kill switch: off refuses everything, nothing runs', async () => {
+    const t = setup();
+    t.setOn(false);
+    for (const r of [{ id: 'a', type: 'ask', text: 'hi' }, { id: 'b', type: 'job_status' }, { id: 'c', type: 'start_job', task: 'x' }]) {
+      expect(await t.req(r)).toEqual({ id: r.id, type: 'error', message: PHONE_OFF_MESSAGE });
+    }
+    expect(t.asked).toEqual([]);
+    expect(t.audit.entries.map((e) => e.outcome)).toEqual(['denied', 'denied', 'denied']);
+  });
+
+  it('busy: refused, not queued', async () => {
+    const t = setup({ ask: () => null });
+    expect(await t.req({ id: '1', type: 'ask', text: 'hi' })).toEqual({ id: '1', type: 'error', message: PHONE_BUSY_MESSAGE });
+  });
+
+  it(`at most ${PHONE_ASKS_PER_MIN} asks a minute`, async () => {
+    const t = setup();
+    for (let i = 0; i < PHONE_ASKS_PER_MIN; i++) expect((await t.req({ id: `${i}`, type: 'ask', text: 'hi' })).type).toBe('reply');
+    expect(await t.req({ id: 'x', type: 'ask', text: 'hi' })).toMatchObject({ type: 'error', message: expect.stringMatching(/Too many requests/) });
+    t.clock.t += 60_001;
+    expect((await t.req({ id: 'y', type: 'ask', text: 'hi' })).type).toBe('reply');
+  });
+
+  it('job_status and start_job (step 4 not built yet)', async () => {
+    expect(await setup().req({ id: '1', type: 'job_status' })).toMatchObject({ type: 'error', message: expect.stringMatching(/jobs are off/) });
+    expect(await setup({ jobStatus: async () => 'No jobs.' }).req({ id: '1', type: 'job_status' })).toEqual({ id: '1', type: 'reply', text: 'No jobs.' });
+    expect(await setup().req({ id: '1', type: 'start_job', task: 'write a poem' })).toEqual({ id: '1', type: 'error', message: PHONE_NO_JOBS_YET });
+  });
+
+  it('anything else is a bad request: unknown types, extra fields, oversize text, not JSON', async () => {
+    const t = setup();
+    expect(await t.req({ id: '1', type: 'memory.add', text: 'x' })).toEqual({ id: '1', type: 'error', message: 'bad request' });
+    expect(await t.req({ id: '2', type: 'ask', text: 'x', source: 'voice-ptt' })).toEqual({ id: '2', type: 'error', message: 'bad request' });
+    expect(await t.req({ id: '3', type: 'ask', text: 'x'.repeat(2001) })).toEqual({ id: '3', type: 'error', message: 'bad request' });
+    expect(await t.server.handle('nope')).toEqual({ type: 'error', message: 'not JSON' });
+    expect(t.asked).toEqual([]);
+  });
+});
+
+describe('phone.sock', () => {
+  it('serves one JSON line each way over a 0600 socket; isOn follows the marker file', async () => {
+    const home = join(tmp, 'h');
+    const { isPhoneOn } = await import('../../src/phone/setup.js');
+    const server = new PhoneServer({ home, isOn: () => isPhoneOn(home), ask: (t) => Promise.resolve(`ok: ${t}`), audit: null, notify: () => undefined });
+    await server.start();
+    try {
+      expect(statSync(phoneSocketPath(home)).mode & 0o777).toBe(0o600);
+      const send = (line: string) =>
+        new Promise<string>((resolve, reject) => {
+          const s = createConnection(phoneSocketPath(home));
+          let buf = '';
+          s.on('data', (d) => {
+            buf += String(d);
+            if (buf.includes('\n')) {
+              s.end();
+              resolve(buf.trim());
+            }
+          });
+          s.on('error', reject);
+          s.write(line + '\n');
+        });
+      expect(JSON.parse(await send('{"id":"1","type":"ask","text":"hi"}'))).toEqual({ id: '1', type: 'error', message: PHONE_OFF_MESSAGE });
+      mkdirSync(join(home, 'phone'), { recursive: true });
+      writeFileSync(phoneOnPath(home), '');
+      expect(JSON.parse(await send('{"id":"2","type":"ask","text":"hi"}'))).toEqual({ id: '2', type: 'reply', text: 'ok: hi' });
+    } finally {
+      await server.close();
+    }
+  });
+});
