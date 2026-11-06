@@ -6,6 +6,7 @@
  * Owner-only: loaded by `stephen phone`, never by anything Claude can reach.
  */
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { parseStreamLine } from '../lib/claude-stream.js';
@@ -17,6 +18,11 @@ export const PHONE_AGENT = 'stephen-phone';
 export const PHONE_TOOLS = ['ask', 'job_status', 'start_job'].map((t) => `mcp__${PHONE_SERVER}__${t}`);
 
 export const phoneDir = (home: string): string => join(home, 'phone');
+/** The listener's phone socket (src/phone/server.ts); the bridge connects to it. */
+export const phoneSocketPath = (home: string): string => join(home, 'run', 'phone.sock');
+/** The kill switch: phone.sock answers only while this file exists (`stephen phone on` writes it, `off` removes it). */
+export const phoneOnPath = (home: string): string => join(phoneDir(home), '.on');
+export const isPhoneOn = (home: string): boolean => existsSync(phoneOnPath(home));
 
 const AGENT_PROMPT = `You are the owner's phone link to Stephen, their Mac assistant. You can only use the Stephen phone tools.
 - For any question or request, call ask with the owner's words, then pass Stephen's answer back briefly.
