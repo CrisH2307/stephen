@@ -67,6 +67,8 @@ Usage:
                          Show your recent commands (kept on this Mac only), or delete them
   stephen jobs [list] | status <id> | show <id> | stop <id>
                          Background jobs ("Stephen, start a job to …"; each start asks in a dialog)
+  stephen phone setup | check
+                         Phone link folder for Remote Control, and proof its session sees only Stephen's phone tools
   stephen accounts [test canvas|calendar|notion|weather]
                          Which account secrets and Gmail accounts Stephen finds (never the values)
   stephen connect gmail <label> | disconnect gmail <label>
@@ -479,6 +481,9 @@ async function main(argv: string[]): Promise<number> {
     case 'jobs':
       // Owner-only, and the per-job supervisor (`jobs _run`): loaded on demand, never by `stephen serve`.
       return (await import('./jobs/cli.js')).runJobsCli(rest);
+    case 'phone':
+      // Owner-only (writes the phone folder, starts claude for the lock-down check): loaded on demand.
+      return (await import('./phone/cli.js')).runPhoneCli(rest);
     case 'app':
       return (await import('./app/cli.js')).runAppCli(rest);
     case 'accounts':

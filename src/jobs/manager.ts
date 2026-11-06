@@ -12,8 +12,8 @@ import { randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expandPath } from '../config.js';
+import { REPO_ROOT } from '../lib/repo.js';
 import { ensurePrivateDir, isInside, writePrivateFileAtomicSync, writePrivateJsonFileSync } from '../lib/fs.js';
 import { isPidAlive } from '../lib/process.js';
 import { wallParts } from '../lib/zone.js';
@@ -49,7 +49,7 @@ const defaultGit: GitFn = (args) =>
 
 /** The repo root of this Stephen install (its .env is in every job's denyRead). */
 export function stephenRepoRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  return REPO_ROOT;
 }
 
 export interface JobManagerOptions {

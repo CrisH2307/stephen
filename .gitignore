@@ -8,3 +8,4 @@ jev/openrouter_key
 jev/router_state.json
 __pycache__/
 .env
+config.json

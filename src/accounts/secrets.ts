@@ -11,8 +11,7 @@
  * `stephen connect gmail <label>`): lookupGmailToken.
  */
 import { lstatSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { keychainHas, keychainRead, type KeychainDeps } from '../lib/keychain.js';
 
 /** Each secret: Keychain service suffix and the `.env` names accepted for it (first present wins). */
@@ -45,7 +44,8 @@ export function checkSecretValue(name: SecretName, v: string): string | null {
 }
 
 /** Stephen's repo root: this file is src/accounts/secrets.ts or dist/accounts/secrets.js. */
-export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+export { REPO_ROOT } from '../lib/repo.js';
+import { REPO_ROOT } from '../lib/repo.js';
 export const DEFAULT_ENV_FILE = join(REPO_ROOT, '.env');
 /** A `.env` larger than this is not read (it is a few lines). */
 const MAX_ENV_BYTES = 64 * 1024;

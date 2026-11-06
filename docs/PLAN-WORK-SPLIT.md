@@ -137,3 +137,13 @@ Then: review #7 (fresh opus / high) over items 1–3, fixes, then items 4–5 pe
   a ranked list of refactors (remove duplicates, reduce coupling, fix wasteful patterns), each with tests, before new
   features. The cloud can't reach api.grapuco.com, so the owner pushes to Grapuco from the Mac and shares exports or
   screenshots.
+
+## 12. Later (after items 5 to 6): one home for everything personal
+Owner request 2026-11-05. Today Stephen's personal files are split: settings and state in `~/.browser-hub/` (legacy
+name; the code prefers `~/.stephen` but keeps the old folder while it exists), secrets in the repo's `.env` or
+Keychain. The owner linked `config.json` into the repo (`ln -s ~/.browser-hub/config.json config.json`, gitignored)
+to edit it from VS Code; that is one file, not two. Goal: the repo holds only code.
+1. Move the home to `~/.stephen` (doctor already gives the `mv` steps); update the repo link.
+2. Secrets in Keychain only, or `.env` moved into the home folder; a `stephen secrets set <name>` (hidden prompt,
+   like `voice-key set`). A job worktree or repo copy then never carries secrets.
+3. doctor warns about a `config.json` or `.env` in the repo that isn't a link into the home folder.

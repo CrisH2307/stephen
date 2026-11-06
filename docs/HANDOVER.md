@@ -427,3 +427,13 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   preloaded in real Chrome); the no-Zen flow test is skipped while a real Zen is open. Selftest check 7 (checkbox)
   failed once under full load, passes 16/16 alone. Result: **2942 passed, 5 skipped** on the Mac. Note: no
   `config.json` yet, so accounts (Notion, Calendar, Canvas URL, Gmail client id) are unset for MAC-TEST-PLAN §1.
+- 2026-11-05: **Item 5 (phone), probe + step 1.** Probed Remote Control on the Mac (ADR-005 Probe results): the
+  project `agent` setting locks the session to exact tools (437 → 3); `.mcp.json` approved once at folder trust;
+  `start_job` with `requiresUserInteraction` prompts on the phone every time, no "always allow". Owner decisions:
+  replies at `wake` trust (contents, email who/when), on demand only (`stephen phone on`), phone tap starts a job.
+  Built step 1: `src/phone/setup.ts` (folder files, 0700/0600; `checkPhoneLockdown` reads the init line of a real
+  `claude -p` in the folder and stops it before any model call), `src/phone/cli.ts` (`stephen phone setup|check`).
+  Real check on the Mac: locked (0 extra tools), bridge tools missing until step 3; with `agent` removed it reports
+  435 extra and fails. Moved the stream-json parser to `src/lib/claude-stream.ts` and the repo root to
+  `src/lib/repo.ts` (one copy each; src/jobs keeps its names) so src/phone loads no job code (boundary test).
+  Tests: `test/phone/setup.test.ts`. Next: step 2 (phone.sock + listener side).
