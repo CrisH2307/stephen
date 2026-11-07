@@ -147,3 +147,22 @@ to edit it from VS Code; that is one file, not two. Goal: the repo holds only co
 2. Secrets in Keychain only, or `.env` moved into the home folder; a `stephen secrets set <name>` (hidden prompt,
    like `voice-key set`). A job worktree or repo copy then never carries secrets.
 3. doctor warns about a `config.json` or `.env` in the repo that isn't a link into the home folder.
+
+## 13. Later: music (and other confirm-level actions) from the phone
+Owner request 2026-11-06, after the first phone test. Seen: "what's my day" read Canvas, then "play Sarà perché ti
+amo" was declined. Audit: `play_media` → `tab_open www.youtube.com/results?search_query=…`, rules
+`first-destination` + `cross-site-navigate` (SYSTEM-DESIGN §4.1 rules 2 and 3: after a private read, a URL with a
+query to a new host could carry what was read). At F5 that is a dialog; on the phone every confirmation is declined
+(`--confirm deny`, ADR-005), so it can't be approved. Working as designed; the gap is usability.
+
+Options (pick before building; each keeps the egress rule intact):
+1. **Deterministic "play …" router before Claude** (like timers and memory): the owner's own words become the search,
+   no model writes the URL, so nothing read earlier can be smuggled into it. Media only (YouTube / YouTube Music,
+   maybe Spotify), a fixed URL template, the query = the owner's words. Smallest and safest. Recommended first.
+2. **Approve on the phone**: forward the gate's confirmation to the phone as a tap (like `start_job`). General (works
+   for any confirm-level action), but the confirm comes from the voice-side serve, not the phone session, so it needs
+   a safe path back to the phone and a clear prompt. Bigger; design + review #8 first.
+3. **Fresh conversation per phone message** (no follow-ups from the phone): no carried taint, but "read me the first
+   one" stops working from the phone. Not recommended.
+4. **Local player** (Spotify / Apple Music app via AppleScript, no browser URL): no web egress at all. Depends on the
+   app being installed and signed in.
