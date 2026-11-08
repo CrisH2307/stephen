@@ -87,7 +87,7 @@ const VOICE_RAW = {
   claudeModel: 'sonnet',
   claudePath: '/Users/cris/.local/bin/claude',
   elevenlabs: { apiKeyFile: '/Users/cris/.stephen/elevenlabs-key.txt', voiceId: 'YEBbZ0itqHW31uoXSBns' },
-  aboutMe: { school: 'I study software engineering in Toronto.' },
+  aboutMe: { school: 'I study software engineering in Toronto.', home: '1 Secret St' },
 };
 
 const settingsFor = (configPath = '/Users/cris/.stephen/config.json') =>
@@ -442,6 +442,7 @@ describe('memory, history, settings, audit, window', () => {
     expect(r.configPath).toBe('/Users/cris/.stephen/config.json');
     const config = r.config as Record<string, Record<string, unknown>>;
     expect(config.voice).toMatchObject({ model: 'sonnet', wakeWord: true, aboutMe: { school: 'I study software engineering in Toronto.' } });
+    expect(JSON.stringify(config)).not.toContain('Secret St'); // R9-12: the home address stays out of the window
     expect(config.memory).toEqual({ enabled: true, confirmWakeWord: true, maxItems: 30 });
     expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });

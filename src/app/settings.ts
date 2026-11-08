@@ -30,7 +30,8 @@ export function appSettings(o: { voice: VoiceConfig; memory: MemoryConfig; histo
         chimes: v.chimes,
         followUpWindowSec: v.followUpWindowSec,
         cooldownSec: v.cooldownSec,
-        ...(v.aboutMe ? { aboutMe: v.aboutMe } : {}),
+        // The home address stays out of the window (R9-12): the persona needs it, no page shows it.
+        ...(v.aboutMe ? { aboutMe: { ...v.aboutMe, home: undefined } } : {}),
       },
       memory: { enabled: o.memory.enabled, confirmWakeWord: o.memory.confirmWakeWord, maxItems: o.memory.maxItems },
       history: { enabled: o.history.retentionDays > 0, retentionDays: o.history.retentionDays },
