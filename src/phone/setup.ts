@@ -31,8 +31,16 @@ export const phoneDir = (home: string): string => join(home, 'phone');
  * needs its own sign-in once: `stephen phone login`.
  */
 export const phoneConfigDir = (home: string): string => join(phoneDir(home), 'claude-config');
-/** The environment every phone-folder `claude` runs with (check, login, remote-control). */
-export const phoneClaudeEnv = (home: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => ({ ...env, CLAUDE_CONFIG_DIR: phoneConfigDir(home) });
+/**
+ * The environment every phone-folder `claude` runs with (check, login, remote-control and the session it spawns).
+ * CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: the plugins that come with the signed-in account must not start MCP servers
+ * there either (seen 2026-11-08: 12 plugin servers after `stephen phone login`).
+ */
+export const phoneClaudeEnv = (home: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => ({
+  ...env,
+  CLAUDE_CONFIG_DIR: phoneConfigDir(home),
+  CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: '1',
+});
 /** The listener's phone socket (src/phone/server.ts); the bridge connects to it. */
 export const phoneSocketPath = (home: string): string => join(home, 'run', 'phone.sock');
 /** The kill switch marker: `stephen phone on` writes `{pid, rc}` (itself, claude remote-control), `off` removes it. */
@@ -91,6 +99,9 @@ export function phoneFiles(bridge: { command: string; args: string[] }): Record<
     disableSkillShellExecution: true,
     disableBundledSkills: true,
     disableWorkflows: true,
+    // The owner's claude.ai connectors (Gmail, Drive, Calendar…) load with the account once the phone config is signed
+    // in; they must not run in the phone session (seen 2026-11-08: 24 servers after `stephen phone login`).
+    disableClaudeAiConnectors: true,
   };
   return {
     '.claude/settings.json': JSON.stringify(settings, null, 2) + '\n',

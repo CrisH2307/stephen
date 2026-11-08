@@ -484,3 +484,8 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
      The `~/.browser-hub` → `~/.stephen` move stays manual. 4. `canvas_inbox` (`GET /api/v1/conversations`): who, when,
      course, subject, excerpt (codes masked); wake word and phone get who and when only; real Canvas shape checked;
      real eval `read-canvas` 4/4. Gmail "In production" is a console step (§10). Full suite 3018 passed.
+- 2026-11-08: Owner's first signed-in `stephen phone check` said NOT locked: once the phone config is signed in, the
+  account's claude.ai connectors (24) and plugin MCP servers (12) start there (the model's tools were still exactly the
+  3 phone tools). Fixed with Claude Code's own switches: `disableClaudeAiConnectors: true` in the phone folder settings
+  and `CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS=1` in `phoneClaudeEnv`. Real check on the Mac: locked, all 3 tools present.
+

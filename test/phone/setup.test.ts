@@ -24,6 +24,7 @@ describe('phone folder files (ADR-005: the agent setting is the allow-list)', ()
       disableSkillShellExecution: true,
       disableBundledSkills: true,
       disableWorkflows: true,
+      disableClaudeAiConnectors: true,
     });
     const agent = f[`.claude/agents/${PHONE_AGENT}.md`]!;
     expect(agent).toMatch(new RegExp(`^---\\nname: ${PHONE_AGENT}\\n`));
@@ -198,6 +199,7 @@ describe('R8-1 / R8-7: the phone session has its own Claude Code config', () => 
     await run(['setup'], home); // what /config wrote on the phone is gone at the next setup / on
     expect(readFileSync(join(phoneConfigDir(home), 'settings.json'), 'utf8')).toBe('{}\n');
     expect(env?.CLAUDE_CONFIG_DIR).toBe(phoneConfigDir(home));
+    expect(env?.CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS).toBe('1'); // account plugins start no MCP servers there
   });
 
   it('on refuses while the phone config is not signed in; nothing is started', async () => {
