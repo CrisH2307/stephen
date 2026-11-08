@@ -142,6 +142,8 @@ struct AppRequest: Encodable {
   var confirms: Bool? = nil
   var confirmId: String? = nil
   var approve: Bool? = nil
+  /** memory.keep / memory.skip: a proposal id ("p3"). */
+  var propId: String? = nil
 
   static func hello(_ id: String) -> AppRequest {
     return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
@@ -186,6 +188,44 @@ struct AppRequest: Encodable {
   static func usageGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage.get") }
   /** `personal.summary` (src/app/personal.ts), read-only. */
   static func personalSummary(_ id: String) -> AppRequest { return AppRequest(id: id, type: "personal.summary") }
+  // Memory page (UI-PLAN v3.1 section 7a). Keep and Skip are only ever sent from the owner's click.
+  static func memoryGraph(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.graph") }
+  static func memorySuggestions(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.suggestions") }
+  static func memoryPropose(_ id: String, text: String) -> AppRequest {
+    return AppRequest(id: id, type: "memory.propose", text: text)
+  }
+  static func memoryKeep(_ id: String, propId: String, text: String?) -> AppRequest {
+    return AppRequest(id: id, type: "memory.keep", text: text, propId: propId)
+  }
+  static func memorySkip(_ id: String, propId: String) -> AppRequest {
+    return AppRequest(id: id, type: "memory.skip", propId: propId)
+  }
+  static func memoryUsage(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.usage") }
+}
+
+/** A memory proposal waiting for Keep or Skip (src/memory/proposals.ts). Text is shown verbatim. */
+struct MemoryProposal: Decodable, Identifiable, Equatable {
+  let id: String
+  let text: String
+  /** "you" | "chat" | "email" | "canvas" | "web" */
+  let origin: String
+  /** Third-party text (email, Canvas, web). */
+  let untrusted: Bool
+  var createdAt: String = ""
+}
+
+/** One node of `memory.graph` (src/app/memory-graph.ts): a saved item ("m3") or a proposal ("p2", new). */
+struct GraphNode: Decodable, Identifiable, Equatable {
+  let id: String
+  let text: String
+  /** "people" | "school" | "places" | "habits" | "projects" | "other" */
+  let kind: String
+  let new: Bool
+}
+
+struct GraphLink: Decodable, Equatable {
+  let a: String
+  let b: String
 }
 
 /** The `personal` answer (src/app/personal.ts). The owner's own config and Stephen's fixed rules: shown verbatim. */
@@ -326,8 +366,10 @@ struct MemoryItem: Decodable, Identifiable, Equatable {
   var source: String = ""
   var createdAt: String = ""
   var updatedAt: String = ""
+  /** Set when the owner kept a proposal: where it came from. */
+  var origin: String? = nil
 
-  enum CodingKeys: String, CodingKey { case id, text, source, createdAt, updatedAt }
+  enum CodingKeys: String, CodingKey { case id, text, source, createdAt, updatedAt, origin }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -336,6 +378,7 @@ struct MemoryItem: Decodable, Identifiable, Equatable {
     source = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? ""
     createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
     updatedAt = (try? c.decodeIfPresent(String.self, forKey: .updatedAt)) ?? ""
+    origin = (try? c.decodeIfPresent(String.self, forKey: .origin)) ?? nil
   }
 }
 
@@ -456,6 +499,10 @@ struct AppMessage: Decodable {
   var memory: UsageBar? = nil
   // personal (the whole answer)
   var personal: PersonalSummary? = nil
+  // Memory page: suggestions / graph
+  var suggestions: [MemoryProposal]? = nil
+  var nodes: [GraphNode]? = nil
+  var links: [GraphLink]? = nil
   // state / heard pushes
   var state: String? = nil
   var text: String? = nil
@@ -468,7 +515,7 @@ struct AppMessage: Decodable {
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
       configPath, state, text, source, accounts, note, jobs, job, on, lines, ok, checks, problems, blocking, context, memory,
-      confirmId, title, body
+      confirmId, title, body, suggestions, nodes, links
   }
 
   init(localError: String, id: String?) {
@@ -509,6 +556,10 @@ struct AppMessage: Decodable {
     checks = try? c.decodeIfPresent([DoctorCheck].self, forKey: .checks)
     problems = try? c.decodeIfPresent(Int.self, forKey: .problems)
     blocking = try? c.decodeIfPresent(Int.self, forKey: .blocking)
+    if type == "memory.usage" { memory = try? c.decodeIfPresent(UsageBar.self, forKey: .memory) }
+    suggestions = try? c.decodeIfPresent([MemoryProposal].self, forKey: .suggestions)
+    nodes = try? c.decodeIfPresent([GraphNode].self, forKey: .nodes)
+    links = try? c.decodeIfPresent([GraphLink].self, forKey: .links)
     if type == "usage" {
       context = try? c.decodeIfPresent(UsageBar.self, forKey: .context)
       memory = try? c.decodeIfPresent(UsageBar.self, forKey: .memory)
@@ -763,6 +814,12 @@ final class AppModel: ObservableObject {
   /** personal.summary for the Personal page; personalNotice says why it is missing. */
   @Published private(set) var personal: PersonalSummary? = nil
   @Published private(set) var personalNotice: String? = nil
+  /** Memory page (section 7a): the graph, proposals waiting for Keep/Skip, the memory bar, and why one is missing. */
+  @Published private(set) var graphNodes: [GraphNode] = []
+  @Published private(set) var graphLinks: [GraphLink] = []
+  @Published private(set) var suggestions: [MemoryProposal] = []
+  @Published private(set) var memoryUsage: UsageBar? = nil
+  @Published private(set) var memoryPageNotice: String? = nil
 
   /** The gate's questions waiting for a click, oldest first. Cleared when the connection drops (the gate falls back). */
   @Published private(set) var confirms: [PendingConfirm] = []
@@ -1009,8 +1066,79 @@ final class AppModel: ObservableObject {
 
   func memoryCaption(_ item: MemoryItem) -> String {
     let when = dateText(item.updatedAt.isEmpty ? item.createdAt : item.updatedAt)
+    if let o = item.origin { return [originLabel(o), "you kept it", when].filter { !$0.isEmpty }.joined(separator: " · ") }
     let how = sourceLabel(item.source)
     return [how, when].filter { !$0.isEmpty }.joined(separator: " · ")
+  }
+
+  // MARK: memory page (section 7a)
+
+  /** Graph, proposals and the memory bar together. */
+  func refreshMemoryPage() {
+    request(AppRequest.memoryGraph(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "graph" {
+        self.graphNodes = msg.nodes ?? []
+        self.graphLinks = msg.links ?? []
+        self.memoryPageNotice = nil
+      } else {
+        self.memoryPageNotice = msg.message ?? "Couldn't read memory."
+      }
+    }
+    request(AppRequest.memorySuggestions(newId())) { [weak self] msg in self?.takeSuggestions(msg) }
+    request(AppRequest.memoryUsage(newId())) { [weak self] msg in
+      self?.memoryUsage = msg.type == "memory.usage" ? msg.memory : nil
+    }
+    refreshMemory()
+  }
+
+  /** Tell Stephen: the owner's words become a proposal (New), saved only after Keep. */
+  func proposeMemory(_ text: String) {
+    request(AppRequest.memoryPropose(newId(), text: text)) { [weak self] msg in
+      self?.takeSuggestions(msg)
+      self?.refreshMemoryPage()
+    }
+  }
+
+  /** The owner's Keep (optionally with their edit): the only way a proposal becomes memory. */
+  func keepProposal(_ propId: String, text: String? = nil) {
+    request(AppRequest.memoryKeep(newId(), propId: propId, text: text)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "memory" {
+        self.memory = msg.items ?? []
+        self.memoryPageNotice = nil
+      } else {
+        self.memoryPageNotice = msg.message ?? "error"
+      }
+      self.refreshMemoryPage()
+    }
+  }
+
+  func skipProposal(_ propId: String) {
+    request(AppRequest.memorySkip(newId(), propId: propId)) { [weak self] msg in
+      self?.takeSuggestions(msg)
+      self?.refreshMemoryPage()
+    }
+  }
+
+  private func takeSuggestions(_ msg: AppMessage) {
+    if msg.type == "suggestions" {
+      suggestions = msg.suggestions ?? []
+    } else {
+      memoryPageNotice = msg.message ?? "error"
+    }
+  }
+
+  /** Where a proposal or a kept item came from, in words. */
+  func originLabel(_ origin: String) -> String {
+    switch origin {
+    case "you": return "You told Stephen"
+    case "chat": return "From your chats"
+    case "email": return "From email"
+    case "canvas": return "From Canvas"
+    case "web": return "From a web page"
+    default: return "From \(origin)"
+    }
   }
 
   // MARK: history

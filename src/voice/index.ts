@@ -19,6 +19,7 @@ import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../h
 import { HistoryStore } from '../history/store.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
 import { MemoryStore } from '../memory/store.js';
+import { ProposalStore } from '../memory/proposals.js';
 import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
@@ -551,6 +552,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       listening: () => true,
       model: cfg.claudeModel ?? 'default',
       memory: memoryStore,
+      ...(memoryStore ? { proposals: new ProposalStore({ home }) } : {}),
       endConversation: () => a.endConversation(),
       history,
       audit,

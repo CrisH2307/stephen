@@ -78,7 +78,7 @@ describe('parseAppRequest', () => {
 
   it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage'].sort(),
     );
   });
 
@@ -100,10 +100,35 @@ describe('parseAppRequest', () => {
   });
 
   it('control requests take only an id; extra fields are dropped', () => {
-    for (const type of ['phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary']) {
+    for (const type of ['phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.usage']) {
       expect(parseAppRequest(line({ id: 'c', type, cmd: 'rm -rf /' }))).toEqual({ kind: 'request', req: { id: 'c', type } });
       expect(parseAppRequest(line({ type }))).toMatchObject({ kind: 'invalid' });
     }
+  });
+});
+
+describe('Memory page requests (UI-PLAN v3.1 section 7a)', () => {
+  it('memory.propose takes text (capped like memory.add); extra fields such as origin are dropped', () => {
+    expect(parseAppRequest(line({ id: 'p', type: 'memory.propose', text: 'I moved to Fit4Less', origin: 'canvas' }))).toEqual({
+      kind: 'request',
+      req: { id: 'p', type: 'memory.propose', text: 'I moved to Fit4Less' },
+    });
+    expect(parseAppRequest(line({ id: 'p', type: 'memory.propose' })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 'p', type: 'memory.propose', text: 'x'.repeat(2001) })).kind).toBe('invalid');
+  });
+
+  it('memory.keep takes a proposal id and optional edited text; memory.skip an id', () => {
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3' }))).toEqual({ kind: 'request', req: { id: 'k', type: 'memory.keep', propId: 'p3' } });
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3', text: 'I moved to GoodLife' }))).toEqual({
+      kind: 'request',
+      req: { id: 'k', type: 'memory.keep', propId: 'p3', text: 'I moved to GoodLife' },
+    });
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3', text: null }))).toEqual({ kind: 'request', req: { id: 'k', type: 'memory.keep', propId: 'p3' } });
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3', text: 7 })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'm3' })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep' })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 's', type: 'memory.skip', propId: 'p3', text: 'x' }))).toEqual({ kind: 'request', req: { id: 's', type: 'memory.skip', propId: 'p3' } });
+    expect(parseAppRequest(line({ id: 's', type: 'memory.skip', propId: 'p0' })).kind).toBe('invalid');
   });
 });
 

@@ -145,7 +145,7 @@ const STOPWORDS = new Set(
   ).split(' '),
 );
 
-function contentWords(text: string): Set<string> {
+export function contentWords(text: string): Set<string> {
   const out = new Set<string>();
   for (const w of memoryWords(text).split(' ')) {
     if (!w || STOPWORDS.has(w)) continue;
