@@ -248,16 +248,6 @@ final class AskPanel: NSPanel {
   override func cancelOperation(_ sender: Any?) { onEscape() }
 }
 
-/**
- * Theme for the box: `defaults write dev.stephen.helper theme navy` (light, dark, navy, rose, sun, or "mac" for
- * Follow the Mac). Settings > Appearance will write the same key.
- */
-func savedThemeChoice() -> ThemeChoice {
-  let raw = UserDefaults.standard.string(forKey: "theme") ?? ""
-  if raw == "mac" { return ThemeChoice(name: .light, followMac: true) }
-  return ThemeChoice(name: ThemeName(rawValue: raw) ?? .light, followMac: false)
-}
-
 @MainActor
 final class AskBoxController: NSObject {
   let model: AppModel
@@ -353,7 +343,7 @@ final class AskBoxController: NSObject {
       reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) },
       quit: { [weak self] in self?.quit() })
     let root = AskBoxView(model: model, box: box, actions: actions)
-      .stephenThemed(savedThemeChoice())
+      .stephenThemedBySettings()
       .fixedSize()
       .background(GeometryReader { g in Color.clear.preference(key: AskBoxSizeKey.self, value: g.size) })
       .onPreferenceChange(AskBoxSizeKey.self) { [weak self, weak p] size in

@@ -144,6 +144,8 @@ struct AppRequest: Encodable {
   var approve: Bool? = nil
   /** memory.keep / memory.skip: a proposal id ("p3"). */
   var propId: String? = nil
+  /** settings.set: the changed How-Stephen-talks settings (length, tone, speak, explain, voice). */
+  var values: [String: TalkValue]? = nil
 
   static func hello(_ id: String) -> AppRequest {
     return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
@@ -172,6 +174,9 @@ struct AppRequest: Encodable {
   }
   static func memoryClear(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.clear") }
   static func settingsGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "settings.get") }
+  static func settingsSet(_ id: String, values: [String: TalkValue]) -> AppRequest {
+    return AppRequest(id: id, type: "settings.set", values: values)
+  }
   static func auditRecent(_ id: String, limit: Int) -> AppRequest {
     return AppRequest(id: id, type: "audit.recent", limit: limit)
   }
@@ -574,6 +579,62 @@ struct AppMessage: Decodable {
   }
 }
 
+/** One value of settings.set: an enum word or a switch. The listener refuses anything else. */
+enum TalkValue: Encodable, Equatable {
+  case word(String)
+  case on(Bool)
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.singleValueContainer()
+    switch self {
+    case let .word(s): try c.encode(s)
+    case let .on(b): try c.encode(b)
+    }
+  }
+}
+
+/** settings.get config.talk (How Stephen talks): the saved values and the preview sentences (length, then tone). */
+struct TalkSettings: Equatable {
+  var length = "brief"
+  var tone = "casual"
+  var speak = true
+  var explain = false
+  var voice = "elevenlabs"
+  var samples: [String: [String: String]] = [:]
+
+  static var blank: TalkSettings { return TalkSettings() }
+  private init() {}
+
+  /** nil when the listener is older and sends no talk section. */
+  init?(_ config: AppJSON?) {
+    guard case .object(let c)? = config, case .object(let t)? = c["talk"] else { return nil }
+    if case .string(let v)? = t["length"] { length = v }
+    if case .string(let v)? = t["tone"] { tone = v }
+    if case .bool(let v)? = t["speak"] { speak = v }
+    if case .bool(let v)? = t["explain"] { explain = v }
+    if case .string(let v)? = t["voice"] { voice = v }
+    if case .object(let s)? = t["samples"] {
+      for (l, row) in s { if case .object(let r) = row { samples[l] = r.compactMapValues { if case .string(let x) = $0 { return x } else { return nil } } } }
+    }
+  }
+
+  /** The preview line: the listener's sample for this length and tone (computed here, no request). */
+  var preview: String {
+    let base = samples[length]?[tone] ?? "Bet, playing lofi beats."
+    return explain ? base + " First I opened a tab, then I started it." : base
+  }
+
+  /** What differs from `old`, as a settings.set payload (empty when nothing changed). */
+  func changes(from old: TalkSettings) -> [String: TalkValue] {
+    var v: [String: TalkValue] = [:]
+    if length != old.length { v["length"] = .word(length) }
+    if tone != old.tone { v["tone"] = .word(tone) }
+    if speak != old.speak { v["speak"] = .on(speak) }
+    if explain != old.explain { v["explain"] = .on(explain) }
+    if voice != old.voice { v["voice"] = .word(voice) }
+    return v
+  }
+}
+
 /** settings.get config → voice.aboutMe.name (the owner's own config), or "". */
 func aboutMeName(_ config: AppJSON?) -> String {
   guard case .object(let c)? = config, case .object(let v)? = c["voice"], case .object(let a)? = v["aboutMe"],
@@ -799,6 +860,10 @@ final class AppModel: ObservableObject {
   @Published private(set) var settingsNotice: String? = nil
   /** voice.aboutMe.name from settings.get, for Home's greeting; empty when not set. */
   @Published private(set) var ownerName = ""
+  /** settings.get config.talk; nil until an answer arrives (or the listener is older). */
+  @Published private(set) var talk: TalkSettings? = nil
+  /** The raw config (voice.wakeWord and so on) for the read-only Settings rows. */
+  @Published private(set) var configJSON: AppJSON? = nil
 
   @Published private(set) var audit: [AuditEntry] = []
   @Published private(set) var auditNotice: String? = nil
@@ -1218,10 +1283,27 @@ final class AppModel: ObservableObject {
       if msg.type == "settings" {
         self.settingsText = (msg.config ?? .object([:])).renderLines().joined(separator: "\n")
         self.ownerName = aboutMeName(msg.config)
+        self.talk = TalkSettings(msg.config)
+        self.configJSON = msg.config
         self.configPath = msg.configPath
         self.settingsNotice = nil
       } else {
         self.settingsNotice = msg.message ?? "error"
+      }
+    }
+  }
+
+  /** How Stephen talks > Save: only what changed; `done(nil)` on success, else the listener's words. */
+  func saveTalk(_ values: [String: TalkValue], done: @escaping (String?) -> Void) {
+    if values.isEmpty { return done(nil) }
+    request(AppRequest.settingsSet(newId(), values: values)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "settings" {
+        self.talk = TalkSettings(msg.config)
+        self.configJSON = msg.config
+        done(nil)
+      } else {
+        done(msg.message ?? "error")
       }
     }
   }

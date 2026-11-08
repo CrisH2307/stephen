@@ -42,6 +42,7 @@ import {
   type ConfirmResult,
 } from './protocol.js';
 import type { AppSettings } from './settings.js';
+import type { TalkState } from '../voice/talk.js';
 import type { AccountsStatus } from './accounts-status.js';
 import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
 import type { AppControl } from './control.js';
@@ -90,6 +91,8 @@ export interface AppServerOptions {
   /** null = no audit log configured. */
   audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
   settings: () => AppSettings;
+  /** settings.set (How Stephen talks): validated changes in, the saved settings out. Absent = read-only. */
+  setTalk?: (changes: Partial<TalkState>) => void;
   /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
   accounts?: () => Promise<AccountsStatus>;
   /** jobs.list / jobs.stop (background jobs). Absent = jobs are off. */
@@ -428,6 +431,15 @@ export class AppServer {
           return { id, type: 'settings', config: s.config, configPath: s.configPath };
         } catch {
           return { id, type: 'error', message: 'could not read the config' };
+        }
+      case 'settings.set':
+        if (!this.o.setTalk) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          this.o.setTalk(req.values);
+          const s = this.o.settings();
+          return { id, type: 'settings', config: s.config, configPath: s.configPath };
+        } catch {
+          return { id, type: 'error', message: 'could not save the setting' };
         }
       case 'audit.recent': {
         if (!this.o.audit) return { id, type: 'audit', entries: [] };

@@ -17,6 +17,7 @@ import { removeServeLock } from '../server/instance.js';
 import { toolLogServeArgs } from '../server/tool-log.js';
 import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
+import { DEFAULT_TALK, EXPLAIN_LINE, LENGTH_LINES, TONE_LINES, type TalkPrefs } from './talk.js';
 
 /** The MCP server name. Tools appear to Claude as mcp__stephen__<tool>. */
 export const MCP_SERVER_NAME = 'stephen';
@@ -56,7 +57,9 @@ export const PERSONA_ANNOUNCE_EXAMPLES = ['Bet, playing One Call Away by Charlie
 /** Google Maps "directions" URL shape the persona teaches (no API key needed; opened with open_url). */
 export const MAPS_DIRECTIONS_URL = 'https://www.google.com/maps/dir/?api=1&origin=<from>&destination=<to>&travelmode=<transit|driving|walking|bicycling>';
 
-export const STEPHEN_PERSONA = [
+/** The persona text for these talk settings (Settings > How Stephen talks): only fixed sentences, see voice/talk.ts. */
+function buildPersona(t: TalkPrefs): string {
+  return [
   "You are Stephen, a voice assistant on the user's Mac.",
   // (1) Speech recognition mishears names: fix them before acting.
   'The request below came from speech recognition on the Mac, so it may contain mistakes, especially in the names of songs, artists, people and places. ' +
@@ -98,15 +101,19 @@ export const STEPHEN_PERSONA = [
   // Background jobs are started by Stephen itself before Claude runs (src/jobs), after a dialog; Claude has no job tool.
   "You can't start background jobs, and you can't write documents, reports, essays or code yourself. Stephen starts a job itself, after a confirmation dialog, when the user says 'start a job to …' (or 'in the background, …' or 'while I'm cooking, …'); " +
     "if they asked for one another way (for example 'write my lab report in the background'), don't do the work or open anything: tell them in one sentence to say 'start a job to' and the task.",
-  // (5) Tone.
-  'Talk like a chill Gen-Z friend: casual, warm and quick ("bet", "got you", "say less", "on it"). Never say "certainly" or "I\'d be happy to", and never mock or roast the user. ' +
-    'Anything about safety — a refusal, a blocked site, a confirmation the user declined or still has to answer — say plainly and seriously, without slang.',
-  'Reply in one or two short spoken sentences that cover every part: what you did, what you guessed, and anything that failed. Plain words, no markdown, no lists, no links, no emoji.',
+  // (5) Tone, then length (and the optional step line): chosen by Settings > How Stephen talks.
+  TONE_LINES[t.tone],
+  LENGTH_LINES[t.length],
+  ...(t.explain ? [EXPLAIN_LINE] : []),
   "Before doing anything that will play sound (music, a video, a podcast), first call the announce tool with a short line saying what you're about to play (≤ 12 words), then do it. " +
     'announce lines only say what is about to play; they must not contain words like yes, ok, okay, allow, confirm, click, press, tap, type, enter, code, password or safe (the tool refuses them). ' +
     'One announce per request is enough, even if it has several parts.',
   'After starting playback, your final reply should be very short.',
-].join(' ');
+  ].join(' ');
+}
+
+/** The default (Brief, Casual) persona. */
+export const STEPHEN_PERSONA = buildPersona(DEFAULT_TALK);
 
 /**
  * The "About the user" block appended to the persona (voice.aboutMe). Only what the user put in their own config;
@@ -166,8 +173,8 @@ export function memoryForTrust(trust: Trust, read: () => readonly string[]): rea
 }
 
 /** The full system-prompt addition: the persona, "About the user", then the user's memory block. */
-export function personaFor(about?: AboutMe | null, memory?: readonly string[] | null): string {
-  return [STEPHEN_PERSONA, aboutMeLines(about), memoryBlock(memory)].filter(Boolean).join(' ');
+export function personaFor(about?: AboutMe | null, memory?: readonly string[] | null, talk?: TalkPrefs | null): string {
+  return [talk ? buildPersona(talk) : STEPHEN_PERSONA, aboutMeLines(about), memoryBlock(memory)].filter(Boolean).join(' ');
 }
 
 export interface ClaudeSettings {
@@ -184,6 +191,8 @@ export interface ClaudeSettings {
   followUps?: boolean;
   /** voice.aboutMe: facts the user chose to share (appended to the persona). */
   aboutMe?: AboutMe | null;
+  /** Settings > How Stephen talks, read when each persona is built (a warm session keeps its persona until the conversation ends). */
+  talk?: () => TalkPrefs;
   /**
    * Persona file mode: the persona (with About the user and memory) goes to this 0600 file, written before every
    * run (writePersonaFile), and Claude gets `--append-system-prompt-file <path>`, so none of it is on argv where
@@ -300,7 +309,7 @@ function lockedArgs(s: ClaudeSettings, memory: readonly string[] | undefined): s
     ALLOWED_TOOLS.join(','),
     '--disallowedTools',
     DISALLOWED_TOOLS.join(','),
-    ...(s.personaFile ? ['--append-system-prompt-file', s.personaFile] : ['--append-system-prompt', personaFor(s.aboutMe, memory)]),
+    ...(s.personaFile ? ['--append-system-prompt-file', s.personaFile] : ['--append-system-prompt', personaFor(s.aboutMe, memory, s.talk?.())]),
     '--max-turns',
     String(s.maxTurns),
   ];
@@ -596,7 +605,7 @@ export class ClaudeRunner {
       // File mode: write this run's persona (with the memory just read) first. If that fails, don't fall back to
       // argv (memory would show in `ps`): the command fails with a clear message instead.
       try {
-        await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory));
+        await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory, this.o.talk?.()));
       } catch (e) {
         return { kind: 'error', message: `Could not write the persona file (${(e as Error).message}).`, sessionId: null };
       }

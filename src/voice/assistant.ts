@@ -103,7 +103,8 @@ export interface AssistantOptions {
   runner: CommandRunner;
   speaker: Speaker;
   chimes: Chimes;
-  speak: boolean;
+  /** A function: read for every reply, so Settings can turn speaking on and off while Stephen runs. */
+  speak: boolean | (() => boolean);
   status: (line: string) => void;
   now?: () => number;
   /** Phase changes (the listener mirrors them in the menu bar). */
@@ -248,7 +249,8 @@ export class Assistant {
   private async deliver(spoken: string, ok: boolean, speakOverride: boolean | undefined, t0: number): Promise<void> {
     const now = this.o.now ?? Date.now;
     this.o.status(ok ? `Stephen: ${spoken}` : `Problem: ${spoken}`);
-    let speak = speakOverride ?? this.o.speak;
+    // A per-command override can only switch speaking off (typed chat); the global setting always applies.
+    let speak = speakOverride !== false && (typeof this.o.speak === 'function' ? this.o.speak() : this.o.speak);
     if (speak && this.o.soundPlaying) {
       let playing = false;
       try {
