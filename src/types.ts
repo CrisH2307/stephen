@@ -215,7 +215,16 @@ export interface PageEngine {
   describe(page: Page, ref: Ref): Promise<ElementInfo>;
   /** The element that currently has keyboard focus (through shadow roots and iframes), or null. Feeds key-press safety rules. */
   describeFocused(page: Page, tab: TabId): Promise<ElementInfo | null>;
-  click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<void>;
+  /**
+   * Waits (bounded) for the page to settle (loaded, visible, target not covered), clicks, then checks the page
+   * reacted. Resolves to a server-authored note when nothing changed, else void.
+   */
+  click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<string | void>;
+  /**
+   * For a STALE_REF ref: a fresh ref to the ONE live element in the same document with the same role, name, tag
+   * and href, or null (none, several, or the document changed). Never acts; callers decide whether to use it.
+   */
+  refind?(page: Page, ref: Ref): Promise<Ref | null>;
   hover(page: Page, ref: Ref): Promise<void>;
   /** Types into an editable element. clear=true replaces existing content. submit=true presses Enter after. */
   type(page: Page, ref: Ref, text: string, opts?: { clear?: boolean; submit?: boolean }): Promise<void>;

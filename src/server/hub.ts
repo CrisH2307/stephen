@@ -341,6 +341,27 @@ export class Hub {
     return this.guarded(tab, () => this.engine.describe(page, ref), 'describe');
   }
 
+  /**
+   * describe() for a click target, with ONE re-find when the ref went stale (the page re-rendered the element):
+   * the fresh ref must point at the only live element with the same role, name, tag and href, and the gate must
+   * allow clicking it without asking (pure pre-check). Otherwise the original STALE_REF stands. The re-find happens
+   * before the gate, so whatever is approved and then re-checked is the element that will be clicked; nothing is
+   * re-found after approval. The returned ElementInfo's `ref` is the ref to act on.
+   */
+  async describeClickTarget(tool: string, tab: TabId, page: Page, ref: Ref, intent: string): Promise<ElementInfo> {
+    try {
+      return await this.describe(tab, page, ref);
+    } catch (e) {
+      if (!isHubError(e) || e.code !== 'STALE_REF' || !this.engine.refind) throw e;
+      const fresh = await this.guarded(tab, () => this.engine.refind!(page, ref), 'refind').catch(() => null);
+      if (!fresh) throw e;
+      const el = await this.describe(tab, page, fresh);
+      const req = this.request({ tool, kind: 'click', tab, page, intent, ref: fresh, element: el, run: async () => undefined, done: '' }, safeUrl(page));
+      if (this.safety().gate.evaluate(req).verdict !== 'allow') throw e;
+      return el;
+    }
+  }
+
   /** What has keyboard focus, as the gate needs it for key presses. Never throws. */
   async focusState(tab: TabId, page: Page): Promise<FocusState> {
     try {

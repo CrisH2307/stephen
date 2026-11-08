@@ -204,6 +204,12 @@ export interface RtApi {
   /** arm: watch for a mousedown whose target is element n (or inside it); !arm: report and disarm. */
   probe(a: { n: number; arm: boolean }): boolean;
   platform(a: null): string;
+  /** Element number of the one live element with the same role, name, tag and href as stale element n (0 = none or several). */
+  refind(n: number): number;
+  /** document.readyState is 'complete' and the page is visible. */
+  pageState(a: null): { ready: boolean; visible: boolean };
+  /** arm: start counting DOM changes; !arm: whether anything changed (or the URL did) since arming. */
+  watch(arm: boolean): boolean;
 }
 
 // ───────────────────────────── the runtime ─────────────────────────────
@@ -217,6 +223,9 @@ export function bhRuntime(KEY: string, VERSION: string, CFG: RtConfig): boolean 
   let seq = BASE;
   const byN = new Map<number, Element>();
   const byEl = new WeakMap<Element, { n: number; sig: string }>();
+  /** What each issued number pointed at, kept after the element is gone so refind can look for its twin. */
+  const meta = new Map<number, { sig: string; tag: string; href: string | null }>();
+  const MAX_META = 5000;
   let findCands: Array<{ el: Element; sig: string }> = [];
 
   // ---- shared secret rules (src/lib/secret-fields.ts) ----
@@ -950,7 +959,51 @@ export function bhRuntime(KEY: string, VERSION: string, CFG: RtConfig): boolean 
     const n = ++seq;
     byN.set(n, el);
     byEl.set(el, { n, sig });
+    meta.set(n, { sig, tag: el.localName, href: el.getAttribute('href') });
+    if (meta.size > MAX_META) meta.delete(meta.keys().next().value as number);
     return n;
+  }
+  function refind(n: number): number {
+    const m = meta.get(n);
+    if (!m || lookup(n)) return 0;
+    begin();
+    let found: Element | null = null;
+    let count = 0;
+    const stack: Node[] = [document.documentElement];
+    while (stack.length && count < 2) {
+      const node = stack.pop() as Node;
+      if (node.nodeType === 1) {
+        const el = node as Element;
+        if (el.localName === m.tag && el.getAttribute('href') === m.href) {
+          const role = roleOf(el) || 'button';
+          if (sigOf(role, accName(el, role, 80)) === m.sig) {
+            found = el;
+            count++;
+          }
+        }
+      }
+      for (const k of kids(node)) stack.push(k);
+    }
+    return count === 1 && found ? refFor(found, m.sig) : 0;
+  }
+  function pageState(): { ready: boolean; visible: boolean } {
+    return { ready: document.readyState === 'complete', visible: document.visibilityState === 'visible' };
+  }
+  let watcher: { obs: MutationObserver; changed: boolean; url: string } | null = null;
+  function watch(arm: boolean): boolean {
+    if (arm) {
+      watcher?.obs.disconnect();
+      const w = { obs: new MutationObserver(() => (w.changed = true)), changed: false, url: location.href };
+      w.obs.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+      watcher = w;
+      return true;
+    }
+    const changed = !watcher || watcher.changed || watcher.url !== location.href;
+    if (changed && watcher) {
+      watcher.obs.disconnect();
+      watcher = null;
+    }
+    return changed;
   }
   function sigOf(role: string, name: string): string {
     return role + '\u0001' + name.replace(/…$/, '').slice(0, 70);
@@ -2140,6 +2193,9 @@ export function bhRuntime(KEY: string, VERSION: string, CFG: RtConfig): boolean 
     docInfo,
     probe,
     platform,
+    refind,
+    pageState,
+    watch,
   });
   Object.defineProperty(G, KEY, { value: api, enumerable: false, configurable: false, writable: false });
   return true;
