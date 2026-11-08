@@ -650,6 +650,13 @@ export class Hub {
     const base = this.auditBase(spec, g, urlBefore);
     let r: RaceOutcome<string | void>;
     try {
+      // A click first waits for the page to settle, so the re-check below runs after all waiting and binds the
+      // approval to the element that is pressed (review 9 R9-3). A ref that is gone is reported by the re-check.
+      if (spec.kind === 'click' && spec.ref) {
+        const { settle } = this.engine;
+        const ref = spec.ref;
+        if (settle) await this.guarded(tab, () => settle(page, ref), 'settle').catch(() => undefined);
+      }
       // The gate may have waited a long time for a human: make sure we still act on what was approved.
       if (spec.kind !== 'dialog') this.assertNoDialog(tab);
       if (spec.verify) await spec.verify();

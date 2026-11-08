@@ -133,6 +133,15 @@ s.innerHTML='<button>Save draft</button>';s.firstChild.onclick=function(){done('
 <script>addEventListener('load',function(){setTimeout(function(){var s=document.getElementById('slot');
 s.innerHTML='<button>Open</button><button>Open</button>';s.children[0].onclick=function(){done('one');};s.children[1].onclick=function(){done('two');};},300);});</script>`,
   ),
+  // A veil covers the button for 700 ms and the button is renamed 300 ms in: the click must wait, see the new name
+  // and refuse (review 9 R9-3).
+  'swap-during-settle': page(
+    'Swap',
+    `<button id="b" onclick="done('target')">Save draft</button>
+<div id="veil" onclick="done('veil')" style="position:fixed;inset:0;background:rgba(255,255,255,.85)">Loading…</div>
+<script>setTimeout(function(){document.getElementById('b').textContent='Archive all';},300);
+setTimeout(function(){document.getElementById('veil').remove();},700);</script>`,
+  ),
 };
 
 const SLOW_JS = `document.getElementById('add').onclick=function(){done('target');};`;
