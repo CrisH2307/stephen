@@ -300,16 +300,16 @@ suites only, all green).
 
 | ID | Fix | Test |
 |----|-----|------|
-| R9-1 | open | |
-| R9-2 | open | |
-| R9-3 | open | |
-| R9-4 | open | |
-| R9-5 | open | |
-| R9-6 | open | |
-| R9-7 | open | |
-| R9-8 | open | |
-| R9-9 | open | |
-| R9-10 | open | |
-| R9-11 | open | |
-| R9-12 | open | |
-| R9-13 | open | |
+| R9-1 | Fixed on p7/asr-names (#14), d8a1e26: never blocks or asks; rewrite only non-common words, names 5+ letters, one edit from exactly one name; first word of a memory item ignored | test/voice/names.test.ts (review probes) |
+| R9-2 | Fixed on ui/ask-confirm (#19), d5ceb7d, 4b96cdf: new `serve --confirm app` (Ask box, then dialog); listener uses it; phone stays deny | "R9-2 ..." in confirm, serve-args and mcpConfig argv tests |
+| R9-3 | Fixed on p1/click-fixes (#20), 04a85d6: settle runs before the identity re-check in hub `perform`; merged into #22, #25 | test/eval/clicks.int.test.ts swap-during-settle |
+| R9-4 | Fixed on p2/app-control (#15), fd56a01: one `stopPhoneLink`, also called on listener exit when the marker pid is its own; merged into #18 | test/app/listen.int.test.ts, phone unit tests |
+| R9-5 | Fixed in ADR-006 (#12): serve sends only {message_id, body} over app.sock; listener re-reads recipient/subject, holds draft, hash, counters, taint | docs only |
+| R9-6 | Fixed on ui/ask-confirm (#19), d890a40: Allow/Deny disabled 0.75 s when the shown question changes; "1 of N" | helper source test |
+| R9-7 | Fixed on ui/ask-confirm (#19), d5ceb7d: confirm.answer only from confirms:true clients; askers get no broadcasts; 4096-byte cap per line | "R9-7 ..." in test/app |
+| R9-8 | Fixed on p2/app-control (#15), fd56a01: pid command line re-checked before delayed signals; listen.pid removed on exit; launch.json written only by install-helper | test/app/listen.int.test.ts |
+| R9-9 | Fixed in ADR-006 (#12): phone cannot draft or send in v1 | docs only |
+| R9-10 | Fixed on ui/settings (#28), b397224: behaviour test instead of SHA-256 pin; checked against a throwaway merge with p6/speed-cuts | test/voice/talk.test.ts |
+| R9-11 | Fixed: one `levenshtein` in src/lib (#14, d8a1e26); one `updateConfigSection` in src/config-write.ts (#28, 3be79ea) | boundary tests, names and talk tests |
+| R9-12 | Fixed: SYSTEM-DESIGN app.sock text (#19, 8f81cd7; #26, c1b64f9); settings.get no longer sends home (#24, 54ec132); doctor shows host:port only (#15) | doctor and settings tests |
+| R9-13 | Fixed on p2/app-control (#15): window phone.on refuses until the phone folder is trusted (reads Claude Code internal .claude.json; unknown never blocks) | phone trust test |
