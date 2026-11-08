@@ -452,7 +452,11 @@ export interface ConfirmerDeps {
   exec?: ExecFn;
 }
 
-/** 'auto' = [elicit if available, Ask box (macOS, home given), dialog]; 'elicit' = [elicit]; 'dialog' = [dialog]; 'deny' = [deny]. */
+/**
+ * 'auto' = [elicit if available, Ask box (macOS, home given), dialog]; 'elicit' = [elicit];
+ * 'app' = [Ask box, dialog] (serves started by `stephen listen`: nobody watches the headless chat, so no elicit);
+ * 'dialog' = [dialog]; 'deny' = [deny].
+ */
 export function buildConfirmer(safety: Pick<ResolvedConfig['safety'], 'confirm' | 'confirmTimeoutSec'>, deps: ConfirmerDeps = {}): Confirmer {
   const dialog = (): Confirmer =>
     new DialogConfirmer({ timeoutSec: safety.confirmTimeoutSec, platform: deps.platform, exec: deps.exec });
@@ -466,6 +470,8 @@ export function buildConfirmer(safety: Pick<ResolvedConfig['safety'], 'confirm' 
       return new ChainConfirmer([...elicit, ...askBox, dialog()]);
     case 'elicit':
       return new ChainConfirmer(elicit);
+    case 'app':
+      return new ChainConfirmer([...askBox, dialog()]);
     case 'dialog':
       return new ChainConfirmer([dialog()]);
     case 'deny':
