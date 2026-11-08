@@ -7,7 +7,7 @@
 import AppKit
 import SwiftUI
 
-/** The window's pages. The first five are the sidebar rows (⌘1…⌘5); memory is opened from the Ask box. */
+/** The window's pages. The first five are the sidebar rows (⌘1…⌘5); memory is opened from Personal and the Ask box. */
 enum Page: String, CaseIterable, Identifiable {
   case home, conversations, jobs, personal, settings, memory
 
@@ -112,7 +112,7 @@ private struct MainWindowView: View {
       case .jobs: JobsView(model: model)
       case .personal: PersonalView(model: model, nav: nav)
       case .settings: SettingsView(model: model)
-      case .memory: MemoryView(model: model)
+      case .memory: MemoryPage(model: model, nav: nav)
       }
     }
   }
