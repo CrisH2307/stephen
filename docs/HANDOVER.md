@@ -466,3 +466,21 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   refuses at once), then SIGTERMs the recorded pid only if its command line is `claude … remote-control`. `status`:
   on/off, Remote Control alive, listener answering phone.sock. Mac checks: MAC-TEST-PLAN §9. Next: the owner's phone
   run of §9, then review #8 (items 4 and 5).
+- 2026-11-07: **Review #8 done and fixed** (`docs/REVIEW-8.md`, fresh opus/high reviewer over items 4, 5 and B1): no
+  Critical/High; 2 Medium, 4 Low, 2 Info, all fixed with tests (Fix status table there). Biggest: the phone session now
+  runs with its own Claude Code config (`stephen phone login` once), so `/config` typed on the phone can't change the
+  owner's `~/.claude/settings.json` (proved on the Mac), and only the bridge MCP server starts there. Also: phone jobs
+  take no inbox files / no repos / 500-char task; job starts serialized; honest audit outcomes; liveness by command
+  line, not bare pid/marker; job stragglers killed at the end; no memory block for phone runs; timers read-only from
+  the phone. Shared helpers in `src/lib/process.ts`: `commandOf`, `pidsWithCwdIn`, `processStart`.
+  Owner to do: `stephen phone login`, then MAC-TEST-PLAN §9 review-8 lines. Next: the "play" router (plan §13).
+- 2026-11-07: **Items 1 to 4 after item 5** (owner's order; one Mac test pass at the end, MAC-TEST-PLAN §10).
+  1. Play from the phone (plan §13): `freshForPlay` in `src/voice/assistant.ts` ends a running follow-up before a
+     "play / put on <something new>", so it runs in a fresh, untainted conversation and the unchanged gate lets YouTube
+     open. 2. Accounts tab: a "Phone link" row (`phoneAccountRow`, sign-in cached 5 min; no Swift change);
+     `phoneAuth` in `src/phone/setup.ts` is the one `claude auth status` reader. 3. Home folder (plan §12): `.env` is
+     read from the home folder first, the repo's second (with a note); `stephen accounts set <name>` stores a secret in
+     the Keychain (hidden prompt); `doctor` warns about a repo `.env` / a repo `config.json` that isn't the home link.
+     The `~/.browser-hub` → `~/.stephen` move stays manual. 4. `canvas_inbox` (`GET /api/v1/conversations`): who, when,
+     course, subject, excerpt (codes masked); wake word and phone get who and when only; real Canvas shape checked;
+     real eval `read-canvas` 4/4. Gmail "In production" is a console step (§10). Full suite 3018 passed.

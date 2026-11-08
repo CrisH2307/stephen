@@ -331,6 +331,17 @@ Not verified: whether Remote Control forwards a skill's inline-shell permission 
 (print mode refused it); the model-driven commands (`/schedule`, `/loop`, `/goal`, `/batch`, workflows); whether the
 phone app offers a permission-mode switch of its own; `--max-budget-usd` on a subscription (ADR-004 open question 2).
 
-## Fix status
+## Fix status (2026-11-07, all eight; each fix has a test)
 
-Not started
+| ID | Fix | Test |
+|----|-----|------|
+| R8-1 | The phone session runs with its own Claude Code config (`CLAUDE_CONFIG_DIR=<home>/phone/claude-config`, 0700) in `stephen phone on`, `check` and the new `stephen phone login`; `on` refuses until that config is signed in; its `settings.json` is reset to `{}` on every `setup` / `on`. Real probe: `/config permissionMode=auto` in the phone folder wrote only the phone config; `~/.claude/settings.json` byte-identical | `test/phone/setup.test.ts` "R8-1 / R8-7" |
+| R8-2 | `startFromPhone`: plan with no inbox inputs (`plan(task, { inbox: false })`), refuse a task naming a repo, refuse a task over 500 characters (bridge and phone.sock both cap `start_job` at `PHONE_MAX_TASK` = `TASK_MAX`); the reply says "no input files" | `test/phone/routers.test.ts` "R8-2" |
+| R8-3 | `JobManager.start` runs one start at a time (promise chain); the caps and the phone's daily cap (`extraCap`) are checked inside that turn | `test/phone/routers.test.ts` "R8-3" |
+| R8-4 | Every approved start that is refused writes `job_start` `error` with the reason; `job_stop` is audited after the stop with the final status; `reconcile` and `failQueued` write one `job_end` (`by: reconcile` / `start`); phone.sock audits after the call, `start_job` refusals as `denied` (and returned as a tool error) | `test/jobs/audit-r8.test.ts`, `test/phone/server.test.ts` "R8-4", `test/phone/routers.test.ts` "R8-3" |
+| R8-5 | `isPhoneOn` = marker **and** its `rc` pid's command is `claude … remote-control`, else the marker is removed; job `reconcile` / `stop` trust a pid only if its command is this job's supervisor (`jobs _run …<id>`) or Claude (`--session-id <id>`) (`commandOf` in `src/lib/process.ts`) | `test/phone/setup.test.ts` "R8-5", `test/jobs/state-pid.test.ts` |
+| R8-6 | At job end the supervisor SIGKILLs processes still working in the job folder that have no terminal and started at or after the job (so the owner's own shell or editor there is never touched); `job_end` records `leftover` | `test/jobs/runner.test.ts` "R8-6", `test/lib/process-cwd.test.ts` |
+| R8-7 | Phone folder settings: `crossSessionInbound: refuse`, `disableSkillShellExecution`, `disableBundledSkills`, `disableWorkflows`, `permissions.deny: [Skill, SendMessage, ListAgents]` (probed: skills 19 → 3, slash commands 49 → 33); with R8-1's config only `stephen_phone` starts (was 37 MCP servers); the check fails on any other MCP server | `test/phone/setup.test.ts` |
+| R8-8 | Phone runs get no `<user_memory>` block (`memoryForTrust`, one-shot and warm); timers and reminders can't be set from the phone (read-only, like cancel) | `test/voice/memory-persona.test.ts` "R8-8", `test/phone/routers.test.ts` |
+
+Left as is: `/heapdump` from the phone still writes to `~/Desktop` (it ignores `CLAUDE_CONFIG_DIR`); the wake word still gets the memory block (pre-existing, owner's choice); folder cleanup after a failed worktree (R8-4 item 5) is not done.

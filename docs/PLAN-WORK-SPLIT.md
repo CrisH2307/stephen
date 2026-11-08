@@ -166,3 +166,11 @@ Options (pick before building; each keeps the egress rule intact):
    one" stops working from the phone. Not recommended.
 4. **Local player** (Spotify / Apple Music app via AppleScript, no browser URL): no web egress at all. Depends on the
    app being installed and signed in.
+
+**§13 built (2026-11-07):** a variant of option 3 that keeps follow-ups: only a "play / put on / start playing
+<something new>" command, decided from the owner's words (`freshForPlay` in `src/voice/assistant.ts`, no model),
+ends a running follow-up first, so it runs in a fresh conversation that has read nothing private, and the normal gate
+lets YouTube open (no rule fires without a private read). "play it / that / the first one" stays in the follow-up
+(it needs the context). No gate rule was changed. Trade-off: the follow-up chain before the music ends. Owner check:
+F5 "what's my day", then (phone or F5) "play Sarà perché ti amo" → plays, no confirmation. Tests:
+`test/voice/play-fresh.test.ts`.
