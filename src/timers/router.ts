@@ -62,6 +62,12 @@ function atText(at: number, now: number, tz: string): string {
 
 const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
 
+/**
+ * From the phone, timers are read-only (docs/ADR-005: the model never writes memory or timers; REVIEW-8 R8-8: the phone
+ * model could create them through ask, and injected text could ask it to). Cancelling would need a Mac dialog too.
+ */
+export const PHONE_CANCEL_REPLY = "I can't set or cancel timers from your phone. Do that at the Mac.";
+
 export class TimerRouter {
   constructor(private readonly o: TimerRouterOptions) {}
 
@@ -72,19 +78,21 @@ export class TimerRouter {
   /** Handle `text` if it is a timer/reminder command; null = not one. Never throws. */
   async route(text: string, opts: { source: string; raw?: string } = { source: 'cli' }): Promise<TimerRoute | null> {
     const now = this.now();
-    const wake = opts.source === 'voice-wake';
+    const wake = opts.source === 'voice-wake' || opts.source === 'phone'; // the phone gets wake-word replies (ADR-005)
     const intent = parseTimerIntent(text, now, this.o.timeZone);
     if (!intent) return null;
     const store = this.o.store;
     const withRest = (r: TimerRoute) => ('rest' in intent && intent.rest ? { ...r, rest: intent.rest } : r);
     switch (intent.kind) {
       case 'timer': {
+        if (opts.source === 'phone') return withRest({ reply: PHONE_CANCEL_REPLY, changed: false });
         if (intent.label && memoryTextLooksSecret(intent.label)) return withRest({ reply: "I don't save codes or passwords, even in timer names.", changed: false, said: 'set a timer [refused: looks like a secret]' });
         const r = store.add('timer', now + intent.ms, intent.label ?? '', intent.ms, wake);
         if ('error' in r) return withRest({ reply: r.error, changed: false });
         return withRest({ reply: `Bet, ${durationAdj(intent.ms)} timer${r.text ? ` for ${r.text}` : ''} started.`, changed: false });
       }
       case 'remind': {
+        if (opts.source === 'phone') return withRest({ reply: PHONE_CANCEL_REPLY, changed: false });
         if (memoryTextLooksSecret(intent.text)) return withRest({ reply: "I don't save codes or passwords, even in reminders.", changed: false, said: 'remind me [refused: looks like a secret]' });
         const r = store.add('reminder', intent.dueAt, intent.text, undefined, wake);
         if ('error' in r) return withRest({ reply: r.error, changed: false });
@@ -103,6 +111,7 @@ export class TimerRouter {
         const items = store.list();
         if (!items.length) return { reply: 'There are no timers or reminders to cancel.', changed: false };
         if (intent.which === 'all') {
+          if (opts.source === 'phone') return { reply: PHONE_CANCEL_REPLY, changed: false };
           if (wake && !(await this.confirm(`Cancel all ${items.length} timers and reminders?`))) return { reply: 'Okay, kept them.', changed: false };
           store.remove(items.map((i) => i.id));
           return { reply: `Cancelled all ${items.length}.`, changed: false };
@@ -117,6 +126,7 @@ export class TimerRouter {
           target = scored[0]?.i;
           if (!target) return { reply: `I don't have a reminder about ${intent.which.query}.`, changed: false };
         }
+        if (opts.source === 'phone') return { reply: PHONE_CANCEL_REPLY, changed: false };
         if (wake && !(await this.confirm(`Cancel ${this.describe(target!, now, false)}?`))) return { reply: 'Okay, kept it.', changed: false };
         store.remove([target!.id]);
         return { reply: `Cancelled ${this.describe(target!, now, false)}.`, changed: false };

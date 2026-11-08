@@ -12,6 +12,7 @@
  */
 import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveStephenHome } from '../config.js';
 import { keychainHas, keychainRead, type KeychainDeps } from '../lib/keychain.js';
 
 /** Each secret: Keychain service suffix and the `.env` names accepted for it (first present wins). */
@@ -46,12 +47,18 @@ export function checkSecretValue(name: SecretName, v: string): string | null {
 /** Stephen's repo root: this file is src/accounts/secrets.ts or dist/accounts/secrets.js. */
 export { REPO_ROOT } from '../lib/repo.js';
 import { REPO_ROOT } from '../lib/repo.js';
+/** The repo's `.env` (legacy place: a repo copy, like a job's worktree, could carry it; docs/PLAN-WORK-SPLIT.md §12). */
 export const DEFAULT_ENV_FILE = join(REPO_ROOT, '.env');
+
+/** Where `.env` is looked for, in order: Stephen's home folder (`~/.stephen/.env`), then the repo's (legacy). */
+export function defaultEnvFiles(env: NodeJS.ProcessEnv = process.env): string[] {
+  return [join(resolveStephenHome(env).dir, '.env'), DEFAULT_ENV_FILE];
+}
 /** A `.env` larger than this is not read (it is a few lines). */
 const MAX_ENV_BYTES = 64 * 1024;
 
 export interface SecretDeps extends KeychainDeps {
-  /** `.env` path (default: the repo root); null = don't use a file. */
+  /** `.env` path (default: defaultEnvFiles(): the home folder's, then the repo's); null = don't use a file. */
   envFile?: string | null;
   uid?: number | null;
 }
@@ -110,19 +117,26 @@ export async function lookupSecret(name: SecretName, deps: SecretDeps = {}): Pro
   const notes: string[] = [];
   const kc = await keychainFind(spec.keychain, (v) => checkSecretValue(name, v), deps, notes);
   if (kc) return { value: kc, source: 'keychain', notes };
-  const file = deps.envFile === undefined ? DEFAULT_ENV_FILE : deps.envFile;
-  if (file) {
+  for (const file of envFilesOf(deps)) {
     const { values, note } = readEnvFile(file, spec.env, deps);
     if (note) notes.push(note);
     for (const k of spec.env) {
       const v = values.get(k);
       if (!v) continue;
       const bad = checkSecretValue(name, v);
-      if (!bad) return { value: v, source: '.env', notes };
+      if (!bad) {
+        if (file === DEFAULT_ENV_FILE && deps.envFile === undefined) notes.push(`${k} is in the repo's .env: move it with \`stephen accounts set ${name}\` (Keychain).`);
+        return { value: v, source: '.env', notes };
+      }
       notes.push(`.env ${k}: ${bad}`);
     }
   }
   return { value: null, source: null, notes };
+}
+
+function envFilesOf(deps: SecretDeps): string[] {
+  if (deps.envFile === undefined) return defaultEnvFiles();
+  return deps.envFile ? [deps.envFile] : [];
 }
 
 /** One Keychain item (src/lib/keychain.ts keychainRead), checked by `check`; null when absent or bad. */
@@ -170,8 +184,7 @@ export interface SecretPresence {
 export async function secretPresent(name: SecretName, deps: SecretDeps = {}): Promise<SecretPresence> {
   const spec = SECRET_SPECS[name];
   if (await keychainHas(spec.keychain, deps)) return { present: true, source: 'keychain' };
-  const file = deps.envFile === undefined ? DEFAULT_ENV_FILE : deps.envFile;
-  if (file && readEnvFile(file, spec.env, deps).values.size > 0) return { present: true, source: '.env' };
+  if (envFilesOf(deps).some((f) => readEnvFile(f, spec.env, deps).values.size > 0)) return { present: true, source: '.env' };
   return { present: false, source: null };
 }
 

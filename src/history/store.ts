@@ -29,7 +29,7 @@ import { writePrivateFileAtomicSync } from '../lib/fs.js';
 import { truncate } from '../safety/text.js';
 import { parseToolCallRecord, type ToolCallRecord } from '../server/tool-log.js';
 
-export const HISTORY_SOURCES = ['voice-ptt', 'voice-wake', 'app', 'cli'] as const;
+export const HISTORY_SOURCES = ['voice-ptt', 'voice-wake', 'app', 'cli', 'phone'] as const;
 export type HistorySource = (typeof HISTORY_SOURCES)[number];
 export const HISTORY_OUTCOMES = ['ok', 'error', 'cancelled', 'memory'] as const;
 export type HistoryOutcome = (typeof HISTORY_OUTCOMES)[number];

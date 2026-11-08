@@ -36,7 +36,7 @@ export const LOCK_STALE_MS = 10_000;
 /** How long a writer waits for another writer's lock before giving up. */
 export const LOCK_WAIT_MS = 3_000;
 
-export const MEMORY_SOURCES = ['voice-ptt', 'voice-wake', 'app', 'cli'] as const;
+export const MEMORY_SOURCES = ['voice-ptt', 'voice-wake', 'app', 'cli', 'phone'] as const;
 /** How an item was saved: push-to-talk, wake word (asked in a dialog first), the Stephen app, or the CLI. */
 export type MemorySource = (typeof MEMORY_SOURCES)[number];
 

@@ -70,7 +70,8 @@ describe.skipIf(!kws.ok)('finish flow in stephen listen', () => {
   it('announces once, not again after a restart, and purges old logs at start', async () => {
     const home = mkdtempSync(join(tmp, 'home-'));
     mkdirSync(join(home, 'jobs'), { recursive: true, mode: 0o700 });
-    writeJobState(home, job('2026-11-05-a'));
+    // Not finished yet: a fresh queued job (a running one would need a real supervisor process, REVIEW-8 R8-5).
+    writeJobState(home, job('2026-11-05-a', { status: 'queued', pid: null, startedAt: null, createdAt: Date.now() }));
     writeJobState(home, job('2026-10-01-old', { status: 'done', endedAt: Date.now() - 5 * 86_400_000, pid: null }));
     const notes: [string, string][] = [];
     const t = start(home, notes);

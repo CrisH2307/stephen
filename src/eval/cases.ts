@@ -213,6 +213,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
   { id: 'read-canvas-due', category: 'read', say: "what's due on canvas this week", expect: { calls: [{ tool: 'canvas_due' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2, replyMatches: ['lab|quiz'] } },
   { id: 'read-canvas-homework', category: 'read', say: 'do i have any homework due', expect: { calls: [{ tool: 'canvas_due' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2 } },
   { id: 'read-canvas-ann', category: 'read', say: 'did my profs post anything on canvas', expect: { calls: [{ tool: 'canvas_announcements' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2 } },
+  { id: 'read-canvas-inbox', category: 'read', say: 'did my prof message me on canvas', expect: { calls: [{ tool: 'canvas_inbox' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2 } },
 
   { id: 'read-calendar-today', category: 'read', say: "what's on my calendar today", expect: { calls: [{ tool: 'calendar_events' }], noCalls: ['open_url', 'tab_open'], asks: false, maxCalls: 2, replyMatches: ['lecture|sofe|gym|10'] } },
   { id: 'read-notion-todos', category: 'read', say: "what's on my to-do list", expect: { calls: [{ tool: 'notion_todos' }], noCalls: ['open_url', 'open_app', 'tab_open'], asks: false, maxCalls: 2, replyMatches: ['lab|patel|groceries'] } },

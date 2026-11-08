@@ -159,3 +159,12 @@ Use it only if Remote Control can't be locked down (see the lock-down bullet). E
 
 Answered by the probe: tool lock-down (yes, `agent` setting), `.mcp.json` approval (once, at folder trust, persists),
 `requiresUserInteraction` on the phone (yes, exact input, no "always allow").
+
+## Review 8 changes (2026-11-07)
+- The phone session has its **own Claude Code config** (`<home>/phone/claude-config`): `/config` typed on the phone
+  can't change the owner's settings (R8-1), and the owner's plugins, skills, hooks and other MCP servers don't load
+  there (T6 closed). One-time `stephen phone login`; `stephen phone status` shows when it expires.
+- Hardening keys in the phone folder settings (R8-7); the start check also fails on any MCP server but the bridge.
+- The kill switch follows the real Remote Control process, not just the marker file (R8-5).
+- Phone jobs: no inbox files, no repo jobs, task at most 500 characters (R8-2); starts serialized (R8-3).
+- Phone runs get no memory block; timers are read-only from the phone (R8-8).

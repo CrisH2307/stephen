@@ -41,7 +41,7 @@ interface Saved {
 
 /** The trust when a caller gives none: the most cautious. */
 const DEFAULT_TRUST: Trust = 'wake';
-const isTrust = (t: unknown): t is Trust => t === 'trusted' || t === 'wake';
+const isTrust = (t: unknown): t is Trust => t === 'trusted' || t === 'wake' || t === 'phone';
 
 /** A short stable hash of a memory list (what the persona's <user_memory> block was built from). */
 export function memoryKey(texts: readonly string[]): string {

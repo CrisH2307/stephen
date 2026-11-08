@@ -2,6 +2,7 @@
  * Canvas LMS, read-only (phase 2a). Two questions the owner asks by voice:
  *   - "what's due this week?"      → canvas_due: planner items in a window (assignments, quizzes, discussions…)
  *   - "any Canvas announcements?"  → canvas_announcements: announcements of active courses in the last N days
+ *   - "any Canvas messages?"       → canvas_inbox: the newest conversations in the Canvas inbox (who, when, subject)
  * API (Canvas REST v1, personal access token): GET /api/v1/planner/items, /api/v1/courses, /api/v1/announcements,
  * /api/v1/users/self (connection test). Everything is a GET on the one Canvas origin (ApiClient).
  *
@@ -28,6 +29,16 @@ export interface Course {
   id: number;
   name?: string | null;
   course_code?: string | null;
+}
+
+export interface Conversation {
+  id: number;
+  subject?: string | null;
+  workflow_state?: string | null;
+  last_message?: string | null;
+  last_message_at?: string | null;
+  context_name?: string | null;
+  participants?: { id?: number; name?: string | null }[] | null;
 }
 
 export interface Announcement {
@@ -101,6 +112,25 @@ export function formatAnnouncements(items: readonly Announcement[], courses: Rea
     });
 }
 
+/**
+ * Inbox conversations → lines, newest first. `whoOnly` (wake word and phone, like email: docs/REVIEW-7.md R7-2): who
+ * and when only, no subject or text. Every page-supplied string goes through `field` (cleaned, codes masked, capped).
+ */
+export function formatInbox(items: readonly Conversation[], selfId: number | null, opts: { whoOnly?: boolean; timeZone?: string } = {}): string[] {
+  return [...items]
+    .sort((a, b) => Date.parse(b.last_message_at ?? '') - Date.parse(a.last_message_at ?? ''))
+    .map((c) => {
+      const when = c.last_message_at ? whenText(c.last_message_at, opts.timeZone) : 'no date';
+      const others = (c.participants ?? []).filter((p) => p && p.id !== selfId).map((p) => field(p.name ?? '', 60)).filter(Boolean);
+      const who = others.length ? `from ${others.slice(0, 3).join(', ')}${others.length > 3 ? ` and ${others.length - 3} more` : ''}` : 'from (unknown)';
+      const unread = c.workflow_state === 'unread' ? ' (unread)' : '';
+      if (opts.whoOnly) return `- ${when} · ${who}${unread}`;
+      const course = field(c.context_name ?? '', 80);
+      const excerpt = field(c.last_message ?? '', 240);
+      return `- ${when} · ${course ? `${course} · ` : ''}${who} · "${field(c.subject ?? '(no subject)', 160)}"${unread}${excerpt ? ` — ${excerpt}` : ''}`;
+    });
+}
+
 export class CanvasClient {
   readonly api: ApiClient;
   constructor(o: ApiClientOptions) {
@@ -121,6 +151,19 @@ export class CanvasClient {
   async activeCourses(): Promise<Course[]> {
     const q = new URLSearchParams({ enrollment_state: 'active', per_page: '100' });
     return (await this.api.getAllPages<Course>(`/api/v1/courses?${q}`)).items.filter((c) => Number.isSafeInteger(c?.id));
+  }
+
+  /** The account's own user id (to leave the owner out of each conversation's participants). */
+  async selfId(): Promise<number | null> {
+    const me = await this.api.getJson<{ id?: unknown }>('/api/v1/users/self');
+    return Number.isSafeInteger(me.id) ? (me.id as number) : null;
+  }
+
+  /** The newest `limit` inbox conversations (one page), or only the unread ones. */
+  async conversations(unreadOnly: boolean, limit: number): Promise<Conversation[]> {
+    const q = new URLSearchParams({ scope: unreadOnly ? 'unread' : 'inbox', per_page: String(limit) });
+    const r = await this.api.getJson<unknown>(`/api/v1/conversations?${q}`);
+    return Array.isArray(r) ? (r as Conversation[]).filter((c) => c && Number.isSafeInteger(c.id)).slice(0, limit) : [];
   }
 
   async announcements(courseIds: readonly number[], start: Date, end: Date): Promise<{ items: Announcement[]; truncated: boolean }> {

@@ -70,3 +70,16 @@ export async function accountsStatus(rawAccounts: unknown, deps: SecretDeps = {}
   }
   return { accounts: rows, ...(note ? { note } : {}) };
 }
+
+/** The phone link as an Accounts row (docs/ADR-005): on/off, and the phone config's own sign-in. */
+export function phoneAccountRow(p: { on: boolean; loggedIn: boolean; expiresAt: string | null }): AccountRow {
+  const signIn = p.loggedIn ? `Signed in${p.expiresAt ? ` until ${p.expiresAt.slice(0, 10)}` : ''}` : 'Not signed in';
+  return {
+    id: 'phone',
+    name: 'Phone link',
+    state: p.on ? 'connected' : p.loggedIn ? 'off' : 'not_set',
+    source: null,
+    detail: `${p.on ? 'On' : 'Off'} · ${signIn}`,
+    hint: p.loggedIn ? 'Turn it on with: stephen phone on (Ctrl-C or stephen phone off ends it)' : 'Sign in once with: stephen phone login, then: stephen phone on',
+  };
+}

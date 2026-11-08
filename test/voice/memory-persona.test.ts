@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, sy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import {
+import { memoryForTrust,
   ClaudeRunner,
   MEMORY_ITEM_MAX_CHARS,
   MEMORY_MAX_ITEMS,
@@ -197,6 +197,26 @@ describe('ClaudeRunner reads memory fresh on every run', () => {
     const [a, b] = readFakeLog(log);
     expect(a!.argv[a!.argv.indexOf('--append-system-prompt') + 1]).toBe(personaFor(null, MEM));
     expect(b!.argv[b!.argv.indexOf('--append-system-prompt') + 1]).toBe(STEPHEN_PERSONA);
+  });
+
+  it('R8-8: a phone run gets no memory block (the provider is not even read); other trusts do', async () => {
+    const log = join(tmp, 'phone-mode.log');
+    let reads = 0;
+    const runner = new ClaudeRunner({
+      ...settings,
+      claudePath: fake,
+      memory: () => (reads++, MEM),
+      cwd: tmp,
+      env: { ...process.env, FAKE_CLAUDE_LOG: log },
+    });
+    expect(await runner.run('what do you remember', { trust: 'phone' })).toMatchObject({ kind: 'ok' });
+    expect(reads).toBe(0);
+    await runner.run('open youtube', { trust: 'wake' });
+    const [phone, wake] = readFakeLog(log);
+    expect(phone!.argv.join('\n')).not.toMatch(/user_memory|goodlife|patel/);
+    expect(wake!.argv[wake!.argv.indexOf('--append-system-prompt') + 1]).toBe(personaFor(null, MEM));
+    expect(memoryForTrust('phone', () => MEM)).toEqual([]);
+    expect(memoryForTrust('trusted', () => MEM)).toEqual(MEM);
   });
 
   it('no provider: same argv as before (no memory block)', () => {

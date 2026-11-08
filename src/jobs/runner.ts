@@ -15,7 +15,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { closeSync, constants as fsConstants, openSync, writeSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { readPrivateJsonFile } from '../lib/fs.js';
-import { killGroup } from '../lib/process.js';
+import { killGroup, pidsWithCwdIn, processStart } from '../lib/process.js';
 import { AuditLog } from '../safety/audit.js';
 import { clean } from '../safety/text.js';
 import type { IAuditLog } from '../types.js';
@@ -72,6 +72,9 @@ export interface SuperviseDeps {
   killGraceMs?: number;
   progressEveryMs?: number;
   log?: (line: string) => void;
+  /** Processes still working in the job folder at the end (tests: a fake). Default: pidsWithCwdIn. */
+  stragglers?: (folder: string) => number[];
+  kill?: (pid: number, signal: NodeJS.Signals) => void;
 }
 
 /** Append-only private file (O_NOFOLLOW, 0600) with a byte cap. Never throws after opening. */
@@ -159,15 +162,46 @@ export class JobSupervisor {
   private finish(status: JobStatus, error: string): JobState {
     this.state = { ...this.state, status, error: clean(error, 400), endedAt: this.now() };
     this.save(true);
+    const leftover = this.killStragglers();
     void this.d.audit
       ?.append({
         tool: 'job_end',
         outcome: status === 'done' ? 'ok' : 'error',
-        args: { id: this.state.id, status, turns: this.state.turns, costUsd: this.state.costUsd ?? 0, denials: this.state.denials, toolCalls: this.state.toolCalls },
+        args: { id: this.state.id, status, turns: this.state.turns, costUsd: this.state.costUsd ?? 0, denials: this.state.denials, toolCalls: this.state.toolCalls, ...(leftover ? { leftover } : {}) },
         ...(this.state.error ? { error: this.state.error } : {}),
       })
       .catch(() => undefined);
     return this.state;
+  }
+
+  /**
+   * REVIEW-8 R8-6: a job's command can `setsid` a child out of Claude Code's process group, so killing the group
+   * misses it. When the job ends, anything still working inside the job folder is SIGKILLed. Returns how many.
+   */
+  private killStragglers(): number {
+    const since = this.state.startedAt;
+    if (since === null) return 0; // Claude Code never ran: nothing can be left
+    let pids: number[];
+    try {
+      // Only what the job could have started: no terminal (the owner's Terminal shells have one) and started at or
+      // after the job did (a shell or editor the owner already had open in the folder is never touched).
+      pids = this.d.stragglers
+        ? this.d.stragglers(this.s.spec.folder)
+        : pidsWithCwdIn(this.s.spec.folder).filter((pid) => {
+            const p = processStart(pid);
+            return p !== null && p.tty === '??' && p.startedAt >= Math.floor(since / 1000) * 1000;
+          });
+    } catch {
+      return 0;
+    }
+    for (const pid of pids) {
+      try {
+        (this.d.kill ?? ((p, sig) => process.kill(p, sig)))(pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }
+    return pids.length;
   }
 
   async run(): Promise<JobState> {

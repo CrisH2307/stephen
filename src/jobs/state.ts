@@ -10,7 +10,7 @@
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
-import { isPidAlive, killGroup } from '../lib/process.js';
+import { commandOf, killGroup } from '../lib/process.js';
 import { clean } from '../safety/text.js';
 import { SUMMARY_MAX, isJobId } from './spec.js';
 
@@ -122,8 +122,24 @@ export function writeJobState(home: string, s: JobState): void {
 
 export interface ReconcileOptions {
   now?: () => number;
+  /** Told once, when this call marks a job failed (the manager audits it, R8-4). */
+  onFailed?: (s: JobState) => void;
+  /** Tests: is this pid still ours? Default: the pid's command line is this job's supervisor / Claude Code (R8-5). */
   alive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => boolean;
+}
+
+/** Is `pid` still this job's supervisor (`stephen jobs _run <meta folder of this id>`)? A reused pid is not (R8-5). */
+export function supervisorRuns(s: Pick<JobState, 'id'>, pid: number, alive?: (pid: number) => boolean): boolean {
+  if (alive) return alive(pid);
+  const cmd = commandOf(pid);
+  return /\bjobs _run\b/.test(cmd) && cmd.includes(s.id);
+}
+
+/** Is `pid` still this job's Claude Code (its `--session-id`)? Without a recorded session id: not provably ours. */
+function claudeRuns(s: Pick<JobState, 'sessionId'>, pid: number, alive?: (pid: number) => boolean): boolean {
+  if (alive) return alive(pid);
+  return !!s.sessionId && commandOf(pid).includes(`--session-id ${s.sessionId}`);
 }
 
 /**
@@ -133,14 +149,13 @@ export interface ReconcileOptions {
 export function reconcile(home: string, s: JobState, o: ReconcileOptions = {}): JobState {
   if (isFinal(s.status)) return s;
   const now = (o.now ?? Date.now)();
-  const alive = o.alive ?? isPidAlive;
   const deadline = (s.deadlineAt ?? s.createdAt + s.wallClockMs) + OVERDUE_MS;
   let why = '';
   if (s.status === 'queued' && s.pid === null) {
     if (now - s.createdAt > QUEUED_STALE_MS) why = "The job runner didn't start.";
-  } else if (s.pid === null || !alive(s.pid) || now > deadline) {
+  } else if (s.pid === null || !supervisorRuns(s, s.pid, o.alive) || now > deadline) {
     why = "Stephen's job runner ended without a result (the Mac restarted, or it crashed).";
-    if (s.claudePid !== null && now <= deadline && alive(s.claudePid)) (o.kill ?? killGroup)(s.claudePid, 'SIGKILL');
+    if (s.claudePid !== null && now <= deadline && claudeRuns(s, s.claudePid, o.alive)) (o.kill ?? killGroup)(s.claudePid, 'SIGKILL');
   }
   if (!why) return s;
   const next: JobState = { ...s, status: 'failed', endedAt: now, error: why };
@@ -149,6 +164,7 @@ export function reconcile(home: string, s: JobState, o: ReconcileOptions = {}): 
   } catch {
     /* shown as failed anyway */
   }
+  o.onFailed?.(next);
   return next;
 }
 

@@ -14,9 +14,14 @@ import { NO_TODO_DATABASE, NotionClient } from '../accounts/notion.js';
 import { field } from '../accounts/result.js';
 import { parseAccountsConfig } from '../accounts/config.js';
 import { WEATHER_ORIGIN, fetchWeather, formatWeather } from '../accounts/weather.js';
-import { lookupGmailToken, lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from '../accounts/secrets.js';
+import { checkSecretValue, lookupGmailToken, lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from '../accounts/secrets.js';
+import { keychainAccount } from '../lib/keychain.js';
+import { keychainStore } from './keychain-write.js';
+import { readSecretFromStdin } from './voice-key.js';
 
 export const ACCOUNTS_HELP = `stephen accounts              Show which account secrets Stephen finds (Keychain or .env; never the values)
+stephen accounts set <name>   Store one in the Keychain (hidden prompt, or piped: pbpaste | stephen accounts set <name>)
+                              <name>: ${Object.keys(SECRET_SPECS).join(', ')}
 stephen accounts test canvas  Read your Canvas once: your name and what's due in the next 7 days
 stephen accounts test calendar  Read your Google Calendar feed once: events in the next 7 days
 stephen accounts test notion  Read your Notion to-do database once: how many open to-dos
@@ -37,6 +42,10 @@ export interface AccountsCliEnv {
   weatherOrigin?: string;
   /** Tests only: the config.json to read and write (default: Stephen's). */
   configPath?: string;
+  /** Reads a secret (default: hidden prompt on a TTY, else all of stdin). */
+  readSecret?: (prompt: string) => Promise<string>;
+  /** Stores it (default: the Keychain item of that secret). Returns an error message, or null. */
+  store?: (service: string, label: string, value: string) => Promise<string | null>;
   /** Tests only: a fake Notion server. */
   notionOrigin?: string;
 }
@@ -74,6 +83,27 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
   const err = e.err ?? ((l: string) => console.error(l));
   if (argv[0] === '--help' || argv[0] === 'help') {
     out(ACCOUNTS_HELP);
+    return 0;
+  }
+  if (argv[0] === 'set') {
+    const name = argv[1] as SecretName;
+    if (argv.length !== 2 || !(name in SECRET_SPECS)) {
+      err(`Usage: stephen accounts set <name>, where <name> is one of: ${Object.keys(SECRET_SPECS).join(', ')}`);
+      return 2;
+    }
+    const value = (await (e.readSecret ?? readSecretFromStdin)(`${name} (input hidden): `)).trim();
+    const bad = checkSecretValue(name, value);
+    if (bad) {
+      err(`Not stored: ${bad}.`);
+      return 1;
+    }
+    const service = SECRET_SPECS[name].keychain;
+    const fail = await (e.store ?? ((s, l, v) => keychainStore(s, l, v, { user: keychainAccount({}) })))(service, `Stephen ${name}`, value);
+    if (fail) {
+      err(fail);
+      return 1;
+    }
+    out(`Stored ${name} in the Keychain (${service}). Keychain wins over .env, so you can now delete its line from .env.`);
     return 0;
   }
   if (argv.length === 0 || argv[0] === 'status') {

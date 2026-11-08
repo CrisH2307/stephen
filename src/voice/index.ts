@@ -27,6 +27,7 @@ import { Assistant, type CommandReport, type CommandRunner, type Trust } from '.
 import { MicrophoneSource, listInputDevices, resolveDeviceIndex, wavFileSource, type AudioSource } from './audio.js';
 import {
   ClaudeRunner,
+  memoryForTrust,
   buildClaudeArgs,
   formatTiming,
   mcpConfig,
@@ -56,7 +57,7 @@ import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel,
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
-import { accountsStatus } from '../app/accounts-status.js';
+import { accountsStatus, phoneAccountRow } from '../app/accounts-status.js';
 import { macNotify, macNotifyTitled, type NotifyFn, type NotifyTitledFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
@@ -66,6 +67,8 @@ import { FinishWatcher } from '../jobs/finish.js';
 import { JobManager } from '../jobs/manager.js';
 import { purgeJobs } from '../jobs/state.js';
 import { JobRouter } from '../jobs/router.js';
+import { PhoneServer } from '../phone/server.js';
+import { isPhoneOn, phoneAuth, type PhoneAuth } from '../phone/setup.js';
 import type { SpawnFn as JobSpawnFn } from '../jobs/runner.js';
 
 export { LISTEN_USAGE } from './args.js';
@@ -120,6 +123,8 @@ export interface ListenEnv {
   notify?: (text: string) => void;
   /** Job-finished notification (tests); default: macOS notification with a title. */
   jobNotify?: NotifyTitledFn;
+  /** Notices for phone requests (tests); default macOS notifications. */
+  phoneNotify?: NotifyTitledFn;
   /** How often finished jobs are looked for, ms (tests); default 10 s. */
   jobPollMs?: number;
   /**
@@ -427,7 +432,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       };
       warm = new WarmConversationRunner({
         conversation,
-        start: (key, trust) => new WarmClaude(warmOpts, key, memoryNow(), trust),
+        start: (key, trust) => new WarmClaude(warmOpts, key, memoryForTrust(trust, memoryNow), trust),
         onTiming: (t) => out(formatTiming(t)),
         now: env.now,
         log: err,
@@ -441,6 +446,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const recordHistory = args.dryRun ? undefined : historyRecorder(history, toolRunner ? () => toolRunner.tools() : null, err);
   // The Stephen window (app.sock): started once the listener exists; until then (and with --text) it stays null.
   let app: AppServer | null = null;
+  let phone: PhoneServer | null = null;
   const onDone = (r: CommandReport) => {
     recordHistory?.(r);
     app?.commandDone(r, r.ranClaude && toolRunner ? toolRunner.tools().map((t) => t.tool) : []);
@@ -524,6 +530,12 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     });
   };
   const configPath = env.configPath ?? configFilePath(env.env ?? process.env);
+  // The phone config's sign-in for the Accounts tab: `claude auth status` takes about a second, so it is cached.
+  let signIn: { at: number; value: Promise<PhoneAuth> } | null = null;
+  const phoneSignIn = (): Promise<PhoneAuth> => {
+    if (!signIn || Date.now() - signIn.at > 5 * 60_000) signIn = { at: Date.now(), value: phoneAuth(home, cfg.claudePath) };
+    return signIn.value;
+  };
   /** Serve <home>/run/app.sock for the Stephen window; null (with a note) when that isn't possible. */
   const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null): Promise<AppServer | null> => {
     const server = new AppServer({
@@ -536,7 +548,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       history,
       audit,
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
-      accounts: () => accountsStatus(loaded.accounts),
+      accounts: async () => {
+        const s = await accountsStatus(loaded.accounts);
+        return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
+      },
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
@@ -546,6 +561,34 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       await server.start();
     } catch (e) {
       err(`Note: the Stephen window can't connect to this listener (${(e as Error).message}).`);
+      return null;
+    }
+    return server;
+  };
+  /**
+   * Serve <home>/run/phone.sock for the phone bridge (docs/ADR-005): phone commands go through the same listener queue
+   * as voice and typed ones, as source 'phone'. Requests are refused unless `stephen phone on`. null (with a note)
+   * when the socket can't be made.
+   */
+  const startPhone = async (l: Listener, a: Assistant): Promise<PhoneServer | null> => {
+    const server = new PhoneServer({
+      home,
+      isOn: () => isPhoneOn(home),
+      ask: (text) => l.submit(() => a.command(text, { source: 'phone', raw: text, speak: false }))?.then((r) => r.reply) ?? null,
+      ...(jobRouter
+        ? {
+            jobStatus: async () => (await jobRouter.route("how's the job going", { source: 'phone' }))?.reply ?? 'No jobs.',
+            startJob: (task: string, web: boolean) => jobRouter.startFromPhone(task, web),
+          }
+        : {}),
+      audit,
+      notify: env.phoneNotify ?? macNotifyTitled,
+      log: err,
+    });
+    try {
+      await server.start();
+    } catch (e) {
+      err(`Note: the phone link can't connect to this listener (${(e as Error).message}).`);
       return null;
     }
     return server;
@@ -576,6 +619,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     claude?.killNow();
     warm?.killNow();
     app?.closeSync();
+    phone?.closeSync();
     if (settings.personaFile) removePersonaFile(settings.personaFile);
   };
   const signals = env.signals ?? true;
@@ -652,6 +696,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
+    phone = await startPhone(listener, assistant);
     // Fire timers only while listening. The notification shows at once; the spoken alert waits in ONE queue until the
     // listener is idle (not recording, no command, nobody talking) and runs through listener.submit, so it counts as
     // busy while it speaks (review 6, R6-5). Gives up speaking after 10 minutes (the notification already showed).
@@ -718,6 +763,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     if (settings.personaFile) removePersonaFile(settings.personaFile);
     await app?.close();
     app = null;
+    await phone?.close();
+    phone = null;
     bridge?.close();
     if (signals) {
       process.off('SIGINT', onSigint);

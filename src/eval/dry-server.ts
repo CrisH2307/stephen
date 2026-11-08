@@ -92,6 +92,10 @@ export function fakeResult(tool: string, args: Record<string, unknown>, n: numbe
           : ['- Fri, Oct 30, 3:00 pm · SOFE 3980U · "Lab moved" — Lab 4 is in room UA1350 this week.'];
     return text(accountBlock('canvas', tool === 'canvas_due' ? `Canvas, due in the next 7 days: ${lines.length} items.` : `Canvas announcements from the last 7 days: ${lines.length}.`, lines));
   }
+  if (tool === 'canvas_inbox') {
+    const lines = ctx.page !== undefined ? ctx.page.split('\n').map((l) => `- ${l}`) : ['- Sat, Oct 31, 3:00 pm · SOFE 3980U · from Dr Patel · "Lab 4 extension" (unread) — Yes, until Friday.'];
+    return text(accountBlock('canvas', `Canvas inbox, newest first: ${lines.length} conversation${lines.length === 1 ? '' : 's'}.`, lines));
+  }
   if (tool === 'notion_todos' || tool === 'notion_search') {
     const lines =
       ctx.page !== undefined

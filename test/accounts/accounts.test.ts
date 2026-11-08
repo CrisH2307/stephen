@@ -245,6 +245,40 @@ describe('Canvas tools over MCP', () => {
     expect(h.gate.dataReads).toEqual(['canvas']);
   });
 
+  it('canvas_inbox: newest first, the owner left out, cleaned; the wake word / phone get who and when only', async () => {
+    const CONVS = [
+      { id: 1, subject: 'Lab 4 extension', workflow_state: 'unread', last_message: 'Yes, until Friday. Code 4417-8890 for the portal.', last_message_at: '2026-10-31T15:00:00Z', context_name: 'SOFE 3980U', participants: [{ id: 99, name: 'Cris' }, { id: 5, name: 'Dr Patel' }] },
+      { id: 2, subject: 'Group project', workflow_state: 'read', last_message: 'See you at 3', last_message_at: '2026-11-01T18:00:00Z', context_name: 'MATH 2050U', participants: [{ id: 99, name: 'Cris' }, { id: 6, name: 'Sam' }] },
+    ];
+    handler = (_q, res, url) => {
+      if (url.pathname === '/api/v1/conversations') {
+        expect(url.searchParams.get('scope')).toBe(url.searchParams.get('scope') === 'unread' ? 'unread' : 'inbox');
+        return json(res, CONVS);
+      }
+      if (url.pathname === '/api/v1/users/self') return json(res, { id: 99, name: 'Cris' });
+      res.writeHead(404);
+      res.end();
+    };
+    const h = await harness(envFile());
+    const text = textOf(await h.call('canvas_inbox', { limit: 5 }));
+    expect(text).toContain('Canvas inbox, newest first: 2 conversations (1 unread).');
+    expect(text.indexOf('Sam')).toBeLessThan(text.indexOf('Dr Patel')); // newest first
+    expect(text).toContain('SOFE 3980U · from Dr Patel · "Lab 4 extension" (unread) — Yes, until Friday.');
+    expect(text).not.toMatch(/4417-8890/); // codes masked like email
+    expect(text).not.toMatch(/from Cris/);
+    expect(h.gate.dataReads).toEqual(['canvas']);
+    expect(seen.find((r) => r.path.startsWith('/api/v1/conversations'))?.path).toBe('/api/v1/conversations?scope=inbox&per_page=5');
+
+    const w = await setup({
+      overrides: { accounts: { timeZone: TZ } } as never,
+      extraDeps: { trust: 'wake', accounts: { secrets: { platform: 'linux', envFile: envFile() }, allowLoopbackHttp: true, now: () => new Date('2026-11-01T22:00:00Z') } },
+    });
+    const wake = textOf(await w.call('canvas_inbox', { unread_only: true }));
+    expect(wake).toMatch(/from Dr Patel \(unread\)/);
+    expect(wake).not.toMatch(/Lab 4 extension|Friday|SOFE/);
+    expect(wake).toMatch(/only who and when/);
+  });
+
   it('not connected: a clear notice, no request, no taint', async () => {
     const before = seen.length;
     const h = await harness(null);

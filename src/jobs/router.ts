@@ -56,6 +56,11 @@ export function startPrompt(plan: JobPlan, source: string): ConfirmPrompt {
   return { title: 'Stephen: start a background job?', body: lines.join('\n') };
 }
 
+/** Jobs a day from the phone (docs/ADR-005 Bridge rules), on top of jobs.dailyStarts. */
+export const PHONE_DAILY_JOBS = 3;
+export const PHONE_JOB_START_REPLY = 'To start a job from your phone, ask me to start it and approve the request on your phone.';
+export const PHONE_JOB_STOP_REPLY = "I can't stop a job from your phone yet. Stop it at the Mac (say \"stop the job\", or the Jobs tab).";
+
 export class JobRouter {
   constructor(private readonly o: JobRouterOptions) {}
 
@@ -68,20 +73,53 @@ export class JobRouter {
     // The task keeps the owner's own spelling ("SOFE 3980"): parse the original text when there is one.
     const intent = parseJobIntent(opts.raw ?? text);
     if (!intent) return null;
-    const wake = opts.source === 'voice-wake';
+    // The phone (docs/ADR-005) gets wake-word replies; nobody is at the Mac for a dialog, so start and stop are
+    // refused here (a phone job starts through the bridge's start_job, which the owner approves on the phone).
+    const phone = opts.source === 'phone';
+    const wake = opts.source === 'voice-wake' || phone;
     try {
       switch (intent.kind) {
         case 'start':
+          if (phone) return { reply: PHONE_JOB_START_REPLY, changed: false };
           return await this.start(intent.task, opts.source);
         case 'list':
           return { reply: this.listReply(wake), changed: false };
         case 'show':
           return this.show(wake);
         case 'stop':
+          if (phone) return { reply: PHONE_JOB_STOP_REPLY, changed: false };
           return await this.stop(intent.which, opts.source, wake);
       }
     } catch (e) {
       return { reply: `Something went wrong with the job (${clean((e as Error).message, 120)}).`, changed: false };
+    }
+  }
+
+  /**
+   * A job the owner approved on the phone (docs/ADR-005, owner decision 3): the phone's Allow tap, which showed the exact
+   * task, is the confirmation, so there is no Mac dialog. The same plan, folder, sandbox, budgets and caps as a job
+   * started at the Mac, plus: web only when the owner asked for it on the phone, and PHONE_DAILY_JOBS a day from the
+   * phone (counted from the job registry, so a listener restart doesn't reset it).
+   */
+  async startFromPhone(task: string, web: boolean): Promise<{ ok: boolean; text: string }> {
+    const no = (text: string) => ({ ok: false, text });
+    try {
+      // The phone tap showed exactly {task, web} (REVIEW-8 R8-2): nothing it didn't show may join the job.
+      if (task.length > TASK_MAX) return no(`That task is too long for a job (at most ${TASK_MAX} characters). Shorten it and try again.`);
+      const plan = await this.o.jobs.plan(task, { inbox: false });
+      if ('error' in plan) return no(plan.error);
+      if (plan.repo) return no(`That names your repo "${plan.repo.name}". Start code jobs at the Mac, where the dialog shows the worktree.`);
+      const day = plan.id.slice(0, 10); // ids start with the local date (YYYY-MM-DD)
+      // Checked inside the manager's start turn, so parallel phone starts can't all pass (R8-3).
+      const phoneCap = () =>
+        this.o.jobs.list().filter((j) => j.source === 'phone' && j.id.startsWith(day)).length >= PHONE_DAILY_JOBS
+          ? `That's ${PHONE_DAILY_JOBS} jobs from your phone today already, the phone limit. Start more at the Mac.`
+          : '';
+      const r = await this.o.jobs.start({ ...plan, web }, 'phone', phoneCap);
+      if ('refused' in r) return no(r.refused);
+      return { ok: true, text: `Job started: ${said(plan.task)}. Up to ${plural(minutes(plan.wallClockMs), 'minute')}, web ${web ? 'on' : 'off'}, no input files; it'll be in your Stephen Jobs folder. Ask "how's my job going" to check on it.` };
+    } catch (e) {
+      return no(`Something went wrong with the job (${clean((e as Error).message, 120)}).`);
     }
   }
 

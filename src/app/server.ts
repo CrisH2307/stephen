@@ -12,11 +12,10 @@
  *  - Typed chat runs through the AppCommandQueue: the same queue as voice commands (Listener.submit), so the wake
  *    word, Esc and push-to-talk treat it like a voice command and two commands never run at once.
  */
-import { chmodSync, lstatSync, mkdirSync, unlinkSync } from 'node:fs';
-import { type Server, type Socket, createConnection, createServer } from 'node:net';
-import { dirname, join } from 'node:path';
+import { type Socket } from 'node:net';
+import { join } from 'node:path';
 import { LineFramer } from '../helper/framing.js';
-import { MAX_SOCKET_PATH_BYTES } from '../helper/paths.js';
+import { listenPrivateSocket, type PrivateSocket } from '../lib/private-socket.js';
 import { MAX_REPLY_CHARS, MAX_SAID_CHARS, newHistoryId, type HistoryEntry, type HistoryStore } from '../history/store.js';
 import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/store.js';
 import { truncate } from '../safety/text.js';
@@ -45,8 +44,6 @@ export function appSocketPath(home: string): string {
 export const MAX_CLIENTS = 8;
 /** A client that stops reading is dropped once this much output is queued for it. */
 export const MAX_QUEUED_OUTPUT_BYTES = 8 * 1024 * 1024;
-/** How long start() waits for an existing socket to answer before calling it stale. */
-const PROBE_TIMEOUT_MS = 500;
 
 export const MEMORY_OFF_MESSAGE = 'Memory is off (memory.enabled is false in config.json).';
 export const MEMORY_GONE_MESSAGE = "That memory doesn't exist any more.";
@@ -91,28 +88,6 @@ export interface AppServerOptions {
   newId?: () => string;
 }
 
-export class AppSocketError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AppSocketError';
-  }
-}
-
-/** True when something accepts connections on `path`. */
-export function socketAnswers(path: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
-  return new Promise((resolve) => {
-    const s = createConnection(path);
-    const done = (v: boolean) => {
-      clearTimeout(timer);
-      s.destroy();
-      resolve(v);
-    };
-    const timer = setTimeout(() => done(false), timeoutMs);
-    s.once('connect', () => done(true));
-    s.once('error', () => done(false));
-  });
-}
-
 /** Messages listing `items` (newest first), dropping the oldest until the line fits APP_MAX_LINE_BYTES. */
 function fitList<T>(items: T[], build: (items: T[]) => AppMessage): AppMessage {
   let n = items.length;
@@ -125,8 +100,7 @@ function fitList<T>(items: T[], build: (items: T[]) => AppMessage): AppMessage {
 
 export class AppServer {
   readonly socketPath: string;
-  private server: Server | null = null;
-  private ino: number | null = null;
+  private sock: PrivateSocket | null = null;
   private readonly clients = new Set<Socket>();
   private current: AppState = 'idle';
   /** A memory change happened while a command ran: end the conversation again once it is done. */
@@ -146,57 +120,24 @@ export class AppServer {
     return this.current;
   }
 
-  /** Create the socket (see the file comment). Throws AppSocketError when it can't. */
+  /** Create the socket (src/lib/private-socket.ts). Throws PrivateSocketError when it can't. */
   async start(): Promise<void> {
-    const path = this.socketPath;
-    if (Buffer.byteLength(path) > MAX_SOCKET_PATH_BYTES) throw new AppSocketError(`socket path too long (${Buffer.byteLength(path)} bytes): ${path}`);
-    this.prepareDir(dirname(path));
-    let st;
-    try {
-      st = lstatSync(path);
-    } catch {
-      st = null;
-    }
-    if (st) {
-      if (!st.isSocket()) throw new AppSocketError(`${path} exists and is not a socket; remove it`);
-      if (await socketAnswers(path)) throw new AppSocketError(`another \`stephen listen\` is already serving ${path}`);
-      try {
-        unlinkSync(path); // stale: nobody answers
-      } catch (e) {
-        throw new AppSocketError(`cannot remove the stale ${path}: ${(e as Error).message}`);
-      }
-    }
-    const server = createServer((sock) => this.accept(sock));
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', (e) => reject(new AppSocketError(`cannot listen on ${path}: ${e.message}`)));
-      server.listen(path, () => resolve());
-    });
-    server.on('error', (e) => this.log(`app.sock: ${e.message}`));
-    try {
-      chmodSync(path, 0o600);
-      this.ino = lstatSync(path).ino;
-    } catch (e) {
-      server.close();
-      throw new AppSocketError(`cannot secure ${path}: ${(e as Error).message}`);
-    }
-    this.server = server;
+    this.sock = await listenPrivateSocket(this.socketPath, (sock) => this.accept(sock), this.log, 'app.sock');
   }
 
   /** Disconnect every client, stop listening and remove the socket (if it is still ours). */
   async close(): Promise<void> {
-    const server = this.server;
-    this.server = null;
+    const sock = this.sock;
+    this.sock = null;
     for (const c of this.clients) c.destroy();
     this.clients.clear();
-    if (server) await new Promise<void>((r) => server.close(() => r()));
-    this.removeSocket();
+    await sock?.close();
   }
 
   /** For a process 'exit' hook: remove the socket file synchronously. */
   closeSync(): void {
-    this.server?.close();
-    this.server = null;
-    this.removeSocket();
+    this.sock?.closeSync();
+    this.sock = null;
   }
 
   // ───────────────────────────── pushes ─────────────────────────────
@@ -230,28 +171,6 @@ export class AppServer {
   }
 
   // ───────────────────────────── connections ─────────────────────────────
-
-  private prepareDir(dir: string): void {
-    try {
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-    } catch (e) {
-      throw new AppSocketError(`cannot create ${dir}: ${(e as Error).message}`);
-    }
-    const st = lstatSync(dir);
-    if (!st.isDirectory()) throw new AppSocketError(`${dir} must be a real folder (not a symlink)`);
-    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) throw new AppSocketError(`${dir} belongs to another user`);
-    if ((st.mode & 0o777) !== 0o700) chmodSync(dir, 0o700);
-  }
-
-  private removeSocket(): void {
-    if (this.ino === null) return;
-    try {
-      if (lstatSync(this.socketPath).ino === this.ino) unlinkSync(this.socketPath);
-    } catch {
-      // already gone
-    }
-    this.ino = null;
-  }
 
   private accept(sock: Socket): void {
     if (this.clients.size >= MAX_CLIENTS) {

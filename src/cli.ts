@@ -10,7 +10,8 @@ import { parseTtsConfig } from './voice/tts/index.js';
 import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
 import { helperDoctorChecks } from './helper/doctor.js';
 import { runInstallHelper } from './helper/install.js';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import { REPO_ROOT } from './lib/repo.js';
 import { access, constants, mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,8 +68,8 @@ Usage:
                          Show your recent commands (kept on this Mac only), or delete them
   stephen jobs [list] | status <id> | show <id> | stop <id>
                          Background jobs ("Stephen, start a job to …"; each start asks in a dialog)
-  stephen phone setup | check
-                         Phone link folder for Remote Control, and proof its session sees only Stephen's phone tools
+  stephen phone login | on | off | status | setup | check
+                         Talk to Stephen from your phone (Claude app, Remote Control), locked to Stephen's phone tools
   stephen accounts [test canvas|calendar|notion|weather]
                          Which account secrets and Gmail accounts Stephen finds (never the values)
   stephen connect gmail <label> | disconnect gmail <label>
@@ -237,6 +238,7 @@ async function doctor(network = false): Promise<number> {
   if (homeInfo.legacy) {
     add({ ok: true, info: true, label: 'Home folder', detail: legacyHomeNotice(homeInfo.dir) });
   }
+  for (const w of repoPersonalFiles(REPO_ROOT, cfg?.home ?? homeInfo.dir)) add({ ok: false, label: w.label, detail: w.detail, fix: w.fix });
 
   if (cfg) {
     const err = await writable(cfg.home);
@@ -481,6 +483,9 @@ async function main(argv: string[]): Promise<number> {
     case 'jobs':
       // Owner-only, and the per-job supervisor (`jobs _run`): loaded on demand, never by `stephen serve`.
       return (await import('./jobs/cli.js')).runJobsCli(rest);
+    case 'phone-bridge':
+      // The phone session's MCP server (docs/ADR-005): reaches the listener only through phone.sock.
+      return (await import('./phone/bridge.js')).runPhoneBridge();
     case 'phone':
       // Owner-only (writes the phone folder, starts claude for the lock-down check): loaded on demand.
       return (await import('./phone/cli.js')).runPhoneCli(rest);
@@ -523,3 +528,37 @@ main(process.argv.slice(2)).then(
     process.exit(1);
   },
 );
+
+/**
+ * Personal files that belong in Stephen's home folder, not the repo (docs/PLAN-WORK-SPLIT.md §12): a repo copy (a job's
+ * worktree, a clone) must never carry secrets, and a repo config.json is not the one Stephen reads unless it is a link
+ * to it. Pure apart from lstat / realpath.
+ */
+export function repoPersonalFiles(repo: string, home: string): { label: string; detail: string; fix: string }[] {
+  const out: { label: string; detail: string; fix: string }[] = [];
+  const envPath = join(repo, '.env');
+  if (existsSync(envPath)) {
+    out.push({
+      label: 'Secrets outside the repo',
+      detail: `${envPath} holds secrets inside the code folder`,
+      fix: `Move each one to the Keychain with \`stephen accounts set <name>\` (or to ${join(home, '.env')}, chmod 600), then delete ${envPath}.`,
+    });
+  }
+  const cfgPath = join(repo, 'config.json');
+  if (existsSync(cfgPath)) {
+    let same = false;
+    try {
+      same = realpathSync(cfgPath) === realpathSync(join(home, 'config.json'));
+    } catch {
+      /* the home one is missing */
+    }
+    if (!same) {
+      out.push({
+        label: 'Repo config.json',
+        detail: `${cfgPath} is not Stephen's config (Stephen reads ${join(home, 'config.json')})`,
+        fix: `Delete it, or replace it with a link: ln -sf ${join(home, 'config.json')} ${cfgPath}`,
+      });
+    }
+  }
+  return out;
+}

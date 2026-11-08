@@ -437,3 +437,50 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   435 extra and fails. Moved the stream-json parser to `src/lib/claude-stream.ts` and the repo root to
   `src/lib/repo.ts` (one copy each; src/jobs keeps its names) so src/phone loads no job code (boundary test).
   Tests: `test/phone/setup.test.ts`. Next: step 2 (phone.sock + listener side).
+- 2026-11-05: **Item 5 step 2: phone.sock + listener side** (ADR-005 Bridge rules). New `src/phone/server.ts`:
+  `<home>/run/phone.sock` (0600) with only `ask`, `job_status`, `start_job` (the last refused until step 4); refused
+  unless the `<home>/phone/.on` marker exists (`stephen phone on|off` in step 5); 6 asks a minute; every request
+  audited (type and size, never the text) and shown as a Mac notification. The listener starts it next to app.sock
+  and runs phone asks through the same queue as source `phone`. New trust `phone`: serve gets `--trust wake`
+  (email who/when) and `--confirm deny` (nobody at the Mac). From the phone: memory changes refused, memory and
+  timer lists are counts, timer cancel / job start / job stop refused without a dialog. `'phone'` added to the
+  memory/history sources and the Swift source label ("Phone"). Refactor: the app socket's lifecycle (stale check,
+  0700/0600, remove-if-ours) moved to `src/lib/private-socket.ts`, shared by app.sock and phone.sock.
+  Tests: `test/phone/server.test.ts`, `test/phone/routers.test.ts`. Next: step 3 (bridge MCP).
+- 2026-11-05: **Item 5 step 3: the bridge MCP** (`src/phone/bridge.ts`, `stephen phone-bridge`). Three tools (`ask`,
+  `job_status`, `start_job` with `_meta["anthropic/requiresUserInteraction"] = true`); one JSON line per call to
+  phone.sock, 5 min timeout, "listener not running" as a tool error. Claude-reachable: added to CLAUDE_REACHABLE in
+  `test/helpers/import-scan.ts` (loads no memory/app/history/timer/job/connect code). `phoneSocketPath` moved to
+  `src/phone/setup.ts`. Real `stephen phone check` on the Mac: locked, all 3 phone tools present.
+  Tests: `test/phone/bridge.test.ts`. Next: step 4 (jobs from the phone), step 5 (`stephen phone on|off|status`).
+- 2026-11-06: **Item 5 step 4: jobs from the phone.** `JobRouter.startFromPhone(task, web)`: the phone's Allow tap
+  (requiresUserInteraction, exact task shown) is the confirmation, so no Mac dialog (ADR-004 rule 2, ADR-005
+  decision 3). Same `plan()` / `start()` as a Mac job (folder, sandbox, budgets, jobs.maxRunning and dailyStarts), plus
+  web only when asked on the phone (not guessed from the words) and `PHONE_DAILY_JOBS` = 3 a day from the phone,
+  counted from the registry (`source: 'phone'`). The listener wires it as phone.sock's `start_job`. Tests in
+  `test/phone/routers.test.ts` and `server.test.ts`. Next: step 5 (`stephen phone on|off|status`, Remote Control).
+- 2026-11-06: **Item 5 step 5: `stephen phone on | off | status`.** `on` rewrites the folder, runs the lock-down
+  check (refuses unless locked AND complete), writes the `.on` marker (0600, `{pid, rc}`) and runs
+  `claude remote-control --spawn session --no-chrome --permission-mode default --name Stephen` in the phone folder in
+  the foreground (Ctrl-C ends it; the marker is removed when it exits). `off` removes the marker first (phone.sock
+  refuses at once), then SIGTERMs the recorded pid only if its command line is `claude … remote-control`. `status`:
+  on/off, Remote Control alive, listener answering phone.sock. Mac checks: MAC-TEST-PLAN §9. Next: the owner's phone
+  run of §9, then review #8 (items 4 and 5).
+- 2026-11-07: **Review #8 done and fixed** (`docs/REVIEW-8.md`, fresh opus/high reviewer over items 4, 5 and B1): no
+  Critical/High; 2 Medium, 4 Low, 2 Info, all fixed with tests (Fix status table there). Biggest: the phone session now
+  runs with its own Claude Code config (`stephen phone login` once), so `/config` typed on the phone can't change the
+  owner's `~/.claude/settings.json` (proved on the Mac), and only the bridge MCP server starts there. Also: phone jobs
+  take no inbox files / no repos / 500-char task; job starts serialized; honest audit outcomes; liveness by command
+  line, not bare pid/marker; job stragglers killed at the end; no memory block for phone runs; timers read-only from
+  the phone. Shared helpers in `src/lib/process.ts`: `commandOf`, `pidsWithCwdIn`, `processStart`.
+  Owner to do: `stephen phone login`, then MAC-TEST-PLAN §9 review-8 lines. Next: the "play" router (plan §13).
+- 2026-11-07: **Items 1 to 4 after item 5** (owner's order; one Mac test pass at the end, MAC-TEST-PLAN §10).
+  1. Play from the phone (plan §13): `freshForPlay` in `src/voice/assistant.ts` ends a running follow-up before a
+     "play / put on <something new>", so it runs in a fresh, untainted conversation and the unchanged gate lets YouTube
+     open. 2. Accounts tab: a "Phone link" row (`phoneAccountRow`, sign-in cached 5 min; no Swift change);
+     `phoneAuth` in `src/phone/setup.ts` is the one `claude auth status` reader. 3. Home folder (plan §12): `.env` is
+     read from the home folder first, the repo's second (with a note); `stephen accounts set <name>` stores a secret in
+     the Keychain (hidden prompt); `doctor` warns about a repo `.env` / a repo `config.json` that isn't the home link.
+     The `~/.browser-hub` → `~/.stephen` move stays manual. 4. `canvas_inbox` (`GET /api/v1/conversations`): who, when,
+     course, subject, excerpt (codes masked); wake word and phone get who and when only; real Canvas shape checked;
+     real eval `read-canvas` 4/4. Gmail "In production" is a console step (§10). Full suite 3018 passed.
