@@ -15,8 +15,12 @@ import { HelperClient, openHelperArgv } from './client.js';
 import { HELPER_APP_NAME, HELPER_BUNDLE_ID, HELPER_EXECUTABLE, MAX_SOCKET_PATH_BYTES, helperAppPath, helperLogPath, helperSocketPath } from './paths.js';
 
 export const INSTALL_HELPER_USAGE = 'stephen install-helper [--dry-run]';
-/** main.swift holds the top-level code; AppClient.swift + AppWindow.swift are the Stephen window (app.sock client). */
-export const HELPER_SOURCES = ['Core.swift', 'AppClient.swift', 'AppWindow.swift', 'main.swift'] as const;
+/** main.swift holds the top-level code and goes last; Theme + Components are the shared UI kit; AppClient + AppWindow are the Stephen window. */
+export const HELPER_SOURCES = [
+  'Core.swift', 'Theme.swift',
+  'Components/Sidebar.swift', 'Components/Controls.swift', 'Components/Lists.swift', 'Components/Gallery.swift',
+  'AppClient.swift', 'AppWindow.swift', 'main.swift',
+] as const;
 export const HELPER_FRAMEWORKS = ['AppKit', 'CoreAudio', 'CoreGraphics', 'SwiftUI'] as const;
 export const XCODE_TOOLS_FIX = 'Install Apple\'s command line tools: run `xcode-select --install` (or install Xcode), then run `stephen install-helper` again.';
 
