@@ -211,7 +211,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   });
 
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
-    for (const src of [window, client]) {
+    for (const src of [window, client, read('AskBox.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];
       expect(bad).toEqual([]);
     }

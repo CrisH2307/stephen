@@ -23,7 +23,7 @@ let APP_CHAT_MAX_CHARS = 2000
 let APP_MEMORY_MAX_ITEMS = 30
 /** Requests without a response after this long fail with "timed out". */
 let APP_REQUEST_TIMEOUT_SECONDS = 15.0
-/** While the window is open and Stephen isn't reachable, try again this often. */
+/** While someone (window or Ask box) wants the connection and Stephen isn't reachable, try again this often. */
 let APP_RETRY_SECONDS = 3.0
 /** What the Today card on the Chat tab submits, exactly as if it were typed (test/helper/app-protocol.test.ts). */
 let APP_TODAY_PROMPT = "what's my day?"
@@ -170,6 +170,14 @@ struct AppRequest: Encodable {
   static func jobsStop(_ id: String, jobId: String) -> AppRequest {
     return AppRequest(id: id, type: "jobs.stop", jobId: jobId)
   }
+  /** Added on p2/app-control (not merged yet): a listener without it ignores the request and it times out. */
+  static func usage(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage") }
+}
+
+/** The `usage` answer, in percent (0 to 100). nil = that number was not sent. */
+struct AppUsage: Equatable {
+  var context: Double?
+  var memory: Double?
 }
 
 /** One row of `jobs.list` / the `job` answer to `jobs.stop` (src/app/jobs-status.ts). Summary and task are the job's own words: shown verbatim. */
@@ -363,10 +371,13 @@ struct AppMessage: Decodable {
   var state: String? = nil
   var text: String? = nil
   var source: String? = nil
+  // usage (p2/app-control)
+  var contextPct: Double? = nil
+  var memoryPct: Double? = nil
 
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
-      configPath, state, text, source, accounts, note, jobs, job
+      configPath, state, text, source, accounts, note, jobs, job, contextPct, memoryPct
   }
 
   init(localError: String, id: String?) {
@@ -404,6 +415,8 @@ struct AppMessage: Decodable {
     state = try? c.decodeIfPresent(String.self, forKey: .state)
     text = try? c.decodeIfPresent(String.self, forKey: .text)
     source = try? c.decodeIfPresent(String.self, forKey: .source)
+    contextPct = try? c.decodeIfPresent(Double.self, forKey: .contextPct)
+    memoryPct = try? c.decodeIfPresent(Double.self, forKey: .memoryPct)
   }
 }
 
@@ -629,13 +642,17 @@ final class AppModel: ObservableObject {
   @Published private(set) var jobs: [JobRow] = []
   @Published private(set) var jobsNotice: String? = nil
 
+  /** Last `usage` answer; nil until one arrives (and again when the listener doesn't know the request). */
+  @Published private(set) var usage: AppUsage? = nil
+
   let socketPath: String
   private let log: (String) -> Void
   private let link: AppConnection
   private var pending: [String: (AppMessage) -> Void] = [:]
   private var nextRequest = 1
   private var nextBubble = 1
-  private var windowOpen = false
+  /** Who wants the connection ("window", "askbox"); it closes when nobody does. */
+  private var users: Set<String> = []
   private var retryScheduled = false
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
@@ -666,14 +683,14 @@ final class AppModel: ObservableObject {
 
   // MARK: window lifecycle
 
-  func windowOpened() {
-    windowOpen = true
+  func opened(_ who: String) {
+    users.insert(who)
     if connection != .online { connect() }
   }
 
-  func windowClosed() {
-    windowOpen = false
-    link.close()
+  func closed(_ who: String) {
+    users.remove(who)
+    if users.isEmpty { link.close() }
   }
 
   func retry() {
@@ -733,16 +750,16 @@ final class AppModel: ObservableObject {
     awaitingReplies = []
     for (id, handler) in waiting { handler(AppMessage(localError: "not connected", id: id)) }
     if connection == .online { log("app.sock: disconnected") }
-    goOffline(windowOpen ? "the connection to stephen listen closed" : "window closed")
+    goOffline(users.isEmpty ? "window closed" : "the connection to stephen listen closed")
   }
 
   private func scheduleRetry() {
-    guard windowOpen, !retryScheduled else { return }
+    guard !users.isEmpty, !retryScheduled else { return }
     retryScheduled = true
     DispatchQueue.main.asyncAfter(deadline: .now() + APP_RETRY_SECONDS) { [weak self] in
       guard let self = self else { return }
       self.retryScheduled = false
-      if self.windowOpen && self.connection == .offline { self.connect() }
+      if !self.users.isEmpty && self.connection == .offline { self.connect() }
     }
   }
 
@@ -991,6 +1008,13 @@ final class AppModel: ObservableObject {
       } else {
         self.jobsNotice = msg.message ?? "error"
       }
+    }
+  }
+
+  func refreshUsage() {
+    request(AppRequest.usage(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      self.usage = msg.type == "usage" ? AppUsage(context: msg.contextPct, memory: msg.memoryPct) : nil
     }
   }
 

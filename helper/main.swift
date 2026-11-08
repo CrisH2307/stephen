@@ -1,5 +1,5 @@
 // Stephen Helper — macOS menu-bar agent (LSUIElement). Built by `stephen install-helper`:
-//   swiftc -O -swift-version 5 -o "Stephen Helper" Core.swift AppClient.swift AppWindow.swift main.swift \
+//   swiftc -O -swift-version 5 -o "Stephen Helper" <HELPER_SOURCES in src/helper/install.ts, main.swift last> \
 //     -framework AppKit -framework CoreAudio -framework CoreGraphics -framework SwiftUI
 //
 // It owns the Input Monitoring permission (a listen-only CGEventTap for Fn+Option and Esc), watches whether the
@@ -13,7 +13,9 @@
 //
 // The Stephen window (AppWindow.swift, AppClient.swift) opens from the menu ("Open Stephen…"), from the launch
 // argument --open-window, or from the `open_window` command on helper.sock. It talks to `stephen listen` over
-// <home>/run/app.sock; nothing above (tap, audio, helper.sock) depends on it.
+// <home>/run/app.sock; nothing above (tap, audio, helper.sock) depends on it. The Ask box (AskBox.swift) opens
+// from a click on the menu bar icon (right-click shows the menu), from F5, and from Cmd+K in the window; it shares the
+// window's AppModel, which stays connected while the helper runs.
 
 import AppKit
 import CoreAudio
@@ -85,6 +87,8 @@ final class KeyTap {
   private let log: (String) -> Void
   private var tap: CFMachPort?
   private var source: CFRunLoopSource?
+  /** F5 went down (not an auto-repeat): show the Ask box while you talk. */
+  var onF5Down: () -> Void = {}
 
   init(core: HelperCore, log: @escaping (String) -> Void) {
     self.core = core
@@ -156,7 +160,9 @@ final class KeyTap {
       // Only the key code is examined, and only to recognise Esc and F5; nothing about other keys is kept or sent.
       let code = event.getIntegerValueField(.keyboardEventKeycode)
       if code == KEYCODE_ESCAPE || code == KEYCODE_F5 {
-        core.handleKeyDown(keyCode: code, isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        core.handleKeyDown(keyCode: code, isRepeat: isRepeat)
+        if code == KEYCODE_F5 && !isRepeat { onF5Down() }
       }
     case .keyUp:
       let code = event.getIntegerValueField(.keyboardEventKeycode)
@@ -254,6 +260,7 @@ let INPUT_MONITORING_SETTINGS_URL = "x-apple.systempreferences:com.apple.prefere
 @MainActor
 final class StatusMenu: NSObject, NSMenuDelegate {
   private let item: NSStatusItem
+  private let menu = NSMenu()
   private let header: NSMenuItem
   private let permission: NSMenuItem
   private var state: UIState = .idle
@@ -262,17 +269,21 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let checkPermission: () -> Bool
   private let quitAction: () -> Void
   private let openWindowAction: @MainActor () -> Void
+  private let clickAction: @MainActor () -> Void
 
-  init(checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void, quit: @escaping () -> Void) {
+  init(
+    checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void,
+    click: @escaping @MainActor () -> Void, quit: @escaping () -> Void
+  ) {
     self.checkPermission = checkPermission
     openWindowAction = openWindow
+    clickAction = click
     quitAction = quit
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     header = NSMenuItem(title: "Stephen Helper", action: nil, keyEquivalent: "")
     permission = NSMenuItem(title: "Input Monitoring", action: nil, keyEquivalent: "")
     super.init()
 
-    let menu = NSMenu()
     menu.autoenablesItems = false
     header.isEnabled = false
     menu.addItem(header)
@@ -290,7 +301,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     quitItem.isEnabled = true
     menu.addItem(quitItem)
     menu.delegate = self
-    item.menu = menu
+    // Click: the Ask box. Right-click or Control-click: this menu (status, Input Monitoring, Open, Quit).
+    item.button?.target = self
+    item.button?.action = #selector(buttonClicked(_:))
+    item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     granted = checkPermission()
     render()
   }
@@ -314,6 +328,19 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   func menuWillOpen(_ menu: NSMenu) {
     granted = checkPermission()
     render()
+  }
+
+  var button: NSStatusBarButton? { return item.button }
+
+  @objc func buttonClicked(_ sender: Any?) {
+    let e = NSApp.currentEvent
+    if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
+      item.menu = menu
+      item.button?.performClick(nil)
+      item.menu = nil
+    } else {
+      clickAction()
+    }
   }
 
   @objc func openSettings(_ sender: Any?) {
@@ -354,15 +381,28 @@ let audioWatcher = AudioWatcher(log: log)
 let keyTap = KeyTap(core: core, log: log)
 var statusMenu: StatusMenu? = nil
 var appWindow: AppWindowController? = nil
+var appModel: AppModel? = nil
+var askBox: AskBoxController? = nil
+
+/** The one AppModel (window and Ask box). Created at launch and kept connected while the helper runs. */
+@MainActor
+func sharedAppModel() -> AppModel {
+  if let m = appModel { return m }
+  let m = AppModel(socketPath: home + "/run/app.sock", log: log)
+  appModel = m
+  log("Stephen window and Ask box: talking to \(home)/run/app.sock")
+  return m
+}
 
 /** Show the Stephen window (created on first use, then reused). */
 @MainActor
-func showStephenWindow() {
+func showStephenWindow(tab: AppTab? = nil) {
   if appWindow == nil {
-    appWindow = AppWindowController(socketPath: home + "/run/app.sock", log: log)
-    log("Stephen window: talking to \(home)/run/app.sock")
+    let w = AppWindowController(model: sharedAppModel())
+    w.onAsk = { askBox?.show(focus: true) }
+    appWindow = w
   }
-  appWindow?.show()
+  appWindow?.show(tab: tab)
 }
 
 func shutdownAndExit(_ code: Int32) {
@@ -378,6 +418,7 @@ core.readAudio = { audioWatcher.isPlaying() }
 core.onUIState = { s in MainActor.assumeIsolated { statusMenu?.setState(s) } }
 core.onQuit = { shutdownAndExit(0) }
 core.onOpenWindow = { MainActor.assumeIsolated { showStephenWindow() } }
+keyTap.onF5Down = { MainActor.assumeIsolated { askBox?.show(focus: false) } }
 audioWatcher.onChange = { playing in core.handleAudio(playing: playing) }
 
 // SIGTERM/SIGINT (e.g. `killall "Stephen Helper"`): remove the socket before exiting.
@@ -411,7 +452,17 @@ MainActor.assumeIsolated {
   app.setActivationPolicy(.accessory)
   statusMenu = StatusMenu(
     checkPermission: { CGPreflightListenEventAccess() }, openWindow: { showStephenWindow() },
-    quit: { shutdownAndExit(0) })
+    click: { askBox?.toggle() }, quit: { shutdownAndExit(0) })
+  let model = sharedAppModel()
+  model.opened("askbox")
+  let box = AskBoxController(model: model)
+  box.anchor = { statusMenu?.button }
+  box.openWindow = { tab in showStephenWindow(tab: tab) }
+  box.quit = { shutdownAndExit(0) }
+  box.ptt = { down in
+    if down { core.handleKeyDown(keyCode: KEYCODE_F5, isRepeat: false) } else { core.handleKeyUp(keyCode: KEYCODE_F5) }
+  }
+  askBox = box
 
   var granted = CGPreflightListenEventAccess()
   if !granted {
