@@ -44,7 +44,7 @@ describe('stephen listen --text', () => {
         stephen: {
           command: process.execPath,
           args: [
-            '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice',
+            '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'app', '--voice',
             '--tool-log', join(tmp, 'home', 'voice', 'tool-log.jsonl'),
             '--session-state', join(tmp, 'home', 'voice', 'conversation-state.json'),
           ],
@@ -128,7 +128,7 @@ describe('stephen listen --text', () => {
     // Each run gets a fresh serve instance (R7-1), and window 0 still names the state file, so a serve that Claude
     // Code restarts mid-command keeps the taint (deleted before and after every command).
     expect(JSON.parse(readFileSync(zmcp, 'utf8')).mcpServers.stephen.args).toEqual([
-      '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice', '--instance', expect.stringMatching(/^[0-9a-f]{32}$/),
+      '/opt/stephen/dist/cli.js', 'serve', '--confirm', 'app', '--voice', '--instance', expect.stringMatching(/^[0-9a-f]{32}$/),
       '--tool-log', join(zhome, 'voice', 'tool-log.jsonl'), '--session-state', join(zhome, 'voice', 'conversation-state.json'),
     ]);
     expect(existsSync(join(zhome, 'voice', 'conversation-state.json'))).toBe(false);

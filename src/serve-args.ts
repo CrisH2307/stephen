@@ -1,8 +1,9 @@
 /**
- * `serve --confirm dialog|deny`: force how confirmations are asked for this server process. Only these two
+ * `serve --confirm app|dialog|deny`: force how confirmations are asked for this server process. Only these
  * values are accepted, so the flag can make confirmation stricter but never skip it. The voice listener
- * starts the server with `--confirm dialog`: headless `claude -p` has no one watching the chat, so an
- * in-chat (elicitation) prompt would go unanswered — the macOS dialog is the human channel.
+ * starts the server with `--confirm app` (`deny` for the phone): headless `claude -p` has no one watching the
+ * chat, so an in-chat (elicitation) prompt would go unanswered. `app` asks in the Ask box first and falls back
+ * to the macOS dialog (src/safety/confirm.ts buildConfirmer); both need the owner's click.
  *
  * `serve --voice`: the voice listener's server — also registers the `announce` tool (speak a short line before
  * playing sound). It takes no value and grants nothing beyond that tool.
@@ -42,7 +43,7 @@ import { SERVE_INSTANCE_RE } from './server/instance.js';
 import { checkToolLogPath } from './server/tool-log.js';
 
 export interface ServeArgs {
-  confirm?: 'dialog' | 'deny';
+  confirm?: 'app' | 'dialog' | 'deny';
   voice?: true;
   /** --assume-private-read: taint armed from the start. */
   assumePrivateRead?: true;
@@ -71,7 +72,7 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
     const a = argv[i]!;
     const v = a === '--confirm' ? argv[++i] : a.startsWith('--confirm=') ? a.slice('--confirm='.length) : undefined;
     if (a === '--confirm' || a.startsWith('--confirm=')) {
-      if (v !== 'dialog' && v !== 'deny') return { error: '--confirm must be "dialog" or "deny"' };
+      if (v !== 'app' && v !== 'dialog' && v !== 'deny') return { error: '--confirm must be "app", "dialog" or "deny"' };
       out.confirm = v;
     } else if (a === '--voice') out.voice = true;
     else if (a.startsWith('--voice=')) return { error: '--voice takes no value' };
