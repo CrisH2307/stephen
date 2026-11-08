@@ -38,6 +38,7 @@ import type { AppSettings } from './settings.js';
 import type { AccountsStatus } from './accounts-status.js';
 import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
 import type { AppControl } from './control.js';
+import type { UsageReport } from './usage.js';
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -86,6 +87,8 @@ export interface AppServerOptions {
   speakReplies: boolean;
   /** phone.on / phone.off / zen.open / doctor.run (src/app/control.ts). Absent = not available. */
   control?: AppControl;
+  /** usage.get (src/app/usage.ts). Absent = not available. */
+  usage?: () => Promise<UsageReport>;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
   openWindow: () => string | null;
   log?: (line: string) => void;
@@ -365,6 +368,9 @@ export class AppServer {
         if (req.type === 'doctor.run') return { id, type: 'doctor', ...(await c.doctor()) };
         return { id, type: 'phone', ...(await (req.type === 'phone.on' ? c.phoneOn() : c.phoneOff())) };
       }
+      case 'usage.get':
+        if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };
+        return { id, type: 'usage', ...(await this.o.usage()) };
       case 'window.open': {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };

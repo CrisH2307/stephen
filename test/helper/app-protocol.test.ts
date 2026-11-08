@@ -38,6 +38,7 @@ const RESPONSES: Record<string, string[]> = {
   'phone.off': ['phone', 'error'],
   'zen.open': ['zen', 'error'],
   'doctor.run': ['doctor', 'error'],
+  'usage.get': ['usage', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -206,6 +207,13 @@ describe('app.sock protocol v1 fixture', () => {
           expect(typeof msg.problems).toBe('number');
           expect(typeof msg.blocking).toBe('number');
           break;
+        case 'usage': {
+          const m = msg.memory as Record<string, unknown>;
+          expect(Object.keys(m).sort()).toEqual(['budget', 'bytes', 'percent', 'warn']);
+          expect(m.budget).toBe(8192);
+          if (msg.context !== null) expect(Object.keys(msg.context as object).sort()).toEqual(['percent', 'tokens', 'warn', 'window']);
+          break;
+        }
         case 'heard':
           expect(typeof msg.text).toBe('string');
           expect(typeof msg.source).toBe('string');

@@ -17,6 +17,8 @@
  *   printed; same checks and kill switch), `{id, type:"zen.open"}` → `{id, type:"zen", ok, message}`,
  *   `{id, type:"doctor.run"}` → `{id, type:"doctor", checks:[{ok,label,detail?,fix?,blocking?,info?}], problems, blocking}`.
  *   phone.on, zen.open and doctor.run can take up to a minute or more (the lock-down check starts Claude Code).
+ * Additive (ROADMAP P2, src/app/usage.ts): `{id, type:"usage.get"}` → `{id, type:"usage", context:{percent, warn, tokens,
+ *   window} | null, memory:{percent, warn, bytes, budget}}` (warn at 80%; context null when unknown).
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
  */
@@ -25,6 +27,7 @@ import type { MemoryItem } from '../memory/store.js';
 import type { AuditEntry } from '../types.js';
 import type { AccountRow } from './accounts-status.js';
 import type { DoctorCheck } from './control.js';
+import type { UsageReport } from './usage.js';
 import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
@@ -61,7 +64,8 @@ export type AppRequest =
   | { id: string; type: 'phone.on' }
   | { id: string; type: 'phone.off' }
   | { id: string; type: 'zen.open' }
-  | { id: string; type: 'doctor.run' };
+  | { id: string; type: 'doctor.run' }
+  | { id: string; type: 'usage.get' };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -86,6 +90,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'phone.off',
   'zen.open',
   'doctor.run',
+  'usage.get',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -106,6 +111,7 @@ export type AppMessage =
   | { id: string; type: 'phone'; on: boolean; lines: string[] }
   | { id: string; type: 'zen'; ok: boolean; message: string }
   | { id: string; type: 'doctor'; checks: DoctorCheck[]; problems: number; blocking: number }
+  | ({ id: string; type: 'usage' } & UsageReport)
   | { id?: string; type: 'error'; message: string }
   | { type: 'state'; state: AppState }
   | { type: 'heard'; text: string; source: string }
@@ -183,6 +189,7 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'phone.off': () => ok,
   'zen.open': () => ok,
   'doctor.run': () => ok,
+  'usage.get': () => ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */

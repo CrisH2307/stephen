@@ -485,7 +485,7 @@ Ctrl-C there. A listener started from the helper uses the helper's macOS permiss
 helper's Info.plist carries the usage strings and the owner grants them to Stephen Helper once.
 
 **New app.sock requests** (src/app/control.ts, wire format in src/app/protocol.ts): `phone.on`, `phone.off`,
-`zen.open`, `doctor.run`. What they allow, and why it is safe:
+`zen.open`, `doctor.run`, `usage.get`. What they allow, and why it is safe:
 - Who can send them: only processes of the same user (app.sock is 0600 in a 0700 folder; the Swift client also checks
   the peer uid). That is the same trust as typing `stephen phone on` or `stephen doctor` in Terminal, which such a
   process can already do. None is reachable by the model: voice and phone runs only have Stephen's MCP tools, src/app
@@ -498,6 +498,10 @@ helper's Info.plist carries the usage strings and the owner grants them to Steph
   --json`, as children with a 90 s limit. Neither takes an argument from the request, so nothing in a request reaches
   a command line. Doctor output holds paths and check results, never secret values.
 - They change nothing the model could later read as instructions, write no memory, timers or jobs, and send nothing.
+- `usage.get` (src/app/usage.ts) is read-only: memory % is the byte size of the memory block one chat loads against
+  the 8 KB budget; context % is the last model reply's token usage (input + cache + output) against the model's
+  context window, both from the warm Claude Code stream (null when unknown, e.g. `voice.warm` off). Warn at 80%. It
+  returns numbers only, no memory text.
 
 ## 5. Threat model (summary)
 

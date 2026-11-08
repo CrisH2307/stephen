@@ -60,3 +60,5 @@
 {"from":"node","kind":"response","msg":{"id":"a26","type":"zen","ok":true,"message":"Zen is ready for Stephen (pid 4242)."}}
 {"from":"app","kind":"request","msg":{"id":"a27","type":"doctor.run"}}
 {"from":"node","kind":"response","msg":{"id":"a27","type":"doctor","checks":[{"ok":true,"label":"macOS","detail":"darwin","fix":"Stephen drives Zen and Chrome on macOS.","blocking":true},{"ok":false,"label":"Chrome installed","detail":"not found at /Applications/Google Chrome.app","fix":"Install Google Chrome."},{"ok":true,"info":true,"label":"Audit log","detail":"/Users/cris/.stephen/audit.jsonl"}],"problems":1,"blocking":0}}
+{"from":"app","kind":"request","msg":{"id":"a28","type":"usage.get"}}
+{"from":"node","kind":"response","msg":{"id":"a28","type":"usage","context":{"tokens":41000,"window":200000,"percent":21,"warn":false},"memory":{"bytes":6800,"budget":8192,"percent":83,"warn":true}}}

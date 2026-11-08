@@ -175,6 +175,17 @@ struct AppRequest: Encodable {
   static func phoneOff(_ id: String) -> AppRequest { return AppRequest(id: id, type: "phone.off") }
   static func zenOpen(_ id: String) -> AppRequest { return AppRequest(id: id, type: "zen.open") }
   static func doctorRun(_ id: String) -> AppRequest { return AppRequest(id: id, type: "doctor.run") }
+  static func usageGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage.get") }
+}
+
+/** One bar of the `usage` answer (src/app/usage.ts): context has tokens/window, memory has bytes/budget. */
+struct UsageBar: Decodable, Equatable {
+  let percent: Int
+  let warn: Bool
+  var tokens: Int? = nil
+  var window: Int? = nil
+  var bytes: Int? = nil
+  var budget: Int? = nil
 }
 
 /** One check of the `doctor` answer (src/cli.ts doctor --json). */
@@ -381,6 +392,9 @@ struct AppMessage: Decodable {
   var checks: [DoctorCheck]? = nil
   var problems: Int? = nil
   var blocking: Int? = nil
+  // usage (context is nil when unknown)
+  var context: UsageBar? = nil
+  var memory: UsageBar? = nil
   // state / heard pushes
   var state: String? = nil
   var text: String? = nil
@@ -388,7 +402,7 @@ struct AppMessage: Decodable {
 
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
-      configPath, state, text, source, accounts, note, jobs, job, on, lines, ok, checks, problems, blocking
+      configPath, state, text, source, accounts, note, jobs, job, on, lines, ok, checks, problems, blocking, context, memory
   }
 
   init(localError: String, id: String?) {
@@ -429,6 +443,10 @@ struct AppMessage: Decodable {
     checks = try? c.decodeIfPresent([DoctorCheck].self, forKey: .checks)
     problems = try? c.decodeIfPresent(Int.self, forKey: .problems)
     blocking = try? c.decodeIfPresent(Int.self, forKey: .blocking)
+    if type == "usage" {
+      context = try? c.decodeIfPresent(UsageBar.self, forKey: .context)
+      memory = try? c.decodeIfPresent(UsageBar.self, forKey: .memory)
+    }
     state = try? c.decodeIfPresent(String.self, forKey: .state)
     text = try? c.decodeIfPresent(String.self, forKey: .text)
     source = try? c.decodeIfPresent(String.self, forKey: .source)
@@ -1320,6 +1338,10 @@ final class StephenControl: ObservableObject {
   func phoneOff(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .phoneOff("c-phone-off"), done) }
   func openZen(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .zenOpen("c-zen"), done) }
   func runDoctor(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .doctorRun("c-doctor"), done) }
+  /** This chat's context % (nil when unknown) and memory % for the ⋯ menu; quick, so a short timeout. */
+  func usage(_ done: @escaping (AppMessage) -> Void) {
+    appRequestOnce(appSocketPath, .usageGet("c-usage"), timeout: APP_REQUEST_TIMEOUT_SECONDS, done)
+  }
 
   // MARK: log
 

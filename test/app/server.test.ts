@@ -138,6 +138,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     speakReplies: false,
     openWindow: () => (calls.opens++, null),
     control: FAKE_CONTROL,
+    usage: async () => ({ context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } }),
     newId: () => `h_test${++ids}`,
     ...o,
   });
@@ -475,6 +476,13 @@ describe('memory, history, settings, audit, window', () => {
     expect(await failing.client.request({ id: 'p', type: 'phone.on' })).toEqual({ id: 'p', type: 'error', message: 'The phone link is already turning on.' });
     const none = await harness({ control: undefined });
     expect(await none.client.request({ id: 'd', type: 'doctor.run' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('usage.get answers from the listener; without it, an error', async () => {
+    const h = await harness();
+    expect(await h.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'usage', context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } });
+    const none = await harness({ usage: undefined });
+    expect(await none.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'error', message: 'not available in this listener' });
   });
 
   it('window.open forwards to the helper, or says why it could not', async () => {
