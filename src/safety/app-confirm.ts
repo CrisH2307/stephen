@@ -70,7 +70,6 @@ export class AppConfirmer implements Confirmer {
       });
       sock.on('data', (d: string) => {
         buf += d;
-        if (buf.length > MAX_REPLY_BYTES) return finish('unavailable');
         let nl: number;
         while ((nl = buf.indexOf('\n')) >= 0) {
           const line = buf.slice(0, nl);
@@ -89,6 +88,7 @@ export class AppConfirmer implements Confirmer {
           if (msg.type === 'confirm.result' && (msg.outcome === 'approved' || msg.outcome === 'declined')) return finish(msg.outcome);
           return finish('unavailable'); // error, 'unavailable', or an older listener's answer
         }
+        if (buf.length > MAX_REPLY_BYTES) finish('unavailable'); // the cap is per line (R9-7)
       });
     });
   }

@@ -15,12 +15,14 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { writePrivateJsonFileSync } from '../lib/fs.js';
 import type { PhoneCliEnv } from '../phone/cli.js';
-import { readPhoneMarker } from '../phone/setup.js';
+import { phoneFolderTrusted, readPhoneMarker } from '../phone/setup.js';
 import { clean } from '../safety/text.js';
 
 /** Lines kept from a phone command's output (each cleaned, at most LINE_MAX characters). */
 export const CONTROL_MAX_LINES = 40;
 const LINE_MAX = 300;
+export const PHONE_UNTRUSTED =
+  "The phone folder isn't trusted yet. Run `stephen phone on` once in Terminal (type y to trust the folder), then `stephen phone off`, then turn it on here.";
 /** zen-launch and doctor are killed after this long. */
 export const CONTROL_RUN_TIMEOUT_MS = 90_000;
 
@@ -94,6 +96,8 @@ export function appControl(o: AppControlOptions): AppControl {
   return {
     async phoneOn() {
       if (turningOn) throw new Error('The phone link is already turning on.');
+      // R9-13: Remote Control gets this listener's stdio, so its first-run trust prompt can't be answered from here.
+      if (phoneFolderTrusted(o.home) === false) return { on: false, lines: [PHONE_UNTRUSTED] };
       turningOn = true;
       try {
         return await new Promise<PhoneResult>((resolve) => {

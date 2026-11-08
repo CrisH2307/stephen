@@ -1,7 +1,7 @@
 /**
  * What `personal.summary` shows on the Personal page (UI-PLAN v3.1 section 7). Read-only: nothing here writes.
  *  - about: the owner's own voice.aboutMe (name, school, work, notes) and the listener's time zone. The home address
- *    stays out of the window: the persona needs it, the page doesn't.
+ *    stays out of the window: the persona needs it, no page shows it (settings.get leaves it out too).
  *  - routines: what Stephen can do on request and what each needs, with a state from the accounts.status rows.
  *    The window lists the accounts themselves with accounts.status, so they are not repeated here.
  *  - permissions: PERMISSIONS below, the one description of the safety rules the window shows. Each cell cites the

@@ -7,6 +7,9 @@ describe('serve --confirm (voice listener forces the macOS dialog)', () => {
     expect(parseServeArgs(['--confirm', 'dialog'])).toEqual({ confirm: 'dialog' });
     expect(parseServeArgs(['--confirm=deny'])).toEqual({ confirm: 'deny' });
   });
+  it('R9-2: accepts "app" (Ask box, then the dialog: still a human click)', () => {
+    expect(parseServeArgs(['--confirm', 'app'])).toEqual({ confirm: 'app' });
+  });
   it('never lets a flag weaken confirmation', () => {
     for (const bad of [['--confirm', 'auto'], ['--confirm', 'elicit'], ['--confirm', 'none'], ['--confirm'], ['--yolo']]) {
       expect('error' in parseServeArgs(bad), bad.join(' ')).toBe(true);
