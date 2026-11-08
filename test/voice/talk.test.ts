@@ -1,17 +1,23 @@
 /** Settings > How Stephen talks: the persona is chosen from fixed sentences; Brief + Casual is the old persona. */
-import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { buildClaudeArgs, personaFor, STEPHEN_PERSONA } from '../../src/voice/claude.js';
 import { LENGTHS, LENGTH_LINES, TONES, TONE_LINES, TALK_SAMPLES, EXPLAIN_LINE, checkTalkChanges, DEFAULT_TALK } from '../../src/voice/talk.js';
 
-const sha = (s: string) => createHash('sha256').update(s).digest('hex');
-
 describe('persona by talk settings', () => {
-  it('the default (Brief, Casual) prompt is byte for byte the persona from before the settings existed', () => {
-    expect(STEPHEN_PERSONA).toHaveLength(7029);
-    expect(sha(STEPHEN_PERSONA)).toBe('490c467be72ebfe0d5325ffe6e1093b4a9bd839fb4677ab66a0c64e29c9b0d51');
-    expect(sha(personaFor({ name: 'Cris' }, ['a b']))).toBe('16c7c5c87988db4f2fb7a532836af2169bb554e5d68ad2ee2c32a9a85ae040ca');
+  // R9-10: pin behaviour, not bytes, so a new persona sentence in another PR keeps this green.
+  it('R9-10 the default (Brief, Casual) is the base persona, and settings swap only their own sentences', () => {
     expect(personaFor(null, null, DEFAULT_TALK)).toBe(STEPHEN_PERSONA);
+    expect(personaFor(null, null)).toBe(STEPHEN_PERSONA);
+    expect(STEPHEN_PERSONA).toContain(`${TONE_LINES.casual} ${LENGTH_LINES.brief}`);
+    expect(STEPHEN_PERSONA).not.toContain(EXPLAIN_LINE);
+    for (const length of LENGTHS) {
+      for (const tone of TONES) {
+        const swapped = STEPHEN_PERSONA.replace(TONE_LINES.casual, TONE_LINES[tone]).replace(LENGTH_LINES.brief, LENGTH_LINES[length]);
+        expect(personaFor(null, null, { length, tone, explain: false })).toBe(swapped);
+      }
+    }
+    expect(personaFor(null, null, { ...DEFAULT_TALK, explain: true })).toBe(STEPHEN_PERSONA.replace(LENGTH_LINES.brief, `${LENGTH_LINES.brief} ${EXPLAIN_LINE}`));
+    expect(personaFor({ name: 'Cris' }, ['a b']).startsWith(`${STEPHEN_PERSONA} `)).toBe(true);
   });
 
   it('every length and tone picks its own fixed sentences; the others are absent', () => {
