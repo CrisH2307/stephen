@@ -533,6 +533,11 @@ call as the server runs it, and the waits inside (click settle, press, verify, s
 play_media's resolve and player wait). The steps are wrapped in `timed()` (src/lib/step-timer.ts), which records only
 a step name and a duration, and only while a harness listens. `stephen eval` prints the real model's share: start-up
 + MCP, model time per turn (the "think" step) and the rest.
+The numbers say one model turn (about 1.8 s) costs far more than any tool or page step (tens of ms, plus the
+bounded P1 waits), so the cut is fewer turns: the persona asks for `include_snapshot: true` on an action whose result
+the model needs, instead of a separate snapshot or read_text call (eval case `speed-click-then-read`). It stays
+opt-in per call, not a default: a snapshot is a gated read that can arm the private-read rule, and it costs tokens on
+every action that does not need it.
 
 ## 8. Research findings that shaped the design
 
