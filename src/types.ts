@@ -216,9 +216,11 @@ export interface PageEngine {
   /** The element that currently has keyboard focus (through shadow roots and iframes), or null. Feeds key-press safety rules. */
   describeFocused(page: Page, tab: TabId): Promise<ElementInfo | null>;
   /**
-   * Waits (bounded) for the page to settle (loaded, visible, target not covered), clicks, then checks the page
-   * reacted. Resolves to a server-authored note when nothing changed, else void.
+   * Waits (bounded, about 2 s) for the page to settle: loaded, visible (a background tab is brought to front), the
+   * target not covered. Never fails on a page that does not settle. The hub runs it before the identity re-check.
    */
+  settle?(page: Page, ref: Ref): Promise<void>;
+  /** Clicks at the hit-tested point (OBSCURED if covered), then checks the page reacted: a note when nothing changed. */
   click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<string | void>;
   /**
    * For a STALE_REF ref: a fresh ref to the ONE live element in the same document with the same role, name, tag

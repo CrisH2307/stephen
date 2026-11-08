@@ -39,6 +39,25 @@ describe('stephen eval-clicks', () => {
     expect(seen).toEqual(['stale-send:false:true:', 'stale-twins:false:true:']);
   }, 60_000);
 
+  it('re-checks identity after the settle wait: renamed while covered gives STALE_REF, nothing clicked (R9-3)', async () => {
+    let seen = '';
+    await run([
+      {
+        id: 'swap-during-settle',
+        cause: 'other',
+        what: 'renamed during settle',
+        run: async (a) => {
+          const tab = await a.open('swap-during-settle');
+          const ref = (await a.find(tab, 'Save draft')).find((m) => m.role === 'button')!.ref;
+          const r = await a.click(tab, ref);
+          await a.sleep(300);
+          seen = `${r.ok}:${/STALE_REF|no longer/i.test(r.text)}:${await a.result(tab)}`;
+        },
+      },
+    ]);
+    expect(seen).toBe('false:true:');
+  }, 60_000);
+
   it('says so when a click changed nothing on the page', async () => {
     let text = '';
     await run([

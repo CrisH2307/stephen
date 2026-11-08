@@ -772,12 +772,14 @@ async function clickTarget(
 
 async function click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<string | void> {
   return withTarget(page, ref, 'click', async (frame, n, d) => {
-    await timed('click.settle', () => settle(page, frame, n, d));
-    d.check();
     await rt(frame, 'watch', true).catch(() => undefined);
     await timed('click.press', () => clickTarget(page, frame, n, ref, d, opts));
     return (await timed('click.verify', () => reacted(frame))) ? undefined : NO_CHANGE_NOTE;
   });
+}
+
+async function settleFor(page: Page, ref: Ref): Promise<void> {
+  await timed('click.settle', () => withTarget(page, ref, 'settle', (frame, n, d) => settle(page, frame, n, d)));
 }
 
 async function refind(page: Page, ref: Ref): Promise<Ref | null> {
@@ -1242,6 +1244,7 @@ export const pageEngine: PageEngine = {
   describe,
   describeFocused,
   click,
+  settle: settleFor,
   refind,
   hover,
   type,
