@@ -210,6 +210,18 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('main.swift')).toContain('home + "/run/app.sock"');
   });
 
+  it('Ask box usage bars: sends usage.get and decodes the P2 shape (PR #18) without importing it', () => {
+    // {id,type:"usage",context:{percent,warn,tokens,window}|null,memory:{percent,warn,bytes,budget}}
+    expect(client).toContain('type: "usage.get"');
+    expect(client).toContain('msg.type == "usage"');
+    expect(client).toMatch(/struct UsageMeter: Decodable[\s\S]*var percent: Double[\s\S]*var warn: Bool/);
+    expect(client).toContain('decodeIfPresent(UsageMeter.self, forKey: .context)');
+    expect(client).toContain('decodeIfPresent(UsageMeter.self, forKey: .memory)');
+    const box = read('AskBox.swift');
+    expect(box).toContain('if let m = model.usage?.context');
+    expect(box).toContain('let high = warn');
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
     for (const src of [window, client, read('AskBox.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];
