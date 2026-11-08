@@ -31,12 +31,17 @@
  *    when that question is gone (answered, timed out, or the asker left).
  *  - `{id, type:"confirm.answer", confirmId, approve}` → `{id, type:"ok"}`, or an error when that exact id is not
  *    waiting. It answers only that one question, and never from the connection that asked.
+ * Additive (Personal page, UI-PLAN v3.1 section 7, src/app/personal.ts), read-only: `{id, type:"personal.summary"}` →
+ *   `{id, type:"personal", about:{name?, school?, work?, notes, timeZone},
+ *   routines:[{id, name, uses, say, state:"ready"|"needs_setup"|"off", missing?}],
+ *   permissions:{columns:[string], rows:[{action, cells:[{level:"allowed"|"asks"|"never", rule}]}]}}`.
  */
 import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import type { AuditEntry } from '../types.js';
 import type { AccountRow } from './accounts-status.js';
 import type { DoctorCheck } from './control.js';
+import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
 import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
 
@@ -83,7 +88,8 @@ export type AppRequest =
   | { id: string; type: 'phone.off' }
   | { id: string; type: 'zen.open' }
   | { id: string; type: 'doctor.run' }
-  | { id: string; type: 'usage.get' };
+  | { id: string; type: 'usage.get' }
+  | { id: string; type: 'personal.summary' };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -111,6 +117,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'zen.open',
   'doctor.run',
   'usage.get',
+  'personal.summary',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -134,6 +141,7 @@ export type AppMessage =
   | { id: string; type: 'zen'; ok: boolean; message: string }
   | { id: string; type: 'doctor'; checks: DoctorCheck[]; problems: number; blocking: number }
   | ({ id: string; type: 'usage' } & UsageReport)
+  | ({ id: string; type: 'personal' } & PersonalSummary)
   | { id?: string; type: 'error'; message: string }
   | { type: 'confirm'; confirmId: string; title: string; body: string }
   | { type: 'confirm.end'; confirmId: string }
@@ -230,6 +238,7 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'zen.open': () => ok,
   'doctor.run': () => ok,
   'usage.get': () => ok,
+  'personal.summary': () => ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
