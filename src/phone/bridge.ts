@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import type { PhoneResponse } from './server.js';
-import { phoneSocketPath } from './setup.js';
+import { PHONE_MAX_TASK, phoneSocketPath } from './setup.js';
 
 /** A phone command can run a whole Claude turn with tools: allow a few minutes before giving up. */
 export const BRIDGE_TIMEOUT_MS = 5 * 60_000;
@@ -82,7 +82,7 @@ export function buildPhoneBridge(socketPath: string, timeoutMs = BRIDGE_TIMEOUT_
         'Start a background job on the Mac (Claude Code in a sandboxed folder: writing, research, code). Only when the owner clearly ' +
         'asks for one. The owner approves the exact task on the phone first.',
       inputSchema: {
-        task: z.string().min(1).max(MAX_TEXT).describe('The job, exactly as the owner asked.'),
+        task: z.string().min(1).max(PHONE_MAX_TASK).describe(`The job, exactly as the owner asked (at most ${PHONE_MAX_TASK} characters).`),
         web: z.boolean().optional().describe('true only if the owner asked for the job to use the web.'),
       },
       _meta: { 'anthropic/requiresUserInteraction': true },

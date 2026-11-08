@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { formatLockdown, runPhoneCli, type PhoneCliEnv } from '../../src/phone/cli.js';
-import { checkPhoneLockdown, compareTools, isPhoneOn, PHONE_AGENT, PHONE_TOOLS, phoneDir, phoneFiles, phoneOnPath, writePhoneFolder } from '../../src/phone/setup.js';
+import { checkPhoneLockdown, compareTools, isPhoneOn, phoneConfigDir, PHONE_AGENT, PHONE_TOOLS, phoneDir, phoneFiles, phoneOnPath, writePhoneFolder } from '../../src/phone/setup.js';
 
 const FAKE = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude-init.mjs');
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-phone-')));
@@ -19,7 +19,11 @@ describe('phone folder files (ADR-005: the agent setting is the allow-list)', ()
     expect(settings).toEqual({
       agent: PHONE_AGENT,
       enableAllProjectMcpServers: true,
-      permissions: { allow: ['mcp__stephen_phone__ask', 'mcp__stephen_phone__job_status'] },
+      permissions: { allow: ['mcp__stephen_phone__ask', 'mcp__stephen_phone__job_status'], deny: ['Skill', 'SendMessage', 'ListAgents'] },
+      crossSessionInbound: 'refuse',
+      disableSkillShellExecution: true,
+      disableBundledSkills: true,
+      disableWorkflows: true,
     });
     const agent = f[`.claude/agents/${PHONE_AGENT}.md`]!;
     expect(agent).toMatch(new RegExp(`^---\\nname: ${PHONE_AGENT}\\n`));
@@ -101,22 +105,22 @@ describe('stephen phone on | off | status', () => {
   const locked = async () => ({ ...compareTools(PHONE_TOOLS), error: '' });
   const run = async (argv: string[], home: string, o: Partial<PhoneCliEnv> = {}) => {
     const out: string[] = [];
-    const code = await runPhoneCli(argv, { home, check: locked, listening: async () => true, out: (l) => out.push(l), err: (l) => out.push(l), ...o });
+    const code = await runPhoneCli(argv, { home, check: locked, listening: async () => true, auth: () => ({ loggedIn: true, expiresAt: '2026-12-01T00:00:00Z' }), out: (l) => out.push(l), err: (l) => out.push(l), ...o });
     return { code, text: out.join('\n') };
   };
 
   it('on: checks the lock, runs Remote Control in the phone folder with the marker set, clears it when it ends', async () => {
     const home = join(tmp, 'on1');
-    const seen: { args: string[]; cwd: unknown; onDuring: boolean }[] = [];
+    const seen: { args: string[]; cwd: unknown; onDuring: boolean; configDir: unknown }[] = [];
     const r = await run(['on'], home, {
       spawn: (_cmd, args, opts) => {
-        const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300)'], { stdio: 'ignore' });
-        setTimeout(() => seen.push({ args, cwd: opts.cwd, onDuring: isPhoneOn(home) }), 100);
+        const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300)', 'claude', 'remote-control'], { stdio: 'ignore' });
+        setTimeout(() => seen.push({ args, cwd: opts.cwd, onDuring: isPhoneOn(home), configDir: opts.env?.CLAUDE_CONFIG_DIR }), 100);
         return child;
       },
     });
     expect(r.code).toBe(0);
-    expect(seen).toEqual([{ args: ['remote-control', '--spawn', 'session', '--no-chrome', '--permission-mode', 'default', '--name', 'Stephen'], cwd: phoneDir(home), onDuring: true }]);
+    expect(seen).toEqual([{ args: ['remote-control', '--spawn', 'session', '--no-chrome', '--permission-mode', 'default', '--name', 'Stephen'], cwd: phoneDir(home), onDuring: true, configDir: phoneConfigDir(home) }]);
     expect(isPhoneOn(home)).toBe(false);
     expect(r.text).toMatch(/Phone link on[\s\S]*Phone link off\./);
   });
@@ -152,9 +156,71 @@ describe('stephen phone on | off | status', () => {
 
   it('status', async () => {
     const home = join(tmp, 'st1');
-    expect((await run(['status'], home, { listening: async () => false })).text).toBe('Phone link: off.\n• stephen listen is not running: phone requests fail until you start it.');
+    expect((await run(['status'], home, { listening: async () => false })).text).toBe('Phone link: off.\n• stephen listen is not running: phone requests fail until you start it.\n✓ Phone sign-in OK until 2026-12-01.');
     mkdirSync(phoneDir(home), { recursive: true });
     writeFileSync(phoneOnPath(home), JSON.stringify({ pid: 1, rc: 77 }));
-    expect((await run(['status'], home, { commandOf: () => 'claude remote-control' })).text).toBe('Phone link: on (Remote Control pid 77).\n✓ stephen listen answers phone requests.');
+    expect((await run(['status'], home, { commandOf: () => 'claude remote-control' })).text).toBe('Phone link: on (Remote Control pid 77).\n✓ stephen listen answers phone requests.\n✓ Phone sign-in OK until 2026-12-01.');
+  });
+});
+
+describe('R8-5: the kill switch follows the real Remote Control process', () => {
+  it('a marker whose rc pid is gone, or is not Remote Control, is off and removed', () => {
+    const home = join(tmp, 'k1');
+    mkdirSync(phoneDir(home), { recursive: true });
+    const mark = (rc: number) => writeFileSync(phoneOnPath(home), JSON.stringify({ pid: 1, rc }));
+    mark(4242);
+    expect(isPhoneOn(home, () => 'claude remote-control --spawn session')).toBe(true);
+    expect(existsSync(phoneOnPath(home))).toBe(true);
+    expect(isPhoneOn(home, () => '/usr/bin/vim notes.txt')).toBe(false); // a reused pid
+    expect(existsSync(phoneOnPath(home))).toBe(false);
+    mark(4242);
+    expect(isPhoneOn(home, () => '')).toBe(false); // gone (crash, reboot)
+    expect(existsSync(phoneOnPath(home))).toBe(false);
+    writeFileSync(phoneOnPath(home), ''); // unreadable
+    expect(isPhoneOn(home)).toBe(false);
+  });
+});
+
+describe('R8-1 / R8-7: the phone session has its own Claude Code config', () => {
+  const run = async (argv: string[], home: string, o: Partial<PhoneCliEnv> = {}) => {
+    const out: string[] = [];
+    const code = await runPhoneCli(argv, { home, listening: async () => true, out: (l) => out.push(l), err: (l) => out.push(l), ...o });
+    return { code, text: out.join('\n') };
+  };
+
+  it('setup makes the config folder 0700; check runs claude with CLAUDE_CONFIG_DIR there', async () => {
+    const home = join(tmp, 'cfg1');
+    let env: NodeJS.ProcessEnv | undefined;
+    await run(['check'], home, { check: async (_d, o) => ((env = o.env), { ...compareTools(PHONE_TOOLS), error: '' }) });
+    await run(['setup'], home);
+    expect(statSync(phoneConfigDir(home)).mode & 0o777).toBe(0o700);
+    writeFileSync(join(phoneConfigDir(home), 'settings.json'), '{"permissions":{"defaultMode":"auto"}}');
+    await run(['setup'], home); // what /config wrote on the phone is gone at the next setup / on
+    expect(readFileSync(join(phoneConfigDir(home), 'settings.json'), 'utf8')).toBe('{}\n');
+    expect(env?.CLAUDE_CONFIG_DIR).toBe(phoneConfigDir(home));
+  });
+
+  it('on refuses while the phone config is not signed in; nothing is started', async () => {
+    let spawned = 0;
+    const r = await run(['on'], join(tmp, 'cfg2'), {
+      check: async () => ({ ...compareTools(PHONE_TOOLS), error: '' }),
+      auth: () => ({ loggedIn: false, expiresAt: null }),
+      spawn: () => (spawned++, spawn(process.execPath, ['-e', ''])),
+    });
+    expect(r.code).toBe(1);
+    expect(r.text).toMatch(/not signed in.*stephen phone login/);
+    expect(spawned).toBe(0);
+  });
+
+  it('login runs `claude auth login` with the phone config', async () => {
+    const calls: [string[], unknown][] = [];
+    const r = await run(['login'], join(tmp, 'cfg3'), { spawn: (_c, args, opts) => (calls.push([args, opts.env?.CLAUDE_CONFIG_DIR]), spawn(process.execPath, ['-e', ''])) });
+    expect(r.code).toBe(0);
+    expect(calls).toEqual([[['auth', 'login'], phoneConfigDir(join(tmp, 'cfg3'))]]);
+  });
+
+  it('an MCP server other than the bridge means not locked', () => {
+    expect(compareTools(PHONE_TOOLS, ['stephen_phone'])).toMatchObject({ locked: true });
+    expect(compareTools(PHONE_TOOLS, ['stephen_phone', 'stephen'])).toMatchObject({ locked: false, extra: ['MCP server stephen'] });
   });
 });

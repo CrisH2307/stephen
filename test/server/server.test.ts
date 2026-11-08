@@ -12,6 +12,7 @@ const EXPECTED_TOOLS = [
   // phase 2a account tools (read-only)
   'canvas_due',
   'canvas_announcements',
+  'canvas_inbox',
   'calendar_events',
   'notion_todos',
   'notion_search',

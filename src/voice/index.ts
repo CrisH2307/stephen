@@ -27,6 +27,7 @@ import { Assistant, type CommandReport, type CommandRunner, type Trust } from '.
 import { MicrophoneSource, listInputDevices, resolveDeviceIndex, wavFileSource, type AudioSource } from './audio.js';
 import {
   ClaudeRunner,
+  memoryForTrust,
   buildClaudeArgs,
   formatTiming,
   mcpConfig,
@@ -56,7 +57,7 @@ import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel,
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
-import { accountsStatus } from '../app/accounts-status.js';
+import { accountsStatus, phoneAccountRow } from '../app/accounts-status.js';
 import { macNotify, macNotifyTitled, type NotifyFn, type NotifyTitledFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
@@ -67,7 +68,7 @@ import { JobManager } from '../jobs/manager.js';
 import { purgeJobs } from '../jobs/state.js';
 import { JobRouter } from '../jobs/router.js';
 import { PhoneServer } from '../phone/server.js';
-import { isPhoneOn } from '../phone/setup.js';
+import { isPhoneOn, phoneAuth, type PhoneAuth } from '../phone/setup.js';
 import type { SpawnFn as JobSpawnFn } from '../jobs/runner.js';
 
 export { LISTEN_USAGE } from './args.js';
@@ -431,7 +432,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       };
       warm = new WarmConversationRunner({
         conversation,
-        start: (key, trust) => new WarmClaude(warmOpts, key, memoryNow(), trust),
+        start: (key, trust) => new WarmClaude(warmOpts, key, memoryForTrust(trust, memoryNow), trust),
         onTiming: (t) => out(formatTiming(t)),
         now: env.now,
         log: err,
@@ -529,6 +530,12 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     });
   };
   const configPath = env.configPath ?? configFilePath(env.env ?? process.env);
+  // The phone config's sign-in for the Accounts tab: `claude auth status` takes about a second, so it is cached.
+  let signIn: { at: number; value: Promise<PhoneAuth> } | null = null;
+  const phoneSignIn = (): Promise<PhoneAuth> => {
+    if (!signIn || Date.now() - signIn.at > 5 * 60_000) signIn = { at: Date.now(), value: phoneAuth(home, cfg.claudePath) };
+    return signIn.value;
+  };
   /** Serve <home>/run/app.sock for the Stephen window; null (with a note) when that isn't possible. */
   const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null): Promise<AppServer | null> => {
     const server = new AppServer({
@@ -541,7 +548,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       history,
       audit,
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
-      accounts: () => accountsStatus(loaded.accounts),
+      accounts: async () => {
+        const s = await accountsStatus(loaded.accounts);
+        return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
+      },
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),

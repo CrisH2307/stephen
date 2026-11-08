@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseJobsConfig, type JobsConfig } from '../../src/jobs/config.js';
 import { JobManager, type JobManagerOptions } from '../../src/jobs/manager.js';
 import type { SpawnFn } from '../../src/jobs/runner.js';
+import { isPidAlive } from '../../src/lib/process.js';
 import type { AuditEntry, IAuditLog } from '../../src/types.js';
 
 export const HERE = dirname(fileURLToPath(import.meta.url));
@@ -94,6 +95,9 @@ export function harness(tmp: string, o: Partial<JobManagerOptions> & { jobs?: Re
     stephenRepo: join(base, 'stephen-repo'),
     now: () => NOW,
     spawn: supervisor.spawn,
+    // Fixtures use this test's own pid as a pretend supervisor: liveness by pid here; the real command-line check
+    // (REVIEW-8 R8-5) has its own tests.
+    alive: isPidAlive,
     ...o,
   });
   return { home, root, userHome, manager, audit, supervisor, config };

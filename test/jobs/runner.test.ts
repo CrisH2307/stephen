@@ -41,7 +41,8 @@ async function untilIo(cond: () => boolean, what: string, ms = 10_000): Promise<
 
 describe('parseJobLine / resultStatus', () => {
   it('reads init, assistant turns, denials and the result; ignores the rest', () => {
-    expect(parseJobLine('{"type":"system","subtype":"init","tools":["Bash","Read"],"mcp_servers":[],"session_id":"s"}')).toEqual({ kind: 'init', tools: ['Bash', 'Read'], mcpServers: 0, sessionId: 's' });
+    expect(parseJobLine('{"type":"system","subtype":"init","tools":["Bash","Read"],"mcp_servers":[],"session_id":"s"}')).toEqual({ kind: 'init', tools: ['Bash', 'Read'], mcpServers: 0, mcpServerNames: [], sessionId: 's' });
+    expect(parseJobLine('{"type":"system","subtype":"init","tools":[],"mcp_servers":[{"name":"stephen_phone"},{"x":1}],"session_id":"s"}')).toMatchObject({ mcpServers: 2, mcpServerNames: ['stephen_phone', '?'] });
     expect(parseJobLine('{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use"},{"type":"text"}]}}')).toEqual({ kind: 'assistant', messageId: 'm1', toolUses: 1 });
     expect(parseJobLine('{"type":"system","subtype":"permission_denied"}')).toEqual({ kind: 'denied' });
     expect(parseJobLine('{"type":"stream_event"}')).toBeNull();
@@ -60,6 +61,24 @@ describe('parseJobLine / resultStatus', () => {
 });
 
 describe('JobSupervisor with a fake claude', () => {
+  it('R8-6: whatever still works in the job folder at the end is killed, and the job_end line counts it', async () => {
+    const { plan, sup } = await started('write two sentences about rivers MODE:ok');
+    const audit = new FakeAudit();
+    const killed: [number, string][] = [];
+    const asked: string[] = [];
+    const end = await new JobSupervisor(sup, {
+      spawn: fakeClaudeSpawn().spawn,
+      audit,
+      platform: 'linux',
+      stragglers: (folder) => (asked.push(folder), [4242, 4343]),
+      kill: (pid, sig) => killed.push([pid, sig]),
+    }).run();
+    expect(end.status).toBe('done');
+    expect(asked).toEqual([plan.folder]);
+    expect(killed).toEqual([[4242, 'SIGKILL'], [4343, 'SIGKILL']]);
+    expect(audit.entries.find((e) => e.tool === 'job_end')?.args).toMatchObject({ status: 'done', leftover: 2 });
+  });
+
   it('runs the exact argv in the job folder with only the allow-listed environment; progress and result land in the state', async () => {
     const { h, plan, sup } = await started('write my SOFE 3980 lab report draft MODE:ok');
     // start(): the supervisor is spawned detached, no terminal, scratch env, `node <cli> jobs _run <meta folder>`.

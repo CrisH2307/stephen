@@ -18,7 +18,7 @@ import type { IAuditLog } from '../types.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 
 export { phoneSocketPath } from './setup.js';
-import { phoneSocketPath } from './setup.js';
+import { PHONE_MAX_TASK, phoneSocketPath } from './setup.js';
 
 export const PHONE_MAX_LINE_BYTES = 8 * 1024;
 export const PHONE_MAX_TEXT = 2000;
@@ -31,7 +31,7 @@ const id = z.string().min(1).max(64);
 const request = z.discriminatedUnion('type', [
   z.object({ id, type: z.literal('ask'), text: z.string().max(PHONE_MAX_TEXT) }).strict(),
   z.object({ id, type: z.literal('job_status') }).strict(),
-  z.object({ id, type: z.literal('start_job'), task: z.string().max(PHONE_MAX_TEXT), web: z.boolean().optional() }).strict(),
+  z.object({ id, type: z.literal('start_job'), task: z.string().max(PHONE_MAX_TASK), web: z.boolean().optional() }).strict(),
 ]);
 export type PhoneRequest = z.infer<typeof request>;
 export type PhoneResponse = { id: string; type: 'reply'; text: string } | { id?: string; type: 'error'; message: string };
@@ -51,7 +51,7 @@ export interface PhoneServerOptions {
   /** The jobs summary at phone trust; absent = jobs are off. */
   jobStatus?: () => Promise<string>;
   /** Start a job the owner approved on the phone; absent = jobs are off. */
-  startJob?: (task: string, web: boolean) => Promise<string>;
+  startJob?: (task: string, web: boolean) => Promise<{ ok: boolean; text: string }>;
   audit: IAuditLog | null;
   /** A short notice on the Mac for every phone request. */
   notify: (title: string, body: string) => void;
@@ -121,19 +121,23 @@ export class PhoneServer {
           const run = this.o.ask(text);
           if (!run) return fail(PHONE_BUSY_MESSAGE, 'denied');
           this.notice(`From your phone: "${truncate(text, 80)}"`);
+          const reply = await run; // audited after it ran (REVIEW-8 R8-4): a throw is audited as error below
           await this.audited(req, 'ok');
-          return { id: req.id, type: 'reply', text: truncate(await run, PHONE_MAX_REPLY) };
+          return { id: req.id, type: 'reply', text: truncate(reply, PHONE_MAX_REPLY) };
         }
         case 'job_status': {
           if (!this.o.jobStatus) return fail(PHONE_JOBS_OFF, 'error');
+          const status = await this.o.jobStatus();
           await this.audited(req, 'ok');
-          return { id: req.id, type: 'reply', text: truncate(await this.o.jobStatus(), PHONE_MAX_REPLY) };
+          return { id: req.id, type: 'reply', text: truncate(status, PHONE_MAX_REPLY) };
         }
         case 'start_job': {
           if (!this.o.startJob) return fail(PHONE_JOBS_OFF, 'denied');
           this.notice(`Job requested from your phone: "${truncate(req.task, 80)}"`);
+          const r = await this.o.startJob(req.task, req.web === true);
+          if (!r.ok) return fail(truncate(r.text, PHONE_MAX_REPLY), 'denied'); // logged as what it was, not ok (R8-4)
           await this.audited(req, 'ok');
-          return { id: req.id, type: 'reply', text: truncate(await this.o.startJob(req.task, req.web === true), PHONE_MAX_REPLY) };
+          return { id: req.id, type: 'reply', text: truncate(r.text, PHONE_MAX_REPLY) };
         }
       }
     } catch (e) {

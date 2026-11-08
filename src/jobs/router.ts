@@ -101,18 +101,25 @@ export class JobRouter {
    * started at the Mac, plus: web only when the owner asked for it on the phone, and PHONE_DAILY_JOBS a day from the
    * phone (counted from the job registry, so a listener restart doesn't reset it).
    */
-  async startFromPhone(task: string, web: boolean): Promise<string> {
+  async startFromPhone(task: string, web: boolean): Promise<{ ok: boolean; text: string }> {
+    const no = (text: string) => ({ ok: false, text });
     try {
-      const plan = await this.o.jobs.plan(task);
-      if ('error' in plan) return plan.error;
+      // The phone tap showed exactly {task, web} (REVIEW-8 R8-2): nothing it didn't show may join the job.
+      if (task.length > TASK_MAX) return no(`That task is too long for a job (at most ${TASK_MAX} characters). Shorten it and try again.`);
+      const plan = await this.o.jobs.plan(task, { inbox: false });
+      if ('error' in plan) return no(plan.error);
+      if (plan.repo) return no(`That names your repo "${plan.repo.name}". Start code jobs at the Mac, where the dialog shows the worktree.`);
       const day = plan.id.slice(0, 10); // ids start with the local date (YYYY-MM-DD)
-      const fromPhone = this.o.jobs.list().filter((j) => j.source === 'phone' && j.id.startsWith(day)).length;
-      if (fromPhone >= PHONE_DAILY_JOBS) return `That's ${PHONE_DAILY_JOBS} jobs from your phone today already, the phone limit. Start more at the Mac.`;
-      const r = await this.o.jobs.start({ ...plan, web }, 'phone');
-      if ('refused' in r) return r.refused;
-      return `Job started: ${said(plan.task)}. Up to ${plural(minutes(plan.wallClockMs), 'minute')}, web ${web ? 'on' : 'off'}; it'll be in your Stephen Jobs folder. Ask "how's my job going" to check on it.`;
+      // Checked inside the manager's start turn, so parallel phone starts can't all pass (R8-3).
+      const phoneCap = () =>
+        this.o.jobs.list().filter((j) => j.source === 'phone' && j.id.startsWith(day)).length >= PHONE_DAILY_JOBS
+          ? `That's ${PHONE_DAILY_JOBS} jobs from your phone today already, the phone limit. Start more at the Mac.`
+          : '';
+      const r = await this.o.jobs.start({ ...plan, web }, 'phone', phoneCap);
+      if ('refused' in r) return no(r.refused);
+      return { ok: true, text: `Job started: ${said(plan.task)}. Up to ${plural(minutes(plan.wallClockMs), 'minute')}, web ${web ? 'on' : 'off'}, no input files; it'll be in your Stephen Jobs folder. Ask "how's my job going" to check on it.` };
     } catch (e) {
-      return `Something went wrong with the job (${clean((e as Error).message, 120)}).`;
+      return no(`Something went wrong with the job (${clean((e as Error).message, 120)}).`);
     }
   }
 

@@ -15,7 +15,6 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { expandPath } from '../config.js';
 import { REPO_ROOT } from '../lib/repo.js';
 import { ensurePrivateDir, isInside, writePrivateFileAtomicSync, writePrivateJsonFileSync } from '../lib/fs.js';
-import { isPidAlive } from '../lib/process.js';
 import { wallParts } from '../lib/zone.js';
 import type { IAuditLog } from '../types.js';
 import type { JobsConfig } from './config.js';
@@ -35,7 +34,7 @@ import {
   wantsWeb,
   type JobSpec,
 } from './spec.js';
-import { isFinal, jobsDir, listJobStates, metaDirOf, readJobState, writeJobState, type JobState } from './state.js';
+import { isFinal, jobsDir, listJobStates, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState } from './state.js';
 
 export type GitFn = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -144,7 +143,11 @@ export class JobManager {
   }
 
   list(): JobState[] {
-    return listJobStates(this.o.home, { now: () => this.now(), ...(this.o.alive ? { alive: this.o.alive } : {}) });
+    return listJobStates(this.o.home, {
+      now: () => this.now(),
+      ...(this.o.alive ? { alive: this.o.alive } : {}),
+      onFailed: (s) => this.auditEnd(s, s.error, 'reconcile'),
+    });
   }
 
   get(id: string): JobState | null {
@@ -184,7 +187,7 @@ export class JobManager {
   /**
    * Plan a job for this task: id, folder, web, repo, budgets. Creates nothing. An error is said to the owner as is.
    */
-  async plan(rawTask: string): Promise<JobPlan | { error: string }> {
+  async plan(rawTask: string, opts: { inbox?: boolean } = {}): Promise<JobPlan | { error: string }> {
     if (!this.o.config.enabled) return { error: 'Jobs are turned off in your Stephen settings (jobs.enabled).' };
     const task = cleanTask(rawTask);
     if (task.split(' ').filter(Boolean).length < 2) return { error: 'Say what the job should do, like "start a job to write my lab report draft".' };
@@ -216,7 +219,8 @@ export class JobManager {
         const b = await (this.o.git ?? defaultGit)(['-C', repo.path, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
         if (b.code === 0) continue; // that branch exists: next suffix
       }
-      const inbox = repo ? [] : inboxFiles(join(realRoot, INBOX_DIR));
+      // No inbox files for a repo job, or when the caller can't show them (a phone job, REVIEW-8 R8-2).
+      const inbox = repo || opts.inbox === false ? [] : inboxFiles(join(realRoot, INBOX_DIR));
       if (!Array.isArray(inbox)) return { error: inbox.error };
       return {
         id,
@@ -254,10 +258,29 @@ export class JobManager {
 
   /**
    * Start an approved plan: folder (or worktree), meta folder with settings.json, persona.md and spec.json (0600),
-   * the queued state, then the detached supervisor. Caps are checked again (the dialog took time).
+   * the queued state, then the detached supervisor. Starts run one at a time, and the caps (plus the caller's
+   * `extraCap`, e.g. the phone's daily limit) are checked inside that turn, after the previous start wrote its state
+   * (REVIEW-8 R8-3). An approved start that is refused anyway is audited with the reason (R8-4).
    */
-  async start(plan: JobPlan, source: string): Promise<JobState | { refused: string }> {
-    const cap = this.capError();
+  async start(plan: JobPlan, source: string, extraCap?: () => string): Promise<JobState | { refused: string }> {
+    const run = this.starting.then(() => this.startNow(plan, source, extraCap));
+    this.starting = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    const r = await run;
+    if ('refused' in r) {
+      void this.o.audit
+        ?.append({ tool: 'job_start', outcome: 'error', confirmation: 'approved', error: r.refused, args: { id: plan.id, task: plan.task, web: plan.web, source } })
+        .catch(() => undefined);
+    }
+    return r;
+  }
+
+  private starting: Promise<void> = Promise.resolve();
+
+  private async startNow(plan: JobPlan, source: string, extraCap?: () => string): Promise<JobState | { refused: string }> {
+    const cap = this.capError() || extraCap?.() || '';
     if (cap) return { refused: cap };
     const home = this.o.home;
     const metaDir = metaDirOf(home, plan.id);
@@ -389,6 +412,12 @@ export class JobManager {
     } catch {
       /* reconcile marks it failed later */
     }
+    this.auditEnd(s, error, 'start');
+  }
+
+  /** A job the listener (not its supervisor) declared failed: the supervisor never writes its own job_end then. */
+  private auditEnd(s: JobState, error: string, by: string): void {
+    void this.o.audit?.append({ tool: 'job_end', outcome: 'error', error, args: { id: s.id, status: 'failed', by } }).catch(() => undefined);
   }
 
   /**
@@ -400,24 +429,34 @@ export class JobManager {
     const s = this.get(id);
     if (!s) return { refused: `There's no job ${id}.` };
     if (isFinal(s.status)) return s;
-    void this.o.audit?.append({ tool: 'job_stop', outcome: 'ok', args: { id, by } }).catch(() => undefined);
+    // Audited after the stop, with what actually happened (R8-4).
+    const audited = (r: JobState): JobState => {
+      const stopped = isFinal(r.status);
+      void this.o.audit
+        ?.append({ tool: 'job_stop', outcome: stopped ? 'ok' : 'error', ...(stopped ? {} : { error: 'still running after the wait' }), args: { id, by, status: r.status } })
+        .catch(() => undefined);
+      return r;
+    };
     if (s.pid === null) {
       writeJobState(this.o.home, { ...s, status: 'stopped', endedAt: this.now(), error: 'Stopped by the owner before it started.' });
-      return readJobState(this.o.home, id) ?? s;
+      return audited(readJobState(this.o.home, id) ?? s);
     }
-    try {
-      process.kill(s.pid, 'SIGTERM');
-    } catch {
-      /* gone: reconcile below */
+    // Only a pid that is still this job's supervisor gets the signal (R8-5: never an unrelated reused pid).
+    if (supervisorRuns(s, s.pid, this.o.alive)) {
+      try {
+        process.kill(s.pid, 'SIGTERM');
+      } catch {
+        /* gone: reconcile below */
+      }
     }
     const until = Date.now() + waitMs;
     for (;;) {
       const now = readJobState(this.o.home, id);
-      if (now && isFinal(now.status)) return now;
-      if (Date.now() > until || !(this.o.alive ?? isPidAlive)(s.pid)) break;
+      if (now && isFinal(now.status)) return audited(now);
+      if (Date.now() > until || !supervisorRuns(s, s.pid, this.o.alive)) break;
       await new Promise((r) => setTimeout(r, 200));
     }
-    return this.get(id) ?? s;
+    return audited(this.get(id) ?? s);
   }
 }
 

@@ -16,6 +16,18 @@ import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './s
  */
 export type Trust = 'trusted' | 'wake' | 'phone';
 
+/**
+ * True for "play / put on / start playing <something new>", decided from the owner's words (never the model's). Not for
+ * a bare "play" (resume) or anything that points back into the conversation ("play it", "play the first one"):
+ * those need the follow-up's context.
+ */
+export function freshForPlay(text: string): boolean {
+  const m = /^(?:(?:hey )?stephen,?\s+)?(?:please\s+)?(?:play|put on|start playing)\s+(.+)$/i.exec(text.trim());
+  if (!m) return false;
+  const what = m[1]!.replace(/[.!?]+$/, '').trim().toLowerCase();
+  return !/^(?:it|that|this|them|those|again|it again|that again|the (?:first|second|third|next|last|previous|same|other) ?(?:one|song|video|track)?|(?:the )?(?:one|song|video) (?:from|in|you)\b.*|something from (?:that|it)\b.*)$/.test(what);
+}
+
 /** The trust of a command from this source. */
 export function trustOf(source: CommandSource): Trust {
   return source === 'voice-wake' ? 'wake' : source === 'phone' ? 'phone' : 'trusted';
@@ -198,6 +210,13 @@ export class Assistant {
       let followUp = false;
       try {
         followUp = this.o.runner.followUp?.(trust) ?? false;
+        // "Play <something>" starts a fresh conversation (docs/PLAN-WORK-SPLIT.md §13): a conversation that read
+        // private data (Canvas, email…) must confirm before opening YouTube with a query, which the phone and an
+        // empty room can't answer. A new conversation has read nothing private, so the normal gate lets it through.
+        if (followUp && freshForPlay(prompt)) {
+          this.o.runner.endConversation?.();
+          followUp = false;
+        }
       } catch {
         // run() reports it
       }

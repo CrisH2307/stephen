@@ -1,4 +1,5 @@
 /** Process helpers shared by the drivers, memory (lock files), the voice Claude, jobs and the self-test. */
+import { execFileSync } from 'node:child_process';
 
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but isn't ours. */
 export function isPidAlive(pid: number): boolean {
@@ -8,6 +9,56 @@ export function isPidAlive(pid: number): boolean {
     return true;
   } catch (e) {
     return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * The command line of a live pid ('' when gone or unreadable). A recorded pid can be reused by an unrelated process
+ * after a crash or reboot (REVIEW-8 R8-5): check the command before trusting or signalling it.
+ */
+export function commandOf(pid: number): string {
+  if (!isPidAlive(pid)) return '';
+  try {
+    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Pids of this user's processes whose working directory is `dir` or inside it (macOS/Linux `lsof`), never this
+ * process. One `lsof` over all cwds, filtered by path: fast however big `dir` is. [] when lsof is missing or fails.
+ */
+export function pidsWithCwdIn(dir: string): number[] {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (uid === null) return [];
+  let out: string;
+  try {
+    out = execFileSync('lsof', ['-a', '-d', 'cwd', '-u', String(uid), '-Fpn'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+  } catch (e) {
+    out = typeof (e as { stdout?: unknown }).stdout === 'string' ? ((e as { stdout: string }).stdout) : ''; // lsof exits 1 on partial results
+  }
+  const root = dir.replace(/\/+$/, '');
+  const pids: number[] = [];
+  let pid = 0;
+  for (const line of out.split('\n')) {
+    if (line.startsWith('p')) pid = Number(line.slice(1));
+    else if (line.startsWith('n') && pid > 0 && pid !== process.pid) {
+      const cwd = line.slice(1);
+      if (cwd === root || cwd.startsWith(`${root}/`)) pids.push(pid);
+    }
+  }
+  return [...new Set(pids)];
+}
+
+/** A live pid's terminal ('??' = none) and start time (ms, second precision); null when gone or unreadable. */
+export function processStart(pid: number): { tty: string; startedAt: number } | null {
+  try {
+    const [tty, ...rest] = execFileSync('ps', ['-o', 'tty=,lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split(/\s+/);
+    const startedAt = Date.parse(rest.join(' '));
+    return tty && Number.isFinite(startedAt) ? { tty, startedAt } : null;
+  } catch {
+    return null;
   }
 }
 

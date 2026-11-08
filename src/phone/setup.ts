@@ -5,24 +5,70 @@
  * lives in files that user settings, plugins or a Claude Code update could widen (threat T5).
  * Owner-only: loaded by `stephen phone`, never by anything Claude can reach.
  */
-import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { execFile, spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { parseStreamLine } from '../lib/claude-stream.js';
 import { ensurePrivateDir, writePrivateFileAtomicSync } from '../lib/fs.js';
+import { commandOf } from '../lib/process.js';
 
 export const PHONE_SERVER = 'stephen_phone';
 export const PHONE_AGENT = 'stephen-phone';
+/**
+ * The longest job task the phone may send: the jobs limit (src/jobs/spec.ts TASK_MAX; a test keeps them equal). The
+ * bridge can't import job code, so it lives here. Longer is refused, never cut (REVIEW-8 R8-2).
+ */
+export const PHONE_MAX_TASK = 500;
+
 /** Exactly what the phone session may call (the init line must list these and nothing else). */
 export const PHONE_TOOLS = ['ask', 'job_status', 'start_job'].map((t) => `mcp__${PHONE_SERVER}__${t}`);
 
 export const phoneDir = (home: string): string => join(home, 'phone');
+/**
+ * The phone session's own Claude Code config folder (REVIEW-8 R8-1): `/config` typed on the phone writes only here,
+ * and the owner's plugins, skills, hooks and MCP servers don't load in the phone session (R8-7, ADR-005 T6). It
+ * needs its own sign-in once: `stephen phone login`.
+ */
+export const phoneConfigDir = (home: string): string => join(phoneDir(home), 'claude-config');
+/** The environment every phone-folder `claude` runs with (check, login, remote-control). */
+export const phoneClaudeEnv = (home: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => ({ ...env, CLAUDE_CONFIG_DIR: phoneConfigDir(home) });
 /** The listener's phone socket (src/phone/server.ts); the bridge connects to it. */
 export const phoneSocketPath = (home: string): string => join(home, 'run', 'phone.sock');
-/** The kill switch: phone.sock answers only while this file exists (`stephen phone on` writes it, `off` removes it). */
+/** The kill switch marker: `stephen phone on` writes `{pid, rc}` (itself, claude remote-control), `off` removes it. */
 export const phoneOnPath = (home: string): string => join(phoneDir(home), '.on');
-export const isPhoneOn = (home: string): boolean => existsSync(phoneOnPath(home));
+
+/** The marker, or null when off or unreadable. */
+export function readPhoneMarker(home: string): { pid: number; rc: number } | null {
+  try {
+    const j = JSON.parse(readFileSync(phoneOnPath(home), 'utf8')) as { pid?: unknown; rc?: unknown };
+    return { pid: Number.isInteger(j.pid) ? (j.pid as number) : 0, rc: Number.isInteger(j.rc) ? (j.rc as number) : 0 };
+  } catch {
+    return null;
+  }
+}
+
+export function removePhoneMarker(home: string): void {
+  try {
+    unlinkSync(phoneOnPath(home));
+  } catch {
+    /* already off */
+  }
+}
+
+export const isRemoteControl = (command: string): boolean => /\bclaude\b.*\bremote-control\b/.test(command);
+
+/**
+ * The kill switch, checked on every phone request: on only while the marker's Remote Control process really runs
+ * (REVIEW-8 R8-5: a marker left by a crash or reboot must not keep phone.sock answering). A stale marker is removed.
+ */
+export function isPhoneOn(home: string, cmdOf: (pid: number) => string = commandOf): boolean {
+  const m = readPhoneMarker(home);
+  if (!m) return false;
+  if (m.rc > 0 && isRemoteControl(cmdOf(m.rc))) return true;
+  removePhoneMarker(home);
+  return false;
+}
 
 const AGENT_PROMPT = `You are the owner's phone link to Stephen, their Mac assistant. You can only use the Stephen phone tools.
 - For any question or request, call ask with the owner's words, then pass Stephen's answer back briefly.
@@ -38,7 +84,13 @@ export function phoneFiles(bridge: { command: string; args: string[] }): Record<
     agent: PHONE_AGENT,
     enableAllProjectMcpServers: true,
     // ask / job_status without a prompt each time; start_job always asks (requiresUserInteraction, no allow rule skips it).
-    permissions: { allow: [PHONE_TOOLS[0], PHONE_TOOLS[1]] },
+    permissions: { allow: [PHONE_TOOLS[0], PHONE_TOOLS[1]], deny: ['Skill', 'SendMessage', 'ListAgents'] },
+    // REVIEW-8 R8-7 (probed 2026-11-07: skills 19 → 3, slash commands 49 → 33): no messages from other sessions, no
+    // skill shell, no bundled skills, no workflows.
+    crossSessionInbound: 'refuse',
+    disableSkillShellExecution: true,
+    disableBundledSkills: true,
+    disableWorkflows: true,
   };
   return {
     '.claude/settings.json': JSON.stringify(settings, null, 2) + '\n',
@@ -55,6 +107,10 @@ export async function writePhoneFolder(home: string, bridge: { command: string; 
     await ensurePrivateDir(join(file, '..'), home);
     writePrivateFileAtomicSync(file, content);
   }
+  await ensurePrivateDir(phoneConfigDir(home), home);
+  // Undo whatever `/config` typed on the phone wrote last time (R8-1): the phone's user settings start empty on every
+  // setup / on. Its sign-in and folder trust live in other files and stay.
+  writePrivateFileAtomicSync(join(phoneConfigDir(home), 'settings.json'), '{}\n');
   return dir;
 }
 
@@ -69,10 +125,10 @@ export interface LockdownResult {
   error: string;
 }
 
-/** Compare an init line's tools with PHONE_TOOLS. Pure. */
-export function compareTools(tools: string[]): Omit<LockdownResult, 'error'> {
+/** Compare an init line's tools (and MCP servers: only the bridge may start, R8-7) with PHONE_TOOLS. Pure. */
+export function compareTools(tools: string[], mcpServers: string[] = []): Omit<LockdownResult, 'error'> {
   const got = new Set(tools);
-  const extra = [...got].filter((t) => !PHONE_TOOLS.includes(t)).sort();
+  const extra = [...[...got].filter((t) => !PHONE_TOOLS.includes(t)), ...mcpServers.filter((m) => m !== PHONE_SERVER).map((m) => `MCP server ${m}`)].sort();
   const missing = PHONE_TOOLS.filter((t) => !got.has(t));
   return { locked: extra.length === 0, complete: missing.length === 0, extra, missing };
 }
@@ -83,12 +139,13 @@ type SpawnFn = (cmd: string, args: string[], opts: SpawnOptions) => ChildProcess
  * Start `claude -p` in the phone folder (no --settings: Remote Control can't pass one either), read its init line,
  * then stop it before the model is called (no cost). Fails closed: no init line means not locked.
  */
-export async function checkPhoneLockdown(dir: string, o: { claudePath: string; timeoutMs?: number; spawn?: SpawnFn }): Promise<LockdownResult> {
+export async function checkPhoneLockdown(dir: string, o: { claudePath: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; spawn?: SpawnFn }): Promise<LockdownResult> {
   const fail = (error: string): LockdownResult => ({ locked: false, complete: false, extra: [], missing: [...PHONE_TOOLS], error });
   let child: ChildProcess;
   try {
     child = (o.spawn ?? nodeSpawn)(o.claudePath, ['-p', 'Reply with the single word ok.', '--output-format', 'stream-json', '--verbose'], {
       cwd: dir,
+      ...(o.env ? { env: o.env } : {}),
       stdio: ['ignore', 'pipe', 'ignore'],
     });
   } catch (e) {
@@ -109,7 +166,27 @@ export async function checkPhoneLockdown(dir: string, o: { claudePath: string; t
     const rl = createInterface({ input: child.stdout! });
     rl.on('line', (line) => {
       const ev = parseStreamLine(line);
-      if (ev?.kind === 'init') finish({ ...compareTools(ev.tools), error: '' });
+      if (ev?.kind === 'init') finish({ ...compareTools(ev.tools, ev.mcpServerNames), error: '' });
+    });
+  });
+}
+
+export interface PhoneAuth {
+  loggedIn: boolean;
+  /** ISO time the phone config's sign-in expires, when Claude Code says. */
+  expiresAt: string | null;
+}
+
+/** `claude auth status` (JSON) with the phone config. Not signed in when it can't be read. Never throws. */
+export function phoneAuth(home: string, claudePath = 'claude'): Promise<PhoneAuth> {
+  return new Promise((resolve) => {
+    execFile(claudePath, ['auth', 'status'], { env: phoneClaudeEnv(home), encoding: 'utf8', timeout: 20_000 }, (_e, stdout) => {
+      try {
+        const j = JSON.parse(String(stdout)) as { loggedIn?: unknown; loginExpiresAt?: unknown };
+        resolve({ loggedIn: j.loggedIn === true, expiresAt: typeof j.loginExpiresAt === 'string' ? j.loginExpiresAt : null });
+      } catch {
+        resolve({ loggedIn: false, expiresAt: null });
+      }
     });
   });
 }

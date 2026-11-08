@@ -1,7 +1,7 @@
 /** Claude Code `--output-format stream-json` lines → the few events Stephen reads (jobs, the phone lock-down check). */
 
 export type StreamEvent =
-  | { kind: 'init'; tools: string[]; mcpServers: number; sessionId: string }
+  | { kind: 'init'; tools: string[]; mcpServers: number; mcpServerNames: string[]; sessionId: string }
   | { kind: 'assistant'; messageId: string; toolUses: number }
   | { kind: 'denied' }
   | { kind: 'result'; subtype: string; isError: boolean; text: string; turns: number | null; costUsd: number | null; denials: number; startupFailure: string; errors: string[] };
@@ -21,6 +21,9 @@ export function parseStreamLine(line: string): StreamEvent | null {
       kind: 'init',
       tools: Array.isArray(j.tools) ? j.tools.filter((t): t is string => typeof t === 'string') : [],
       mcpServers: Array.isArray(j.mcp_servers) ? j.mcp_servers.length : -1,
+      mcpServerNames: Array.isArray(j.mcp_servers)
+        ? (j.mcp_servers as { name?: unknown }[]).map((m) => (typeof m?.name === 'string' ? m.name : '?'))
+        : [],
       sessionId: typeof j.session_id === 'string' ? j.session_id : '',
     };
   }

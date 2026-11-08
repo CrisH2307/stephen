@@ -62,8 +62,11 @@ function atText(at: number, now: number, tz: string): string {
 
 const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
 
-/** The phone can't answer the cancel dialog at the Mac (docs/ADR-005). */
-export const PHONE_CANCEL_REPLY = "I can't cancel timers from your phone. Do that at the Mac.";
+/**
+ * From the phone, timers are read-only (docs/ADR-005: the model never writes memory or timers; REVIEW-8 R8-8: the phone
+ * model could create them through ask, and injected text could ask it to). Cancelling would need a Mac dialog too.
+ */
+export const PHONE_CANCEL_REPLY = "I can't set or cancel timers from your phone. Do that at the Mac.";
 
 export class TimerRouter {
   constructor(private readonly o: TimerRouterOptions) {}
@@ -82,12 +85,14 @@ export class TimerRouter {
     const withRest = (r: TimerRoute) => ('rest' in intent && intent.rest ? { ...r, rest: intent.rest } : r);
     switch (intent.kind) {
       case 'timer': {
+        if (opts.source === 'phone') return withRest({ reply: PHONE_CANCEL_REPLY, changed: false });
         if (intent.label && memoryTextLooksSecret(intent.label)) return withRest({ reply: "I don't save codes or passwords, even in timer names.", changed: false, said: 'set a timer [refused: looks like a secret]' });
         const r = store.add('timer', now + intent.ms, intent.label ?? '', intent.ms, wake);
         if ('error' in r) return withRest({ reply: r.error, changed: false });
         return withRest({ reply: `Bet, ${durationAdj(intent.ms)} timer${r.text ? ` for ${r.text}` : ''} started.`, changed: false });
       }
       case 'remind': {
+        if (opts.source === 'phone') return withRest({ reply: PHONE_CANCEL_REPLY, changed: false });
         if (memoryTextLooksSecret(intent.text)) return withRest({ reply: "I don't save codes or passwords, even in reminders.", changed: false, said: 'remind me [refused: looks like a secret]' });
         const r = store.add('reminder', intent.dueAt, intent.text, undefined, wake);
         if ('error' in r) return withRest({ reply: r.error, changed: false });
