@@ -90,7 +90,7 @@ const VOICE_RAW = {
   claudeModel: 'sonnet',
   claudePath: '/Users/cris/.local/bin/claude',
   elevenlabs: { apiKeyFile: '/Users/cris/.stephen/elevenlabs-key.txt', voiceId: 'YEBbZ0itqHW31uoXSBns' },
-  aboutMe: { school: 'I study software engineering in Toronto.' },
+  aboutMe: { school: 'I study software engineering in Toronto.', home: '1 Secret St' },
 };
 
 const settingsFor = (configPath = '/Users/cris/.stephen/config.json') =>
@@ -451,6 +451,7 @@ describe('memory, history, settings, audit, window', () => {
     expect(r.configPath).toBe('/Users/cris/.stephen/config.json');
     const config = r.config as Record<string, Record<string, unknown>>;
     expect(config.voice).toMatchObject({ model: 'sonnet', wakeWord: true, aboutMe: { school: 'I study software engineering in Toronto.' } });
+    expect(JSON.stringify(config)).not.toContain('Secret St'); // R9-12: the home address stays out of the window
     expect(config.memory).toEqual({ enabled: true, confirmWakeWord: true, maxItems: 30 });
     expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });
@@ -769,6 +770,59 @@ describe('Ask box confirmations (confirm.ask / confirm / confirm.answer / confir
     expect(kinds(buildConfirmer(safety, { platform: 'linux', home: '/h' }))).toEqual(['dialog']);
     expect(kinds(buildConfirmer(safety, { platform: 'darwin' }))).toEqual(['dialog']);
     expect(kinds(buildConfirmer({ ...safety, confirm: 'dialog' }, { platform: 'darwin', home: '/h' }))).toEqual(['dialog']);
+  });
+
+  it("R9-2 buildConfirmer 'app' (listener-started serves): the Ask box, then the dialog; never elicit", () => {
+    const safety = { confirm: 'app' as const, confirmTimeoutSec: 120 };
+    const kinds = (c: ReturnType<typeof buildConfirmer>) => ('confirmers' in c ? (c.confirmers as { kind: string }[]).map((x) => x.kind) : [c.kind]);
+    expect(kinds(buildConfirmer(safety, { platform: 'darwin', home: '/h', elicit: async () => 'accept' }))).toEqual(['app', 'dialog']);
+    expect(kinds(buildConfirmer(safety, { platform: 'linux', home: '/h' }))).toEqual(['dialog']);
+  });
+
+  it('R9-7 confirm.answer is accepted only from an Ask box (hello with confirms: true)', async () => {
+    const { h, box, gate } = await withBox();
+    const plain = await h.connect();
+    await plain.request({ id: 'p0', type: 'hello', version: '1' });
+    gate.send({ id: 'g1', ...ASK });
+    const q = await box.waitFor((m) => m.type === 'confirm');
+    expect(await plain.request({ id: 'p1', type: 'confirm.answer', confirmId: q.confirmId, approve: true })).toMatchObject({ type: 'error' });
+    expect(gate.messages.some((m) => m.id === 'g1')).toBe(false);
+    await box.request({ id: 'b1', type: 'confirm.answer', confirmId: q.confirmId, approve: true });
+    expect(await gate.waitFor((m) => m.id === 'g1')).toMatchObject({ outcome: 'approved' });
+  });
+
+  it('R9-7 a gate connection (sent confirm.ask) gets no heard / chat.done / state pushes', async () => {
+    const { h, box, gate } = await withBox();
+    gate.send({ id: 'g0', type: 'hello', version: '1' });
+    gate.send({ id: 'g1', ...ASK });
+    await box.waitFor((m) => m.type === 'confirm');
+    h.server.heard('read my email', 'voice-ptt');
+    h.server.setState('working');
+    h.server.commandDone({ id: 'h_x', reply: 'You have 3 new emails', outcome: 'ok', ms: 5 } as never, []);
+    await box.waitFor((m) => m.type === 'chat.done');
+    await sleep(20);
+    expect(gate.messages.filter((m) => m.type === 'heard' || m.type === 'chat.done' || m.type === 'state')).toEqual([]);
+  });
+
+  it('R9-7 AppConfirmer applies the 4096-byte cap per line, not to several lines read at once', async () => {
+    const home = mkdtempSync(join(tmp, 'cap-'));
+    const path = join(home, 'cap.sock');
+    const filler = `${JSON.stringify({ type: 'heard', text: 'x'.repeat(3000), source: 'voice-ptt' })}\n`;
+    const srv = createServer((s) =>
+      s.on('data', (d) => {
+        for (const line of d.toString().split('\n').filter(Boolean)) {
+          const m = JSON.parse(line) as Msg;
+          if (m.type === 'hello') s.write(`${JSON.stringify({ id: m.id, type: 'hello', version: '1', confirms: true })}\n`);
+          if (m.type === 'confirm.ask') s.write(filler + filler + `${JSON.stringify({ id: m.id, type: 'confirm.result', outcome: 'approved' })}\n`);
+        }
+      }),
+    );
+    await new Promise<void>((r) => srv.listen(path, r));
+    try {
+      expect(await new AppConfirmer(path, 60_000).confirm({ title: 'T', body: 'B' })).toBe('approved');
+    } finally {
+      srv.close();
+    }
   });
 
   it('the gate and the listener agree on the socket path', async () => {

@@ -33,7 +33,8 @@ export function appSettings(o: { voice: VoiceConfig; memory: MemoryConfig; histo
         chimes: v.chimes,
         followUpWindowSec: v.followUpWindowSec,
         cooldownSec: v.cooldownSec,
-        ...(v.aboutMe ? { aboutMe: v.aboutMe } : {}),
+        // The home address stays out of the window (R9-12): the persona needs it, no page shows it.
+        ...(v.aboutMe ? { aboutMe: { ...v.aboutMe, home: undefined } } : {}),
       },
       // How Stephen talks (settings.set): the current values plus the preview sentences (voice/talk.ts).
       talk: { ...talk, samples: TALK_SAMPLES },

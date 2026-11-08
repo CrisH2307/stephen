@@ -1434,6 +1434,33 @@ func appSocketPeerPid(_ path: String) -> pid_t? {
   return pid
 }
 
+/** A pid's argv (KERN_PROCARGS2), or [] when gone or not readable. */
+func processArgv(_ pid: pid_t) -> [String] {
+  var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+  var size = 0
+  guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+  var buf = [UInt8](repeating: 0, count: size)
+  guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+  let argc = Int(buf.withUnsafeBytes { $0.load(as: Int32.self) })
+  var i = MemoryLayout<Int32>.size
+  while i < size && buf[i] != 0 { i += 1 }  // the exec path
+  while i < size && buf[i] == 0 { i += 1 }  // its padding
+  var args: [String] = []
+  while args.count < argc && i < size {
+    let start = i
+    while i < size && buf[i] != 0 { i += 1 }
+    args.append(String(decoding: buf[start..<i], as: UTF8.self))
+    i += 1
+  }
+  return args
+}
+
+/** Is this pid still `<node> <…/dist/cli.js> listen` (the process Stop meant to signal)? */
+func isStephenListen(_ pid: pid_t) -> Bool {
+  let a = processArgv(pid)
+  return a.count >= 3 && a[1].hasSuffix("/dist/cli.js") && a[2] == "listen"
+}
+
 /**
  * One request on its own short connection to app.sock (works with the window closed): send, wait for the answer with
  * the same id, close. `done` runs on the main queue with the answer or a local error.
@@ -1511,10 +1538,14 @@ enum ListenerStatus: Equatable {
  *  - One owner: start does nothing while app.sock answers (a listener runs, from here or from Terminal) or while our
  *    child is still starting. The child's pid goes to <home>/run/listen.pid; app.sock's peer pid (LOCAL_PEERPID) equal
  *    to it means "ours", so a restarted helper still knows its listener. Stop refuses a Terminal listener.
- *  - How to start it: <home>/run/launch.json (node, cli.js, PATH), written by `stephen listen` and
- *    `stephen install-helper` (src/app/control.ts). It must be ours and not group/world-writable.
+ *    listen.pid is removed when our child exits, or when nothing serves app.sock and we have no child (after a reboot).
+ *  - How to start it: <home>/run/launch.json (node, cli.js, PATH), written only by `stephen install-helper`
+ *    (src/app/control.ts), so a listener run from another checkout never changes what Start runs. It must be ours and
+ *    not group/world-writable; missing or unsafe, Start says to run `stephen install-helper`.
  *  - Output: <home>/logs/listen.log (0600, rotated at 2 MB); the window tails it with watchLog.
- *  - Stop: SIGINT (idle: "Bye."; busy: cancels the command), SIGINT again after 3 s, SIGKILL after 10 s.
+ *  - Stop: SIGINT (idle: "Bye."; busy: cancels the command), SIGINT again after 3 s, SIGKILL after 10 s. The delayed
+ *    signals go only if that pid's command line is still `<node> <…/dist/cli.js> listen` (REVIEW-9 R9-8: a pid
+ *    reused in between is left alone).
  */
 final class StephenControl: ObservableObject {
   @Published private(set) var listener: ListenerStatus = .stopped
@@ -1552,6 +1583,7 @@ final class StephenControl: ObservableObject {
       listener = .starting
     } else {
       listener = .stopped
+      if child == nil { try? FileManager.default.removeItem(atPath: pidPath) }  // stale (helper restarted, reboot)
     }
   }
 
@@ -1588,7 +1620,7 @@ final class StephenControl: ObservableObject {
     if case .running = listener { return done("Stephen is already running.") }
     if listener == .starting { return done(nil) }
     guard let info = readLaunchInfo() else {
-      return done("Stephen Helper doesn't know how to start Stephen yet. Run `stephen install-helper` (or `stephen listen` once) in Terminal.")
+      return done("Stephen Helper doesn't know how to start Stephen: \(launchInfoPath) is missing or unsafe. Run `stephen install-helper` once in Terminal.")
     }
     try? makePrivateDir(home + "/logs")
     let fm = FileManager.default
@@ -1613,6 +1645,7 @@ final class StephenControl: ObservableObject {
     p.terminationHandler = { [weak self] proc in
       let code = proc.terminationStatus
       DispatchQueue.main.async {
+        if let path = self?.pidPath { try? FileManager.default.removeItem(atPath: path) }
         self?.log("stephen listen exited (\(code))")
         self?.refresh()
       }
@@ -1648,7 +1681,7 @@ final class StephenControl: ObservableObject {
     }
     log("stopping stephen listen, pid \(pid)")
     kill(pid, SIGINT)
-    let alive = { kill(pid, 0) == 0 }
+    let alive = { isStephenListen(pid) }
     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if alive() { kill(pid, SIGINT) } }
     DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
       if alive() {
