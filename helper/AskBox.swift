@@ -57,6 +57,33 @@ struct AskBoxActions {
 
 // ───────────────────────────── view ─────────────────────────────
 
+/// Allow and Deny for one question. Both stay disabled for 0.75 s each time the shown question changes, so a double
+/// click, or a click aimed at the menu bar icon as the box opens, can't answer a question the owner hasn't seen (R9-6).
+struct ConfirmButtons: View {
+  @Environment(\.stephenTheme) var t
+  let question: PendingConfirm
+  let waiting: Int
+  let answer: (Bool) -> Void
+  @State private var armed: String? = nil
+
+  var body: some View {
+    let live = armed == question.id
+    HStack(spacing: Space.s) {
+      if waiting > 1 { Text(verbatim: "1 of \(waiting)").font(TypeScale.secondary).foregroundColor(t.ink2) }
+      Spacer()
+      // Deny first, so keyboard focus (Full Keyboard Access) lands on it; Return is not bound to Allow.
+      QuietButton("Deny") { answer(false) }
+      PrimaryButton("Allow") { answer(true) }
+    }
+    .disabled(!live).opacity(live ? 1 : 0.5)
+    .task(id: question.id) {
+      armed = nil
+      try? await Task.sleep(nanoseconds: 750_000_000)
+      if !Task.isCancelled { armed = question.id }
+    }
+  }
+}
+
 struct AskBoxView: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
@@ -88,12 +115,7 @@ struct AskBoxView: View {
       }
       .frame(maxHeight: 160).fixedSize(horizontal: false, vertical: true)
       .accessibilityLabel("Details: \(q.body)")
-      HStack(spacing: Space.s) {
-        Spacer()
-        // Deny first, so keyboard focus (Full Keyboard Access) lands on it; Return is not bound to Allow.
-        QuietButton("Deny") { model.answerConfirm(q.id, approve: false) }
-        PrimaryButton("Allow") { model.answerConfirm(q.id, approve: true) }
-      }
+      ConfirmButtons(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
     case .idle:
       HStack(spacing: Space.s) {
         AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)

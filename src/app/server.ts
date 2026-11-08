@@ -120,6 +120,8 @@ export class AppServer {
   private readonly clients = new Set<Socket>();
   /** Clients that show confirm questions (hello confirms:true): the Ask box. */
   private readonly askBoxes = new Set<Socket>();
+  /** Connections that sent confirm.ask: the gate in a serve process. They get no broadcasts (R9-7). */
+  private readonly gates = new Set<Socket>();
   /** Waiting questions by confirmId: who asked, with which request id. */
   private readonly confirms = new Map<string, { asker: Socket; id: string; timer: NodeJS.Timeout; push: AppMessage }>();
   private current: AppState = 'idle';
@@ -211,6 +213,7 @@ export class AppServer {
     sock.on('close', () => {
       this.clients.delete(sock);
       this.askBoxes.delete(sock);
+      this.gates.delete(sock);
       for (const [confirmId, c] of this.confirms) {
         if (c.asker === sock) this.settle(confirmId, null);
         // The last Ask box left: the gate shows the dialog instead.
@@ -232,8 +235,9 @@ export class AppServer {
     }
   }
 
+  /** Pushes go to the window and Ask boxes, never to a gate (serve, model-reachable) waiting on a question (R9-7). */
   private broadcast(msg: AppMessage): void {
-    for (const c of this.clients) this.send(c, msg);
+    for (const c of this.clients) if (!this.gates.has(c)) this.send(c, msg);
   }
 
   private receive(sock: Socket, line: string): void {
@@ -254,7 +258,8 @@ export class AppServer {
     }
     if (req.type === 'confirm.answer') {
       const c = this.confirms.get(req.confirmId);
-      if (!c || c.asker === sock) {
+      // Only an Ask box (hello with confirms: true) answers (R9-7).
+      if (!c || c.asker === sock || !this.askBoxes.has(sock)) {
         this.send(sock, { id: req.id, type: 'error', message: 'That question is no longer waiting.' });
         return;
       }
@@ -270,7 +275,7 @@ export class AppServer {
     this.answer(req).then(
       (msg) => {
         this.send(sock, msg);
-        if (req.type === 'hello' && msg.type === 'hello') this.send(sock, { type: 'state', state: this.current });
+        if (req.type === 'hello' && msg.type === 'hello' && !this.gates.has(sock)) this.send(sock, { type: 'state', state: this.current });
       },
       (e: unknown) => this.send(sock, { id: req.id, type: 'error', message: (e as Error).message || 'error' }),
     );
@@ -306,6 +311,7 @@ export class AppServer {
 
   /** confirm.ask: relay to the Ask boxes (never back to the asker), or "unavailable" when there is none. */
   private ask(sock: Socket, req: Extract<AppRequest, { type: 'confirm.ask' }>): void {
+    this.gates.add(sock);
     const boxes = [...this.askBoxes].filter((b) => b !== sock);
     if (boxes.length === 0) {
       this.send(sock, { id: req.id, type: 'confirm.result', outcome: 'unavailable' });
