@@ -36,6 +36,12 @@ const RESPONSES: Record<string, string[]> = {
   // Sent by the safety gate (src/safety/app-confirm.ts), not by the window; answered by the Ask box's click.
   'confirm.ask': ['confirm.result', 'error'],
   'confirm.answer': ['ok', 'error'],
+  // ROADMAP P2 control (src/app/control.ts).
+  'phone.on': ['phone', 'error'],
+  'phone.off': ['phone', 'error'],
+  'zen.open': ['zen', 'error'],
+  'doctor.run': ['doctor', 'error'],
+  'usage.get': ['usage', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -190,6 +196,29 @@ describe('app.sock protocol v1 fixture', () => {
             expect(['ok', 'denied', 'error']).toContain(a.outcome);
           }
           break;
+        case 'phone':
+          expect(typeof msg.on).toBe('boolean');
+          expect((msg.lines as unknown[]).every((l) => typeof l === 'string')).toBe(true);
+          break;
+        case 'zen':
+          expect(typeof msg.ok).toBe('boolean');
+          expect(typeof msg.message).toBe('string');
+          break;
+        case 'doctor':
+          for (const c of msg.checks as Record<string, unknown>[]) {
+            expect(typeof c.ok).toBe('boolean');
+            expect(typeof c.label).toBe('string');
+          }
+          expect(typeof msg.problems).toBe('number');
+          expect(typeof msg.blocking).toBe('number');
+          break;
+        case 'usage': {
+          const m = msg.memory as Record<string, unknown>;
+          expect(Object.keys(m).sort()).toEqual(['budget', 'bytes', 'percent', 'warn']);
+          expect(m.budget).toBe(8192);
+          if (msg.context !== null) expect(Object.keys(msg.context as object).sort()).toEqual(['percent', 'tokens', 'warn', 'window']);
+          break;
+        }
         case 'heard':
           expect(typeof msg.text).toBe('string');
           expect(typeof msg.source).toBe('string');
@@ -231,9 +260,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // {id,type:"usage",context:{percent,warn,tokens,window}|null,memory:{percent,warn,bytes,budget}}
     expect(client).toContain('type: "usage.get"');
     expect(client).toContain('msg.type == "usage"');
-    expect(client).toMatch(/struct UsageMeter: Decodable[\s\S]*var percent: Double[\s\S]*var warn: Bool/);
-    expect(client).toContain('decodeIfPresent(UsageMeter.self, forKey: .context)');
-    expect(client).toContain('decodeIfPresent(UsageMeter.self, forKey: .memory)');
+    // P2's UsageBar (percent is a rounded whole number in src/app/usage.ts).
+    expect(client).toMatch(/struct UsageBar: Decodable[\s\S]*let percent: Int[\s\S]*let warn: Bool/);
+    expect(client).toContain('decodeIfPresent(UsageBar.self, forKey: .context)');
+    expect(client).toContain('decodeIfPresent(UsageBar.self, forKey: .memory)');
     const box = read('AskBox.swift');
     expect(box).toContain('if let m = model.usage?.context');
     expect(box).toContain('let high = warn');
@@ -269,6 +299,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).toContain('Timer.publish(every: 5');
     // Stop only for a job that has not ended.
     expect(window).toMatch(/if job\.isRunning/);
+  });
+
+  it('P2 control: the helper owns the listener (not the window), refuses duplicates and a Terminal listener, has the permissions it needs', () => {
+    const main = read('main.swift');
+    expect(main).toContain('let stephenControl = StephenControl(home: home, log: log)');
+    expect(main).toContain('"Start Stephen"');
+    expect(main).toContain('control.start(report)');
+    expect(client).toContain('if case .running = listener { return done("Stephen is already running.") }');
+    expect(client).toContain('LOCAL_PEERPID');
+    expect(client).toContain('p.arguments = [info.cli, "listen"]');
+    expect(client).toContain('st.st_mode & 0o022 == 0');
+    for (const r of ['.phoneOn(', '.phoneOff(', '.zenOpen(', '.doctorRun(']) expect(client).toContain(r);
+    const plist = read('Info.plist');
+    expect(plist).toContain('NSMicrophoneUsageDescription');
+    expect(plist).toContain('NSAppleEventsUsageDescription');
   });
 
   it('the window opens from the menu, --open-window and the open_window command', () => {

@@ -270,15 +270,19 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let quitAction: () -> Void
   private let openWindowAction: @MainActor () -> Void
   private let clickAction: @MainActor () -> Void
+  private let control: StephenControl
+  private let startStop: NSMenuItem
 
   init(
     checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void,
-    click: @escaping @MainActor () -> Void, quit: @escaping () -> Void
+    click: @escaping @MainActor () -> Void, control: StephenControl, quit: @escaping () -> Void
   ) {
     self.checkPermission = checkPermission
     openWindowAction = openWindow
     clickAction = click
+    self.control = control
     quitAction = quit
+    startStop = NSMenuItem(title: "Start Stephen", action: nil, keyEquivalent: "")
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     header = NSMenuItem(title: "Stephen Helper", action: nil, keyEquivalent: "")
     permission = NSMenuItem(title: "Input Monitoring", action: nil, keyEquivalent: "")
@@ -295,6 +299,18 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     openItem.target = self
     openItem.isEnabled = true
     menu.addItem(openItem)
+    // ROADMAP P2 controls (plain items until the redesign gives them a home in the window).
+    startStop.target = self
+    startStop.action = #selector(startStopClicked(_:))
+    menu.addItem(startStop)
+    for (title, action) in [
+      ("Phone link on", #selector(phoneOnClicked(_:))), ("Phone link off", #selector(phoneOffClicked(_:))),
+      ("Open Zen for Stephen", #selector(zenClicked(_:))), ("Run doctor…", #selector(doctorClicked(_:))),
+    ] {
+      let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+      item.target = self
+      menu.addItem(item)
+    }
     menu.addItem(NSMenuItem.separator())
     let quitItem = NSMenuItem(title: "Quit", action: #selector(quitClicked(_:)), keyEquivalent: "q")
     quitItem.target = self
@@ -327,6 +343,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
   func menuWillOpen(_ menu: NSMenu) {
     granted = checkPermission()
+    control.refresh()
+    switch control.listener {
+    case .stopped: startStop.title = "Start Stephen"
+    case .starting: startStop.title = "Stop Stephen (starting…)"
+    case .running(let fromApp): startStop.title = fromApp ? "Stop Stephen" : "Stephen is running in Terminal"
+    }
+    startStop.isEnabled = control.listener != .running(fromApp: false)
     render()
   }
 
@@ -341,6 +364,41 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     } else {
       clickAction()
     }
+  }
+
+  private func show(_ title: String, _ text: String) {
+    NSApp.activate(ignoringOtherApps: true)
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.informativeText = text
+    alert.runModal()
+  }
+
+  @objc func startStopClicked(_ sender: Any?) {
+    let report: (String?) -> Void = { [weak self] why in if let why = why { self?.show("Stephen", why) } }
+    if control.listener == .stopped { control.start(report) } else { control.stop(report) }
+  }
+
+  @objc func phoneOnClicked(_ sender: Any?) {
+    control.phoneOn { [weak self] m in
+      MainActor.assumeIsolated { self?.show(m.on == true ? "Phone link on" : "Phone link", phoneText(m)) }
+    }
+  }
+
+  @objc func phoneOffClicked(_ sender: Any?) {
+    control.phoneOff { [weak self] m in
+      MainActor.assumeIsolated { self?.show("Phone link", phoneText(m)) }
+    }
+  }
+
+  @objc func zenClicked(_ sender: Any?) {
+    control.openZen { [weak self] m in
+      MainActor.assumeIsolated { if let why = zenProblem(m) { self?.show("Zen for Stephen", why) } }
+    }
+  }
+
+  @objc func doctorClicked(_ sender: Any?) {
+    control.runDoctor { [weak self] m in MainActor.assumeIsolated { self?.show("Stephen doctor", doctorText(m)) } }
   }
 
   @objc func openSettings(_ sender: Any?) {
@@ -380,6 +438,8 @@ let core = HelperCore(socketPath: home + "/run/helper.sock", log: log)
 let audioWatcher = AudioWatcher(log: log)
 let keyTap = KeyTap(core: core, log: log)
 var statusMenu: StatusMenu? = nil
+/** Starts / stops `stephen listen` and sends the control requests; lives as long as the helper, not the window. */
+let stephenControl = StephenControl(home: home, log: log)
 var appWindow: AppWindowController? = nil
 var appModel: AppModel? = nil
 var askBox: AskBoxController? = nil
@@ -452,7 +512,7 @@ MainActor.assumeIsolated {
   app.setActivationPolicy(.accessory)
   statusMenu = StatusMenu(
     checkPermission: { CGPreflightListenEventAccess() }, openWindow: { showStephenWindow() },
-    click: { askBox?.toggle() }, quit: { shutdownAndExit(0) })
+    click: { askBox?.toggle() }, control: stephenControl, quit: { shutdownAndExit(0) })
   let model = sharedAppModel()
   model.opened("askbox")
   let box = AskBoxController(model: model)

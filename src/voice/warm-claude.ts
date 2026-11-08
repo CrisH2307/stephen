@@ -83,6 +83,38 @@ export interface WarmProcess {
   killNow(): void;
   /** Called once when it exits, for any reason. */
   onExit(fn: () => void): void;
+  /** Context in use after the last model reply, when Claude Code reported it (the window's ⋯ menu, ROADMAP P2). */
+  readonly context?: ContextUsage | null;
+}
+
+/** Tokens in the conversation's context after the last model reply, and the model's context window. */
+export interface ContextUsage {
+  tokens: number;
+  window: number;
+}
+
+/**
+ * Context tokens from an `assistant` stream line's message.usage (input + cache read + cache write + output: what the
+ * next request starts with), or null without usage.
+ */
+export function contextTokensOf(msg: Record<string, unknown>): number | null {
+  const u = (msg.message as { usage?: Record<string, unknown> } | undefined)?.usage;
+  if (!u || typeof u !== 'object') return null;
+  const n = (k: string) => (typeof u[k] === 'number' && Number.isFinite(u[k]) ? (u[k] as number) : 0);
+  const t = n('input_tokens') + n('cache_read_input_tokens') + n('cache_creation_input_tokens') + n('output_tokens');
+  return t > 0 ? t : null;
+}
+
+/** The largest contextWindow in a result line's modelUsage, or null. */
+export function contextWindowOf(res: Record<string, unknown>): number | null {
+  const mu = res.modelUsage;
+  if (!mu || typeof mu !== 'object') return null;
+  let max = 0;
+  for (const m of Object.values(mu as Record<string, unknown>)) {
+    const w = (m as { contextWindow?: unknown } | null)?.contextWindow;
+    if (typeof w === 'number' && Number.isFinite(w) && w > max) max = w;
+  }
+  return max > 0 ? max : null;
 }
 
 /** The stdin line for one command: always JSON.stringify of a string, never text pasted into JSON. */
@@ -103,6 +135,8 @@ export class WarmClaude implements WarmProcess {
   private current: ((o: ClaudeOutcome) => void) | null = null;
   private prevApiMs = 0;
   private prevCostUsd = 0;
+  private contextTokens: number | null = null;
+  private contextWindow: number | null = null;
   private killing = false;
   private inst: ServeInstance | null = null;
   /** The serve's pid from its instance lock, read once the tools connected. */
@@ -352,9 +386,16 @@ export class WarmClaude implements WarmProcess {
       // Stephen registers no callbacks (no permission prompt tool, no hooks): deny anything Claude Code asks.
       this.write({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: 'Stephen does not answer control requests' } });
     } else if (msg.type === 'result') {
+      this.contextWindow = contextWindowOf(msg) ?? this.contextWindow;
       this.onResult(msg as ResultJson);
+    } else if (msg.type === 'assistant') {
+      this.contextTokens = contextTokensOf(msg) ?? this.contextTokens;
     }
-    // stream_event, assistant, user, system/*, rate_limit_event…: ignored.
+    // stream_event, user, system/*, rate_limit_event…: ignored.
+  }
+
+  get context(): ContextUsage | null {
+    return this.contextTokens !== null && this.contextWindow !== null ? { tokens: this.contextTokens, window: this.contextWindow } : null;
   }
 
   private onResult(res: ResultJson): void {

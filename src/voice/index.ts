@@ -11,6 +11,8 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
+import { appControl, writeLaunchInfo } from '../app/control.js';
+import { usageReport } from '../app/usage.js';
 import { appSettings } from '../app/settings.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
@@ -555,6 +557,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
+      control: appControl({ home, cliPath, log: err }),
+      usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
       log: err,
     });
     try {
@@ -562,6 +566,11 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     } catch (e) {
       err(`Note: the Stephen window can't connect to this listener (${(e as Error).message}).`);
       return null;
+    }
+    try {
+      writeLaunchInfo(home, cliPath);
+    } catch (e) {
+      err(`Note: Stephen Helper won't be able to start the listener itself (${(e as Error).message}).`);
     }
     return server;
   };

@@ -12,6 +12,13 @@
  * Additive: `{id, type:"jobs.list"}` → `{id, type:"jobs", jobs:[JobRow]}` (newest first, summaries cleaned and capped) and
  * `{id, type:"jobs.stop", jobId}` → `{id, type:"job", job:JobRow}` or an error (unknown job, jobs are off). Stopping
  * from the window is the owner's own click, so it needs no dialog.
+ * Additive (ROADMAP P2, src/app/control.ts), the owner's own clicks, so no dialog:
+ *   `{id, type:"phone.on"}` / `{id, type:"phone.off"}` → `{id, type:"phone", on, lines}` (what `stephen phone on|off`
+ *   printed; same checks and kill switch), `{id, type:"zen.open"}` → `{id, type:"zen", ok, message}`,
+ *   `{id, type:"doctor.run"}` → `{id, type:"doctor", checks:[{ok,label,detail?,fix?,blocking?,info?}], problems, blocking}`.
+ *   phone.on, zen.open and doctor.run can take up to a minute or more (the lock-down check starts Claude Code).
+ * Additive (ROADMAP P2, src/app/usage.ts): `{id, type:"usage.get"}` → `{id, type:"usage", context:{percent, warn, tokens,
+ *   window} | null, memory:{percent, warn, bytes, budget}}` (warn at 80%; context null when unknown).
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
  * Additive (Ask box "Needs your OK", UI-PLAN v3.1 section 5; threat model in docs/SYSTEM-DESIGN-STEPHEN.md section 5):
@@ -29,6 +36,8 @@ import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import type { AuditEntry } from '../types.js';
 import type { AccountRow } from './accounts-status.js';
+import type { DoctorCheck } from './control.js';
+import type { UsageReport } from './usage.js';
 import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
@@ -69,7 +78,12 @@ export type AppRequest =
   | { id: string; type: 'jobs.stop'; jobId: string }
   | { id: string; type: 'window.open' }
   | { id: string; type: 'confirm.ask'; title: string; body: string; timeoutMs: number }
-  | { id: string; type: 'confirm.answer'; confirmId: string; approve: boolean };
+  | { id: string; type: 'confirm.answer'; confirmId: string; approve: boolean }
+  | { id: string; type: 'phone.on' }
+  | { id: string; type: 'phone.off' }
+  | { id: string; type: 'zen.open' }
+  | { id: string; type: 'doctor.run' }
+  | { id: string; type: 'usage.get' };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -92,6 +106,11 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'window.open',
   'confirm.ask',
   'confirm.answer',
+  'phone.on',
+  'phone.off',
+  'zen.open',
+  'doctor.run',
+  'usage.get',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -111,6 +130,10 @@ export type AppMessage =
   | { id: string; type: 'jobs'; jobs: JobRow[] }
   | { id: string; type: 'job'; job: JobRow }
   | { id: string; type: 'confirm.result'; outcome: ConfirmResult }
+  | { id: string; type: 'phone'; on: boolean; lines: string[] }
+  | { id: string; type: 'zen'; ok: boolean; message: string }
+  | { id: string; type: 'doctor'; checks: DoctorCheck[]; problems: number; blocking: number }
+  | ({ id: string; type: 'usage' } & UsageReport)
   | { id?: string; type: 'error'; message: string }
   | { type: 'confirm'; confirmId: string; title: string; body: string }
   | { type: 'confirm.end'; confirmId: string }
@@ -202,6 +225,11 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
       : typeof o.approve !== 'boolean'
         ? bad('approve must be true or false')
         : ok,
+  'phone.on': () => ok,
+  'phone.off': () => ok,
+  'zen.open': () => ok,
+  'doctor.run': () => ok,
+  'usage.get': () => ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
