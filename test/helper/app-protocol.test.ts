@@ -33,12 +33,17 @@ const RESPONSES: Record<string, string[]> = {
   'jobs.stop': ['job', 'error'],
   // Sent by `stephen app` (src/app/cli.ts), not by the window: the listener forwards open_window to the helper.
   'window.open': ['ok', 'error'],
+  // Sent by the safety gate (src/safety/app-confirm.ts), not by the window; answered by the Ask box's click.
+  'confirm.ask': ['confirm.result', 'error'],
+  'confirm.answer': ['ok', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
-const CLI_ONLY_REQUESTS = ['window.open'];
+const CLI_ONLY_REQUESTS = ['window.open', 'confirm.ask'];
+/** Responses only the gate reads. */
+const GATE_ONLY_RESPONSES = ['confirm.result'];
 const RESPONSE_TYPES = [...new Set(Object.values(RESPONSES).flat())];
-const PUSH_TYPES = ['state', 'heard', 'chat.done'];
+const PUSH_TYPES = ['state', 'heard', 'chat.done', 'confirm', 'confirm.end'];
 const STATES = ['idle', 'listening', 'recording', 'working', 'speaking'];
 
 type Msg = Record<string, unknown> & { type: string; id?: string };
@@ -192,6 +197,17 @@ describe('app.sock protocol v1 fixture', () => {
         case 'state':
           expect(STATES).toContain(msg.state);
           break;
+        case 'confirm.result':
+          expect(['approved', 'declined', 'unavailable']).toContain(msg.outcome);
+          break;
+        case 'confirm':
+          expect(msg.confirmId).toMatch(/^[0-9a-f-]{36}$/);
+          expect((msg.title as string).length).toBeLessThanOrEqual(200);
+          expect((msg.body as string).length).toBeLessThanOrEqual(4000);
+          break;
+        case 'confirm.end':
+          expect(typeof msg.confirmId).toBe('string');
+          break;
       }
     }
   });
@@ -204,7 +220,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('AppClient sends every request type and handles every response and push type', () => {
     const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
-    for (const t of [...windowRequests, ...RESPONSE_TYPES, ...PUSH_TYPES]) expect(client, t).toContain(`"${t}"`);
+    const windowResponses = RESPONSE_TYPES.filter((t) => !GATE_ONLY_RESPONSES.includes(t));
+    for (const t of [...windowRequests, ...windowResponses, ...PUSH_TYPES]) expect(client, t).toContain(`"${t}"`);
     expect(client).toContain('APP_MAX_LINE_BYTES = 256 * 1024');
     expect(client).toContain('APP_CHAT_MAX_CHARS = 2000');
     expect(read('main.swift')).toContain('home + "/run/app.sock"');

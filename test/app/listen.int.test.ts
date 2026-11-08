@@ -67,7 +67,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     await waitFor(() => existsSync(sock), 10_000, 'app.sock');
     expect(statSync(sock).mode & 0o777).toBe(0o600);
     const c = await TestClient.connect(sock);
-    expect(await c.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: true, model: 'haiku' });
+    expect(await c.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: true, model: 'haiku', confirms: true });
     await c.waitFor((m) => m.type === 'state' && m.state === 'listening');
 
     const a = await c.request({ id: 'c', type: 'chat.send', text: 'open youtube' });

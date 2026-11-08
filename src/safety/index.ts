@@ -21,7 +21,7 @@ export interface SafetyDeps {
 export function createSafety(cfg: ResolvedConfig, deps?: SafetyDeps): { gate: ISafetyGate; audit: IAuditLog } {
   const audit = new AuditLog({ path: cfg.auditLogPath });
   const confirmer =
-    deps?.confirmer ?? buildConfirmer(cfg.safety, { elicit: deps?.elicit, platform: deps?.platform });
+    deps?.confirmer ?? buildConfirmer(cfg.safety, { elicit: deps?.elicit, platform: deps?.platform, home: cfg.home });
   const gate = new SafetyGate({ safety: cfg.safety, confirmer, audit, now: deps?.now });
   return { gate, audit };
 }

@@ -11,7 +11,11 @@
  *    `stephen listen` serves it, and start() refuses. The socket is removed on close (only if it is still ours).
  *  - Typed chat runs through the AppCommandQueue: the same queue as voice commands (Listener.submit), so the wake
  *    word, Esc and push-to-talk treat it like a voice command and two commands never run at once.
+ *  - Ask box confirmations (protocol.ts, confirm.*): the gate's question is relayed to clients that said
+ *    `confirms: true` in hello, and only an answer naming that exact random confirmId, from another connection,
+ *    settles it. No Ask box → "unavailable" (the gate shows the dialog); unanswered → "declined".
  */
+import { randomUUID } from 'node:crypto';
 import { type Socket } from 'node:net';
 import { join } from 'node:path';
 import { LineFramer } from '../helper/framing.js';
@@ -31,6 +35,7 @@ import {
   type AppMessage,
   type AppRequest,
   type AppState,
+  type ConfirmResult,
 } from './protocol.js';
 import type { AppSettings } from './settings.js';
 import type { AccountsStatus } from './accounts-status.js';
@@ -102,6 +107,10 @@ export class AppServer {
   readonly socketPath: string;
   private sock: PrivateSocket | null = null;
   private readonly clients = new Set<Socket>();
+  /** Clients that show confirm questions (hello confirms:true): the Ask box. */
+  private readonly askBoxes = new Set<Socket>();
+  /** Waiting questions by confirmId: who asked, with which request id. */
+  private readonly confirms = new Map<string, { asker: Socket; id: string; timer: NodeJS.Timeout; push: AppMessage }>();
   private current: AppState = 'idle';
   /** A memory change happened while a command ran: end the conversation again once it is done. */
   private endAfterCommand = false;
@@ -129,6 +138,8 @@ export class AppServer {
   async close(): Promise<void> {
     const sock = this.sock;
     this.sock = null;
+    for (const c of this.confirms.values()) clearTimeout(c.timer);
+    this.confirms.clear();
     for (const c of this.clients) c.destroy();
     this.clients.clear();
     await sock?.close();
@@ -186,7 +197,15 @@ export class AppServer {
       for (const line of lines) this.receive(sock, line);
     });
     sock.on('error', () => undefined);
-    sock.on('close', () => this.clients.delete(sock));
+    sock.on('close', () => {
+      this.clients.delete(sock);
+      this.askBoxes.delete(sock);
+      for (const [confirmId, c] of this.confirms) {
+        if (c.asker === sock) this.settle(confirmId, null);
+        // The last Ask box left: the gate shows the dialog instead.
+        else if (this.askBoxes.size === 0) this.settle(confirmId, 'unavailable');
+      }
+    });
   }
 
   private send(sock: Socket, msg: AppMessage): void {
@@ -217,6 +236,25 @@ export class AppServer {
     if (req.type === 'chat.send') {
       this.chat(sock, req);
       return;
+    }
+    if (req.type === 'confirm.ask') {
+      this.ask(sock, req);
+      return;
+    }
+    if (req.type === 'confirm.answer') {
+      const c = this.confirms.get(req.confirmId);
+      if (!c || c.asker === sock) {
+        this.send(sock, { id: req.id, type: 'error', message: 'That question is no longer waiting.' });
+        return;
+      }
+      this.send(sock, { id: req.id, type: 'ok' });
+      this.settle(req.confirmId, req.approve ? 'approved' : 'declined');
+      return;
+    }
+    if (req.type === 'hello' && req.confirms) {
+      this.askBoxes.add(sock);
+      // A box that connects late still gets the questions already waiting.
+      for (const c of this.confirms.values()) if (c.asker !== sock) this.send(sock, c.push);
     }
     this.answer(req).then(
       (msg) => {
@@ -255,6 +293,31 @@ export class AppServer {
     run.catch((e: unknown) => fail(`Something went wrong: ${(e as Error).message}`));
   }
 
+  /** confirm.ask: relay to the Ask boxes (never back to the asker), or "unavailable" when there is none. */
+  private ask(sock: Socket, req: Extract<AppRequest, { type: 'confirm.ask' }>): void {
+    const boxes = [...this.askBoxes].filter((b) => b !== sock);
+    if (boxes.length === 0) {
+      this.send(sock, { id: req.id, type: 'confirm.result', outcome: 'unavailable' });
+      return;
+    }
+    const confirmId = randomUUID();
+    const push: AppMessage = { type: 'confirm', confirmId, title: req.title, body: req.body };
+    const timer = setTimeout(() => this.settle(confirmId, 'declined'), req.timeoutMs);
+    timer.unref?.();
+    this.confirms.set(confirmId, { asker: sock, id: req.id, timer, push });
+    for (const b of boxes) this.send(b, push);
+  }
+
+  /** End a question: answer the asker (null = it left), and tell the Ask boxes it is gone. */
+  private settle(confirmId: string, outcome: ConfirmResult | null): void {
+    const c = this.confirms.get(confirmId);
+    if (!c) return;
+    this.confirms.delete(confirmId);
+    clearTimeout(c.timer);
+    if (outcome) this.send(c.asker, { id: c.id, type: 'confirm.result', outcome });
+    for (const b of this.askBoxes) this.send(b, { type: 'confirm.end', confirmId });
+  }
+
   private memoryChanged(): void {
     this.o.endConversation();
     // A running Claude would save its session again when it ends: end the conversation once more after it.
@@ -268,12 +331,12 @@ export class AppServer {
     return { id, type: 'memory', items: r.items };
   }
 
-  private async answer(req: Exclude<AppRequest, { type: 'chat.send' }>): Promise<AppMessage> {
+  private async answer(req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' }>): Promise<AppMessage> {
     const { id } = req;
     const mem = this.o.memory;
     switch (req.type) {
       case 'hello':
-        return { id, type: 'hello', version: APP_PROTOCOL_VERSION, listening: this.o.listening(), model: this.o.model };
+        return { id, type: 'hello', version: APP_PROTOCOL_VERSION, listening: this.o.listening(), model: this.o.model, confirms: true };
       case 'chat.stop':
         this.o.queue.stop();
         return { id, type: 'ok' };

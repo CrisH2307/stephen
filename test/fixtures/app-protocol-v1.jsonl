@@ -52,3 +52,9 @@
 {"from":"node","kind":"response","msg":{"id":"a22","type":"job","job":{"id":"2026-11-05-write-my-lab-report","task":"write my lab report draft","status":"stopped","createdAt":1793890000000,"startedAt":1793890005000,"endedAt":1793890100000,"turns":9,"costUsd":0.25,"folder":"/Users/cris/Stephen Jobs/2026-11-05-write-my-lab-report","summary":"","error":"Stopped by the owner."}}}
 {"from":"app","kind":"request","msg":{"id":"a23","type":"jobs.stop","jobId":"2026-11-01-gone"}}
 {"from":"node","kind":"response","msg":{"id":"a23","type":"error","message":"There's no job 2026-11-01-gone."}}
+{"from":"app","kind":"request","msg":{"id":"a24","type":"confirm.ask","title":"mail.google.com — Stephen wants to click a button","body":"Site: https://mail.google.com (Zen, tab z1)\nAction: click · button z1:e4","timeoutMs":120000}}
+{"from":"node","kind":"response","msg":{"id":"a24","type":"confirm.result","outcome":"unavailable"}}
+{"from":"node","kind":"push","msg":{"type":"confirm","confirmId":"0b6f3c1e-7a2d-4c55-9f10-2b8e4d6a9c01","title":"mail.google.com — Stephen wants to click a button","body":"Site: https://mail.google.com (Zen, tab z1)\nAction: click · button z1:e4"}}
+{"from":"app","kind":"request","msg":{"id":"a25","type":"confirm.answer","confirmId":"0b6f3c1e-7a2d-4c55-9f10-2b8e4d6a9c01","approve":false}}
+{"from":"node","kind":"response","msg":{"id":"a25","type":"error","message":"That question is no longer waiting."}}
+{"from":"node","kind":"push","msg":{"type":"confirm.end","confirmId":"0b6f3c1e-7a2d-4c55-9f10-2b8e4d6a9c01"}}

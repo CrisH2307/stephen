@@ -28,6 +28,8 @@ import { MEMORY_MESSAGES, MemoryStore } from '../../src/memory/store.js';
 import type { AuditEntry } from '../../src/types.js';
 import type { CommandReport } from '../../src/voice/assistant.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
+import { AppConfirmer } from '../../src/safety/app-confirm.js';
+import { buildConfirmer } from '../../src/safety/confirm.js';
 import { TestClient, sleep, type Msg } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-app-'));
@@ -468,7 +470,7 @@ describe('pushes', () => {
   it('hello answers, then pushes the current state; state changes and heard reach every client', async () => {
     const h = await harness({ listening: () => false, model: 'haiku' });
     h.server.setState('listening');
-    expect(await h.client.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: false, model: 'haiku' });
+    expect(await h.client.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: false, model: 'haiku', confirms: true });
     const helloAt = h.client.messages.findIndex((m) => m.id === 'h');
     await h.client.waitFor((m) => m.type === 'state' && h.client.messages.indexOf(m) > helloAt);
     expect(h.client.messages[helloAt + 1]).toEqual({ type: 'state', state: 'listening' });
@@ -497,5 +499,133 @@ describe('pushes', () => {
     await h.server.close();
     await sleep(20);
     expect(h.client.closed).toBe(true);
+  });
+});
+
+describe('Ask box confirmations (confirm.ask / confirm / confirm.answer / confirm.end)', () => {
+  const ASK = { type: 'confirm.ask', title: 'mail.google.com — Stephen wants to click a button', body: 'Site: https://mail.google.com', timeoutMs: 60_000 };
+  async function withBox() {
+    const h = await harness();
+    const box = h.client;
+    await box.request({ id: 'hb', type: 'hello', version: '1', confirms: true });
+    const gate = await h.connect();
+    return { h, box, gate };
+  }
+
+  it('no Ask box connected: unavailable at once (the gate shows the dialog)', async () => {
+    const h = await harness();
+    await h.client.request({ id: 'h', type: 'hello', version: '1' }); // a window/CLI that did not opt in
+    const gate = await h.connect();
+    expect(await gate.request({ id: 'g1', ...ASK })).toEqual({ id: 'g1', type: 'confirm.result', outcome: 'unavailable' });
+    expect(h.client.messages.some((m) => m.type === 'confirm')).toBe(false);
+  });
+
+  it('the box gets the question; its click with the exact id settles it once, and confirm.end follows', async () => {
+    const { box, gate } = await withBox();
+    gate.send({ id: 'g1', ...ASK });
+    const q = await box.waitFor((m) => m.type === 'confirm');
+    expect(q).toMatchObject({ type: 'confirm', title: ASK.title, body: ASK.body });
+    expect(gate.messages.some((m) => m.type === 'confirm')).toBe(false); // never sent back to the asker
+    const confirmId = q.confirmId as string;
+    expect(await box.request({ id: 'b1', type: 'confirm.answer', confirmId, approve: true })).toEqual({ id: 'b1', type: 'ok' });
+    expect(await gate.waitFor((m) => m.id === 'g1')).toEqual({ id: 'g1', type: 'confirm.result', outcome: 'approved' });
+    expect(await box.waitFor((m) => m.type === 'confirm.end')).toEqual({ type: 'confirm.end', confirmId });
+    // A second answer (replay) or another id answers nothing.
+    expect(await box.request({ id: 'b2', type: 'confirm.answer', confirmId, approve: false })).toMatchObject({ id: 'b2', type: 'error' });
+    expect(gate.messages.filter((m) => m.id === 'g1')).toHaveLength(1);
+  });
+
+  it('an answer naming another id, or from the asking connection, does not settle the question', async () => {
+    const { box, gate } = await withBox();
+    gate.send({ id: 'g1', ...ASK });
+    const q = await box.waitFor((m) => m.type === 'confirm');
+    const other = '00000000-0000-4000-8000-000000000000';
+    expect(await box.request({ id: 'b1', type: 'confirm.answer', confirmId: other, approve: true })).toMatchObject({ type: 'error' });
+    expect(await gate.request({ id: 'g2', type: 'confirm.answer', confirmId: q.confirmId, approve: true })).toMatchObject({ type: 'error' });
+    expect(gate.messages.some((m) => m.id === 'g1')).toBe(false);
+    await box.request({ id: 'b2', type: 'confirm.answer', confirmId: q.confirmId, approve: false });
+    expect(await gate.waitFor((m) => m.id === 'g1')).toMatchObject({ outcome: 'declined' });
+  });
+
+  it('unanswered: declined after timeoutMs; the last box leaving: unavailable; the asker leaving: confirm.end', async () => {
+    const { h, box, gate } = await withBox();
+    gate.send({ id: 'g1', ...ASK, timeoutMs: 1000 });
+    expect(await gate.waitFor((m) => m.id === 'g1', 3000)).toMatchObject({ outcome: 'declined' });
+    await box.waitFor((m) => m.type === 'confirm.end');
+
+    gate.send({ id: 'g2', ...ASK });
+    const q2 = await box.waitFor((m) => m.type === 'confirm' && box.messages.filter((x) => x.type === 'confirm').length === 2);
+    const gate2 = await h.connect();
+    gate2.send({ id: 'g3', ...ASK });
+    await box.waitFor((m) => m.type === 'confirm' && m.confirmId !== q2.confirmId && box.messages.filter((x) => x.type === 'confirm').length === 3);
+    gate2.close();
+    await box.waitFor((m) => m.type === 'confirm.end' && box.messages.filter((x) => x.type === 'confirm.end').length === 2);
+    box.close();
+    expect(await gate.waitFor((m) => m.id === 'g2')).toMatchObject({ outcome: 'unavailable' });
+  });
+
+  it('a box that connects late gets the waiting question', async () => {
+    const h = await harness();
+    const gate = h.client;
+    const early = await h.connect();
+    await early.request({ id: 'e', type: 'hello', version: '1', confirms: true });
+    gate.send({ id: 'g1', ...ASK });
+    await early.waitFor((m) => m.type === 'confirm');
+    const late = await h.connect();
+    await late.request({ id: 'l', type: 'hello', version: '1', confirms: true });
+    expect(await late.waitFor((m) => m.type === 'confirm')).toMatchObject({ title: ASK.title });
+  });
+
+  it('AppConfirmer (the gate side): approved / declined from the box, unavailable without a box or a listener', async () => {
+    const { h, box } = await withBox();
+    const c = new AppConfirmer(h.server.socketPath, 60_000);
+    const answer = (approve: boolean) =>
+      box.waitFor((m) => m.type === 'confirm' && !box.messages.some((x) => x.type === 'confirm.end' && x.confirmId === m.confirmId)).then((q) =>
+        box.send({ id: `b${approve}`, type: 'confirm.answer', confirmId: q.confirmId, approve }),
+      );
+    let p = c.confirm({ title: 'T', body: 'B' });
+    await answer(true);
+    expect(await p).toBe('approved');
+    await box.waitFor((m) => m.type === 'confirm.end');
+    p = c.confirm({ title: 'T', body: 'B' });
+    await answer(false);
+    expect(await p).toBe('declined');
+    box.close();
+    await sleep(20);
+    expect(await new AppConfirmer(h.server.socketPath, 60_000).confirm({ title: 'T', body: 'B' })).toBe('unavailable');
+    expect(await new AppConfirmer(join(h.home, 'run', 'nobody.sock'), 60_000).confirm({ title: 'T', body: 'B' })).toBe('unavailable');
+  });
+
+  it('AppConfirmer: an older listener (hello without confirms) is unavailable, not a silent wait', async () => {
+    const home = mkdtempSync(join(tmp, 'old-'));
+    const path = join(home, 'old.sock');
+    const old = createServer((s) =>
+      s.on('data', (d) => {
+        for (const line of d.toString().split('\n').filter(Boolean)) {
+          const m = JSON.parse(line) as Msg;
+          if (m.type === 'hello') s.write(`${JSON.stringify({ id: m.id, type: 'hello', version: '1', listening: true, model: 'x' })}\n`);
+        }
+      }),
+    );
+    await new Promise<void>((r) => old.listen(path, r));
+    try {
+      expect(await new AppConfirmer(path, 60_000).confirm({ title: 'T', body: 'B' })).toBe('unavailable');
+    } finally {
+      old.close();
+    }
+  });
+
+  it("buildConfirmer 'auto' on macOS: elicit, then the Ask box, then the dialog; 'dialog' mode never uses the box", () => {
+    const safety = { confirm: 'auto' as const, confirmTimeoutSec: 120 };
+    const kinds = (c: ReturnType<typeof buildConfirmer>) => ('confirmers' in c ? (c.confirmers as { kind: string }[]).map((x) => x.kind) : [c.kind]);
+    expect(kinds(buildConfirmer(safety, { platform: 'darwin', home: '/h', elicit: async () => 'accept' }))).toEqual(['elicit', 'app', 'dialog']);
+    expect(kinds(buildConfirmer(safety, { platform: 'linux', home: '/h' }))).toEqual(['dialog']);
+    expect(kinds(buildConfirmer(safety, { platform: 'darwin' }))).toEqual(['dialog']);
+    expect(kinds(buildConfirmer({ ...safety, confirm: 'dialog' }, { platform: 'darwin', home: '/h' }))).toEqual(['dialog']);
+  });
+
+  it('the gate and the listener agree on the socket path', async () => {
+    const { appSocketFor } = await import('../../src/safety/app-confirm.js');
+    expect(appSocketFor('/Users/cris/.stephen')).toBe(appSocketPath('/Users/cris/.stephen'));
   });
 });
