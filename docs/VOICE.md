@@ -607,6 +607,13 @@ some foreign-voice transcripts). Hotwords could not help with arbitrary song or 
 only bias fixed words such as "Stephen", which the keyword spotter already handles. So: none for now. If you switch
 to a transducer model later, `OfflineRecognizer.createStream("…hotwords…")` is the hook.
 
+**Names after the fact (P7, `src/voice/names.ts`).** Because no engine here takes hints, the command text is checked
+against a word list built from the capitalised words in the owner's memory items (read fresh per command). Similarity
+0.8 or more to exactly one name: the spelling is fixed. 0.7 to 0.8, or two names equally close: nothing runs, Stephen
+says "Did you mean Maren or Marin?" and the owner repeats. No contacts (Stephen has no access), and Canvas course names
+are not used (nothing caches them; fetching at listen time would be a network call). The list only changes spelling;
+it is never sent as instructions.
+
 ## Wake phrases (phase 1.6)
 
 `voice.wakePhrases` (default `["hey stephen", "yo stephen", "ok stephen", "stephen"]`) are all spotted at once.
