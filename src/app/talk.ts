@@ -4,9 +4,7 @@
  * The store keeps the current values for the running listener: the persona and the speaker read them at the next
  * command (the persona of a warm conversation that is already running changes at the next conversation).
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { writePrivateFileAtomicSync } from '../lib/fs.js';
+import { updateConfigSection } from '../config-write.js';
 import type { VoiceConfig } from '../voice/config.js';
 import type { TalkState } from '../voice/talk.js';
 
@@ -31,18 +29,9 @@ export class TalkStore {
   /** Validated changes (checkTalkChanges): written to config.json first, then applied. Throws if the file can't be written. */
   set(changes: Partial<TalkState>): TalkState {
     const next = { ...this.state, ...changes };
-    let root: Record<string, unknown> = {};
-    if (existsSync(this.file)) {
-      const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('config.json is not a JSON object');
-      root = parsed as Record<string, unknown>;
-    }
-    const old = root.voice && typeof root.voice === 'object' && !Array.isArray(root.voice) ? (root.voice as Record<string, unknown>) : {};
     // Only what changed is written (an untouched "tts": "auto" stays auto).
     const { voice: tts, ...rest } = changes;
-    root.voice = { ...old, ...rest, ...(tts ? { tts } : {}) };
-    mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
-    writePrivateFileAtomicSync(this.file, `${JSON.stringify(root, null, 2)}\n`);
+    updateConfigSection(this.file, 'voice', (old) => ({ ...old, ...rest, ...(tts ? { tts } : {}) }));
     this.state = next;
     return this.get();
   }

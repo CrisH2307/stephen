@@ -70,7 +70,7 @@ describe('import boundaries', () => {
   it('src/lib/ (loaded by serve) holds no Keychain write or config writer; memory is out of reach (CLAUDE_REACHABLE)', () => {
     for (const abs of listTsFiles(join(SRC_ROOT, 'lib'))) {
       const src = readFileSync(abs, 'utf8');
-      expect(src, abs).not.toMatch(/add-generic-password|delete-generic-password|\['-i'\]|keychainStore|keychainDelete|updateAccountsConfig/);
+      expect(src, abs).not.toMatch(/add-generic-password|delete-generic-password|\['-i'\]|keychainStore|keychainDelete|updateAccountsConfig|updateConfigSection/);
     }
     expect(CLAUDE_REACHABLE).toContain('src/lib/');
   });
@@ -131,13 +131,13 @@ describe('the stephen serve process (review 5, R5-7)', () => {
   });
 
   it('R7-8: no Keychain write/delete or config writer is in serve\'s start-up graph or anywhere Claude can reach', () => {
-    const WRITERS = /export\s+(?:async\s+)?function\s+(keychainStore|keychainDelete|updateAccountsConfig|runVoiceKey)\b/;
+    const WRITERS = /export\s+(?:async\s+)?function\s+(keychainStore|keychainDelete|updateAccountsConfig|updateConfigSection|runVoiceKey)\b/;
     const definedIn = listTsFiles()
       .map((abs) => ({ file: relative(REPO_ROOT, abs).split(sep).join('/'), src: readFileSync(abs, 'utf8') }))
       .filter((f) => WRITERS.test(f.src))
       .map((f) => f.file)
       .sort();
-    expect(definedIn).toEqual(['src/connect/accounts-cli.ts', 'src/connect/keychain-write.ts', 'src/connect/voice-key.ts']);
+    expect(definedIn).toEqual(['src/config-write.ts', 'src/connect/accounts-cli.ts', 'src/connect/keychain-write.ts', 'src/connect/voice-key.ts']);
     const loaded = staticReach('src/cli.ts');
     expect(definedIn.filter((f) => loaded.has(f))).toEqual([]);
     // Nothing Claude-reachable gets to them at runtime, through any chain (src/connect/ is a boundary target above).
