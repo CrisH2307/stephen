@@ -174,3 +174,17 @@ lets YouTube open (no rule fires without a private read). "play it / that / the 
 (it needs the context). No gate rule was changed. Trade-off: the follow-up chain before the music ends. Owner check:
 F5 "what's my day", then (phone or F5) "play Sarà perché ti amo" → plays, no confirmation. Tests:
 `test/voice/play-fresh.test.ts`.
+
+## 14. Later: logins blocked as a bot in "Zen for Stephen" (owner report 2026-11-07)
+Seen: switching Claude accounts, the claude.ai sign-in in "Zen for Stephen" stopped at a bot verification.
+Cause (measured on Firefox Developer Edition, same Gecko engine, 2026-11-07): with `--remote-debugging-port` the
+Remote Agent runs in browser-automation mode and pages see `navigator.webdriver = true`; sign-in pages (claude.ai,
+Google, Cloudflare checks) treat that as a bot. Zen 1.24 has no pref to hide it in that mode (greprefs has no
+webdriver pref). Stephen's real-profile user.js only sets `remote.prefs.recommended=false`, so it adds nothing.
+Workaround now: sign in with Zen opened normally, quit, reopen with "Zen for Stephen" (same profile, cookies kept).
+To research: Zen 1.24 ships Firefox's experimental runtime "Remote control" (`remote.experimental.dynamicstart.enabled`,
+off by default; `RemoteAgent.startAtRuntime({ isBrowserAutomation: false })`, menu "Remote control", per-connection
+"Allow remote control?" prompt). `updateWebdriverActiveFlag` keeps "browser automation" as a separate shared flag,
+so that mode may NOT expose `navigator.webdriver`: unverified. Steps: enable it in a test profile, measure the flag,
+then decide whether Stephen should attach that way (port discovery; Chrome may already hold 9222; the Allow prompt
+means it only helps at the Mac, not from the phone).
