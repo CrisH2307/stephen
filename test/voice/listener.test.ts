@@ -345,10 +345,9 @@ describe('Listener: names (P7)', () => {
     await t.listener.run();
     expect(t.runner.prompts).toEqual(['email Okafor']);
   });
-  it('asks "did you mean" and runs nothing when two names fit', async () => {
+  it('runs a command unchanged when two names fit (never blocks)', async () => {
     const t = setup({ pattern: PAT, hits: { 65: 'WAKE' }, texts: ['Hey Stephen, call maran.'], names: ['Maren', 'Marin'] });
     await t.listener.run();
-    expect(t.runner.prompts).toEqual([]);
-    expect(t.speaker.said).toEqual(['Did you mean Maren or Marin?']);
+    expect(t.runner.prompts).toEqual(['call maran']);
   });
 });

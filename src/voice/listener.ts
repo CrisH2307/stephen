@@ -23,7 +23,7 @@
 import { PTT_MAX_HOLD_MS, PTT_MIN_HOLD_MS } from '../helper/protocol.js';
 import type { Assistant, CommandReport, CommandResult } from './assistant.js';
 import type { AudioSource } from './audio.js';
-import { correctNames, didYouMean } from './names.js';
+import { correctNames } from './names.js';
 import type { KeywordHit, Spotter, Transcriber, Vad } from './engine.js';
 import type { HelperBridge, MenuState } from './helper-link.js';
 import type { Chimes } from './speech.js';
@@ -642,8 +642,7 @@ export class Listener {
     // A continuation carries no wake word (the first part was checked); a repeated "hey stephen" is still stripped.
     const hadWake = prefix !== null || norm.hadWake;
     const heard = prefix !== null ? [prefix, norm.hadWake ? norm.text : plainWords(raw)].filter(Boolean).join(' ') : norm.text;
-    const names = this.d.names ? correctNames(heard, this.d.names()) : null;
-    const text = names?.text ?? heard;
+    const text = this.d.names ? correctNames(heard, this.d.names()) : heard;
     this.d.onTranscript?.(raw, text, ms);
     if (token.cancelled) {
       this.d.status('Cancelled.');
@@ -674,12 +673,6 @@ export class Listener {
     if (token.cancelled) {
       this.d.status('Cancelled.');
       return 'cancelled';
-    }
-    // A name that is only roughly close to one from memory (or close to two): ask, never guess. Nothing runs yet.
-    if (names?.unsure.length) {
-      const q = didYouMean(names.unsure);
-      this.d.status(`Heard: "${text}" — ${q}`);
-      return (await this.d.assistant.announce(q)).result;
     }
     this.d.status(`Heard: "${text}"`);
     token.reachedClaude = true;

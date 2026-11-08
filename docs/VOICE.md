@@ -608,9 +608,10 @@ only bias fixed words such as "Stephen", which the keyword spotter already handl
 to a transducer model later, `OfflineRecognizer.createStream("…hotwords…")` is the hook.
 
 **Names after the fact (P7, `src/voice/names.ts`).** Because no engine here takes hints, the command text is checked
-against a word list built from the capitalised words in the owner's memory items (read fresh per command). Similarity
-0.8 or more to exactly one name: the spelling is fixed. 0.7 to 0.8, or two names equally close: nothing runs, Stephen
-says "Did you mean Maren or Marin?" and the owner repeats. No contacts (Stephen has no access), and Canvas course names
+against names taken from the capitalised words in the owner's memory items (read fresh per command; the first word of
+an item is skipped, it is capitalised by grammar). A word is fixed only if it is not an ordinary English word (built-in
+list), the name has 5+ letters, and it is one edit away from exactly one name. Anything unsure is left as heard: a
+command is never blocked or questioned over a name (review 9, R9-1). No contacts (Stephen has no access), and Canvas course names
 are not used (nothing caches them; fetching at listen time would be a network call). The list only changes spelling;
 it is never sent as instructions.
 

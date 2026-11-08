@@ -1,89 +1,65 @@
 /**
  * Names in transcription (P7). The speech models Stephen uses (whisper, moonshine, parakeet through sherpa-onnx)
- * take no hotwords or prompt (docs/VOICE.md), so we correct after the fact: a word that sounds close to a name
- * from the owner's own memory is fixed; one that is only roughly close, or close to two names, is NOT guessed,
- * the listener asks "did you mean ...?" instead. Names only bias spelling here; they never become instructions.
- * Contacts: Stephen has no contacts access, none is added. Canvas course names: not cached anywhere today, and
- * reading them at listen time would need a network call, so they are skipped (buildNameList takes them if a
- * cache is added later).
+ * take no hotwords or prompt (docs/VOICE.md), so we correct after the fact: a word that is not an ordinary English
+ * word and is one edit away from exactly one name in the owner's own memory is fixed. Anything unsure is left as
+ * heard: a command is never blocked or questioned over a name. Names only bias spelling here; they never become
+ * instructions. Contacts: Stephen has no contacts access, none is added. Canvas course names: not cached anywhere
+ * today (buildNameList takes them if a cache is added later).
  */
+
+import { levenshtein } from '../lib/levenshtein.js';
 
 /** Capitalised words that are not names (sentence starters, titles, days, months, the wake words). */
 const NOT_NAMES = new Set(
   'the and but for with remember note my our his her their this that these those when what where who why how dr mr mrs ms mx hey stephen steven yes okay monday tuesday wednesday thursday friday saturday sunday january february march april may june july august september october november december'.split(' '),
 );
 
-const FIX_AT = 0.8;
-const ASK_AT = 0.7;
-const MAX_WINDOW = 3;
+/** Ordinary words a command may hold; never rewritten into a name. ponytail: short list, extend when a real word gets rewritten. */
+const COMMON = new Set(
+  `about above across after again alarm album all also always amazon android answer any app apple apps around ask audio back bank before behind below best better between bluetooth book bookmark bookmarks both brightness browser button call calendar camera can check chrome class classes clear click close cloud code coffee come copy course create date delete desktop dinner display document download down draft email emails enter event every file files find finder first follow folder food forget friend from game gmail good google great group have help here home hour inbox into item items just keep keys know last later less like line link list listen little local lock look made make mail map mark maybe media meet meeting memory menu message messages minute minutes mode month more most move movie music name need never news next night note notes nothing notion number only open other page pages paste pause people phone photo photos pick place play playlist please podcast post press print quick quiz read ready reminder remind reply restart right save scroll search select send settings share show shut sleep small some song songs sound space speak spotify start still stop store study summarize summary switch take tell text thanks thing think this time timer title today tomorrow tonight turn type under until update upload volume wait wake watch water week weather what when where which while window with word work write yesterday youtube zoom`.split(/\s+/),
+);
 
-/** Names from memory item texts (capitalised words) plus whole course names, deduped, memory first. */
+/** Names from memory item texts (capitalised words, not the first word of an item) plus whole course names. */
 export function buildNameList(memoryTexts: readonly string[], courseNames: readonly string[] = []): string[] {
   const out = new Map<string, string>();
   const add = (n: string) => out.has(n.toLowerCase()) || out.set(n.toLowerCase(), n);
   for (const t of memoryTexts) {
-    for (const w of t.match(/\b[A-Z][A-Za-z'-]{2,}\b/g) ?? []) if (!NOT_NAMES.has(w.toLowerCase())) add(w);
+    // The first word is capitalised by grammar, not because it is a name ("Call mom", "Sundays I run").
+    for (const w of t.replace(/^\s*\S+/, '').match(/\b[A-Z][A-Za-z'-]{2,}\b/g) ?? []) if (!NOT_NAMES.has(w.toLowerCase().replace(/s$/, ''))) add(w);
   }
   for (const c of courseNames) if (c.trim()) add(c.trim());
   return [...out.values()];
 }
 
-function distance(a: string, b: string): number {
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
-    prev = cur;
-  }
-  return prev[b.length]!;
-}
-const similarity = (a: string, b: string) => 1 - distance(a, b) / Math.max(a.length, b.length);
+const MAX_WINDOW = 3;
 
-export interface NameCheck {
-  text: string;
-  /** One group per unsure spot: the names it might be. */
-  unsure: string[][];
-}
-
-/** Fix near-certain misspellings of listed names; report the doubtful ones instead of guessing. */
-export function correctNames(text: string, names: readonly string[]): NameCheck {
-  const entries = names.map((n) => ({ name: n, key: n.toLowerCase().replace(/\s+/g, '') }));
+/** Fix a word that is one edit from exactly one name of 5+ letters; ordinary English words and unsure matches stay as heard. */
+export function correctNames(text: string, names: readonly string[]): string {
+  const entries = names.map((n) => ({ name: n, key: n.toLowerCase().replace(/\s+/g, '') })).filter((e) => e.key.length >= 5);
   const words = [...text.matchAll(/[A-Za-z0-9'-]+/g)].map((m) => ({ s: m[0], at: m.index! }));
-  const unsure: string[][] = [];
   let out = '';
   let pos = 0;
   for (let i = 0; i < words.length; ) {
-    let best: { sim: number; len: number; close: string[] } | null = null;
-    for (let len = 1; len <= Math.min(MAX_WINDOW, words.length - i); len++) {
+    let hit: { len: number; name: string } | null = null;
+    for (let len = Math.min(MAX_WINDOW, words.length - i); len >= 1 && !hit; len--) {
       const key = words
         .slice(i, i + len)
         .map((w) => w.s)
         .join('')
         .toLowerCase();
-      if (key.length < 4) continue;
-      const scored = entries.map((e) => ({ name: e.name, sim: len > 1 && key[0] !== e.key[0] ? 0 : similarity(key, e.key) })).filter((e) => e.sim >= ASK_AT);
-      if (!scored.length) continue;
-      const sim = Math.max(...scored.map((e) => e.sim));
-      if (!best || sim > best.sim) best = { sim, len, close: scored.filter((e) => e.sim >= sim - 0.05).map((e) => e.name) };
+      if (key.length < 5 || (len === 1 && COMMON.has(key))) continue;
+      const close = entries.filter((e) => key[0] === e.key[0] && levenshtein(key, e.key, 1) <= 1);
+      if (close.length === 1) hit = { len, name: close[0]!.name };
     }
-    if (!best) {
+    if (!hit) {
       i++;
       continue;
     }
     const first = words[i]!;
-    const last = words[i + best.len - 1]!;
-    const written = text.slice(first.at, last.at + last.s.length);
-    if (best.close.length === 1 && best.sim >= FIX_AT) {
-      out += text.slice(pos, first.at) + best.close[0];
-      pos = first.at + written.length;
-    } else if (best.sim < 1) unsure.push(best.close);
-    i += best.len;
+    const last = words[i + hit.len - 1]!;
+    out += text.slice(pos, first.at) + hit.name;
+    pos = last.at + last.s.length;
+    i += hit.len;
   }
-  return { text: out + text.slice(pos), unsure };
-}
-
-/** "Did you mean Maren or Marin?" */
-export function didYouMean(unsure: readonly string[][]): string {
-  const g = unsure[0] ?? [];
-  return `Did you mean ${g.length > 1 ? `${g.slice(0, -1).join(', ')} or ${g[g.length - 1]}` : g[0]}?`;
+  return out + text.slice(pos);
 }
