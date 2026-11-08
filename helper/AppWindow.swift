@@ -1,5 +1,6 @@
-// Stephen Helper: the Stephen window (Chat / Memory / History / Settings / Audit), SwiftUI hosted in one reused
-// NSWindow. Data comes from AppModel (AppClient.swift), which talks to `stephen listen` over <home>/run/app.sock.
+// Stephen Helper: the Stephen window, SwiftUI hosted in one reused NSWindow. The frame (sidebar, page router) is in
+// MainWindow.swift, Home in HomeView.swift; this file has the older screens (Memory, History, Settings, Accounts, Jobs,
+// Audit) that later UI PRs restyle, and the window controller. Data comes from AppModel (AppClient.swift), which talks to `stephen listen` over <home>/run/app.sock.
 //
 // Untrusted text (replies, memory, history, audit, settings) is always shown with Text(verbatim:), never as a
 // LocalizedStringKey, so nothing is interpreted as Markdown.
@@ -9,113 +10,6 @@
 
 import AppKit
 import SwiftUI
-
-enum AppTab: String, CaseIterable, Identifiable {
-  case chat, memory, history, settings, accounts, jobs, audit
-
-  var id: String { return rawValue }
-
-  var title: String {
-    switch self {
-    case .chat: return "Chat"
-    case .memory: return "Memory"
-    case .history: return "History"
-    case .settings: return "Settings"
-    case .accounts: return "Accounts"
-    case .jobs: return "Jobs"
-    case .audit: return "Audit"
-    }
-  }
-
-  var symbol: String {
-    switch self {
-    case .chat: return "bubble.left.and.bubble.right"
-    case .memory: return "lightbulb"
-    case .history: return "clock"
-    case .settings: return "gearshape"
-    case .accounts: return "key"
-    case .jobs: return "tray.full"
-    case .audit: return "list.bullet"
-    }
-  }
-}
-
-// ───────────────────────────── root ─────────────────────────────
-
-/** Which tab the window shows; the Ask box sets it for "Review memory". */
-final class WindowNav: ObservableObject {
-  @Published var tab: AppTab? = .chat
-}
-
-struct AppRootView: View {
-  @ObservedObject var model: AppModel
-  @ObservedObject var nav: WindowNav
-
-  var body: some View {
-    HStack(spacing: 0) {
-      List(selection: $nav.tab) {
-        ForEach(AppTab.allCases) { tab in
-          Label(tab.title, systemImage: tab.symbol).tag(tab)
-        }
-      }
-      .listStyle(SidebarListStyle())
-      .frame(width: 170)
-      Divider()
-      VStack(spacing: 0) {
-        AppHeaderView(model: model)
-        Divider()
-        detail
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    .frame(minWidth: 640, minHeight: 420)
-  }
-
-  @ViewBuilder
-  private var detail: some View {
-    if model.connection != .online {
-      OfflineView(model: model)
-    } else {
-      switch nav.tab ?? .chat {
-      case .chat: ChatView(model: model)
-      case .memory: MemoryView(model: model)
-      case .history: HistoryView(model: model)
-      case .settings: SettingsView(model: model)
-      case .accounts: AccountsView(model: model)
-      case .jobs: JobsView(model: model)
-      case .audit: AuditView(model: model)
-      }
-    }
-  }
-}
-
-struct AppHeaderView: View {
-  @ObservedObject var model: AppModel
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Circle().fill(dotColor).frame(width: 10, height: 10)
-      Text(verbatim: model.headerText).font(.headline)
-      Spacer()
-      if model.connection == .online && !model.modelName.isEmpty {
-        Text(verbatim: model.modelName).font(.caption).foregroundColor(.secondary)
-      }
-    }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 8)
-  }
-
-  private var dotColor: Color {
-    if model.connection != .online { return Color.gray.opacity(0.5) }
-    switch model.state {
-    case "listening": return Color.green
-    case "recording": return Color.red
-    case "working": return Color.orange
-    case "speaking": return Color.blue
-    default: return Color.gray
-    }
-  }
-}
 
 struct NoticeView: View {
   let text: String
@@ -156,7 +50,7 @@ struct OfflineView: View {
         Text(verbatim: "Connecting to Stephen…").foregroundColor(.secondary)
       } else {
         Image(systemName: "bolt.horizontal.circle").font(.largeTitle).foregroundColor(.secondary)
-        Text(verbatim: "Can't reach Stephen. Run `stephen listen`.").font(.title3)
+        Text(verbatim: "Can't reach Stephen. Press Start in the sidebar, or run `stephen listen`.").font(.title3)
         if let reason = model.offlineReason {
           Text(verbatim: reason).font(.caption).foregroundColor(.secondary)
         }
@@ -166,114 +60,6 @@ struct OfflineView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .padding(20)
-  }
-}
-
-// ───────────────────────────── chat ─────────────────────────────
-
-struct ChatView: View {
-  @ObservedObject var model: AppModel
-  @State private var draft = ""
-
-  var body: some View {
-    VStack(spacing: 0) {
-      TodayCardView(model: model)
-      ScrollViewReader { proxy in
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 8) {
-            if model.chat.isEmpty {
-              Text(verbatim: "Type a command below, or hold Fn+Option and talk. Voice commands show up here too.")
-                .foregroundColor(.secondary)
-                .padding(.vertical, 20)
-            }
-            ForEach(model.chat) { bubble in
-              ChatBubbleView(bubble: bubble).id(bubble.id)
-            }
-          }
-          .padding(12)
-        }
-        .onAppear { scrollToEnd(proxy) }
-        .onChange(of: model.chat.count) { _ in scrollToEnd(proxy) }
-      }
-      Divider()
-      HStack(spacing: 8) {
-        TextField("Type a command for Stephen", text: $draft)
-          .textFieldStyle(RoundedBorderTextFieldStyle())
-          .onSubmit { send() }
-        if model.isWorking {
-          Button("Stop") { model.stopChat() }
-        }
-        Button("Send") { send() }
-          .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-      }
-      .padding(10)
-      if draft.count > APP_CHAT_MAX_CHARS - 200 {
-        NoticeView(text: "\(draft.count) / \(APP_CHAT_MAX_CHARS) characters (longer text is cut).")
-      }
-    }
-  }
-
-  private func send() {
-    if model.sendChat(draft) { draft = "" }
-  }
-
-  private func scrollToEnd(_ proxy: ScrollViewProxy) {
-    guard let last = model.chat.last else { return }
-    proxy.scrollTo(last.id, anchor: .bottom)
-  }
-}
-
-/** Header card on the Chat tab: one button that sends APP_TODAY_PROMPT through the normal chat request. */
-struct TodayCardView: View {
-  @ObservedObject var model: AppModel
-
-  var body: some View {
-    HStack(spacing: 10) {
-      Image(systemName: "sun.max").font(.title2).foregroundColor(.accentColor)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(verbatim: "Today").font(.headline)
-        Text(verbatim: "Ask: what's my day?").font(.caption).foregroundColor(.secondary)
-      }
-      Spacer()
-      Button("What's my day?") { model.sendChat(APP_TODAY_PROMPT) }
-        .disabled(model.isWorking || model.connection != .online)
-    }
-    .padding(10)
-    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
-    .padding(.horizontal, 12)
-    .padding(.top, 10)
-  }
-}
-
-struct ChatBubbleView: View {
-  let bubble: ChatBubble
-
-  var body: some View {
-    HStack(alignment: .top, spacing: 0) {
-      if bubble.kind == .said { Spacer(minLength: 60) }
-      VStack(alignment: bubble.kind == .said ? .trailing : .leading, spacing: 3) {
-        Text(verbatim: bubble.text)
-          .textSelection(.enabled)
-          .fixedSize(horizontal: false, vertical: true)
-          .foregroundColor(bubble.kind == .info ? .secondary : .primary)
-        if !bubble.detail.isEmpty {
-          Text(verbatim: bubble.detail).font(.caption2).foregroundColor(.secondary)
-        }
-      }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 7)
-      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(fill))
-      if bubble.kind != .said { Spacer(minLength: 60) }
-    }
-  }
-
-  private var fill: Color {
-    switch bubble.kind {
-    case .said: return Color.accentColor.opacity(0.18)
-    case .reply: return Color(nsColor: .controlBackgroundColor)
-    case .problem: return Color.red.opacity(0.15)
-    case .info: return Color.clear
-    }
   }
 }
 
@@ -807,20 +593,22 @@ struct AuditRowView: View {
 final class AppWindowController: NSObject, NSWindowDelegate {
   static let frameName = "StephenWindow"
   private let model: AppModel
+  private let control: StephenControl
   private let nav = WindowNav()
   private var window: NSWindow? = nil
-  /** ⌘K inside the app: open the Ask box. */
-  var onAsk: () -> Void = {}
+  /** Ask box hooks (⌘K, the sidebar field, Home's Talk and Send). Set before the first show(). */
+  var actions = WindowActions()
 
-  init(model: AppModel) {
+  init(model: AppModel, control: StephenControl) {
     self.model = model
+    self.control = control
     super.init()
   }
 
-  @objc func askClicked(_ sender: Any?) { onAsk() }
+  @objc func askClicked(_ sender: Any?) { actions.ask() }
 
-  func show(tab: AppTab? = nil) {
-    if let tab = tab { nav.tab = tab }
+  func show(page: Page? = nil) {
+    if let page = page { nav.page = page }
     let w: NSWindow
     if let existing = window {
       w = existing
@@ -848,7 +636,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     w.title = "Stephen"
     w.isReleasedWhenClosed = false
     w.minSize = NSSize(width: 640, height: 420)
-    w.contentView = NSHostingView(rootView: AppRootView(model: model, nav: nav))
+    w.contentView = NSHostingView(rootView: AppRootView(model: model, nav: nav, control: control, actions: actions))
     w.delegate = self
     w.center()
     // Remembers size and position across launches (stored in the helper's user defaults).

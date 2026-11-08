@@ -456,13 +456,13 @@ func sharedAppModel() -> AppModel {
 
 /** Show the Stephen window (created on first use, then reused). */
 @MainActor
-func showStephenWindow(tab: AppTab? = nil) {
+func showStephenWindow(page: Page? = nil) {
   if appWindow == nil {
-    let w = AppWindowController(model: sharedAppModel())
-    w.onAsk = { askBox?.show(focus: true) }
+    let w = AppWindowController(model: sharedAppModel(), control: stephenControl)
+    w.actions = WindowActions(ask: { askBox?.show(focus: true) }, talk: { askBox?.talk() })
     appWindow = w
   }
-  appWindow?.show(tab: tab)
+  appWindow?.show(page: page)
 }
 
 func shutdownAndExit(_ code: Int32) {
@@ -517,7 +517,7 @@ MainActor.assumeIsolated {
   model.opened("askbox")
   let box = AskBoxController(model: model)
   box.anchor = { statusMenu?.button }
-  box.openWindow = { tab in showStephenWindow(tab: tab) }
+  box.openWindow = { page in showStephenWindow(page: page) }
   box.quit = { shutdownAndExit(0) }
   box.ptt = { down in
     if down { core.handleKeyDown(keyCode: KEYCODE_F5, isRepeat: false) } else { core.handleKeyUp(keyCode: KEYCODE_F5) }

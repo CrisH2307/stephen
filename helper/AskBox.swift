@@ -267,7 +267,7 @@ final class AskBoxController: NSObject {
   private var confirmWatch: AnyCancellable? = nil
   /** The menu bar button the box hangs under. */
   var anchor: () -> NSStatusBarButton? = { nil }
-  var openWindow: (AppTab?) -> Void = { _ in }
+  var openWindow: (Page?) -> Void = { _ in }
   var quit: () -> Void = {}
   /** Push-to-talk down/up through the same path as F5. */
   var ptt: (Bool) -> Void = { _ in }
@@ -313,6 +313,12 @@ final class AskBoxController: NSObject {
     if let m = clickMonitor { NSEvent.removeMonitor(m) }
     clickMonitor = nil
     panel?.orderOut(nil)
+  }
+
+  /** Home's Talk button: open the box and start talking (tap the box again to send). */
+  func talk() {
+    show(focus: true, selectField: false)
+    micDown()
   }
 
   private func micDown() {

@@ -482,6 +482,14 @@ struct AppMessage: Decodable {
   }
 }
 
+/** settings.get config → voice.aboutMe.name (the owner's own config), or "". */
+func aboutMeName(_ config: AppJSON?) -> String {
+  guard case .object(let c)? = config, case .object(let v)? = c["voice"], case .object(let a)? = v["aboutMe"],
+    case .string(let n)? = a["name"]
+  else { return "" }
+  return n
+}
+
 // ───────────────────────────── transport ─────────────────────────────
 
 /**
@@ -697,6 +705,8 @@ final class AppModel: ObservableObject {
   @Published private(set) var settingsText = ""
   @Published private(set) var configPath: String? = nil
   @Published private(set) var settingsNotice: String? = nil
+  /** voice.aboutMe.name from settings.get, for Home's greeting; empty when not set. */
+  @Published private(set) var ownerName = ""
 
   @Published private(set) var audit: [AuditEntry] = []
   @Published private(set) var auditNotice: String? = nil
@@ -766,17 +776,6 @@ final class AppModel: ObservableObject {
   }
 
   var isWorking: Bool { return state == "working" || !awaitingReplies.isEmpty }
-
-  var headerText: String {
-    switch connection {
-    case .connecting: return "Connecting…"
-    case .offline: return "Not connected"
-    case .online:
-      var s = "Idle"
-      if !state.isEmpty { s = state.prefix(1).uppercased() + String(state.dropFirst()) }
-      return listening ? s : s + " (microphone off)"
-    }
-  }
 
   private func connect() {
     if connection == .connecting { return }
@@ -1042,6 +1041,7 @@ final class AppModel: ObservableObject {
       guard let self = self else { return }
       if msg.type == "settings" {
         self.settingsText = (msg.config ?? .object([:])).renderLines().joined(separator: "\n")
+        self.ownerName = aboutMeName(msg.config)
         self.configPath = msg.configPath
         self.settingsNotice = nil
       } else {

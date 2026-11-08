@@ -245,7 +245,8 @@ describe('app.sock protocol v1 fixture', () => {
 describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   const read = (f: string) => readFileSync(join(helperSourceDir(), f), 'utf8');
   const client = read('AppClient.swift');
-  const window = read('AppWindow.swift');
+  // The window's sources: frame and router, Home, and the older screens.
+  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift'].map(read).join('\n');
 
   it('AppClient sends every request type and handles every response and push type', () => {
     const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
@@ -276,8 +277,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     }
   });
 
-  it('Accounts tab and the Today card are wired to the protocol', () => {
-    expect(window).toContain('case .accounts: AccountsView(model: model)');
+  it('Accounts (on Personal for now) and Home\'s Today row are wired to the protocol', () => {
+    expect(window).toContain('case .personal: AccountsView(model: model)');
     expect(window).toContain('model.refreshAccounts()');
     expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
     // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.
@@ -299,6 +300,25 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).toContain('Timer.publish(every: 5');
     // Stop only for a job that has not ended.
     expect(window).toMatch(/if job\.isRunning/);
+  });
+
+  it('main window (UI-PLAN v3.1 sections 4 and 6): sidebar pages, shortcuts, remembered collapse, Start/Stop, Home', () => {
+    const main = read('MainWindow.swift');
+    expect(main).toContain('static let stephen: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let you: [Page] = [.personal, .settings]');
+    expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
+    expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
+    expect(main).toContain('@AppStorage("sidebarCollapsed")');
+    expect(main).toContain('.frame(width: collapsed ? 60 : 220)');
+    // Start/Stop go through the helper's StephenControl (one owner of the listener), not a second launcher.
+    expect(main).toContain('control.start { problem = $0 }');
+    expect(main).toContain('control.stop { problem = $0 }');
+    for (const w of ['"Listening"', '"Stopped"', '"Offline"']) expect(main).toContain(w);
+    expect(main).toContain('.stephenThemed(savedThemeChoice())');
+    const home = read('HomeView.swift');
+    expect(home).toContain('let HOME_SUGGESTIONS = ["Plan my day", "Find internships", "Start a job"]');
+    expect(home).toContain('model.confirms.count');
+    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
   });
 
   it('P2 control: the helper owns the listener (not the window), refuses duplicates and a Terminal listener, has the permissions it needs', () => {
