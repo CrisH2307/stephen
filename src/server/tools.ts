@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { expandPath } from '../config.js';
 import { ZEN_ATTACH_ONLY_LABEL, isZenAttachOnly } from '../drivers/zen.js';
 import { HubError, errorMessage } from '../errors.js';
+import { timed } from '../lib/step-timer.js';
 import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
 import type { ActionKind, ActionRequest, AuditEntry, BrowserName, ElementInfo, GateResult, TabInfo } from '../types.js';
@@ -434,7 +435,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
   // ═════════════════════════════ navigation ═════════════════════════════
 
   async function goto(page: Page, url: string): Promise<string | void> {
-    const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
+    const res = await timed('page.navigate', () => page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS }));
     if (res && !res.ok()) return `(HTTP ${res.status()})`;
   }
 

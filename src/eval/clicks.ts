@@ -6,7 +6,9 @@
  * known failure cause; a scripted "model" makes the calls Claude would make (tab_open, find, click) and the page
  * itself reports what was really clicked. Every case runs N times (default 20); failures are logged by cause.
  *
- * It only measures: nothing here changes how clicks work. ROADMAP P1.
+ * It only measures: nothing here changes how clicks work. ROADMAP P1. It also times every step (each tool call as the
+ * server runs it, and the page waits inside: settle, press, verify, snapshot, navigation; src/lib/step-timer.ts) for
+ * the timing table (ROADMAP P6). The model's own thinking is not here: `stephen eval` times that with the real claude.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -16,6 +18,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import puppeteer, { type Browser, type Page } from 'puppeteer-core';
 import { loadConfig } from '../config.js';
+import { formatStepTable, onStep, timed } from '../lib/step-timer.js';
 import { BrowserManager } from '../drivers/index.js';
 import { pageEngine } from '../page/index.js';
 import { createSafety } from '../safety/index.js';
@@ -295,6 +298,8 @@ export interface CaseReport {
   passed: number;
   runs: number;
   failures: Array<{ run: number; cause: Cause; detail: string }>;
+  /** Step name → durations in ms over all runs (tool.<name>, page and click steps, case = one whole run). */
+  steps: Record<string, number[]>;
 }
 
 export interface ClickEvalOptions {
@@ -349,7 +354,7 @@ async function openSession(cfg: ReturnType<typeof loadConfig>, browser: Browser,
   await mcp.connect(st);
   await client.connect(ct);
   const call = async (tool: string, args: Record<string, unknown>) => {
-    const r = (await client.callTool({ name: tool, arguments: args }, undefined, { timeout: 60_000 })) as {
+    const r = (await timed(`tool.${tool}`, () => client.callTool({ name: tool, arguments: args }, undefined, { timeout: 60_000 }))) as {
       isError?: boolean;
       content: Array<{ type: string; text?: string }>;
     };
@@ -414,11 +419,12 @@ export async function runClickEval(opts: ClickEvalOptions): Promise<CaseReport[]
     });
     const reports: CaseReport[] = [];
     for (const k of opts.cases) {
-      const rep: CaseReport = { id: k.id, what: k.what, passed: 0, runs: opts.runs, failures: [] };
+      const rep: CaseReport = { id: k.id, what: k.what, passed: 0, runs: opts.runs, failures: [], steps: {} };
+      onStep((step, ms) => (rep.steps[step] ??= []).push(ms));
       for (let i = 1; i <= opts.runs; i++) {
         const s = await openSession(cfg, browser, origin);
         try {
-          await k.run(s.agent);
+          await timed('case', () => k.run(s.agent));
           rep.passed++;
         } catch (e) {
           const f = e instanceof CaseFailure ? e : new CaseFailure('other', firstLine(e instanceof Error ? e.message : String(e)));
@@ -434,6 +440,7 @@ export async function runClickEval(opts: ClickEvalOptions): Promise<CaseReport[]
     }
     return reports;
   } finally {
+    onStep(null);
     await browser?.close().catch(() => undefined);
     server.close();
     await rm(home, { recursive: true, force: true }).catch(() => undefined);
@@ -460,6 +467,22 @@ export function formatClickReport(reports: readonly CaseReport[]): string {
   return lines.join('\n');
 }
 
+/**
+ * Per-step timing table (median, p90) over every case and run: the tools first, then the waits inside them, then the
+ * whole run per case. Sleeps in the case scripts (the model "thinking") are not steps; they only count in "case".
+ */
+export function formatStepTimings(reports: readonly CaseReport[]): string {
+  const all = new Map<string, number[]>();
+  for (const r of reports) {
+    for (const [k, v] of Object.entries(r.steps)) {
+      const key = k === 'case' ? `case ${r.id}` : k;
+      all.set(key, [...(all.get(key) ?? []), ...v]);
+    }
+  }
+  const rank = (k: string) => (k.startsWith('tool.') ? 0 : k.startsWith('case ') ? 2 : 1);
+  return formatStepTable(new Map([...all].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))), 'step (ms)');
+}
+
 export const EVAL_CLICKS_HELP = `stephen eval-clicks — measure click reliability on local test pages (nothing touches your browsers)
 
   --runs <1-100>   runs per case (default 20)
@@ -467,7 +490,9 @@ export const EVAL_CLICKS_HELP = `stephen eval-clicks — measure click reliabili
   --youtube        also run the real YouTube flow (play_media; needs the network). Same as STEPHEN_EVAL_YOUTUBE=1.
 
 Starts a headless Chrome with a temporary profile (STEPHEN_TEST_CHROME overrides the binary) and drives Stephen's
-real tools (tab_open, find, click, play_media) against fixture pages that reproduce each failure cause.`;
+real tools (tab_open, find, click, play_media) against fixture pages that reproduce each failure cause, then prints
+how long each step took (median, p90): every tool call and the page waits inside it (settle, press, verify,
+snapshot, navigation). The model's thinking time is measured by stephen eval (real claude, uses your plan).`;
 
 export async function runClickEvalCli(argv: string[], out: (l: string) => void = (l) => console.log(l)): Promise<number> {
   let runs = 20;
@@ -488,6 +513,8 @@ export async function runClickEvalCli(argv: string[], out: (l: string) => void =
   const reports = await runClickEval({ runs, cases, log: out });
   out('');
   out(formatClickReport(reports));
+  out('');
+  out(formatStepTimings(reports));
   return reports.every((r) => r.passed === r.runs) ? 0 : 1;
 }
 

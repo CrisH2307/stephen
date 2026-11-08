@@ -528,6 +528,12 @@ before the gate: the fresh ref must point at the single live element with the sa
 the gate must allow the click without asking (`describeClickTarget`). Nothing is re-found after approval, so the
 identity re-check still binds the approval to the element that is clicked.
 
+**Step timings (ROADMAP P6).** `stephen eval-clicks` also prints how long each step took (median, p90): every tool
+call as the server runs it, and the waits inside (click settle, press, verify, snapshot, navigation, gate check,
+play_media's resolve and player wait). The steps are wrapped in `timed()` (src/lib/step-timer.ts), which records only
+a step name and a duration, and only while a harness listens. `stephen eval` prints the real model's share: start-up
++ MCP, model time per turn (the "think" step) and the rest.
+
 ## 8. Research findings that shaped the design
 
 - Headless `claude -p` does not get claude.ai connectors (Gmail, Notion) in this setup. Even if it did, they would
