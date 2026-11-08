@@ -489,3 +489,19 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   3 phone tools). Fixed with Claude Code's own switches: `disableClaudeAiConnectors: true` in the phone folder settings
   and `CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS=1` in `phoneClaudeEnv`. Real check on the Mac: locked, all 3 tools present.
 
+- 2026-11-08: **Work batch while the owner was away** (tracker issue #10; nothing merged; merge order and Mac steps
+  in MAC-TEST-PLAN §11). 20 PRs: #11 UI plan v3.1 + phone lockdown; #21 Zen selftest fix (test helper: Chrome's
+  first-run screen hid the tab); P1 #16 `stephen eval-clicks` and #20 settle / re-find once on STALE_REF (only when
+  the gate allows without asking) / verify, fixture cases 0/20 → 20/20; P6 #22 step timings and #25 one fewer model
+  turn (`include_snapshot` in the persona); P2 #15 helper starts/stops `stephen listen`, phone/zen/doctor over
+  app.sock, #18 `usage.get`; P7 #14 name correction from memory (never blocks); UI v3.1 chain #13 theme and
+  components, #17 Ask box, #19 approvals in the Ask box (`serve --confirm app`, dialog fallback), #23 sidebar and
+  Home, #24 Personal (`personal.summary`), #26/#27 Memory page (proposals store, Keep/Skip; the model never writes
+  memory), #28 Settings (`settings.set`, fixed persona sentences, themes), #29 Conversations and Jobs; #12 ADR-006
+  (P4 reply by voice, design only); #30 Review 9 (fresh opus/high reviewer: 0 Critical, 1 High, 4 Medium, all 13
+  fixed on their branches). A local merge of all branches in that order had no conflicts and passed the full suite.
+  Open for the owner: the decisions in each PR, plus: (1) on YouTube the accounts.google.com frame counts as a
+  private read, so play's `k` press then asks (likely part of the "7 in 10"); a gate change needs your call;
+  (2) P7 dropped "did you mean" (it blocked normal commands); (3) memory proposals at chat end are designed
+  (SYSTEM-DESIGN §4.15) but not built, Tell Stephen is the only source; (4) R9-13 reads Claude Code's internal
+  `.claude.json` for the phone folder trust; (5) nothing was looked at on screen: all Swift is compiled only.
