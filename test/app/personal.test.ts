@@ -41,7 +41,7 @@ describe('personalSummary (personal.summary, UI-PLAN v3.1 section 7)', () => {
     expect(cited.size).toBeGreaterThan(5);
     for (const id of cited) expect(policy, id).toMatch(new RegExp(`^ \\*   ${id} +(deny|confirm)`, 'm'));
     // The phone column's "declined" comes from the phone's serve flags.
-    expect(readFileSync('src/voice/claude.ts', 'utf8')).toContain("'--confirm', trust === 'phone' ? 'deny' : 'dialog'");
+    expect(readFileSync('src/voice/claude.ts', 'utf8')).toContain("'--confirm', trust === 'phone' ? 'deny' : 'app'");
     for (const r of PERMISSIONS) for (const c of r.cells) expect(c.rule.length).toBeGreaterThan(10);
   });
 });

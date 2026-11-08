@@ -310,7 +310,7 @@ async function doctor(network = false, json = false): Promise<number> {
         : `Run \`stephen install-zen-launcher\` once, then open Zen with the "${ZEN_LAUNCHER_APP_NAME}" app (or run \`stephen zen-launch\`).`;
       if (readiness === 'ready' || readiness === 'starting') {
         const st = ready.value!.state!;
-        add({ ok: true, label: 'Stephen-ready Zen running', detail: readiness === 'ready' ? `pid ${st.pid}, ${st.wsUrl}` : `pid ${st.pid}, still starting` });
+        add({ ok: true, label: 'Stephen-ready Zen running', detail: readiness === 'ready' ? `pid ${st.pid}, ${urlHost(st.wsUrl)}` : `pid ${st.pid}, still starting` });
       } else if (running) {
         add({
           ok: false,
@@ -543,6 +543,18 @@ main(process.argv.slice(2)).then(
  * worktree, a clone) must never carry secrets, and a repo config.json is not the one Stephen reads unless it is a link
  * to it. Pure apart from lstat / realpath.
  */
+/**
+ * host:port of a URL, never its path (REVIEW-9 R9-12: Zen's WebSocket URL carries a session id; doctor output reaches
+ * the window and the log). "connected" when it doesn't parse.
+ */
+export function urlHost(url: string): string {
+  try {
+    return new URL(url).host || 'connected';
+  } catch {
+    return 'connected';
+  }
+}
+
 export function repoPersonalFiles(repo: string, home: string): { label: string; detail: string; fix: string }[] {
   const out: { label: string; detail: string; fix: string }[] = [];
   const envPath = join(repo, '.env');

@@ -6,9 +6,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { appControl, cliRunner, launchInfoPath, writeLaunchInfo, type RunCli } from '../../src/app/control.js';
+import { appControl, cliRunner, launchInfoPath, PHONE_UNTRUSTED, writeLaunchInfo, type RunCli } from '../../src/app/control.js';
+import { urlHost } from '../../src/cli.js';
 import type { PhoneCliEnv } from '../../src/phone/cli.js';
-import { phoneOnPath } from '../../src/phone/setup.js';
+import { phoneConfigDir, phoneDir, phoneOnPath } from '../../src/phone/setup.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-control-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -64,6 +65,19 @@ describe('phone on / off', () => {
     expect((await boom.phoneOn()).lines).toEqual(["Couldn't turn the phone link on: no claude"]);
   });
 
+  it('R9-13: an untrusted phone folder is refused before Remote Control starts (no terminal to answer the prompt)', async () => {
+    const home = newHome();
+    mkdirSync(phoneConfigDir(home), { recursive: true });
+    writeFileSync(join(phoneConfigDir(home), '.claude.json'), JSON.stringify({ projects: { '/other': { hasTrustDialogAccepted: true } } }));
+    const calls: string[][] = [];
+    const phone = async (argv: string[]) => (calls.push(argv), 0);
+    expect(await appControl({ home, cliPath: 'x', run: noRun, phone, pid: 777 }).phoneOn()).toEqual({ on: false, lines: [PHONE_UNTRUSTED] });
+    expect(calls).toEqual([]);
+    writeFileSync(join(phoneConfigDir(home), '.claude.json'), JSON.stringify({ projects: { [phoneDir(home)]: { hasTrustDialogAccepted: true } } }));
+    await appControl({ home, cliPath: 'x', run: noRun, phone, pid: 777 }).phoneOn();
+    expect(calls).toEqual([['on']]);
+  });
+
   it('phone.off runs `phone off` and returns its lines; lines are cleaned and capped', async () => {
     const calls: string[][] = [];
     const phone = async (argv: string[], e: PhoneCliEnv) => {
@@ -94,6 +108,11 @@ describe('zen.open and doctor.run', () => {
     expect(await appControl({ home: newHome(), cliPath: 'x', run: ok }).doctor()).toEqual({ checks, problems: 1, blocking: 0 });
     const bad: RunCli = async () => ({ code: 1, stdout: '', stderr: 'stephen: boom' });
     await expect(appControl({ home: newHome(), cliPath: 'x', run: bad }).doctor()).rejects.toThrow('doctor failed: stephen: boom');
+  });
+
+  it('R9-12: doctor shows Zen as host:port, never the WebSocket path with its session id', () => {
+    expect(urlHost('ws://127.0.0.1:9222/session/1f2e3d4c-aaaa-bbbb')).toBe('127.0.0.1:9222');
+    expect(urlHost('not a url')).toBe('connected');
   });
 
   it('cliRunner runs `node <cli> <args>` and reports the exit code', async () => {
