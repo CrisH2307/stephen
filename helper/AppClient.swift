@@ -178,8 +178,8 @@ struct AppRequest: Encodable {
   static func jobsStop(_ id: String, jobId: String) -> AppRequest {
     return AppRequest(id: id, type: "jobs.stop", jobId: jobId)
   }
-  /** Added on p2/app-control (not merged yet): a listener without it ignores the request and it times out. */
-  static func usage(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage") }
+  /** `usage.get` (P2, PR #18): a listener without it ignores the request and it times out. */
+  static func usageGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage.get") }
 }
 
 /** A question from the safety gate waiting for the owner's click (`confirm` push). Title and body are shown verbatim. */
@@ -189,10 +189,16 @@ struct PendingConfirm: Identifiable, Equatable {
   let body: String
 }
 
-/** The `usage` answer, in percent (0 to 100). nil = that number was not sent. */
+/** One bar of the `usage` answer: `{percent, warn, ...}` (warn is true from 80%). Other fields are ignored. */
+struct UsageMeter: Decodable, Equatable {
+  var percent: Double
+  var warn: Bool
+}
+
+/** The `usage` answer. context is nil when the listener doesn't know it (that bar is hidden). */
 struct AppUsage: Equatable {
-  var context: Double?
-  var memory: Double?
+  var context: UsageMeter?
+  var memory: UsageMeter?
 }
 
 /** One row of `jobs.list` / the `job` answer to `jobs.stop` (src/app/jobs-status.ts). Summary and task are the job's own words: shown verbatim. */
@@ -386,9 +392,9 @@ struct AppMessage: Decodable {
   var state: String? = nil
   var text: String? = nil
   var source: String? = nil
-  // usage (p2/app-control)
-  var contextPct: Double? = nil
-  var memoryPct: Double? = nil
+  // usage: {context: {percent, warn, tokens, window} | null, memory: {percent, warn, bytes, budget}}
+  var context: UsageMeter? = nil
+  var memory: UsageMeter? = nil
   // confirm / confirm.end pushes
   var confirmId: String? = nil
   var title: String? = nil
@@ -396,7 +402,7 @@ struct AppMessage: Decodable {
 
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
-      configPath, state, text, source, accounts, note, jobs, job, contextPct, memoryPct, confirmId, title, body
+      configPath, state, text, source, accounts, note, jobs, job, context, memory, confirmId, title, body
   }
 
   init(localError: String, id: String?) {
@@ -434,8 +440,8 @@ struct AppMessage: Decodable {
     state = try? c.decodeIfPresent(String.self, forKey: .state)
     text = try? c.decodeIfPresent(String.self, forKey: .text)
     source = try? c.decodeIfPresent(String.self, forKey: .source)
-    contextPct = try? c.decodeIfPresent(Double.self, forKey: .contextPct)
-    memoryPct = try? c.decodeIfPresent(Double.self, forKey: .memoryPct)
+    context = try? c.decodeIfPresent(UsageMeter.self, forKey: .context)
+    memory = try? c.decodeIfPresent(UsageMeter.self, forKey: .memory)
     confirmId = try? c.decodeIfPresent(String.self, forKey: .confirmId)
     title = try? c.decodeIfPresent(String.self, forKey: .title)
     body = try? c.decodeIfPresent(String.self, forKey: .body)
@@ -1052,9 +1058,9 @@ final class AppModel: ObservableObject {
   }
 
   func refreshUsage() {
-    request(AppRequest.usage(newId())) { [weak self] msg in
+    request(AppRequest.usageGet(newId())) { [weak self] msg in
       guard let self = self else { return }
-      self.usage = msg.type == "usage" ? AppUsage(context: msg.contextPct, memory: msg.memoryPct) : nil
+      self.usage = msg.type == "usage" ? AppUsage(context: msg.context, memory: msg.memory) : nil
     }
   }
 

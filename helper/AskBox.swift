@@ -140,9 +140,9 @@ struct AskBoxView: View {
     VStack(alignment: .leading, spacing: 2) {
       MenuRow(title: "New chat", shortcut: "⌘N") { newChat() }
       MenuRow(title: "Open Stephen", shortcut: "⌘O") { actions.openApp() }
-      // Shown only once a `usage` answer arrives (p2/app-control); an older listener never answers.
-      if let pct = model.usage?.context { UsageBar(title: "This chat", pct: pct, word: "context used") }
-      if let pct = model.usage?.memory { UsageBar(title: "Memory", pct: pct, word: "full") }
+      // Shown only once a `usage` answer arrives (usage.get, P2); an older listener never answers.
+      if let m = model.usage?.context { UsageBar(title: "This chat", pct: m.percent, warn: m.warn, word: "context used") }
+      if let m = model.usage?.memory { UsageBar(title: "Memory", pct: m.percent, warn: m.warn, word: "full") }
       MenuRow(title: "Review memory", shortcut: nil) { actions.reviewMemory() }
       Divider().padding(.vertical, Space.xs)
       MenuRow(title: "Quit", shortcut: "⌘Q") { actions.quit() }
@@ -202,15 +202,16 @@ private struct MenuRow: View {
   }
 }
 
-/** "Memory 85%" with a thin bar; amber with "almost full" over 80%. */
+/** "Memory 85%" with a thin bar; amber with "almost full" when the listener says warn (from 80%). */
 private struct UsageBar: View {
   @Environment(\.stephenTheme) var t
   let title: String
   let pct: Double
+  let warn: Bool
   let word: String
   var body: some View {
     let p = min(max(pct, 0), 100)
-    let high = p > 80
+    let high = warn
     VStack(alignment: .leading, spacing: Space.xs) {
       HStack {
         Text(verbatim: title).font(TypeScale.secondary).foregroundColor(t.ink2)
