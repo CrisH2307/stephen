@@ -20,6 +20,7 @@ import {
   phoneSocketPath,
   readPhoneMarker as readMarker,
   removePhoneMarker as removeMarker,
+  stopPhoneLink,
   writePhoneFolder,
   type LockdownResult,
   type PhoneAuth,
@@ -110,9 +111,7 @@ export async function runPhoneCli(argv: string[], e: PhoneCliEnv = {}): Promise<
     return 0;
   }
   if (cmd === 'off') {
-    const m = readMarker(home);
-    removeMarker(home);
-    if (m && m.rc > 0 && isRemoteControl(commandOf(m.rc))) (e.kill ?? ((pid) => process.kill(pid, 'SIGTERM')))(m.rc);
+    const m = stopPhoneLink(home, { commandOf, ...(e.kill ? { kill: e.kill } : {}) });
     out(m ? 'Phone link off: phone requests are refused, Remote Control stopped.' : 'Phone link was already off.');
     return 0;
   }
