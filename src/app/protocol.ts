@@ -12,6 +12,11 @@
  * Additive: `{id, type:"jobs.list"}` → `{id, type:"jobs", jobs:[JobRow]}` (newest first, summaries cleaned and capped) and
  * `{id, type:"jobs.stop", jobId}` → `{id, type:"job", job:JobRow}` or an error (unknown job, jobs are off). Stopping
  * from the window is the owner's own click, so it needs no dialog.
+ * Additive (ROADMAP P2, src/app/control.ts), the owner's own clicks, so no dialog:
+ *   `{id, type:"phone.on"}` / `{id, type:"phone.off"}` → `{id, type:"phone", on, lines}` (what `stephen phone on|off`
+ *   printed; same checks and kill switch), `{id, type:"zen.open"}` → `{id, type:"zen", ok, message}`,
+ *   `{id, type:"doctor.run"}` → `{id, type:"doctor", checks:[{ok,label,detail?,fix?,blocking?,info?}], problems, blocking}`.
+ *   phone.on, zen.open and doctor.run can take up to a minute or more (the lock-down check starts Claude Code).
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
  */
@@ -19,6 +24,7 @@ import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import type { AuditEntry } from '../types.js';
 import type { AccountRow } from './accounts-status.js';
+import type { DoctorCheck } from './control.js';
 import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
@@ -51,7 +57,11 @@ export type AppRequest =
   | { id: string; type: 'accounts.status' }
   | { id: string; type: 'jobs.list' }
   | { id: string; type: 'jobs.stop'; jobId: string }
-  | { id: string; type: 'window.open' };
+  | { id: string; type: 'window.open' }
+  | { id: string; type: 'phone.on' }
+  | { id: string; type: 'phone.off' }
+  | { id: string; type: 'zen.open' }
+  | { id: string; type: 'doctor.run' };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -72,6 +82,10 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'jobs.list',
   'jobs.stop',
   'window.open',
+  'phone.on',
+  'phone.off',
+  'zen.open',
+  'doctor.run',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -89,6 +103,9 @@ export type AppMessage =
   | { id: string; type: 'accounts'; accounts: AccountRow[]; note?: string }
   | { id: string; type: 'jobs'; jobs: JobRow[] }
   | { id: string; type: 'job'; job: JobRow }
+  | { id: string; type: 'phone'; on: boolean; lines: string[] }
+  | { id: string; type: 'zen'; ok: boolean; message: string }
+  | { id: string; type: 'doctor'; checks: DoctorCheck[]; problems: number; blocking: number }
   | { id?: string; type: 'error'; message: string }
   | { type: 'state'; state: AppState }
   | { type: 'heard'; text: string; source: string }
@@ -162,6 +179,10 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'jobs.list': () => ok,
   'jobs.stop': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? ok : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
   'window.open': () => ok,
+  'phone.on': () => ok,
+  'phone.off': () => ok,
+  'zen.open': () => ok,
+  'doctor.run': () => ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */

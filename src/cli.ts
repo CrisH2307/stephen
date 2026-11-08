@@ -54,7 +54,7 @@ const HELP = `stephen ${packageVersion()} — lets Claude use your Mac's browser
 
 Usage:
   stephen [serve]        Run the MCP server on stdio (what Claude Code starts; tools are mcp__stephen__*)
-  stephen doctor         Check this Mac's setup and print fixes (--network: also check the ElevenLabs account)
+  stephen doctor         Check this Mac's setup and print fixes (--network: also check the ElevenLabs account; --json)
   stephen selftest       Prove each browser works end to end, safely (temporary agent profile,
                          local test pages only; closes what it opened). Options:
                          --browser chrome|zen|all (default all)  --keep-open  --json
@@ -207,7 +207,7 @@ async function writable(dir: string): Promise<string | null> {
   }
 }
 
-async function doctor(network = false): Promise<number> {
+async function doctor(network = false, json = false): Promise<number> {
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
 
@@ -359,14 +359,19 @@ async function doctor(network = false): Promise<number> {
     add({ ok: true, info: true, label: 'Modes', detail: `chrome: ${cfg.chrome.mode} · zen: ${cfg.zen.mode} · default browser: ${cfg.defaultBrowser} · confirm: ${cfg.safety.confirm}` });
   }
 
+  const failed = checks.filter((c) => !c.ok);
+  const blocking = failed.filter((c) => c.blocking);
+  if (json) {
+    // For the Stephen window (src/app/control.ts doctor.run).
+    console.log(JSON.stringify({ checks, problems: failed.length, blocking: blocking.length }));
+    return blocking.length ? 1 : 0;
+  }
   const out: string[] = [`stephen doctor (v${packageVersion()})`, ''];
   for (const c of checks) {
     const mark = c.info ? '•' : c.ok ? '✓' : '✗';
     out.push(`${mark} ${c.label}${c.detail ? ` — ${c.detail}` : ''}`);
     if (!c.ok && c.fix) out.push(`    fix: ${c.fix}`);
   }
-  const failed = checks.filter((c) => !c.ok);
-  const blocking = failed.filter((c) => c.blocking);
   out.push(
     '',
     failed.length === 0
@@ -460,7 +465,7 @@ async function main(argv: string[]): Promise<number> {
       await serve(rest);
       return -1; // keep running
     case 'doctor':
-      return doctor(rest.includes('--network'));
+      return doctor(rest.includes('--network'), rest.includes('--json'));
     case 'selftest':
       return selftest(rest);
     case 'install':
@@ -469,8 +474,12 @@ async function main(argv: string[]): Promise<number> {
       return zenLaunch(rest);
     case 'install-zen-launcher':
       return installLauncher(rest);
-    case 'install-helper':
-      return runInstallHelper(rest);
+    case 'install-helper': {
+      const code = await runInstallHelper(rest);
+      // Lets the helper start `stephen listen` itself (ROADMAP P2); owner-only code, loaded on demand.
+      if (code === 0 && !rest.includes('--dry-run')) (await import('./app/control.js')).writeLaunchInfo(loadConfig().home, distCliPath());
+      return code;
+    }
     case 'listen':
       // Loaded on demand: `stephen serve` (the process Claude talks to) never loads memory, app or history code.
       return (await import('./voice/index.js')).runListen(rest);

@@ -20,6 +20,7 @@ import {
   type AppServerOptions,
 } from '../../src/app/server.js';
 import { appSettings } from '../../src/app/settings.js';
+import type { AppControl } from '../../src/app/control.js';
 import { accountsStatus } from '../../src/app/accounts-status.js';
 import { parseHistoryConfig } from '../../src/history/config.js';
 import { HistoryStore } from '../../src/history/store.js';
@@ -95,6 +96,14 @@ const settingsFor = (configPath = '/Users/cris/.stephen/config.json') =>
     configPath,
   });
 
+/** The fixture's answers (src/app/control.ts is tested on its own in control.test.ts). */
+const FAKE_CONTROL: AppControl = {
+  phoneOn: async () => ({ on: true, lines: ['✓ Locked: the phone session can use only Stephen phone tools.'] }),
+  phoneOff: async () => ({ on: false, lines: ['Phone link off: phone requests are refused, Remote Control stopped.'] }),
+  openZen: async () => ({ ok: true, message: 'Zen is ready for Stephen (pid 4242).' }),
+  doctor: async () => ({ checks: [{ ok: false, label: 'Chrome installed' }], problems: 1, blocking: 0 }),
+};
+
 const servers: AppServer[] = [];
 const clients: TestClient[] = [];
 afterEach(async () => {
@@ -128,6 +137,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     },
     speakReplies: false,
     openWindow: () => (calls.opens++, null),
+    control: FAKE_CONTROL,
     newId: () => `h_test${++ids}`,
     ...o,
   });
@@ -453,6 +463,18 @@ describe('memory, history, settings, audit, window', () => {
     expect(asked).toBe(7);
     const none = await harness({ audit: null });
     expect(await none.client.request({ id: 'a', type: 'audit.recent' })).toEqual({ id: 'a', type: 'audit', entries: [] });
+  });
+
+  it('phone.on / phone.off / zen.open / doctor.run answer from the control; errors and a missing control say why', async () => {
+    const h = await harness();
+    expect(await h.client.request({ id: 'p', type: 'phone.on' })).toEqual({ id: 'p', type: 'phone', on: true, lines: ['✓ Locked: the phone session can use only Stephen phone tools.'] });
+    expect(await h.client.request({ id: 'q', type: 'phone.off' })).toMatchObject({ id: 'q', type: 'phone', on: false });
+    expect(await h.client.request({ id: 'z', type: 'zen.open' })).toEqual({ id: 'z', type: 'zen', ok: true, message: 'Zen is ready for Stephen (pid 4242).' });
+    expect(await h.client.request({ id: 'd', type: 'doctor.run' })).toEqual({ id: 'd', type: 'doctor', checks: [{ ok: false, label: 'Chrome installed' }], problems: 1, blocking: 0 });
+    const failing = await harness({ control: { ...FAKE_CONTROL, phoneOn: async () => Promise.reject(new Error('The phone link is already turning on.')) } });
+    expect(await failing.client.request({ id: 'p', type: 'phone.on' })).toEqual({ id: 'p', type: 'error', message: 'The phone link is already turning on.' });
+    const none = await harness({ control: undefined });
+    expect(await none.client.request({ id: 'd', type: 'doctor.run' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
   });
 
   it('window.open forwards to the helper, or says why it could not', async () => {

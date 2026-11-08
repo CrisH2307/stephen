@@ -33,6 +33,11 @@ const RESPONSES: Record<string, string[]> = {
   'jobs.stop': ['job', 'error'],
   // Sent by `stephen app` (src/app/cli.ts), not by the window: the listener forwards open_window to the helper.
   'window.open': ['ok', 'error'],
+  // ROADMAP P2 control (src/app/control.ts).
+  'phone.on': ['phone', 'error'],
+  'phone.off': ['phone', 'error'],
+  'zen.open': ['zen', 'error'],
+  'doctor.run': ['doctor', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -185,6 +190,22 @@ describe('app.sock protocol v1 fixture', () => {
             expect(['ok', 'denied', 'error']).toContain(a.outcome);
           }
           break;
+        case 'phone':
+          expect(typeof msg.on).toBe('boolean');
+          expect((msg.lines as unknown[]).every((l) => typeof l === 'string')).toBe(true);
+          break;
+        case 'zen':
+          expect(typeof msg.ok).toBe('boolean');
+          expect(typeof msg.message).toBe('string');
+          break;
+        case 'doctor':
+          for (const c of msg.checks as Record<string, unknown>[]) {
+            expect(typeof c.ok).toBe('boolean');
+            expect(typeof c.label).toBe('string');
+          }
+          expect(typeof msg.problems).toBe('number');
+          expect(typeof msg.blocking).toBe('number');
+          break;
         case 'heard':
           expect(typeof msg.text).toBe('string');
           expect(typeof msg.source).toBe('string');
@@ -240,6 +261,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).toContain('Timer.publish(every: 5');
     // Stop only for a job that has not ended.
     expect(window).toMatch(/if job\.isRunning/);
+  });
+
+  it('P2 control: the helper owns the listener (not the window), refuses duplicates and a Terminal listener, has the permissions it needs', () => {
+    const main = read('main.swift');
+    expect(main).toContain('let stephenControl = StephenControl(home: home, log: log)');
+    expect(main).toContain('"Start Stephen"');
+    expect(main).toContain('control.start(report)');
+    expect(client).toContain('if case .running = listener { return done("Stephen is already running.") }');
+    expect(client).toContain('LOCAL_PEERPID');
+    expect(client).toContain('p.arguments = [info.cli, "listen"]');
+    expect(client).toContain('st.st_mode & 0o022 == 0');
+    for (const r of ['.phoneOn(', '.phoneOff(', '.zenOpen(', '.doctorRun(']) expect(client).toContain(r);
+    const plist = read('Info.plist');
+    expect(plist).toContain('NSMicrophoneUsageDescription');
+    expect(plist).toContain('NSAppleEventsUsageDescription');
   });
 
   it('the window opens from the menu, --open-window and the open_window command', () => {
