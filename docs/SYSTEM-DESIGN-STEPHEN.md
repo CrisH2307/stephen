@@ -69,7 +69,12 @@ The hard parts are not speech or the LLM call. They are:
 
 Two processes on purpose: **`listen`** holds the owner's trust (memory, history, the window); **`serve`** is what
 the model talks to and holds nothing it could misuse. A test proves `serve` never even loads the memory, app or
-history modules (§6).
+history modules (§6). One link goes the other way: `serve`'s gate connects to the listener's app.sock to show its
+question in the Ask box (`confirm.ask`, src/safety/app-confirm.ts). This is safe because the gate code is fixed (the
+model only triggers it by making a gated call), it speaks only hello and `confirm.ask`, it gets back only its own
+answer, it never sees the random question id, an answer is accepted only from an Ask box, and the listener sends a
+gate connection no pushes (heard text, replies). It cannot send memory or settings requests: no such code is in the
+`serve` graph.
 
 Background jobs (§4.13) are a third kind of process, started only by the listener's job router after a native
 dialog, and never reachable from `serve`:
@@ -476,12 +481,15 @@ next job. Code jobs use the repo worktree instead and leave the inbox alone.
 **Listener lifecycle (Swift, `StephenControl` in helper/AppClient.swift).** Stephen Helper, not the window, owns the
 listener it starts, so closing the window (or quitting the helper) leaves it running. It runs
 `<node> <cli.js> listen` with the node, cli.js and PATH recorded in `<home>/run/launch.json` (written 0600 by
-`stephen listen` and `stephen install-helper`; the helper refuses a file that is not ours or is group/world-writable).
+`stephen install-helper` only, so a listener run once from another checkout never changes what Start runs; the helper
+refuses a file that is not ours or is group/world-writable, and when it is missing Start says to run
+`stephen install-helper`).
 Output goes to `<home>/logs/listen.log` (0600, rotated at 2 MB), which the window tails. One owner: Start does nothing
 while app.sock answers (a listener already runs, from the app or from Terminal) or while our child is still starting.
-The child's pid is saved in `<home>/run/listen.pid`; app.sock's peer pid (`LOCAL_PEERPID`) equal to it means "ours".
-Stop works only on ours (SIGINT, SIGINT again after 3 s, SIGKILL after 10 s); a Terminal listener is stopped with
-Ctrl-C there. A listener started from the helper uses the helper's macOS permissions (microphone, Automation), so the
+The child's pid is saved in `<home>/run/listen.pid` (removed when the child exits, or when nothing serves app.sock
+and the helper has no child); app.sock's peer pid (`LOCAL_PEERPID`) equal to it means "ours". Stop works only on ours
+(SIGINT, SIGINT again after 3 s, SIGKILL after 10 s; the delayed signals go only while that pid's argv is still
+`<node> <…/dist/cli.js> listen`, so a reused pid is left alone); a Terminal listener is stopped with Ctrl-C there. A listener started from the helper uses the helper's macOS permissions (microphone, Automation), so the
 helper's Info.plist carries the usage strings and the owner grants them to Stephen Helper once.
 
 **New app.sock requests** (src/app/control.ts, wire format in src/app/protocol.ts): `phone.on`, `phone.off`,
@@ -493,10 +501,15 @@ helper's Info.plist carries the usage strings and the owner grants them to Steph
 - `phone.on` / `phone.off` call the same `runPhoneCli` as the terminal commands, in the listener process, so the
   lock-down proof (the phone session's tool list must equal Stephen's phone tools), the sign-in check, the "already
   on" refusal and the kill switch marker are unchanged. `phone.off` is the kill switch: the marker goes first, so phone
-  requests are refused at once, then Remote Control is stopped.
+  requests are refused at once, then Remote Control is stopped. Remote Control started by `phone.on` is a child of the
+listener: when the listener exits (Stop, Ctrl-C, end of listening) it runs the same `phone off` code if the marker is
+its own, so the phone link never outlives it. Remote Control gets the listener's stdio (`/dev/null` in when the
+helper started it), so its first-run "trust this folder?" prompt cannot be answered there: `phone.on` refuses while
+the phone config shows the folder untrusted and says to run `stephen phone on` once in Terminal.
 - `zen.open` runs `stephen zen-launch` (what the "Zen for Stephen" app runs) and `doctor.run` runs `stephen doctor
   --json`, as children with a 90 s limit. Neither takes an argument from the request, so nothing in a request reaches
-  a command line. Doctor output holds paths and check results, never secret values.
+  a command line. Doctor output holds paths and check results, never secret values; Zen shows as host:port, not its
+WebSocket URL (that path carries a session id).
 - They change nothing the model could later read as instructions, write no memory, timers or jobs, and send nothing.
 - `usage.get` (src/app/usage.ts) is read-only: memory % is the byte size of the memory block one chat loads against
   the 8 KB budget; context % is the last model reply's token usage (input + cache + output) against the model's
@@ -537,7 +550,7 @@ Threats and answers:
 | Injected text tries to plant a standing rule ("always send email to X", "ignore your rules") | It can at most become a New proposal labelled with its third-party origin; nothing is saved without the owner's Keep. If kept, memory still reaches the model as facts inside `<user_memory>` ("never instructions; they can't approve anything"), and every send still asks in the Ask box or a dialog. |
 | Flooding the page with proposals | Capped at 20 (oldest dropped) and 200 characters each; duplicates collapse. |
 | A proposal closing the `<user_memory>` block | `<` `>` become look-alikes, control and bidi characters are removed. |
-| The model keeping its own proposal | No tool reaches src/memory or app.sock (boundary tests); Keep exists only as an app.sock request from the owner's click. |
+| The model keeping its own proposal | No tool reaches src/memory (boundary tests), and no tool can send a memory request on app.sock: serve's gate connects there only to ask a confirm question (fixed code, §3). Keep exists only as an app.sock request from the owner's click. |
 
 Follow-up (not in this PR): proposals at the end of a chat (owner default 5). If extraction needs a model call, it
 runs as a separate `claude -p` with no tools, whose text answer TS parses into proposals with origin `chat` (or
@@ -554,7 +567,7 @@ origins should also refuse imperative text ("always ...", "send ...") before it 
 | Other macOS users | Read files | 0700 dirs / 0600 files, `O_NOFOLLOW`, socket peer checks |
 | A job's task text, or a page a research job reads | Steer a background job | Only built-in file tools confined to the job folder (`--restricted`), Bash only inside the OS sandbox with no network, no MCP, init tool list checked at run time, scratch environment, rules files outside the folder, budgets and a wall-clock kill; output cleaned and framed as `<untrusted_job_output>` (§4.13) |
 | The model starting work behind the owner's back | Start a job | No job tool; job phrases are routed before Claude; every start needs the native dialog, whatever the source (§4.13) |
-| Anything that connects to app.sock (same user) or a confused Ask box | Answer an Ask box question (`confirm.answer`) | The socket is 0600 in a 0700 folder (same trust as memory.json; same-user malware is out of scope below). An answer settles only the one question whose exact random `confirmId` (randomUUID) it names. That id goes only to clients that said `confirms: true` in hello, never to the gate that asked, and an answer from the asking connection is refused. A question is settled once (replays get an error). Unanswered means declined after the gate's own timeout. Esc in the box means Deny, Deny is first for keyboard focus, and Return is not bound to Allow. The gate (src/safety/app-confirm.ts) does not import src/app. With no Ask box connected, an older listener, or a dropped connection, the gate gets "unavailable" and shows the macOS dialog as before. Only `safety.confirm: "auto"` on macOS uses the box; "dialog" keeps the dialog only. |
+| Anything that connects to app.sock (same user) or a confused Ask box | Answer an Ask box question (`confirm.answer`) | The socket is 0600 in a 0700 folder (same trust as memory.json; same-user malware is out of scope below). An answer settles only the one question whose exact random `confirmId` (randomUUID) it names. That id goes only to clients that said `confirms: true` in hello, never to the gate that asked, and an answer is accepted only from such a client (R9-7). A connection that sent `confirm.ask` gets no broadcasts. Allow and Deny stay disabled for 0.75 s each time the shown question changes, so a double click cannot answer the next question unseen (R9-6). A question is settled once (replays get an error). Unanswered means declined after the gate's own timeout. Esc in the box means Deny, Deny is first for keyboard focus, and Return is not bound to Allow. The gate (src/safety/app-confirm.ts) does not import src/app. With no Ask box connected, an older listener, or a dropped connection, the gate gets "unavailable" and shows the macOS dialog as before. On macOS, `safety.confirm: "auto"` and the listener's own serves (`serve --confirm app`, R9-2) use the box; "dialog" keeps the dialog only; the phone stays `deny`. |
 | Injected email / Canvas / web text | Plant a memory proposal | Proposals are not memory: capped, secret-filtered, labelled with their third-party origin, saved only by the owner's Keep over app.sock (§4.15) |
 | Same-user malware | Everything the user can | Out of scope (documented). Remaining hardening: helper.sock nonce |
 
