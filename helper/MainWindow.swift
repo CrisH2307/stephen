@@ -2,7 +2,7 @@
 // rail, remembered), the "Ask Stephen ⌘K" field (opens the Ask box), STEPHEN (Home, Conversations, Jobs) and YOU
 // (Personal, Settings) with ⌘1…⌘5, and the status row (dot + word, Start/Stop through StephenControl).
 // Pages: Page (the router enum) and WindowNav (the selection, also set by the Ask box). Later UI PRs add or restyle
-// pages here; Conversations, Jobs, Settings and Personal still show the older screens from AppWindow.swift.
+// pages here.
 
 import AppKit
 import SwiftUI
@@ -232,20 +232,6 @@ private struct StatusRow: View {
       // Started in Terminal: only Ctrl-C there stops it (StephenControl.stop refuses).
       Image(systemName: "terminal").foregroundColor(t.ink2).help("Running in Terminal. Stop it there with Ctrl-C.")
         .accessibilityLabel("Running in Terminal. Stop it there with Control C.")
-    }
-  }
-}
-
-/** History ("what you asked") and the audit log ("what Stephen did") until the Conversations PR merges them. */
-private struct ConversationsPage: View {
-  @ObservedObject var model: AppModel
-  @State private var showAudit = false
-
-  var body: some View {
-    VStack(spacing: 0) {
-      Segmented("Show", options: [(value: false, title: "What you asked"), (value: true, title: "What Stephen did")], selection: $showAudit)
-        .frame(width: 320).padding(Space.m)
-      if showAudit { AuditView(model: model) } else { HistoryView(model: model) }
     }
   }
 }

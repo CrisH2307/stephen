@@ -372,18 +372,33 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).not.toMatch(/Color\((red|green|blue|white|black|hex):/);
   });
 
-  it('Jobs tab is wired to the protocol and shows job text verbatim', () => {
+  it('Jobs page is wired to the protocol, shows job text verbatim and names status in words', () => {
+    const jobs = read('JobsPage.swift');
     expect(window).toContain('case .jobs: JobsView(model: model)');
-    expect(window).toContain('model.refreshJobs()');
-    expect(window).toContain('model.stopJob(');
+    expect(jobs).toContain('model.refreshJobs()');
+    expect(jobs).toContain('model.stopJob(');
     expect(client).toContain('AppRequest.jobsList(newId())');
     expect(client).toContain('AppRequest.jobsStop(newId(), jobId:');
-    expect(window).toContain('NSWorkspace.shared.activateFileViewerSelecting');
-    expect(window).toContain("No jobs yet. Say 'while I'm cooking, …' or 'start a job to …'");
+    expect(jobs).toContain('NSWorkspace.shared.activateFileViewerSelecting');
+    expect(jobs).toContain('No jobs yet.');
     // Refresh every 5 s while visible.
-    expect(window).toContain('Timer.publish(every: 5');
-    // Stop only for a job that has not ended.
-    expect(window).toMatch(/if job\.isRunning/);
+    expect(jobs).toContain('Timer.publish(every: 5');
+    // Stop only for a job that has not ended; status is a word (not color alone).
+    expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop"/);
+    for (const w of ['Running', 'Finished', 'Stopped', 'Failed']) expect(jobs).toContain(`"${w}`);
+  });
+
+  it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {
+    const conv = read('ConversationsPage.swift');
+    expect(window).toContain('case .conversations: ConversationsPage(model: model)');
+    expect(window).not.toContain('AuditView');
+    expect(window).not.toContain('HistoryView');
+    expect(conv).toContain('model.refreshHistory(); model.refreshAudit()');
+    expect(conv).toContain('Refused: ');
+    expect(conv).toContain('Search conversations');
+    expect(conv).toContain('Nothing yet.');
+    expect(conv).toContain('Clear all conversations?');
+    expect(conv).toContain('Text(verbatim: entry.said)');
   });
 
   it('main window (UI-PLAN v3.1 sections 4 and 6): sidebar pages, shortcuts, remembered collapse, Start/Stop, Home', () => {
