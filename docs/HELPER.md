@@ -31,9 +31,9 @@ What it does (every program runs with an argv array, no shell):
 
 1. Finds `swiftc` with `xcrun --find swiftc` (and the SDK with `xcrun --sdk macosx --show-sdk-path`), else `swiftc`
    on PATH. If neither exists it says to run `xcode-select --install`.
-2. Compiles `helper/Core.swift`, `helper/AppClient.swift`, `helper/AppWindow.swift` and `helper/main.swift` in a
+2. Compiles `helper/Core.swift`, `helper/Theme.swift`, `helper/Components/*.swift`, `helper/AppClient.swift`, `helper/AppWindow.swift` and `helper/main.swift` in a
    temporary folder:
-   `swiftc -O -swift-version 5 [-sdk …] -o "Stephen Helper" Core.swift AppClient.swift AppWindow.swift main.swift -framework AppKit -framework CoreAudio -framework CoreGraphics -framework SwiftUI`
+   `swiftc -O -swift-version 5 [-sdk …] -o "Stephen Helper" Core.swift Theme.swift Components/*.swift AppClient.swift AppWindow.swift main.swift -framework AppKit -framework CoreAudio -framework CoreGraphics -framework SwiftUI`
 3. Assembles `~/Applications/Stephen Helper.app/Contents/{MacOS/Stephen Helper, Info.plist}` (`LSUIElement`,
    bundle id `dev.stephen.helper`) and signs it ad hoc:
    `codesign --force --sign - --identifier dev.stephen.helper "…/Stephen Helper.app"`.

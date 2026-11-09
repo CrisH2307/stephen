@@ -86,7 +86,9 @@ describe('install-helper', () => {
   it('builds the swiftc and codesign argv (no shell)', () => {
     expect(swiftcArgs('/src', '/tmp/x/Stephen Helper', '/SDK')).toEqual([
       '-O', '-swift-version', '5', '-sdk', '/SDK', '-o', '/tmp/x/Stephen Helper',
-      '/src/Core.swift', '/src/AppClient.swift', '/src/AppWindow.swift', '/src/main.swift',
+      '/src/Core.swift', '/src/Theme.swift',
+      '/src/Components/Sidebar.swift', '/src/Components/Controls.swift', '/src/Components/Lists.swift', '/src/Components/Gallery.swift',
+      '/src/AppClient.swift', '/src/AppWindow.swift', '/src/main.swift',
       '-framework', 'AppKit', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'SwiftUI',
     ]);
     expect(swiftcArgs('/src', '/o', null)).not.toContain('-sdk');
@@ -94,7 +96,7 @@ describe('install-helper', () => {
   });
 
   it('compiles every helper/*.swift file (the Stephen window included) and links SwiftUI', () => {
-    const swift = readdirSync(helperSourceDir()).filter((f) => f.endsWith('.swift')).sort();
+    const swift = (readdirSync(helperSourceDir(), { recursive: true }) as string[]).filter((f) => f.endsWith('.swift')).sort();
     expect([...HELPER_SOURCES].sort()).toEqual(swift);
     expect(HELPER_SOURCES.at(-1)).toBe('main.swift');
     expect(HELPER_FRAMEWORKS).toContain('SwiftUI');
