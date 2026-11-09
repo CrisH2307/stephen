@@ -89,7 +89,8 @@ struct AskBoxView: View {
     let mode = AskBoxMode.of(model, box)
     VStack(alignment: .leading, spacing: Space.s) {
       topStrip
-      content(mode)
+      // Content fades and settles from the top while the panel eases to its new height (see resize below).
+      content(mode).transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
     .padding(.horizontal, Space.l).padding(.bottom, Space.l).padding(.top, Space.xs)
     .frame(width: 360, alignment: .leading)
@@ -433,7 +434,8 @@ final class AskBoxController: NSObject {
     let top = f.maxY
     f.size = size
     f.origin.y = top - size.height
-    p.setFrame(f, display: true)
+    // Eased, not a jump (the menu opening, a reply arriving). Instant with Reduce Motion or before it is on screen.
+    p.setFrame(f, display: true, animate: p.isVisible && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     p.invalidateShadow()
   }
 

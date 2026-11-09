@@ -27,7 +27,7 @@ struct HomeView: View {
 
   var body: some View {
     Group {
-      if isEmpty { start } else { chat }
+      if isEmpty { start.transition(.opacity) } else { chat.transition(.opacity) }
     }
     .stephenAnimation(value: isEmpty)
     .background(Button("") { newChat() }.keyboardShortcut("n").opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
@@ -68,10 +68,16 @@ struct HomeView: View {
   private var chat: some View {
     VStack(spacing: Space.m) {
       HStack(spacing: Space.m) {
+        // Back to the empty Home. The chat is not lost: it stays in Conversations.
+        Button { newChat() } label: {
+          Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold)).foregroundColor(t.ink)
+            .frame(width: 32, height: 32).background(Circle().fill(t.surface)).overlay(Circle().stroke(t.line, lineWidth: 1))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain).help("Go back (⌘N)").accessibilityLabel("Go back")
         Text(verbatim: model.threadTitle).font(TypeScale.section).foregroundColor(t.ink).lineLimit(1)
           .accessibilityAddTraits(.isHeader)
         Spacer(minLength: 0)
-        QuietButton("New chat", symbol: "square.and.pencil") { newChat() }.help("New chat (⌘N)")
       }
       .frame(maxWidth: 720).frame(maxWidth: .infinity)
       ChatThreadView(model: model).frame(maxWidth: 720).frame(maxWidth: .infinity)
