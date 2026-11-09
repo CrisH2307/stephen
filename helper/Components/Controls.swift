@@ -108,13 +108,15 @@ struct AskField: View {
   @Binding var text: String
   var hint: String? = nil
   var onMic: (() -> Void)? = nil
+  /// Home's centred composer: bigger text and more room.
+  var large: Bool = false
   let onSubmit: () -> Void
-  init(_ placeholder: String = "Ask Stephen", text: Binding<String>, hint: String? = nil, onMic: (() -> Void)? = nil, onSubmit: @escaping () -> Void) {
-    self.placeholder = placeholder; self._text = text; self.hint = hint; self.onMic = onMic; self.onSubmit = onSubmit
+  init(_ placeholder: String = "Ask Stephen", text: Binding<String>, hint: String? = nil, onMic: (() -> Void)? = nil, large: Bool = false, onSubmit: @escaping () -> Void) {
+    self.placeholder = placeholder; self._text = text; self.hint = hint; self.onMic = onMic; self.large = large; self.onSubmit = onSubmit
   }
   var body: some View {
     HStack(spacing: Space.s) {
-      TextField(placeholder, text: $text).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
+      TextField(placeholder, text: $text).textFieldStyle(.plain).font(large ? Font.system(size: 17) : TypeScale.body).foregroundColor(t.ink)
         .onSubmit(onSubmit).accessibilityLabel(placeholder)
       if let hint = hint, text.isEmpty { Text(verbatim: hint).font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true) }
       if let onMic = onMic {
@@ -122,8 +124,8 @@ struct AskField: View {
           .buttonStyle(.plain).help("Talk").accessibilityLabel("Talk to Stephen")
       }
     }
-    .padding(.horizontal, Space.m).padding(.vertical, 10)
-    .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface))
-    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.line, lineWidth: 1))
+    .padding(.horizontal, large ? Space.l : Space.m).padding(.vertical, large ? Space.l : 10)
+    .background(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).fill(t.surface))
+    .overlay(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).stroke(t.line, lineWidth: 1))
   }
 }
