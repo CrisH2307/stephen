@@ -6,6 +6,7 @@
 {"from":"app","kind":"request","msg":{"id":"a3","type":"chat.send","text":"open my calendar"}}
 {"from":"node","kind":"response","msg":{"id":"a3","type":"error","message":"busy"}}
 {"from":"node","kind":"push","msg":{"type":"chat.done","entryId":"h-20261101-0007","reply":"It's 8 degrees and cloudy in Toronto.","outcome":"ok","tools":["web_search","read_page"],"ms":4210}}
+{"from":"node","kind":"push","msg":{"type":"chat.done","entryId":"h-20261101-0009","reply":"I searched LinkedIn for Hai Phan.","outcome":"ok","tools":["type","click"],"ms":9800,"steps":[{"text":"type textbox \"Search\"","status":"ok"},{"text":"Refused: click button \"Connect\". you did not allow it","status":"refused"},{"text":"Used gmail_search","status":"failed"}]}}
 {"from":"node","kind":"push","msg":{"type":"state","state":"idle"}}
 {"from":"app","kind":"request","msg":{"id":"a4","type":"chat.stop"}}
 {"from":"node","kind":"response","msg":{"id":"a4","type":"ok"}}

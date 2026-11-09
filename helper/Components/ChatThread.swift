@@ -67,12 +67,17 @@ struct ChatBubbleRow: View {
       }
       .accessibilityElement(children: .combine).accessibilityLabel("You: \(bubble.text)")
     case .reply:
-      VStack(alignment: .leading, spacing: Space.xs) {
-        Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
+      // The work first, small and folded; the answer after it, as the main text (owner, 2026-11-09).
+      VStack(alignment: .leading, spacing: Space.s) {
+        if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
+        Text(verbatim: bubble.text).font(TypeScale.reply).foregroundColor(t.ink).lineSpacing(3).textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
-        if !bubble.detail.isEmpty { Text(verbatim: bubble.detail).font(TypeScale.secondary).foregroundColor(t.ink2) }
+          .accessibilityLabel("Stephen: \(bubble.text)")
+        if bubble.steps.isEmpty && !bubble.detail.isEmpty {
+          Text(verbatim: bubble.detail).font(TypeScale.secondary).foregroundColor(t.ink2)
+        }
       }
-      .accessibilityElement(children: .combine).accessibilityLabel("Stephen: \(bubble.text)")
+      .accessibilityElement(children: .contain)
     case .problem:
       VStack(alignment: .leading, spacing: Space.s) {
         Text(verbatim: "Problem").sectionLabelStyle(t)
@@ -81,6 +86,54 @@ struct ChatBubbleRow: View {
       }
     case .info:
       Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
+    }
+  }
+}
+
+/** "3 steps · 9.8 s", folded by default; open, one line per step, refusals and failures named in words. */
+struct ActionChain: View {
+  @Environment(\.stephenTheme) var t
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
+  let steps: [ChatStep]
+  /** "9.8 s" (the reply's time line), may be empty. */
+  let seconds: String
+  @State private var open = false
+
+  var body: some View {
+    let refused = steps.filter { $0.status == "refused" }.count
+    var parts = [steps.count == 1 ? "1 step" : "\(steps.count) steps"]
+    if refused > 0 { parts.append(refused == 1 ? "1 refused" : "\(refused) refused") }
+    if !seconds.isEmpty { parts.append(seconds) }
+    let summary = parts.joined(separator: " · ")
+    return VStack(alignment: .leading, spacing: Space.xs) {
+      Button {
+        if reduceMotion { open.toggle() } else { withAnimation(.easeInOut(duration: Motion.state)) { open.toggle() } }
+      } label: {
+        HStack(spacing: Space.xs) {
+          Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+            .rotationEffect(.degrees(open ? 90 : 0))
+          Text(verbatim: summary).font(TypeScale.secondary)
+        }
+        .foregroundColor(t.ink2).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("What Stephen did: \(summary)")
+      .accessibilityHint(open ? "Hides the steps" : "Shows the steps")
+      if open {
+        VStack(alignment: .leading, spacing: 4) {
+          ForEach(Array(steps.enumerated()), id: \.offset) { _, s in
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+              Circle().fill(s.status == "ok" ? t.line : (s.status == "refused" ? t.warn : t.bad))
+                .frame(width: 6, height: 6).accessibilityHidden(true)
+              Text(verbatim: s.text).font(TypeScale.secondary)
+                .foregroundColor(s.status == "ok" ? t.ink2 : t.ink).fixedSize(horizontal: false, vertical: true)
+            }
+          }
+        }
+        .padding(.leading, Space.m)
+        .overlay(Rectangle().fill(t.line).frame(width: 1), alignment: .leading)
+        .transition(.opacity)
+      }
     }
   }
 }
