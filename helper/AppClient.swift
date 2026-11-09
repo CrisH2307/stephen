@@ -1092,6 +1092,13 @@ final class AppModel: ObservableObject {
   /** The current chat. ponytail: held in memory for as long as the helper runs; older chats are in Conversations (history.list). */
   var thread: [ChatBubble] { return chat.filter { $0.id > chatSince } }
 
+  /** What the chat is called, from your first message (one line, 40 characters), like other chat apps; "New chat" when empty. */
+  var threadTitle: String {
+    guard let first = thread.first(where: { $0.kind == .said })?.text else { return "New chat" }
+    let line = first.split(whereSeparator: { $0.isNewline }).first.map(String.init) ?? first
+    return line.count > 40 ? String(line.prefix(40)).trimmingCharacters(in: .whitespaces) + "…" : line
+  }
+
   /** ⌘N: start a new chat. Nothing is deleted; the old messages stay in Conversations. */
   func newChat() { chatSince = chat.last?.id ?? 0 }
 

@@ -100,20 +100,24 @@ struct AskBoxView: View {
     .onExitCommand { escape(mode) }
   }
 
-  /// Drag here to move the box. The ... button opens the menu.
+  /// Drag the title area to move the box. The ... button sits beside it, not on top: an AppKit drag view would take
+  /// its clicks (that was the "can't open the menu" bug).
   private var topStrip: some View {
-    ZStack {
-      DragStrip(onEnd: actions.dragEnded)
-      Capsule().fill(t.line).frame(width: 36, height: 4).allowsHitTesting(false).accessibilityHidden(true)
-      HStack {
-        Spacer()
-        Button { box.menuOpen.toggle(); model.refreshUsage() } label: {
-          Image(systemName: "ellipsis").font(.system(size: 16)).foregroundColor(t.ink2).frame(width: 24, height: 24)
+    HStack(spacing: Space.xs) {
+      ZStack {
+        DragStrip(onEnd: actions.dragEnded)
+        VStack(spacing: 2) {
+          Capsule().fill(t.line).frame(width: 36, height: 4).accessibilityHidden(true)
+          Text(verbatim: model.threadTitle).font(TypeScale.secondary.weight(.semibold)).foregroundColor(t.ink2).lineLimit(1)
         }
-        .buttonStyle(.plain).help("More").accessibilityLabel("More")
+        .padding(.horizontal, Space.s).allowsHitTesting(false)
       }
+      Button { box.menuOpen.toggle(); model.refreshUsage() } label: {
+        Image(systemName: "ellipsis").font(.system(size: 16)).foregroundColor(t.ink2).frame(width: 28, height: 28).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain).help("More").accessibilityLabel("More")
     }
-    .frame(height: 24)
+    .frame(height: 32)
     .accessibilityElement(children: .contain)
   }
 

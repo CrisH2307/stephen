@@ -67,6 +67,13 @@ struct HomeView: View {
   /// Messages: the same thread as the Ask box, the composer at the bottom.
   private var chat: some View {
     VStack(spacing: Space.m) {
+      HStack(spacing: Space.m) {
+        Text(verbatim: model.threadTitle).font(TypeScale.section).foregroundColor(t.ink).lineLimit(1)
+          .accessibilityAddTraits(.isHeader)
+        Spacer(minLength: 0)
+        QuietButton("New chat", symbol: "square.and.pencil") { newChat() }.help("New chat (⌘N)")
+      }
+      .frame(maxWidth: 720).frame(maxWidth: .infinity)
       ChatThreadView(model: model).frame(maxWidth: 720).frame(maxWidth: .infinity)
       AskField(text: $draft, onMic: actions.talk, onSubmit: send).frame(maxWidth: 720)
     }
