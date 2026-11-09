@@ -61,6 +61,7 @@ import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } 
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
 import { accountsStatus, phoneAccountRow } from '../app/accounts-status.js';
+import { personalSummary } from '../app/personal.js';
 import { macNotify, macNotifyTitled, type NotifyFn, type NotifyTitledFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
@@ -539,6 +540,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     if (!signIn || Date.now() - signIn.at > 5 * 60_000) signIn = { at: Date.now(), value: phoneAuth(home, cfg.claudePath) };
     return signIn.value;
   };
+  const allAccounts = async () => {
+    const s = await accountsStatus(loaded.accounts);
+    return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
+  };
   /** Serve <home>/run/app.sock for the Stephen window; null (with a note) when that isn't possible. */
   const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null): Promise<AppServer | null> => {
     const server = new AppServer({
@@ -551,10 +556,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       history,
       audit,
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
-      accounts: async () => {
-        const s = await accountsStatus(loaded.accounts);
-        return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
-      },
+      accounts: allAccounts,
+      personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),

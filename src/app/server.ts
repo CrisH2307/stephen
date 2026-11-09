@@ -43,6 +43,7 @@ import type { AppSettings } from './settings.js';
 import type { AccountsStatus } from './accounts-status.js';
 import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
 import type { AppControl } from './control.js';
+import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
 
 /** `<home>/run/app.sock` */
@@ -94,6 +95,8 @@ export interface AppServerOptions {
   control?: AppControl;
   /** usage.get (src/app/usage.ts). Absent = not available. */
   usage?: () => Promise<UsageReport>;
+  /** personal.summary (src/app/personal.ts). Absent = not available. */
+  personal?: () => Promise<PersonalSummary>;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
   openWindow: () => string | null;
   log?: (line: string) => void;
@@ -440,6 +443,13 @@ export class AppServer {
       case 'usage.get':
         if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };
         return { id, type: 'usage', ...(await this.o.usage()) };
+      case 'personal.summary':
+        if (!this.o.personal) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          return { id, type: 'personal', ...(await this.o.personal()) };
+        } catch {
+          return { id, type: 'error', message: 'could not read the personal summary' };
+        }
       case 'window.open': {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };

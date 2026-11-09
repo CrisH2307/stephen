@@ -184,6 +184,44 @@ struct AppRequest: Encodable {
   static func zenOpen(_ id: String) -> AppRequest { return AppRequest(id: id, type: "zen.open") }
   static func doctorRun(_ id: String) -> AppRequest { return AppRequest(id: id, type: "doctor.run") }
   static func usageGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage.get") }
+  /** `personal.summary` (src/app/personal.ts), read-only. */
+  static func personalSummary(_ id: String) -> AppRequest { return AppRequest(id: id, type: "personal.summary") }
+}
+
+/** The `personal` answer (src/app/personal.ts). The owner's own config and Stephen's fixed rules: shown verbatim. */
+struct PersonalSummary: Decodable, Equatable {
+  struct About: Decodable, Equatable {
+    var name: String? = nil
+    var school: String? = nil
+    var work: String? = nil
+    var notes: [String] = []
+    var timeZone: String = ""
+  }
+  struct Routine: Decodable, Equatable, Identifiable {
+    let id: String
+    let name: String
+    let uses: String
+    let say: String
+    /** "ready" | "needs_setup" | "off" */
+    let state: String
+    var missing: [String]? = nil
+  }
+  struct Cell: Decodable, Equatable {
+    /** "allowed" | "asks" | "never" */
+    let level: String
+    let rule: String
+  }
+  struct Row: Decodable, Equatable {
+    let action: String
+    let cells: [Cell]
+  }
+  struct Permissions: Decodable, Equatable {
+    let columns: [String]
+    let rows: [Row]
+  }
+  let about: About
+  let routines: [Routine]
+  let permissions: Permissions
 }
 
 /** One bar of the `usage` answer (src/app/usage.ts): context has tokens/window, memory has bytes/budget. */
@@ -416,6 +454,8 @@ struct AppMessage: Decodable {
   // usage (context is nil when unknown)
   var context: UsageBar? = nil
   var memory: UsageBar? = nil
+  // personal (the whole answer)
+  var personal: PersonalSummary? = nil
   // state / heard pushes
   var state: String? = nil
   var text: String? = nil
@@ -473,6 +513,7 @@ struct AppMessage: Decodable {
       context = try? c.decodeIfPresent(UsageBar.self, forKey: .context)
       memory = try? c.decodeIfPresent(UsageBar.self, forKey: .memory)
     }
+    if type == "personal" { personal = try? PersonalSummary(from: decoder) }
     state = try? c.decodeIfPresent(String.self, forKey: .state)
     text = try? c.decodeIfPresent(String.self, forKey: .text)
     source = try? c.decodeIfPresent(String.self, forKey: .source)
@@ -719,6 +760,9 @@ final class AppModel: ObservableObject {
 
   /** Last `usage` answer; nil until one arrives (and again when the listener doesn't know the request). */
   @Published private(set) var usage: AppUsage? = nil
+  /** personal.summary for the Personal page; personalNotice says why it is missing. */
+  @Published private(set) var personal: PersonalSummary? = nil
+  @Published private(set) var personalNotice: String? = nil
 
   /** The gate's questions waiting for a click, oldest first. Cleared when the connection drops (the gate falls back). */
   @Published private(set) var confirms: [PendingConfirm] = []
@@ -1091,6 +1135,18 @@ final class AppModel: ObservableObject {
     confirms.removeAll { $0.id == confirmId }
     request(AppRequest.confirmAnswer(newId(), confirmId: confirmId, approve: approve)) { [weak self] msg in
       if msg.type == "error" { self?.log("app.sock: confirm answer refused: \(msg.message ?? "error")") }
+    }
+  }
+
+  func refreshPersonal() {
+    request(AppRequest.personalSummary(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "personal", let p = msg.personal {
+        self.personal = p
+        self.personalNotice = nil
+      } else {
+        self.personalNotice = msg.message ?? "Couldn't read the Personal summary."
+      }
     }
   }
 

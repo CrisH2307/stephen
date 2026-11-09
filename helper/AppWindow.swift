@@ -1,6 +1,7 @@
 // Stephen Helper: the Stephen window, SwiftUI hosted in one reused NSWindow. The frame (sidebar, page router) is in
-// MainWindow.swift, Home in HomeView.swift; this file has the older screens (Memory, History, Settings, Accounts, Jobs,
-// Audit) that later UI PRs restyle, and the window controller. Data comes from AppModel (AppClient.swift), which talks to `stephen listen` over <home>/run/app.sock.
+// MainWindow.swift, Home in HomeView.swift, Personal in PersonalView.swift; this file has the older screens (Memory,
+// History, Settings, Jobs, Audit) that later UI PRs restyle, and the window controller.
+// Data comes from AppModel (AppClient.swift), which talks to `stephen listen` over <home>/run/app.sock.
 //
 // Untrusted text (replies, memory, history, audit, settings) is always shown with Text(verbatim:), never as a
 // LocalizedStringKey, so nothing is interpreted as Markdown.
@@ -296,81 +297,13 @@ struct SettingsView: View {
 
 // ───────────────────────────── accounts ─────────────────────────────
 
-struct AccountsView: View {
-  @ObservedObject var model: AppModel
-
-  var body: some View {
-    VStack(spacing: 0) {
-      if let notice = model.accountsNotice {
-        NoticeView(text: notice)
-        Divider()
-      }
-      if model.accounts.isEmpty {
-        EmptyStateView(symbol: "key", text: "No account information yet. Press Refresh.")
-      } else {
-        List {
-          ForEach(model.accounts) { account in
-            AccountRowView(account: account)
-          }
-        }
-      }
-      Divider()
-      HStack(spacing: 8) {
-        Text(verbatim: "Secrets stay in the Keychain or .env. Only where they were found is shown.")
-          .font(.caption)
-          .foregroundColor(.secondary)
-        Spacer()
-        Button("Refresh") { model.refreshAccounts() }
-      }
-      .padding(10)
-    }
-    .onAppear { model.refreshAccounts() }
-  }
-}
-
-struct AccountRowView: View {
-  let account: AccountRow
-
-  var body: some View {
-    HStack(alignment: .top, spacing: 10) {
-      Image(systemName: symbol).foregroundColor(tint).frame(width: 20)
-      VStack(alignment: .leading, spacing: 3) {
-        HStack(spacing: 6) {
-          Text(verbatim: account.name).bold()
-          Text(verbatim: status).font(.caption).foregroundColor(.secondary)
-        }
-        Text(verbatim: account.hint).font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
-      }
-    }
-    .padding(.vertical, 3)
-  }
-
-  private var symbol: String {
-    switch account.state {
-    case "connected": return "checkmark.circle.fill"
-    case "off": return "minus.circle"
-    default: return "exclamationmark.circle"
-    }
-  }
-
-  private var tint: Color {
-    switch account.state {
-    case "connected": return Color.green
-    case "off": return Color.secondary
-    default: return Color.orange
-    }
-  }
-
-  private var status: String {
-    var parts: [String] = []
-    switch account.state {
-    case "connected": parts.append("Connected")
-    case "off": parts.append("Turned off")
-    default: parts.append("Not set")
-    }
-    if let source = account.source { parts.append(source == "keychain" ? "Keychain" : source) }
-    if let detail = account.detail, !detail.isEmpty { parts.append(detail) }
-    return parts.joined(separator: " · ")
+/** An accounts.status row in words (Personal > Connected). Where the secret was found, never the secret. */
+func accountStateWord(_ account: AccountRow) -> (word: String, kind: StatusKind) {
+  let place = account.source.map { $0 == "keychain" ? " · Keychain" : " · \($0)" } ?? ""
+  switch account.state {
+  case "connected": return ("Connected" + place, .ok)
+  case "off": return ("Turned off", .idle)
+  default: return ("Not set up", .warn)
   }
 }
 

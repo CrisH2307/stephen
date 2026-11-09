@@ -54,7 +54,7 @@ The hard parts are not speech or the LLM call. They are:
   │     ▼                                                                                       │
   │ WarmConversationRunner ─▶ one warm claude -p per conversation (only Stephen's MCP tools)    │
   │     ▲                     │                                                                 │
-  │ app.sock (0600) ◀─ Stephen window (SwiftUI: chat / memory / history / settings / audit)    │
+  │ app.sock (0600) ◀─ Stephen window (SwiftUI: Home / Personal / history / jobs / settings)    │
   └─────────────────────────┼───────────────────────────────────────────────────────────────────┘
                             ▼ stdio (MCP)
   ┌──────────────────────── stephen serve (the only thing the model can call) ────────────────┐
@@ -515,6 +515,10 @@ WebSocket URL (that path carries a session id).
   the 8 KB budget; context % is the last model reply's token usage (input + cache + output) against the model's
   context window, both from the warm Claude Code stream (null when unknown, e.g. `voice.warm` off). Warn at 80%. It
   returns numbers only, no memory text.
+- `personal.summary` (src/app/personal.ts, UI-PLAN v3.1 section 7) is read-only too: the owner's own `voice.aboutMe`
+  (without the home address), the listener's time zone, routine states derived from `accounts.status`, and the
+  permission table. That table is a static description of the safety rules (one source of truth); each cell cites
+  its rule, and a test checks every cited policy rule id exists in src/safety/policy.ts. The model can't reach it.
 
 ## 5. Threat model (summary)
 

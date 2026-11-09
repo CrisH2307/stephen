@@ -19,7 +19,7 @@ export const INSTALL_HELPER_USAGE = 'stephen install-helper [--dry-run]';
 export const HELPER_SOURCES = [
   'Core.swift', 'Theme.swift',
   'Components/Sidebar.swift', 'Components/Controls.swift', 'Components/Lists.swift', 'Components/Gallery.swift',
-  'AppClient.swift', 'AppWindow.swift', 'AskBox.swift', 'MainWindow.swift', 'HomeView.swift', 'main.swift',
+  'AppClient.swift', 'AppWindow.swift', 'AskBox.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift', 'main.swift',
 ] as const;
 export const HELPER_FRAMEWORKS = ['AppKit', 'CoreAudio', 'CoreGraphics', 'SwiftUI'] as const;
 export const XCODE_TOOLS_FIX = 'Install Apple\'s command line tools: run `xcode-select --install` (or install Xcode), then run `stephen install-helper` again.';

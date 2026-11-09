@@ -110,8 +110,7 @@ private struct MainWindowView: View {
       case .home: HomeView(model: model, nav: nav, actions: actions)
       case .conversations: ConversationsPage(model: model)
       case .jobs: JobsView(model: model)
-      // Until the Personal page PR: the accounts list it will reuse.
-      case .personal: AccountsView(model: model)
+      case .personal: PersonalView(model: model, nav: nav)
       case .settings: SettingsView(model: model)
       case .memory: MemoryView(model: model)
       }

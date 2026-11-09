@@ -42,6 +42,8 @@ const RESPONSES: Record<string, string[]> = {
   'zen.open': ['zen', 'error'],
   'doctor.run': ['doctor', 'error'],
   'usage.get': ['usage', 'error'],
+  // Personal page (src/app/personal.ts), read-only.
+  'personal.summary': ['personal', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -246,7 +248,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   const read = (f: string) => readFileSync(join(helperSourceDir(), f), 'utf8');
   const client = read('AppClient.swift');
   // The window's sources: frame and router, Home, and the older screens.
-  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift'].map(read).join('\n');
+  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift'].map(read).join('\n');
 
   it('AppClient sends every request type and handles every response and push type', () => {
     const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
@@ -277,8 +279,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     }
   });
 
-  it('Accounts (on Personal for now) and Home\'s Today row are wired to the protocol', () => {
-    expect(window).toContain('case .personal: AccountsView(model: model)');
+  it('Personal (accounts, personal.summary, memory) and Home\'s Today row are wired to the protocol', () => {
+    expect(window).toContain('case .personal: PersonalView(model: model, nav: nav)');
+    expect(window).toContain('model.refreshPersonal()');
+    expect(client).toContain('AppRequest.personalSummary(newId())');
+    expect(client).toContain('if type == "personal" { personal = try? PersonalSummary(from: decoder) }');
+    // View only: the one write on the page is Forget (owner default 3).
+    const personal = read('PersonalView.swift');
+    expect(personal.match(/model\.(add|update|clear|forget|stop|send)\w*\(/g)).toEqual(['model.forgetMemory(']);
+    expect(personal).toContain('PermissionTable(');
     expect(window).toContain('model.refreshAccounts()');
     expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
     // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.

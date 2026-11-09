@@ -22,6 +22,7 @@ import {
 import { appSettings } from '../../src/app/settings.js';
 import type { AppControl } from '../../src/app/control.js';
 import { accountsStatus } from '../../src/app/accounts-status.js';
+import { personalSummary } from '../../src/app/personal.js';
 import { parseHistoryConfig } from '../../src/history/config.js';
 import { HistoryStore } from '../../src/history/store.js';
 import { parseMemoryConfig } from '../../src/memory/config.js';
@@ -86,7 +87,7 @@ const VOICE_RAW = {
   claudeModel: 'sonnet',
   claudePath: '/Users/cris/.local/bin/claude',
   elevenlabs: { apiKeyFile: '/Users/cris/.stephen/elevenlabs-key.txt', voiceId: 'YEBbZ0itqHW31uoXSBns' },
-  aboutMe: { school: 'I study software engineering in Toronto.' },
+  aboutMe: { school: 'I study software engineering in Toronto.', home: '1 Secret St' },
 };
 
 const settingsFor = (configPath = '/Users/cris/.stephen/config.json') =>
@@ -141,6 +142,8 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     openWindow: () => (calls.opens++, null),
     control: FAKE_CONTROL,
     usage: async () => ({ context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } }),
+    personal: async () =>
+      personalSummary({ aboutMe: { name: 'Cris' }, accounts: await accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }), jobsOn: true, timeZone: 'America/Toronto' }),
     newId: () => `h_test${++ids}`,
     ...o,
   });
@@ -439,6 +442,7 @@ describe('memory, history, settings, audit, window', () => {
     expect(r.configPath).toBe('/Users/cris/.stephen/config.json');
     const config = r.config as Record<string, Record<string, unknown>>;
     expect(config.voice).toMatchObject({ model: 'sonnet', wakeWord: true, aboutMe: { school: 'I study software engineering in Toronto.' } });
+    expect(JSON.stringify(config)).not.toContain('Secret St'); // R9-12: the home address stays out of the window
     expect(config.memory).toEqual({ enabled: true, confirmWakeWord: true, maxItems: 30 });
     expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });
@@ -485,6 +489,17 @@ describe('memory, history, settings, audit, window', () => {
     expect(await h.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'usage', context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } });
     const none = await harness({ usage: undefined });
     expect(await none.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('personal.summary answers from the listener (read-only); without it, an error', async () => {
+    const h = await harness();
+    const got = await h.client.request({ id: 'p', type: 'personal.summary' });
+    expect(got).toMatchObject({ id: 'p', type: 'personal', about: { name: 'Cris', notes: [], timeZone: 'America/Toronto' } });
+    expect((got.permissions as { columns: string[] }).columns).toEqual(['F5', 'Hey Stephen', 'Phone']);
+    const none = await harness({ personal: undefined });
+    expect(await none.client.request({ id: 'p', type: 'personal.summary' })).toEqual({ id: 'p', type: 'error', message: 'not available in this listener' });
+    const broken = await harness({ personal: async () => { throw new Error('boom'); } });
+    expect(await broken.client.request({ id: 'p', type: 'personal.summary' })).toEqual({ id: 'p', type: 'error', message: 'could not read the personal summary' });
   });
 
   it('window.open forwards to the helper, or says why it could not', async () => {
