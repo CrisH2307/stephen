@@ -476,6 +476,46 @@ and 100 MB), the start dialog names them, and starting **moves** them into the j
 `lstat` at move time, so a file swapped for a symlink after the dialog is skipped). The inbox is then empty for the
 next job. Code jobs use the repo worktree instead and leave the inbox alone.
 
+### 4.14 App control: start/stop the listener, phone, Zen, doctor (ROADMAP P2)
+
+**Listener lifecycle (Swift, `StephenControl` in helper/AppClient.swift).** Stephen Helper, not the window, owns the
+listener it starts, so closing the window (or quitting the helper) leaves it running. It runs
+`<node> <cli.js> listen` with the node, cli.js and PATH recorded in `<home>/run/launch.json` (written 0600 by
+`stephen install-helper` only, so a listener run once from another checkout never changes what Start runs; the helper
+refuses a file that is not ours or is group/world-writable, and when it is missing Start says to run
+`stephen install-helper`).
+Output goes to `<home>/logs/listen.log` (0600, rotated at 2 MB), which the window tails. One owner: Start does nothing
+while app.sock answers (a listener already runs, from the app or from Terminal) or while our child is still starting.
+The child's pid is saved in `<home>/run/listen.pid` (removed when the child exits, or when nothing serves app.sock
+and the helper has no child); app.sock's peer pid (`LOCAL_PEERPID`) equal to it means "ours". Stop works only on ours
+(SIGINT, SIGINT again after 3 s, SIGKILL after 10 s; the delayed signals go only while that pid's argv is still
+`<node> <…/dist/cli.js> listen`, so a reused pid is left alone); a Terminal listener is stopped with Ctrl-C there. A listener started from the helper uses the helper's macOS permissions (microphone, Automation), so the
+helper's Info.plist carries the usage strings and the owner grants them to Stephen Helper once.
+
+**New app.sock requests** (src/app/control.ts, wire format in src/app/protocol.ts): `phone.on`, `phone.off`,
+`zen.open`, `doctor.run`, `usage.get`. What they allow, and why it is safe:
+- Who can send them: only processes of the same user (app.sock is 0600 in a 0700 folder; the Swift client also checks
+  the peer uid). That is the same trust as typing `stephen phone on` or `stephen doctor` in Terminal, which such a
+  process can already do. None is reachable by the model: voice and phone runs only have Stephen's MCP tools, src/app
+  is outside `CLAUDE_REACHABLE`, and the boundary tests fail if Claude-reachable code imports it.
+- `phone.on` / `phone.off` call the same `runPhoneCli` as the terminal commands, in the listener process, so the
+  lock-down proof (the phone session's tool list must equal Stephen's phone tools), the sign-in check, the "already
+  on" refusal and the kill switch marker are unchanged. `phone.off` is the kill switch: the marker goes first, so phone
+  requests are refused at once, then Remote Control is stopped. Remote Control started by `phone.on` is a child of the
+listener: when the listener exits (Stop, Ctrl-C, end of listening) it runs the same `phone off` code if the marker is
+its own, so the phone link never outlives it. Remote Control gets the listener's stdio (`/dev/null` in when the
+helper started it), so its first-run "trust this folder?" prompt cannot be answered there: `phone.on` refuses while
+the phone config shows the folder untrusted and says to run `stephen phone on` once in Terminal.
+- `zen.open` runs `stephen zen-launch` (what the "Zen for Stephen" app runs) and `doctor.run` runs `stephen doctor
+  --json`, as children with a 90 s limit. Neither takes an argument from the request, so nothing in a request reaches
+  a command line. Doctor output holds paths and check results, never secret values; Zen shows as host:port, not its
+WebSocket URL (that path carries a session id).
+- They change nothing the model could later read as instructions, write no memory, timers or jobs, and send nothing.
+- `usage.get` (src/app/usage.ts) is read-only: memory % is the byte size of the memory block one chat loads against
+  the 8 KB budget; context % is the last model reply's token usage (input + cache + output) against the model's
+  context window, both from the warm Claude Code stream (null when unknown, e.g. `voice.warm` off). Warn at 80%. It
+  returns numbers only, no memory text.
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |

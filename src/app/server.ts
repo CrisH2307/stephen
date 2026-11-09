@@ -9,6 +9,8 @@
  *    `stephen app` connects briefly next to it. Every client gets every push (state, heard, chat.done).
  *  - A stale socket file (a crashed listener) is replaced only when connecting to it fails; a live one means another
  *    `stephen listen` serves it, and start() refuses. The socket is removed on close (only if it is still ours).
+ *  - Control requests (phone.on/off, zen.open, doctor.run; src/app/control.ts) are the owner's clicks, like jobs.stop.
+ *    Errors they throw go back as `{id, type:"error", message}`.
  *  - Typed chat runs through the AppCommandQueue: the same queue as voice commands (Listener.submit), so the wake
  *    word, Esc and push-to-talk treat it like a voice command and two commands never run at once.
  *  - Ask box confirmations (protocol.ts, confirm.*): the gate's question is relayed to clients that said
@@ -40,6 +42,8 @@ import {
 import type { AppSettings } from './settings.js';
 import type { AccountsStatus } from './accounts-status.js';
 import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
+import type { AppControl } from './control.js';
+import type { UsageReport } from './usage.js';
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -86,6 +90,10 @@ export interface AppServerOptions {
   jobs?: AppJobs;
   /** app.speakReplies: speak typed-chat replies too. */
   speakReplies: boolean;
+  /** phone.on / phone.off / zen.open / doctor.run (src/app/control.ts). Absent = not available. */
+  control?: AppControl;
+  /** usage.get (src/app/usage.ts). Absent = not available. */
+  usage?: () => Promise<UsageReport>;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
   openWindow: () => string | null;
   log?: (line: string) => void;
@@ -419,6 +427,19 @@ export class AppServer {
           return { id, type: 'error', message: 'could not stop the job' };
         }
       }
+      case 'phone.on':
+      case 'phone.off':
+      case 'zen.open':
+      case 'doctor.run': {
+        const c = this.o.control;
+        if (!c) return { id, type: 'error', message: 'not available in this listener' };
+        if (req.type === 'zen.open') return { id, type: 'zen', ...(await c.openZen()) };
+        if (req.type === 'doctor.run') return { id, type: 'doctor', ...(await c.doctor()) };
+        return { id, type: 'phone', ...(await (req.type === 'phone.on' ? c.phoneOn() : c.phoneOff())) };
+      }
+      case 'usage.get':
+        if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };
+        return { id, type: 'usage', ...(await this.o.usage()) };
       case 'window.open': {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };

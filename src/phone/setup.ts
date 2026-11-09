@@ -6,8 +6,8 @@
  * Owner-only: loaded by `stephen phone`, never by anything Claude can reach.
  */
 import { execFile, spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { readFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, realpathSync, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { parseStreamLine } from '../lib/claude-stream.js';
 import { ensurePrivateDir, writePrivateFileAtomicSync } from '../lib/fs.js';
@@ -64,7 +64,54 @@ export function removePhoneMarker(home: string): void {
   }
 }
 
+/**
+ * Has the phone config trusted the phone folder (Claude Code's first-run "trust this folder?" prompt)? Read from
+ * `<phone config>/.claude.json` (`projects[<dir or a parent>].hasTrustDialogAccepted`, as seen in Claude Code
+ * 2.1.x). null when that file is missing or not in that shape, so a format change never blocks the link by itself.
+ * REVIEW-9 R9-13: the window's `phone on` runs Remote Control with no terminal to answer the prompt.
+ */
+export function phoneFolderTrusted(home: string): boolean | null {
+  let projects: Record<string, { hasTrustDialogAccepted?: unknown }>;
+  try {
+    const j = JSON.parse(readFileSync(join(phoneConfigDir(home), '.claude.json'), 'utf8')) as { projects?: unknown };
+    if (!j.projects || typeof j.projects !== 'object') return null;
+    projects = j.projects as typeof projects;
+  } catch {
+    return null;
+  }
+  let real = phoneDir(home);
+  try {
+    real = realpathSync(real);
+  } catch {
+    /* not written yet */
+  }
+  const trusted = (d: string): boolean => (Object.hasOwn(projects, d) && projects[d]?.hasTrustDialogAccepted === true) || (dirname(d) !== d && trusted(dirname(d)));
+  return trusted(phoneDir(home)) || trusted(real);
+}
+
 export const isRemoteControl = (command: string): boolean => /\bclaude\b.*\bremote-control\b/.test(command);
+
+/**
+ * `stephen phone off`: remove the marker first (phone requests are refused at once), then SIGTERM its Remote Control
+ * if that pid is still one. With `onlyIfPid`, only when the marker was written by that process (REVIEW-9 R9-4: the
+ * listener that ran `phone on` for the window stops its Remote Control when it exits). Returns the marker it removed.
+ */
+export function stopPhoneLink(
+  home: string,
+  o: { commandOf?: (pid: number) => string; kill?: (pid: number) => void; onlyIfPid?: number } = {},
+): { pid: number; rc: number } | null {
+  const m = readPhoneMarker(home);
+  if (!m || (o.onlyIfPid !== undefined && m.pid !== o.onlyIfPid)) return null;
+  removePhoneMarker(home);
+  if (m.rc > 0 && isRemoteControl((o.commandOf ?? commandOf)(m.rc))) {
+    try {
+      (o.kill ?? ((pid) => process.kill(pid, 'SIGTERM')))(m.rc);
+    } catch {
+      /* already gone */
+    }
+  }
+  return m;
+}
 
 /**
  * The kill switch, checked on every phone request: on only while the marker's Remote Control process really runs

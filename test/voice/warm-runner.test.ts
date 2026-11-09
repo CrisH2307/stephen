@@ -184,6 +184,18 @@ describe('WarmConversationRunner (in-memory process, fake timers)', () => {
     expect(h.timings[0]!.warm).toEqual({ command: 1, leadMs: 0 });
   });
 
+  it('contextUsage (window ⋯ menu): the current process after its first command; null before, and after the end', async () => {
+    const h = harness();
+    expect(h.runner.contextUsage()).toBeNull();
+    await h.runner.run('open youtube');
+    expect(h.runner.contextUsage()).toBeNull(); // the process reported none
+    (h.procs[0] as { context?: unknown }).context = { tokens: 41_000, window: 200_000 };
+    expect(h.runner.contextUsage()).toEqual({ tokens: 41_000, window: 200_000 });
+    h.runner.endConversation();
+    await settle();
+    expect(h.runner.contextUsage()).toBeNull();
+  });
+
   const triggers: [string, (h: ReturnType<typeof harness>) => Promise<void>][] = [
     [
       'the window ran out (timer)',

@@ -23,7 +23,7 @@ import { readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
 import { SESSION_STATE_FILE, removeSessionStateFile } from '../safety/session-state.js';
 import type { CommandRunner, RunHooks, Trust } from './assistant.js';
 import { SESSION_ID_RE, type ClaudeOutcome, type ClaudeTiming, type RunOptions } from './claude.js';
-import type { WarmProcess } from './warm-claude.js';
+import type { ContextUsage, WarmProcess } from './warm-claude.js';
 
 export const CONVERSATION_FILE = 'conversation.json';
 /** Default and maximum `voice.followUpWindowSec`. */
@@ -461,6 +461,11 @@ export class WarmConversationRunner implements CommandRunner {
   /** Esc, "Stephen stop", a memory change, the app's "new conversation": kill the process (if any), then reset. */
   endConversation(): void {
     void this.endProcess();
+  }
+
+  /** Context used by the current conversation (null before its first command, after it ended, or when unknown). */
+  contextUsage(): ContextUsage | null {
+    return this.proc && this.commands > 0 ? (this.proc.context ?? null) : null;
   }
 
   commandEnded(): void {

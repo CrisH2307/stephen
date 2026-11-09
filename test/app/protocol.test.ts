@@ -76,9 +76,9 @@ describe('parseAppRequest', () => {
     expect(parseAppRequest(line({ type: 'future.thing' }))).toEqual({ kind: 'unknown', type: 'future.thing' });
   });
 
-  it('knows every request type of the table plus window.open and the confirm pair', () => {
+  it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open', 'confirm.ask', 'confirm.answer'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get'].sort(),
     );
   });
 
@@ -97,6 +97,13 @@ describe('parseAppRequest', () => {
     expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: true }))).toEqual({ kind: 'request', req: { id: 'a', type: 'confirm.answer', confirmId: id, approve: true } });
     expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: 'yes' })).kind).toBe('invalid');
     expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: 'c1', approve: true })).kind).toBe('invalid');
+  });
+
+  it('control requests take only an id; extra fields are dropped', () => {
+    for (const type of ['phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get']) {
+      expect(parseAppRequest(line({ id: 'c', type, cmd: 'rm -rf /' }))).toEqual({ kind: 'request', req: { id: 'c', type } });
+      expect(parseAppRequest(line({ type }))).toMatchObject({ kind: 'invalid' });
+    }
   });
 });
 

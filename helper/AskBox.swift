@@ -163,8 +163,8 @@ struct AskBoxView: View {
       MenuRow(title: "New chat", shortcut: "⌘N") { newChat() }
       MenuRow(title: "Open Stephen", shortcut: "⌘O") { actions.openApp() }
       // Shown only once a `usage` answer arrives (usage.get, P2); an older listener never answers.
-      if let m = model.usage?.context { UsageBar(title: "This chat", pct: m.percent, warn: m.warn, word: "context used") }
-      if let m = model.usage?.memory { UsageBar(title: "Memory", pct: m.percent, warn: m.warn, word: "full") }
+      if let m = model.usage?.context { UsageBarView(title: "This chat", pct: Double(m.percent), warn: m.warn, word: "context used") }
+      if let m = model.usage?.memory { UsageBarView(title: "Memory", pct: Double(m.percent), warn: m.warn, word: "full") }
       MenuRow(title: "Review memory", shortcut: nil) { actions.reviewMemory() }
       Divider().padding(.vertical, Space.xs)
       MenuRow(title: "Quit", shortcut: "⌘Q") { actions.quit() }
@@ -225,7 +225,7 @@ private struct MenuRow: View {
 }
 
 /** "Memory 85%" with a thin bar; amber with "almost full" when the listener says warn (from 80%). */
-private struct UsageBar: View {
+private struct UsageBarView: View {
   @Environment(\.stephenTheme) var t
   let title: String
   let pct: Double
@@ -289,7 +289,7 @@ final class AskBoxController: NSObject {
   private var confirmWatch: AnyCancellable? = nil
   /** The menu bar button the box hangs under. */
   var anchor: () -> NSStatusBarButton? = { nil }
-  var openWindow: (AppTab?) -> Void = { _ in }
+  var openWindow: (Page?) -> Void = { _ in }
   var quit: () -> Void = {}
   /** Push-to-talk down/up through the same path as F5. */
   var ptt: (Bool) -> Void = { _ in }
@@ -335,6 +335,12 @@ final class AskBoxController: NSObject {
     if let m = clickMonitor { NSEvent.removeMonitor(m) }
     clickMonitor = nil
     panel?.orderOut(nil)
+  }
+
+  /** Home's Talk button: open the box and start talking (tap the box again to send). */
+  func talk() {
+    show(focus: true, selectField: false)
+    micDown()
   }
 
   private func micDown() {

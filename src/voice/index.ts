@@ -11,6 +11,8 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
+import { appControl } from '../app/control.js';
+import { usageReport } from '../app/usage.js';
 import { appSettings } from '../app/settings.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
@@ -69,7 +71,7 @@ import { JobManager } from '../jobs/manager.js';
 import { purgeJobs } from '../jobs/state.js';
 import { JobRouter } from '../jobs/router.js';
 import { PhoneServer } from '../phone/server.js';
-import { isPhoneOn, phoneAuth, type PhoneAuth } from '../phone/setup.js';
+import { isPhoneOn, phoneAuth, stopPhoneLink, type PhoneAuth } from '../phone/setup.js';
 import type { SpawnFn as JobSpawnFn } from '../jobs/runner.js';
 
 export { LISTEN_USAGE } from './args.js';
@@ -556,6 +558,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies && speak,
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
+      control: appControl({ home, cliPath, log: err }),
+      usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
       log: err,
     });
     try {
@@ -616,7 +620,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       process.exit(130);
     }
   };
+  // REVIEW-9 R9-4: a `phone on` from the window runs Remote Control as our child; it must not outlive us.
+  const stopOurPhone = () => stopPhoneLink(home, { onlyIfPid: process.pid });
   const onExit = () => {
+    stopOurPhone();
     claude?.killNow();
     warm?.killNow();
     app?.closeSync();
@@ -758,6 +765,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       unwatch();
     }
   } finally {
+    stopOurPhone();
     timerStore?.stop();
     finishWatcher?.stop();
     await warm?.shutdown(); // listener exit ends the conversation: kill → close → reset
