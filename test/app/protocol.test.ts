@@ -33,6 +33,8 @@ describe('parseAppRequest', () => {
     ['memory.clear', { id: 'a', type: 'memory.clear' }, { id: 'a', type: 'memory.clear' }],
     ['settings.get', { id: 'a', type: 'settings.get' }, { id: 'a', type: 'settings.get' }],
     ['settings.set', { id: 'a', type: 'settings.set', values: { length: 'detailed', tone: 'formal', speak: false, explain: true, voice: 'say' } }, { id: 'a', type: 'settings.set', values: { length: 'detailed', tone: 'formal', speak: false, explain: true, voice: 'say' } }],
+    ['model.set', { id: 'a', type: 'model.set', model: 'haiku', effort: 'low', x: 1 }, { id: 'a', type: 'model.set', model: 'haiku', effort: 'low' }],
+    ['model.set effort only', { id: 'a', type: 'model.set', effort: 'default' }, { id: 'a', type: 'model.set', effort: 'default' }],
     ['audit.recent', { id: 'a', type: 'audit.recent', limit: 200 }, { id: 'a', type: 'audit.recent', limit: 200 }],
     ['accounts.status', { id: 'a', type: 'accounts.status', x: 1 }, { id: 'a', type: 'accounts.status' }],
     ['jobs.list', { id: 'a', type: 'jobs.list', x: 1 }, { id: 'a', type: 'jobs.list' }],
@@ -69,6 +71,9 @@ describe('parseAppRequest', () => {
     ['settings.set unknown key', line({ id: 'a', type: 'settings.set', values: { evil: true } }), { kind: 'invalid', id: 'a', message: 'unknown setting "evil"' }],
     ['settings.set bad tone', line({ id: 'a', type: 'settings.set', values: { tone: 'pirate' } }), { kind: 'invalid', id: 'a', message: 'tone must be one of casual, friendly, formal' }],
     ['settings.set no values', line({ id: 'a', type: 'settings.set' }), { kind: 'invalid', id: 'a', message: 'values must be an object' }],
+    ['model.set empty', line({ id: 'a', type: 'model.set' }), { kind: 'invalid', id: 'a', message: 'give a model or an effort' }],
+    ['model.set bad model', line({ id: 'a', type: 'model.set', model: 'haiku; rm -rf /' }), { kind: 'invalid', id: 'a', message: 'model must be a model alias or name like "haiku"' }],
+    ['model.set bad effort', line({ id: 'a', type: 'model.set', effort: 'turbo' }), { kind: 'invalid', id: 'a', message: 'effort must be default or one of low, medium, high, xhigh, max' }],
     ['memory.add huge text', line({ id: 'a', type: 'memory.add', text: 'x'.repeat(5000) }), { kind: 'invalid', id: 'a', message: 'text is too long (2000 characters at most)' }],
   ];
   it.each(invalid)('refuses %s', (_name, raw, expected) => {
@@ -82,7 +87,7 @@ describe('parseAppRequest', () => {
 
   it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage'].sort(),
     );
   });
 

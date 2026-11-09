@@ -33,6 +33,7 @@ import type { AuditEntry } from '../../src/types.js';
 import type { CommandReport } from '../../src/voice/assistant.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
 import { TalkStore, talkFromConfig } from '../../src/app/talk.js';
+import { ModelStore } from '../../src/app/model.js';
 import { AppConfirmer } from '../../src/safety/app-confirm.js';
 import { buildConfirmer } from '../../src/safety/confirm.js';
 import { TestClient, sleep, type Msg } from './helpers.js';
@@ -137,6 +138,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     audit: { recent: async (n) => AUDIT.slice(0, n) },
     settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: '/Users/cris/.stephen/config.json', talk: talk.get() }),
     setTalk: (c) => void talk.set(c),
+    setModel: (c) => void new ModelStore(join(home, 'config.json'), { model: 'sonnet', effort: null }).set(c),
     accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
     jobs: {
       list: () => [],
@@ -488,6 +490,29 @@ describe('memory, history, settings, audit, window', () => {
     expect(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).voice).toMatchObject({ tts: 'say', speak: false });
     // what was saved loads back as the voice config
     expect(parseVoiceConfig(saved.voice)).toMatchObject({ tone: 'formal', explain: true, length: 'brief' });
+  });
+
+  it('model.set saves the model and effort to config.json, applies them live and ends the warm conversation', async () => {
+    const home = mkdtempSync(join(tmp, 'model-'));
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ voice: { wakeWord: false }, memory: { enabled: true } }), { mode: 0o644 });
+    const store = new ModelStore(join(home, 'config.json'), { model: 'sonnet', effort: null });
+    const h = await harness({ setModel: (c) => void store.set(c) }, home);
+    const r = await h.client.request({ id: 'm', type: 'model.set', model: 'haiku', effort: 'low' });
+    expect(r.type).toBe('settings');
+    expect(store.get()).toEqual({ model: 'haiku', effort: 'low' });
+    expect(h.calls.ends).toBeGreaterThan(0);
+    const saved = JSON.parse(readFileSync(join(home, 'config.json'), 'utf8'));
+    expect(saved).toEqual({ voice: { wakeWord: false, claudeModel: 'haiku', claudeEffort: 'low' }, memory: { enabled: true } });
+    expect(parseVoiceConfig(saved.voice)).toMatchObject({ claudeModel: 'haiku', claudeEffort: 'low' });
+    // "default" clears: no --model, no --effort
+    await h.client.request({ id: 'm2', type: 'model.set', model: 'default', effort: 'default' });
+    expect(store.get()).toEqual({ model: null, effort: null });
+    const cleared = parseVoiceConfig(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).voice);
+    expect(cleared.claudeModel).toBeNull();
+    expect(cleared.claudeEffort ?? null).toBeNull();
+    // refused without a store
+    const none = await harness({ setModel: undefined }, mkdtempSync(join(tmp, 'model2-')));
+    expect(await none.client.request({ id: 'm', type: 'model.set', model: 'haiku' })).toEqual({ id: 'm', type: 'error', message: 'not available in this listener' });
   });
 
   it('settings.set refuses unknown keys and bad values and changes nothing', async () => {

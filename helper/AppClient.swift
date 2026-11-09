@@ -146,6 +146,9 @@ struct AppRequest: Encodable {
   var propId: String? = nil
   /** settings.set: the changed How-Stephen-talks settings (length, tone, speak, explain, voice). */
   var values: [String: TalkValue]? = nil
+  /** model.set: a model alias or name ("haiku", "default") and/or an effort level ("low"..."max", "default"). */
+  var model: String? = nil
+  var effort: String? = nil
 
   static func hello(_ id: String) -> AppRequest {
     return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
@@ -176,6 +179,9 @@ struct AppRequest: Encodable {
   static func settingsGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "settings.get") }
   static func settingsSet(_ id: String, values: [String: TalkValue]) -> AppRequest {
     return AppRequest(id: id, type: "settings.set", values: values)
+  }
+  static func modelSet(_ id: String, model: String?, effort: String?) -> AppRequest {
+    return AppRequest(id: id, type: "model.set", model: model, effort: effort)
   }
   static func auditRecent(_ id: String, limit: Int) -> AppRequest {
     return AppRequest(id: id, type: "audit.recent", limit: limit)
@@ -1308,6 +1314,20 @@ final class AppModel: ObservableObject {
       guard let self = self else { return }
       if msg.type == "settings" {
         self.talk = TalkSettings(msg.config)
+        self.configJSON = msg.config
+        done(nil)
+      } else {
+        done(msg.message ?? "error")
+      }
+    }
+  }
+
+  /** Settings > Model > Save: only what changed; `done(nil)` on success, else the listener's words. */
+  func saveModel(model: String?, effort: String?, done: @escaping (String?) -> Void) {
+    if model == nil && effort == nil { return done(nil) }
+    request(AppRequest.modelSet(newId(), model: model, effort: effort)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "settings" {
         self.configJSON = msg.config
         done(nil)
       } else {

@@ -50,10 +50,12 @@ const voiceName = z
 /** Default `bareWakeThreshold` (see docs/VOICE.md "Wake phrases" for the measurements). */
 export const BARE_WAKE_THRESHOLD_DEFAULT = 0.35;
 
-const claudeModel = z
-  .string()
-  .trim()
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/, 'claudeModel must be a model alias or name like "sonnet"');
+export const CLAUDE_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/;
+const claudeModel = z.string().trim().regex(CLAUDE_MODEL_RE, 'claudeModel must be a model alias or name like "sonnet"');
+
+/** `claude --effort` levels. Absent or null = Claude Code's own default (no flag). */
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof EFFORTS)[number];
 
 /** The voice default: the fastest model (see docs/VOICE.md "Model" for the speed/quality trade-off). */
 export const DEFAULT_VOICE_CLAUDE_MODEL = 'sonnet';
@@ -112,6 +114,8 @@ const VoiceConfigSchema = z
      * for Claude Code's own default (no --model flag). See docs/VOICE.md "Model".
      */
     claudeModel: claudeModel.nullish(),
+    /** Effort for the headless session (`claude --effort`); settable live from the Stephen window (Settings > Model). */
+    claudeEffort: z.enum(EFFORTS).nullish(),
     /** Model turns per command. 25 leaves room for multi-step requests ("open Notion and play lofi and …"). */
     maxTurns: z.number().int().min(1).max(100).default(25),
     /**

@@ -29,6 +29,7 @@ const RESPONSES: Record<string, string[]> = {
   'settings.get': ['settings', 'error'],
   // Settings > How Stephen talks: length, tone, speak, explain, voice; answers with the new settings snapshot.
   'settings.set': ['settings', 'error'],
+  'model.set': ['settings', 'error'],
   'audit.recent': ['audit', 'error'],
   'accounts.status': ['accounts', 'error'],
   'jobs.list': ['jobs', 'error'],
@@ -421,6 +422,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(home).toContain('let HOME_SUGGESTIONS = ["Plan my day", "Find internships", "Start a job"]');
     expect(home).toContain('model.confirms.count');
     expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
+  });
+
+  it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
+    expect(client).toContain('type: "model.set", model: model, effort: effort');
+    expect(read('SettingsPage.swift')).toContain('model.saveModel(model: name, effort: effort)');
   });
 
   it('P2 control: the helper owns the listener (not the window), refuses duplicates and a Terminal listener, has the permissions it needs', () => {

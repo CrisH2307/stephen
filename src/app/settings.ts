@@ -9,6 +9,7 @@ import type { MemoryConfig } from '../memory/config.js';
 import { DEFAULT_ASR_MODEL, type VoiceConfig } from '../voice/config.js';
 import { TALK_SAMPLES, type TalkState } from '../voice/talk.js';
 import type { AppConfig } from './config.js';
+import type { ModelPrefs } from './model.js';
 import { talkFromConfig } from './talk.js';
 
 export interface AppSettings {
@@ -16,13 +17,14 @@ export interface AppSettings {
   configPath: string;
 }
 
-export function appSettings(o: { voice: VoiceConfig; memory: MemoryConfig; history: HistoryConfig; app: AppConfig; configPath: string; talk?: TalkState }): AppSettings {
+export function appSettings(o: { voice: VoiceConfig; memory: MemoryConfig; history: HistoryConfig; app: AppConfig; configPath: string; talk?: TalkState; model?: ModelPrefs }): AppSettings {
   const v = o.voice;
   const talk = o.talk ?? talkFromConfig(v);
   return {
     config: {
       voice: {
-        model: v.claudeModel ?? 'default',
+        model: (o.model ? o.model.model : v.claudeModel) ?? 'default',
+        effort: (o.model ? o.model.effort : v.claudeEffort) ?? 'default',
         maxTurns: v.maxTurns,
         asrModel: v.asrModel ?? DEFAULT_ASR_MODEL,
         wakeWord: v.wakeWord,

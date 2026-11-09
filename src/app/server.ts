@@ -26,6 +26,7 @@ import { MAX_REPLY_CHARS, MAX_SAID_CHARS, newHistoryId, type HistoryEntry, type 
 import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/store.js';
 import type { ProposalStore } from '../memory/proposals.js';
 import { memoryGraph } from './memory-graph.js';
+import type { ModelChanges } from './model.js';
 import { truncate } from '../safety/text.js';
 import type { AuditEntry } from '../types.js';
 import type { CommandReport } from '../voice/assistant.js';
@@ -79,8 +80,8 @@ export interface AppServerOptions {
   queue: AppCommandQueue;
   /** hello.listening: the microphone is on. */
   listening: () => boolean;
-  /** hello.model: the Claude model voice commands use. */
-  model: string;
+  /** hello.model: the Claude model voice commands use (a function: it can change live, Settings > Model). */
+  model: string | (() => string);
   /** null = memory.enabled is false. */
   memory: Pick<MemoryStore, 'list' | 'add' | 'update' | 'forget' | 'clear'> | null;
   /** Memory page proposals (src/memory/proposals.ts). Used only while memory is on; absent = no proposals. */
@@ -93,6 +94,8 @@ export interface AppServerOptions {
   settings: () => AppSettings;
   /** settings.set (How Stephen talks): validated changes in, the saved settings out. Absent = read-only. */
   setTalk?: (changes: Partial<TalkState>) => void;
+  /** model.set (Settings > Model): validated changes in; applies from the next command. Absent = read-only. */
+  setModel?: (changes: ModelChanges) => void;
   /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
   accounts?: () => Promise<AccountsStatus>;
   /** jobs.list / jobs.stop (background jobs). Absent = jobs are off. */
@@ -398,7 +401,7 @@ export class AppServer {
     const mem = this.o.memory;
     switch (req.type) {
       case 'hello':
-        return { id, type: 'hello', version: APP_PROTOCOL_VERSION, listening: this.o.listening(), model: this.o.model, confirms: true };
+        return { id, type: 'hello', version: APP_PROTOCOL_VERSION, listening: this.o.listening(), model: typeof this.o.model === 'function' ? this.o.model() : this.o.model, confirms: true };
       case 'chat.stop':
         this.o.queue.stop();
         return { id, type: 'ok' };
@@ -442,6 +445,17 @@ export class AppServer {
         if (!this.o.setTalk) return { id, type: 'error', message: 'not available in this listener' };
         try {
           this.o.setTalk(req.values);
+          const s = this.o.settings();
+          return { id, type: 'settings', config: s.config, configPath: s.configPath };
+        } catch {
+          return { id, type: 'error', message: 'could not save the setting' };
+        }
+      case 'model.set':
+        if (!this.o.setModel) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          this.o.setModel({ ...(req.model !== undefined ? { model: req.model } : {}), ...(req.effort !== undefined ? { effort: req.effort as ModelChanges['effort'] } : {}) });
+          // The warm conversation was started with the old model: end it so the next command starts with the new one.
+          this.memoryChanged();
           const s = this.o.settings();
           return { id, type: 'settings', config: s.config, configPath: s.configPath };
         } catch {

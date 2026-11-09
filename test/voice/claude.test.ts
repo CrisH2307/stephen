@@ -129,6 +129,20 @@ describe('claude argv', () => {
     expect(a.filter((x) => x === '')).toHaveLength(2);
   });
 
+  it('adds --effort when given, and live model and effort (Settings > Model) win over the static ones', () => {
+    const a = buildClaudeArgs('hi', { ...settings, model: 'sonnet', effort: 'high', maxTurns: 6 });
+    expect(flagValue(a, '--model')).toBe('sonnet');
+    expect(flagValue(a, '--effort')).toBe('high');
+    let live: { model: string | null; effort: string | null } = { model: 'haiku', effort: 'low' };
+    const s = { ...settings, model: 'sonnet', effort: 'high', maxTurns: 6, modelPrefs: () => live };
+    expect(flagValue(buildClaudeArgs('hi', s), '--model')).toBe('haiku');
+    expect(flagValue(buildClaudeArgs('hi', s), '--effort')).toBe('low');
+    live = { model: null, effort: null };
+    expect(buildClaudeArgs('hi', s)).not.toContain('--model');
+    expect(buildClaudeArgs('hi', s)).not.toContain('--effort');
+    expect(buildClaudeArgs('hi', { ...settings, maxTurns: 6 })).not.toContain('--effort');
+  });
+
   it('adds --model when given, never --resume; an option-looking prompt stays a prompt', () => {
     const a = buildClaudeArgs('--help me', { ...settings, model: 'sonnet', maxTurns: 6 });
     expect(a[1]).toBe(' --help me');
