@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
@@ -62,6 +62,7 @@ Usage:
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
   stephen eval           score one-shot voice requests with a dry-run of Stephen's tools (--only routes, --jobs 2)
+  stephen eval-clicks    measure click reliability on local test pages in a headless Chrome (--runs 20, --youtube)
   stephen memory list | add "<text>" | forget <id> | clear
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
@@ -476,6 +477,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./voice/index.js')).runListen(rest);
     case 'eval':
       return (await import('./eval/cli.js')).runEvalCli(rest);
+    case 'eval-clicks':
+      return (await import('./eval/clicks.js')).runClickEvalCli(rest);
     case 'memory':
       return (await import('./memory/cli.js')).runMemoryCli(rest);
     case 'history':
