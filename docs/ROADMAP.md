@@ -1,6 +1,86 @@
-# Stephen — roadmap (as of 2026-11-02)
+# Stephen: roadmap (as of 2026-11-08)
 
-## Order agreed 2026-11-02 (details: docs/HANDOFF-PROMPT.md)
+## Next order (owner's list of 2026-11-08, sorted; draft until the owner agrees)
+Done from the 11-02 order below: items 1 to 5 (briefing, warm session, Notion + Gmail, jobs, phone), reviews 7 and 8,
+plus play from the phone, the Canvas inbox and secrets out of the repo. Each item below: plan first, small subtasks
+with tests, a Mac check list, and a fresh review after anything that writes or sends.
+
+**Why this order.** Everything later stands on two things: actions that work every time, and an app the owner can
+use without a terminal. Features that *send* or *apply* come after those, because a wrong click there costs real
+money or reputation. Speed comes after reliability (fast and wrong is worse than slow and right).
+
+| # | Item | Why here | Depends on | Size |
+|---|------|----------|------------|------|
+| P1 | **Reliable clicks and actions** (today about 7 in 10 for YouTube; goal 19 in 20) | Every later item (apply, send, faster) is built on clicks working | none | M-L |
+| P2 | **App-first: run and test Stephen from the app, not the terminal** | Daily use and testing without commands; the redesign must include these controls | none | M |
+| P3 | **UI redesign** (clean, e-commerce-quality look) | Best done once P2 decided what the app must hold | P2 | M |
+| P4 | **Reply to email / Canvas by voice, send only after you see it** | High value, but Stephen's first *sending* feature: needs a design and review #9 | P1, P2 | L |
+| P5 | **Internship pipeline with `~/ai-job-search`** (find, write, apply) | The biggest goal; needs reliable clicks, uploads and the confirm pattern from P4 | P1, P4 | XL, in phases |
+| P6 | **Faster actions** | After reliability; measure, then cut round trips | P1 | M |
+| P7 | **Better transcription of names** | Owner: low priority | none | S-M |
+| Vision | **Stephen as the bridge between automation and AI** | The result of P1 to P6, not a separate task | all | n/a |
+
+### P1. Reliable clicks and actions
+- Measure first: a click-reliability eval (fixture pages plus the real YouTube flow), 20 runs each, and a failure log
+  by cause: stale ref, element covered, page still loading, wrong element, autoplay blocked, tab not focused.
+- Fix where all callers go through (`src/page/index.ts`): wait for the page to settle, re-find the element once on
+  STALE_REF for safe actions, check the result after a click (did the video start, did the page change).
+- Done when: 19/20 on each eval case, and the owner's YouTube test passes 10/10.
+
+### P2. App-first
+- The Stephen window starts and stops `stephen listen` itself (through the Helper, as a background process that keeps
+  running when the window closes), shows its log, and has buttons for: phone on/off and sign-in, Zen for Stephen,
+  doctor, and the Mac test checklist (tick boxes, with the command run for you where it's safe).
+- Done when: a full day of use and the MAC-TEST-PLAN can be done without opening Terminal.
+
+### P3. UI redesign
+- Process: three theme directions (below) as clickable mockups, owner picks one, then tab by tab in SwiftUI with the
+  TS mirror tests. No new features in this pass.
+- Directions to choose from:
+  - **A. Storefront (light first):** white and soft gray, big rounded cards (16 px), a hero "Today" card like a
+    product banner, Jobs and Accounts as a grid of cards with status chips, one bold accent color.
+  - **B. Night market (dark first):** deep navy background, glassy cards, a vivid accent (teal or orange), large
+    numbers for "due this week", "unread", "jobs running".
+  - **C. Native premium:** macOS materials and SF Symbols, sidebar plus content, quiet colors, polish in spacing,
+    typography and motion (closest to Apple's own apps).
+- **Chosen 2026-11-08: A. Storefront**, refined the same day into **docs/UI-PLAN.md** (the spec to build from:
+  anti-slop rules, screens, tokens with measured contrast, components, states, build order, open questions).
+  **Superseded the same day by v3** (owner's direction: calm navy, small floating chat, context network,
+  personality settings), then **v3.1** so Stephen does not copy the friend's product: Personal (grouped lists plus a
+  permissions table) replaces the context network, the Ask box (menu bar popover) replaces the floating chat, and Settings
+  uses Length/Tone controls. **Build from docs/UI-PLAN.md v3.1.** Mockups:
+  https://claude.ai/artifact/LPZoKp4HvKkyjAM2ysAUrd (row "v3.1": Home, Ask box, Personal, Memory, Settings, Appearance).
+
+### P4. Reply by voice (email, Canvas)
+- Flow: read → "want to reply?" → you say the reply (Stephen's ASR, or Wispr Flow typing into the draft) → the draft
+  shows on screen (window and notification) with recipient and subject → you say or click **Send** → it sends.
+  Never sends what you haven't seen; never from the wake word alone; from the phone only with a phone tap showing
+  the exact text.
+- Needs: a write scope (Gmail `gmail.send`, new consent; Canvas conversation reply), a threat model (injected email
+  asking to "reply with your password"), and review #9 before it ships.
+
+### P5. Internship pipeline (in phases, each usable alone)
+1. **Find:** Stephen reads job sites you name and saves each match (link and job description text) into
+   `~/ai-job-search/inbox/`.
+2. **Write:** a job (ADR-004 sandbox) runs your `ai-job-search` project on each saved posting and puts the resume and
+   cover letter PDFs next to it.
+3. **Apply (assisted):** Stephen opens the posting, fills the form, uploads those PDFs, and **stops before Submit**
+   for your OK. Watch for: site bot checks (plan §14), sites' terms of use, one application at a time.
+
+### P6. Faster actions
+- Measure each step (think, tool call, page wait). Cut round trips: batch actions, fewer snapshots, include the
+  snapshot in the action's answer, keep tabs warm.
+
+### P7. Names in transcription
+- A custom word list from your memory, contacts and course names fed to the speech model as hints; when a name is
+  unsure, Stephen asks "did you mean …?" instead of guessing.
+
+### Carried over (not lost)
+- Phone confirmations as a phone tap (plan §13 option 2), bot detection in "Zen for Stephen" (plan §14), more Canvas
+  pages, Gmail consent screen "In production" (MAC-TEST-PLAN §10), the `~/.stephen` move (§10).
+
+## Order agreed 2026-11-02 (done; details: docs/HANDOFF-PROMPT.md)
+
 1. Morning briefing ("what's my day": calendar + Canvas due + weather).
 2. Phase 3 speed + real follow-ups (start Claude while speaking; long-lived session and server).
 3. Finish 2a: Notion to-dos, then Gmail (two personal accounts first).
