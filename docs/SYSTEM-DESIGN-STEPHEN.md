@@ -483,6 +483,8 @@ next job. Code jobs use the repo worktree instead and leave the inbox alone.
 | The model starting work behind the owner's back | Start a job | No job tool; job phrases are routed before Claude; every start needs the native dialog, whatever the source (§4.13) |
 | Same-user malware | Everything the user can | Out of scope (documented). Remaining hardening: helper.sock nonce |
 
+**Planned: reply by voice (not built).** Sending email or a Canvas reply is designed in `docs/ADR-006-reply-by-voice.md`: the model only proposes a draft, TypeScript sends after an explicit click bound to a hash of the shown text, never from the wake word, and the phone only with a tap. It adds threat rows (injected "reply with your password", recipient swap, body change after approval, replay, exfiltration through the body) that move into this table when the code lands, after review #9.
+
 ## 6. Keeping a growing codebase honest
 
 - **Import-boundary tests.** A static import graph of `src/` is built in the tests. Rules: nothing the model can
