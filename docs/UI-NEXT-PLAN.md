@@ -71,7 +71,18 @@ Permissions and delete the old ones.
 4. Reply versus action chain (2), starting with `steps` on `chat.done`.
 5. Move Settings panes into Connected and Permissions (3, PR 2).
 
-## Questions for the owner
+## Owner's answers (2026-11-08)
+1. Recents: the reviewer pick is **B** (a few under the composer, "View all" page). It keeps Home calm like Claude's home
+   and the sidebar short for the eight pages. Sidebar recents can come later if B feels hidden.
+2. Opening an old chat: **resume it** (not read-only). Needs `chat.history` plus the listener starting a conversation that
+   replays the old turns; decide how many turns to replay (cost and context).
+3. Sidebar: **eight pages as separate rows**, packed tight so it looks tidy (smaller row height, no section gaps beyond
+   the two labels).
+4. Chat title: **model-generated**, kept very simple: after the first reply, one cheap one-shot (Haiku, low effort, a
+   fixed prompt that only sees your first message and the reply, no tools) returns 3 to 5 words; until then the first
+   message is the title. The title is shown as plain text, never as instructions.
+
+## Questions for the owner (answered above, kept for the record)
 1. Recents: option B first (few under the composer, "View all"), sidebar later? Or A or C now?
 2. Opening an old chat: read-only, or resume it for real?
 3. Sidebar: eight pages (separate rows) or five pages with tabs inside Personal?
