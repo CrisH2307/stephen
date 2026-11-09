@@ -16,6 +16,7 @@ import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
 import { HistoryStore } from '../history/store.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
+import { buildNameList } from './names.js';
 import { MemoryStore } from '../memory/store.js';
 import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
@@ -693,7 +694,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         cooldownSec: cfg.cooldownSec,
         wakeWord,
       },
-      { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
+      { source, ...engines, assistant, chimes, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
     phone = await startPhone(listener, assistant);

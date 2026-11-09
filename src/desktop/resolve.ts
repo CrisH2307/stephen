@@ -3,6 +3,7 @@
  * .app on disk and its bundle id (read from Contents/Info.plist — plutil when available, else the XML).
  */
 import { join } from 'node:path';
+import { levenshtein } from '../lib/levenshtein.js';
 import { plistString } from '../drivers/macos.js';
 import { HubError } from '../errors.js';
 import { normalizeAppName, type ResolvedApp } from './apps.js';
@@ -137,23 +138,6 @@ async function quickBundleId(deps: DesktopDeps, appPath: string): Promise<string
   if (head.startsWith('bplist')) return null;
   const id = plistString(buf.toString('utf8'), 'CFBundleIdentifier');
   return id && BUNDLE_ID_RE.test(id) ? id : null;
-}
-
-function levenshtein(a: string, b: string, max: number): number {
-  if (Math.abs(a.length - b.length) > max) return max + 1;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    let best = i;
-    for (let j = 1; j <= b.length; j++) {
-      const v = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
-      cur.push(v);
-      best = Math.min(best, v);
-    }
-    if (best > max) return max + 1;
-    prev = cur;
-  }
-  return prev[b.length]!;
 }
 
 /**
