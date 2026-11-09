@@ -846,6 +846,8 @@ final class AppModel: ObservableObject {
   @Published private(set) var state = "idle"
 
   @Published private(set) var chat: [ChatBubble] = []
+  /** Bubbles with an id at or below this belong to an earlier chat (⌘N). The Ask box and Home both show `thread`. */
+  @Published private(set) var chatSince = 0
   @Published private(set) var awaitingReplies: Set<String> = []
 
   @Published private(set) var memory: [MemoryItem] = []
@@ -1080,6 +1082,12 @@ final class AppModel: ObservableObject {
     }
     return true
   }
+
+  /** The current chat. ponytail: held in memory for as long as the helper runs; older chats are in Conversations (history.list). */
+  var thread: [ChatBubble] { return chat.filter { $0.id > chatSince } }
+
+  /** ⌘N: start a new chat. Nothing is deleted; the old messages stay in Conversations. */
+  func newChat() { chatSince = chat.last?.id ?? 0 }
 
   func stopChat() {
     request(AppRequest.chatStop(newId())) { [weak self] msg in

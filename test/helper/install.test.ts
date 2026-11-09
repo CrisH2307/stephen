@@ -87,7 +87,7 @@ describe('install-helper', () => {
     expect(swiftcArgs('/src', '/tmp/x/Stephen Helper', '/SDK')).toEqual([
       '-O', '-swift-version', '5', '-sdk', '/SDK', '-o', '/tmp/x/Stephen Helper',
       '/src/Core.swift', '/src/Theme.swift',
-      '/src/Components/Sidebar.swift', '/src/Components/Controls.swift', '/src/Components/Lists.swift', '/src/Components/Gallery.swift',
+      '/src/Components/Sidebar.swift', '/src/Components/Controls.swift', '/src/Components/Lists.swift', '/src/Components/Gallery.swift', '/src/Components/ChatThread.swift',
       '/src/AppClient.swift', '/src/AppWindow.swift', '/src/AskBox.swift', '/src/MainWindow.swift', '/src/HomeView.swift', '/src/PersonalView.swift', '/src/MemoryPage.swift', '/src/ConversationsPage.swift', '/src/JobsPage.swift', '/src/AppearanceSettings.swift', '/src/SettingsPage.swift', '/src/main.swift',
       '-framework', 'AppKit', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'SwiftUI',
     ]);

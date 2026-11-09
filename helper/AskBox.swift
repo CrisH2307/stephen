@@ -1,7 +1,8 @@
-// Stephen Helper: the Ask box (UI-PLAN v3.1 section 5). A 300 pt non-activating panel under the menu bar icon,
-// opened by clicking the icon, by F5 (push-to-talk, shown while you talk) or by Cmd+K inside the app. It shows one
-// thing at a time, all derived from AppModel (the same app.sock connection and chat as the Stephen window):
-// offline, idle, listening, working, reply, problem, and the ... menu.
+// Stephen Helper: the Ask box (UI-PLAN v3.2 section 5). A 360 pt non-activating chat panel under the menu bar icon,
+// opened by clicking the icon, by F5 (push-to-talk, shown while you talk) or by Cmd+K inside the app. It is a real
+// chat: the current conversation as a scrolling thread (ChatThreadView, the same one Home shows), with the input at the
+// bottom, all from AppModel (the same app.sock connection and chat as the Stephen window). Drag it by the strip on
+// top; it remembers where you left it. The ... menu has New chat, pin (stay open), Reset position and usage.
 //
 // Untrusted text (replies, what was heard) is shown with Text(verbatim:), never as Markdown.
 // Threading: main thread only (AskBoxController is @MainActor; main.swift reaches it like StatusMenu).
@@ -13,36 +14,27 @@ import SwiftUI
 /** Box-only state; everything else is read from AppModel. */
 final class AskBoxState: ObservableObject {
   @Published var draft = ""
-  /** Chat bubbles with an id at or below this are from before the box was opened: not shown. */
-  @Published var since = 0
   @Published var menuOpen = false
   /** Push-to-talk started from the box's mic button (tap the box again to send). */
   @Published var micHeld = false
+  /** Stay open when you click elsewhere. Remembered. */
+  @Published var pinned = UserDefaults.standard.bool(forKey: "askBoxPinned") {
+    didSet { UserDefaults.standard.set(pinned, forKey: "askBoxPinned") }
+  }
 }
 
 enum AskBoxMode: Equatable {
-  case needsOK(PendingConfirm)
   case offline
   case menu
   case listening
-  case working(said: String)
-  case reply(String)
-  case problem(String)
-  case idle
+  case chat
 
   static func of(_ model: AppModel, _ box: AskBoxState) -> AskBoxMode {
-    if let q = model.confirms.first { return .needsOK(q) }
+    if !model.confirms.isEmpty { return .chat }  // the question is a message in the thread
     if box.menuOpen { return .menu }
     if model.connection != .online { return .offline }
     if model.state == "recording" || box.micHeld { return .listening }
-    let lastSaid = model.chat.last(where: { $0.kind == .said })?.text ?? ""
-    if model.isWorking { return .working(said: lastSaid) }
-    guard let last = model.chat.last, last.id > box.since else { return .idle }
-    switch last.kind {
-    case .reply: return .reply(last.text)
-    case .problem, .info: return .problem(last.text)
-    case .said: return .working(said: last.text)  // sent, not accepted yet
-    }
+    return .chat
   }
 }
 
@@ -53,6 +45,9 @@ struct AskBoxActions {
   var openApp: () -> Void
   var reviewMemory: () -> Void
   var quit: () -> Void
+  /** The owner let go of the drag strip: remember where the box is. */
+  var dragEnded: () -> Void
+  var resetPosition: () -> Void
 }
 
 // ───────────────────────────── view ─────────────────────────────
@@ -92,38 +87,44 @@ struct AskBoxView: View {
 
   var body: some View {
     let mode = AskBoxMode.of(model, box)
-    VStack(alignment: .leading, spacing: Space.s) { content(mode) }
-      .padding(Space.m)
-      .frame(width: 300, alignment: .leading)
-      .background(RoundedRectangle(cornerRadius: Corner.askBox).fill(t.surface))
-      .overlay(RoundedRectangle(cornerRadius: Corner.askBox).stroke(t.line, lineWidth: 1))
-      .background(shortcuts)
-      .stephenAnimation(value: mode)
-      .onExitCommand { escape(mode) }
+    VStack(alignment: .leading, spacing: Space.s) {
+      topStrip
+      content(mode)
+    }
+    .padding(.horizontal, Space.l).padding(.bottom, Space.l).padding(.top, Space.xs)
+    .frame(width: 360, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: Corner.askBox).fill(t.surface))
+    .overlay(RoundedRectangle(cornerRadius: Corner.askBox).stroke(t.line, lineWidth: 1))
+    .background(shortcuts)
+    .stephenAnimation(value: mode)
+    .onExitCommand { escape(mode) }
+  }
+
+  /// Drag here to move the box. The ... button opens the menu.
+  private var topStrip: some View {
+    ZStack {
+      DragStrip(onEnd: actions.dragEnded)
+      Capsule().fill(t.line).frame(width: 36, height: 4).allowsHitTesting(false).accessibilityHidden(true)
+      HStack {
+        Spacer()
+        Button { box.menuOpen.toggle(); model.refreshUsage() } label: {
+          Image(systemName: "ellipsis").font(.system(size: 16)).foregroundColor(t.ink2).frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain).help("More").accessibilityLabel("More")
+      }
+    }
+    .frame(height: 24)
+    .accessibilityElement(children: .contain)
   }
 
   @ViewBuilder
   private func content(_ mode: AskBoxMode) -> some View {
     switch mode {
-    case let .needsOK(q):
-      // The gate's own question (computed facts first, model and page text quoted and labelled). The full fact list
-      // is kept, in a short scroll, because the owner must be able to decide from it alone, as with the dialog.
-      Text(verbatim: q.title).font(TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
-      ScrollView {
-        Text(verbatim: q.body).font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
+    case .chat:
+      if !model.thread.isEmpty || !model.confirms.isEmpty || model.isWorking {
+        ChatThreadView(model: model).frame(maxHeight: 340).fixedSize(horizontal: false, vertical: true)
       }
-      .frame(maxHeight: 160).fixedSize(horizontal: false, vertical: true)
-      .accessibilityLabel("Details: \(q.body)")
-      ConfirmButtons(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
-    case .idle:
-      HStack(spacing: Space.s) {
-        AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)
-        Button { box.menuOpen = true; model.refreshUsage() } label: {
-          Image(systemName: "ellipsis").font(.system(size: 16)).foregroundColor(t.ink2).frame(width: 24, height: 24)
-        }
-        .buttonStyle(.plain).help("More").accessibilityLabel("More")
-      }
+      AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)
     case .listening:
       // No live words or level from the listener yet (`heard` arrives once the words are final), so this names the
       // state in words. Tapping sends when the box's mic started it.
@@ -133,23 +134,6 @@ struct AskBoxView: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel(box.micHeld ? "Listening. Activate to send." : "Listening")
-    case let .working(said):
-      if !said.isEmpty {
-        Text(verbatim: said).font(TypeScale.body).foregroundColor(t.ink2).lineLimit(4)
-          .accessibilityLabel("You said: \(said)")
-      }
-      Text(verbatim: "Working…").font(TypeScale.secondary).foregroundColor(t.ink)
-        .accessibilityLabel("Working. Press Escape to stop.")
-    case let .reply(text):
-      ScrollView {
-        Text(verbatim: text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .frame(maxHeight: 320).fixedSize(horizontal: false, vertical: true)
-      .accessibilityLabel("Stephen: \(text)")
-    case let .problem(text):
-      Text(verbatim: text).font(TypeScale.body).foregroundColor(t.ink).lineLimit(5)
-      QuietButton("Try again") { retry() }
     case .offline:
       Text(verbatim: "Can't reach Stephen. Is stephen listen running?").font(TypeScale.body).foregroundColor(t.ink)
       QuietButton("Try again") { model.retry() }
@@ -162,6 +146,8 @@ struct AskBoxView: View {
     VStack(alignment: .leading, spacing: 2) {
       MenuRow(title: "New chat", shortcut: "⌘N") { newChat() }
       MenuRow(title: "Open Stephen", shortcut: "⌘O") { actions.openApp() }
+      MenuRow(title: "Pin open", shortcut: box.pinned ? "✓" : nil, checked: box.pinned) { box.pinned.toggle() }
+      MenuRow(title: "Reset position", shortcut: nil) { box.menuOpen = false; actions.resetPosition() }
       // Shown only once a `usage` answer arrives (usage.get, P2); an older listener never answers.
       if let m = model.usage?.context { UsageBarView(title: "This chat", pct: Double(m.percent), warn: m.warn, word: "context used") }
       if let m = model.usage?.memory { UsageBarView(title: "Memory", pct: Double(m.percent), warn: m.warn, word: "full") }
@@ -185,23 +171,37 @@ struct AskBoxView: View {
     if model.sendChat(box.draft) { box.draft = "" }
   }
 
-  private func retry() {
-    if let said = model.chat.last(where: { $0.kind == .said })?.text { model.sendChat(said) }
-  }
-
   private func newChat() {
     box.menuOpen = false
     box.draft = ""
-    box.since = model.chat.last?.id ?? 0
+    model.newChat()
   }
 
   private func escape(_ mode: AskBoxMode) {
+    if let q = model.confirms.first { model.answerConfirm(q.id, approve: false); return }  // Esc = Deny, like the dialog
     switch mode {
-    case let .needsOK(q): model.answerConfirm(q.id, approve: false)  // Esc = Deny, like the dialog
     case .menu: box.menuOpen = false
     case .listening where box.micHeld: actions.micUp()
-    case .working: model.stopChat()
+    case .chat where model.isWorking: model.stopChat()
     default: actions.close()
+    }
+  }
+}
+
+/// The top strip: mouse down starts a window drag (performDrag returns when the button is released).
+private struct DragStrip: NSViewRepresentable {
+  let onEnd: () -> Void
+  func makeNSView(context: Context) -> DragView { return DragView() }
+  func updateNSView(_ v: DragView, context: Context) { v.onEnd = onEnd }
+
+  final class DragView: NSView {
+    var onEnd: () -> Void = {}
+    override var mouseDownCanMoveWindow: Bool { return true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+    override func mouseDown(with event: NSEvent) {
+      window?.performDrag(with: event)
+      onEnd()
     }
   }
 }
@@ -210,6 +210,7 @@ private struct MenuRow: View {
   @Environment(\.stephenTheme) var t
   let title: String
   let shortcut: String?
+  var checked: Bool? = nil
   let action: () -> Void
   var body: some View {
     Button(action: action) {
@@ -221,6 +222,7 @@ private struct MenuRow: View {
       .padding(.horizontal, Space.s).padding(.vertical, 6).contentShape(Rectangle())
     }
     .buttonStyle(.plain).accessibilityLabel(title)
+    .accessibilityAddTraits(checked == true ? .isSelected : [])
   }
 }
 
@@ -306,8 +308,7 @@ final class AskBoxController: NSObject {
     panel = p
     if !isShown {
       box.menuOpen = false
-      if !model.isWorking && model.state != "recording" { box.since = model.chat.last?.id ?? 0 }
-      place(p, size: p.contentView?.fittingSize ?? NSSize(width: 300, height: 60))
+      place(p, size: p.contentView?.fittingSize ?? NSSize(width: 360, height: 80))
       p.orderFrontRegardless()
       watchOutsideClicks()
     }
@@ -345,7 +346,7 @@ final class AskBoxController: NSObject {
 
   private func makePanel() -> AskPanel {
     let p = AskPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 300, height: 60), styleMask: [.borderless, .nonactivatingPanel],
+      contentRect: NSRect(x: 0, y: 0, width: 360, height: 80), styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered, defer: false)
     p.isFloatingPanel = true
     p.level = .statusBar
@@ -363,7 +364,9 @@ final class AskBoxController: NSObject {
       micUp: { [weak self] in self?.micUp() },
       openApp: { [weak self] in self?.close(); self?.openWindow(nil) },
       reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) },
-      quit: { [weak self] in self?.quit() })
+      quit: { [weak self] in self?.quit() },
+      dragEnded: { [weak self] in self?.savePosition() },
+      resetPosition: { [weak self] in self?.resetPosition() })
     let root = AskBoxView(model: model, box: box, actions: actions)
       .stephenThemedBySettings()
       .fixedSize()
@@ -376,8 +379,37 @@ final class AskBoxController: NSObject {
     return p
   }
 
-  /** Under the menu bar icon, inside the screen. */
+  /// Where the owner left the box: its left edge and top edge. The box resizes downward, so the top edge is the anchor.
+  private static let savedXKey = "askBoxX", savedTopKey = "askBoxTop"
+
+  private func savePosition() {
+    guard let f = panel?.frame else { return }
+    UserDefaults.standard.set(Double(f.minX), forKey: Self.savedXKey)
+    UserDefaults.standard.set(Double(f.maxY), forKey: Self.savedTopKey)
+  }
+
+  /** "Reset position": forget the saved spot and go back under the menu bar icon. */
+  private func resetPosition() {
+    UserDefaults.standard.removeObject(forKey: Self.savedXKey)
+    UserDefaults.standard.removeObject(forKey: Self.savedTopKey)
+    if let p = panel { place(p, size: p.frame.size) }
+  }
+
+  /// The saved spot, only if it is still on a screen (a monitor may have been unplugged).
+  private func savedOrigin(size: NSSize) -> NSPoint? {
+    let d = UserDefaults.standard
+    guard let x = d.object(forKey: Self.savedXKey) as? Double, let top = d.object(forKey: Self.savedTopKey) as? Double else { return nil }
+    let r = NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
+    guard NSScreen.screens.contains(where: { $0.visibleFrame.intersects(r) }) else { return nil }
+    return r.origin
+  }
+
+  /** Where the owner left it, else under the menu bar icon, inside the screen. */
   private func place(_ p: NSPanel, size: NSSize) {
+    if let o = savedOrigin(size: size) {
+      p.setFrame(NSRect(origin: o, size: size), display: true)
+      return
+    }
     var origin = NSPoint(x: 0, y: 0)
     if let b = anchor(), let w = b.window {
       let r = w.convertToScreen(b.convert(b.bounds, to: nil))
@@ -405,7 +437,7 @@ final class AskBoxController: NSObject {
   private func watchOutsideClicks() {
     guard clickMonitor == nil else { return }
     clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-      MainActor.assumeIsolated { self?.close() }
+      MainActor.assumeIsolated { if self?.box.pinned == false { self?.close() } }
     }
   }
 }
