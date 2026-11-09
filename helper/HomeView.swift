@@ -1,6 +1,7 @@
-// Stephen Helper: Home (UI-PLAN v3.1 section 6). "Morning, Cris." and the date, a plain Today list (only what
-// app.sock already knows: questions waiting in the Ask box, running jobs; due items and to-dos come from asking
-// "what's my day?"), then a wide ask field with Talk and Send and three suggestion chips. No weather, no cards.
+// Stephen Helper: Home (UI-PLAN v3.2 section 6), a chat layout. With no messages: "Morning, Cris." and the date, a
+// large centred composer with Talk and Send, three suggestion chips, and Today as one line ("Nothing waiting · What's
+// my day?"; only what app.sock already knows, due items and to-dos come from asking). With messages: the same thread
+// as the Ask box (ChatThreadView) and the composer at the bottom. No weather, no cards.
 
 import SwiftUI
 
@@ -21,62 +22,83 @@ struct HomeView: View {
   let actions: WindowActions
   @State private var draft = ""
 
+  /// No messages yet in this chat (a waiting question or a running command counts as a chat).
+  private var isEmpty: Bool { return model.thread.isEmpty && model.confirms.isEmpty && !model.isWorking }
+
   var body: some View {
-    let now = Date()
-    ScrollView {
-      VStack(alignment: .leading, spacing: Space.xl) {
-        VStack(alignment: .leading, spacing: Space.xs) {
-          Text(verbatim: homeGreeting(hour: Calendar.current.component(.hour, from: now), name: model.ownerName))
-            .font(TypeScale.homeTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
-          Text(verbatim: now.formatted(date: .complete, time: .omitted)).font(TypeScale.body).foregroundColor(t.ink2)
-        }
-        GroupedList("Today") { today }
-        VStack(alignment: .leading, spacing: Space.m) {
-          HStack(spacing: Space.s) {
-            AskField(text: $draft, onMic: actions.talk, onSubmit: send)
-            PrimaryButton("Send", action: send)
-          }
-          HStack(spacing: Space.s) {
-            ForEach(HOME_SUGGESTIONS, id: \.self) { s in Tag(s) { draft = s } }
-          }
-        }
-      }
-      .padding(Space.xxl)
-      .frame(maxWidth: 720, alignment: .leading)
-      .frame(maxWidth: .infinity, alignment: .leading)
+    Group {
+      if isEmpty { start } else { chat }
     }
+    .stephenAnimation(value: isEmpty)
+    .background(Button("") { newChat() }.keyboardShortcut("n").opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
     .onAppear {
       model.refreshSettings()  // the name for the greeting
       model.refreshJobs()
     }
   }
 
-  @ViewBuilder
-  private var today: some View {
-    let waiting = model.confirms.count
-    let running = model.jobs.filter { $0.isRunning }.count
-    if waiting > 0 {
-      GroupedRow(waiting == 1 ? "1 question waiting for you" : "\(waiting) questions waiting for you", first: true) {
-        QuietButton("Answer") { actions.ask() }
+  /// Empty chat: greeting and date, a large centred composer, chips under it, one line for Today.
+  private var start: some View {
+    let now = Date()
+    return ScrollView {
+      VStack(spacing: Space.xl) {
+        VStack(spacing: Space.xs) {
+          Text(verbatim: homeGreeting(hour: Calendar.current.component(.hour, from: now), name: model.ownerName))
+            .font(TypeScale.homeTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
+          Text(verbatim: now.formatted(date: .complete, time: .omitted)).font(TypeScale.body).foregroundColor(t.ink2)
+        }
+        VStack(spacing: Space.m) {
+          HStack(spacing: Space.s) {
+            AskField(text: $draft, onMic: actions.talk, large: true, onSubmit: send)
+            PrimaryButton("Send", action: send)
+          }
+          HStack(spacing: Space.s) {
+            ForEach(HOME_SUGGESTIONS, id: \.self) { s in Tag(s) { draft = s } }
+          }
+          todayLine.padding(.top, Space.xs)
+        }
       }
-    }
-    if running > 0 {
-      GroupedRow(running == 1 ? "1 job running" : "\(running) jobs running", first: waiting == 0) {
-        QuietButton("See jobs") { nav.page = .jobs }
-      }
-    }
-    if waiting == 0 && running == 0 {
-      GroupedRow("Nothing is waiting for you", first: true)
-    }
-    GroupedRow("What's due and your to-dos", detail: "Stephen checks Canvas, Calendar and Notion when you ask") {
-      QuietButton("What's my day?") { if model.sendChat(APP_TODAY_PROMPT) { actions.ask() } }
+      .padding(Space.xxl)
+      .frame(maxWidth: 680)
+      .frame(maxWidth: .infinity, minHeight: 360)
     }
   }
 
-  private func send() {
-    if model.sendChat(draft) {
-      draft = ""
-      actions.ask()  // the reply shows in the Ask box
+  /// Messages: the same thread as the Ask box, the composer at the bottom.
+  private var chat: some View {
+    VStack(spacing: Space.m) {
+      ChatThreadView(model: model).frame(maxWidth: 720).frame(maxWidth: .infinity)
+      AskField(text: $draft, onMic: actions.talk, onSubmit: send).frame(maxWidth: 720)
     }
+    .padding(.horizontal, Space.xxl).padding(.vertical, Space.xl)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  /// "Nothing waiting · What's my day?" Waiting questions and running jobs come first when there are any.
+  private var todayLine: some View {
+    let waiting = model.confirms.count
+    let running = model.jobs.filter { $0.isRunning }.count
+    let (text, word, act): (String, String, () -> Void) = {
+      if waiting > 0 { return (waiting == 1 ? "1 question waiting" : "\(waiting) questions waiting", "Answer", { actions.ask() }) }
+      if running > 0 { return (running == 1 ? "1 job running" : "\(running) jobs running", "See jobs", { nav.page = .jobs }) }
+      return ("Nothing waiting", "What's my day?", { model.sendChat(APP_TODAY_PROMPT) })
+    }()
+    return HStack(spacing: Space.s) {
+      Text(verbatim: text).font(TypeScale.secondary).foregroundColor(t.ink2)
+      Text(verbatim: "·").font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true)
+      Button(action: act) { Text(verbatim: word).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.accent) }
+        .buttonStyle(.plain).accessibilityLabel(word)
+    }
+    .accessibilityElement(children: .contain)
+  }
+
+  private func send() {
+    if model.sendChat(draft) { draft = "" }  // the reply shows right here in the thread
+  }
+
+  /// Cmd+N: a new chat (back to the empty layout). Older chats stay in Conversations.
+  private func newChat() {
+    draft = ""
+    model.newChat()
   }
 }
