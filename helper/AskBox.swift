@@ -2,7 +2,12 @@
 // opened by clicking the icon, by F5 (push-to-talk, shown while you talk) or by Cmd+K inside the app. It is a real
 // chat: the current conversation as a scrolling thread (ChatThreadView, the same one Home shows), with the input at the
 // bottom, all from AppModel (the same app.sock connection and chat as the Stephen window). Drag it by the strip on
-// top; it remembers where you left it. The ... menu has New chat, pin (stay open), Reset position and usage.
+// top; it remembers where you left it. The ... button opens a normal pop-up menu over the box (New chat, pin, Reset
+// position, usage), so the chat stays in view.
+//
+// Motion: the panel window never changes size. It is a fixed, transparent canvas; only the card inside it grows and
+// shrinks, one SwiftUI animation of its height (clicks on the transparent part go through to the app below). Resizing
+// the window while SwiftUI also animated the content was the jumpy look in the owner's recording of 2026-11-09.
 //
 // Untrusted text (replies, what was heard) is shown with Text(verbatim:), never as Markdown.
 // Threading: main thread only (AskBoxController is @MainActor; main.swift reaches it like StatusMenu).
@@ -14,7 +19,6 @@ import SwiftUI
 /** Box-only state; everything else is read from AppModel. */
 final class AskBoxState: ObservableObject {
   @Published var draft = ""
-  @Published var menuOpen = false
   /** Push-to-talk started from the box's mic button (tap the box again to send). */
   @Published var micHeld = false
   /** Stay open when you click elsewhere. Remembered. */
@@ -25,13 +29,11 @@ final class AskBoxState: ObservableObject {
 
 enum AskBoxMode: Equatable {
   case offline
-  case menu
   case listening
   case chat
 
   static func of(_ model: AppModel, _ box: AskBoxState) -> AskBoxMode {
     if !model.confirms.isEmpty { return .chat }  // the question is a message in the thread
-    if box.menuOpen { return .menu }
     if model.connection != .online { return .offline }
     if model.state == "recording" || box.micHeld { return .listening }
     return .chat
@@ -81,24 +83,38 @@ struct ConfirmButtons: View {
 
 struct AskBoxView: View {
   @Environment(\.stephenTheme) var t
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
   @ObservedObject var model: AppModel
   @ObservedObject var box: AskBoxState
   let actions: AskBoxActions
+  /// The card's shown height. It follows the content's own height with one ease, so the card opens and closes like a
+  /// drawer; the content itself switches at once and is clipped to the card while it moves.
+  @State private var cardHeight: CGFloat = 0
 
   var body: some View {
     let mode = AskBoxMode.of(model, box)
     VStack(alignment: .leading, spacing: Space.s) {
       topStrip
-      // Content fades and settles from the top while the panel eases to its new height (see resize below).
-      content(mode).transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+      content(mode)
     }
     .padding(.horizontal, Space.l).padding(.bottom, Space.l).padding(.top, Space.xs)
-    .frame(width: 360, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: Corner.askBox).fill(t.surface))
+    .frame(width: AskBoxController.cardWidth, alignment: .leading)
+    .fixedSize(horizontal: false, vertical: true)
+    .background(GeometryReader { g in Color.clear.preference(key: AskBoxSizeKey.self, value: g.size) })
+    .frame(height: cardHeight > 0 ? cardHeight : nil, alignment: .top)
+    .clipShape(RoundedRectangle(cornerRadius: Corner.askBox))
+    .background(RoundedRectangle(cornerRadius: Corner.askBox).fill(t.surface).shadow(color: .black.opacity(0.18), radius: 14, y: 6))
     .overlay(RoundedRectangle(cornerRadius: Corner.askBox).stroke(t.line, lineWidth: 1))
     .background(shortcuts)
-    .stephenAnimation(value: mode)
+    .onPreferenceChange(AskBoxSizeKey.self) { size in follow(size.height) }
+    .onChange(of: model.thread.count) { _ in model.refreshUsage() }  // the menu's usage lines stay current
     .onExitCommand { escape(mode) }
+  }
+
+  private func follow(_ h: CGFloat) {
+    guard h > 0, abs(h - cardHeight) > 0.5 else { return }
+    if cardHeight == 0 || reduceMotion { cardHeight = h; return }
+    withAnimation(.easeInOut(duration: Motion.bar)) { cardHeight = h }
   }
 
   /// Drag the title area to move the box. The ... button sits beside it, not on top: an AppKit drag view would take
@@ -113,10 +129,7 @@ struct AskBoxView: View {
         }
         .padding(.horizontal, Space.s).allowsHitTesting(false)
       }
-      Button { box.menuOpen.toggle(); model.refreshUsage() } label: {
-        Image(systemName: "ellipsis").font(.system(size: 16)).foregroundColor(t.ink2).frame(width: 28, height: 28).contentShape(Rectangle())
-      }
-      .buttonStyle(.plain).help("More").accessibilityLabel("More")
+      menu
     }
     .frame(height: 32)
     .accessibilityElement(children: .contain)
@@ -142,24 +155,32 @@ struct AskBoxView: View {
     case .offline:
       Text(verbatim: "Can't reach Stephen. Is stephen listen running?").font(TypeScale.body).foregroundColor(t.ink)
       QuietButton("Try again") { model.retry() }
-    case .menu:
-      menu
     }
   }
 
+  /// A normal pop-up menu: it opens over the box and the chat stays where it is. The shortcuts (⌘N, ⌘O, ⌘Q) are the
+  /// hidden buttons below, so they also work with the menu closed.
   private var menu: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      MenuRow(title: "New chat", shortcut: "⌘N") { newChat() }
-      MenuRow(title: "Open Stephen", shortcut: "⌘O") { actions.openApp() }
-      MenuRow(title: "Pin open", shortcut: box.pinned ? "✓" : nil, checked: box.pinned) { box.pinned.toggle() }
-      MenuRow(title: "Reset position", shortcut: nil) { box.menuOpen = false; actions.resetPosition() }
+    Menu {
+      Button("New chat  ⌘N") { newChat() }
+      Button("Open Stephen  ⌘O") { actions.openApp() }
+      Toggle("Pin open", isOn: $box.pinned)
+      Button("Reset position") { actions.resetPosition() }
       // Shown only once a `usage` answer arrives (usage.get, P2); an older listener never answers.
-      if let m = model.usage?.context { UsageBarView(title: "This chat", pct: Double(m.percent), warn: m.warn, word: "context used") }
-      if let m = model.usage?.memory { UsageBarView(title: "Memory", pct: Double(m.percent), warn: m.warn, word: "full") }
-      MenuRow(title: "Review memory", shortcut: nil) { actions.reviewMemory() }
-      Divider().padding(.vertical, Space.xs)
-      MenuRow(title: "Quit", shortcut: "⌘Q") { actions.quit() }
+      if model.usage?.context != nil || model.usage?.memory != nil {
+        Divider()
+        if let m = model.usage?.context { Text(verbatim: usageLine("This chat", m.percent, m.warn, "context used")) }
+        if let m = model.usage?.memory { Text(verbatim: usageLine("Memory", m.percent, m.warn, "full")) }
+      }
+      Button("Review memory") { actions.reviewMemory() }
+      Divider()
+      Button("Quit  ⌘Q") { actions.quit() }
+    } label: {
+      Image(systemName: "ellipsis").font(.system(size: 16)).foregroundColor(t.ink2)
     }
+    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    .frame(width: 28, height: 28)
+    .help("More").accessibilityLabel("More")
   }
 
   /** Cmd+N / Cmd+O / Cmd+Q while the box has focus. */
@@ -177,7 +198,6 @@ struct AskBoxView: View {
   }
 
   private func newChat() {
-    box.menuOpen = false
     box.draft = ""
     model.newChat()
   }
@@ -185,7 +205,6 @@ struct AskBoxView: View {
   private func escape(_ mode: AskBoxMode) {
     if let q = model.confirms.first { model.answerConfirm(q.id, approve: false); return }  // Esc = Deny, like the dialog
     switch mode {
-    case .menu: box.menuOpen = false
     case .listening where box.micHeld: actions.micUp()
     case .chat where model.isWorking: model.stopChat()
     default: actions.close()
@@ -211,56 +230,10 @@ private struct DragStrip: NSViewRepresentable {
   }
 }
 
-private struct MenuRow: View {
-  @Environment(\.stephenTheme) var t
-  let title: String
-  let shortcut: String?
-  var checked: Bool? = nil
-  let action: () -> Void
-  var body: some View {
-    Button(action: action) {
-      HStack {
-        Text(verbatim: title).font(TypeScale.body).foregroundColor(t.ink)
-        Spacer()
-        if let s = shortcut { Text(verbatim: s).font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true) }
-      }
-      .padding(.horizontal, Space.s).padding(.vertical, 6).contentShape(Rectangle())
-    }
-    .buttonStyle(.plain).accessibilityLabel(title)
-    .accessibilityAddTraits(checked == true ? .isSelected : [])
-  }
-}
-
-/** "Memory 85%" with a thin bar; amber with "almost full" when the listener says warn (from 80%). */
-private struct UsageBarView: View {
-  @Environment(\.stephenTheme) var t
-  let title: String
-  let pct: Double
-  let warn: Bool
-  let word: String
-  var body: some View {
-    let p = min(max(pct, 0), 100)
-    let high = warn
-    VStack(alignment: .leading, spacing: Space.xs) {
-      HStack {
-        Text(verbatim: title).font(TypeScale.secondary).foregroundColor(t.ink2)
-        Spacer()
-        Text(verbatim: high ? "almost full · \(Int(p))%" : "\(Int(p))%").font(TypeScale.mono)
-          .foregroundColor(high ? t.warn : t.ink2)
-      }
-      GeometryReader { g in
-        ZStack(alignment: .leading) {
-          Capsule().fill(t.surface2)
-          Capsule().fill(high ? t.warn : t.accent).frame(width: g.size.width * CGFloat(p / 100))
-        }
-      }
-      .frame(height: 4)
-    }
-    .padding(.horizontal, Space.s).padding(.vertical, 6)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(title)
-    .accessibilityValue("\(Int(p)) percent \(word)\(high ? ", almost full" : "")")
-  }
+/** "Memory: 85% full, almost full". Words, not color: the menu is plain text (UI-PLAN section 2). */
+func usageLine(_ title: String, _ percent: Int, _ warn: Bool, _ word: String) -> String {
+  let p = min(max(percent, 0), 100)
+  return "\(title): \(p)% \(word)" + (warn ? ", almost full" : "")
 }
 
 // ───────────────────────────── panel ─────────────────────────────
@@ -312,8 +285,7 @@ final class AskBoxController: NSObject {
     let p = panel ?? makePanel()
     panel = p
     if !isShown {
-      box.menuOpen = false
-      place(p, size: p.contentView?.fittingSize ?? NSSize(width: 360, height: 80))
+      place(p)
       p.orderFrontRegardless()
       watchOutsideClicks()
     }
@@ -327,7 +299,6 @@ final class AskBoxController: NSObject {
   func close() {
     guard model.confirms.isEmpty else { return }
     if box.micHeld { micUp() }
-    box.menuOpen = false
     if let m = clickMonitor { NSEvent.removeMonitor(m) }
     clickMonitor = nil
     panel?.orderOut(nil)
@@ -349,15 +320,24 @@ final class AskBoxController: NSObject {
     ptt(false)
   }
 
+  /// The card, and the fixed transparent panel around it. The panel is as tall as the card can get (strip, a 340 pt
+  /// thread, the field) plus a margin for the card's shadow, so the window itself never resizes.
+  static let cardWidth: CGFloat = 360
+  private static let cardMaxHeight: CGFloat = 520
+  private static let margin: CGFloat = 24
+  private static var panelSize: NSSize {
+    return NSSize(width: cardWidth + 2 * margin, height: cardMaxHeight + 2 * margin)
+  }
+
   private func makePanel() -> AskPanel {
     let p = AskPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 360, height: 80), styleMask: [.borderless, .nonactivatingPanel],
+      contentRect: NSRect(origin: .zero, size: Self.panelSize), styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered, defer: false)
     p.isFloatingPanel = true
     p.level = .statusBar
     p.backgroundColor = .clear
     p.isOpaque = false
-    p.hasShadow = true
+    p.hasShadow = false  // the card draws its own shadow; a window shadow would outline the whole canvas
     p.hidesOnDeactivate = false
     p.isReleasedWhenClosed = false
     p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -374,69 +354,61 @@ final class AskBoxController: NSObject {
       resetPosition: { [weak self] in self?.resetPosition() })
     let root = AskBoxView(model: model, box: box, actions: actions)
       .stephenThemedBySettings()
-      .fixedSize()
-      .background(GeometryReader { g in Color.clear.preference(key: AskBoxSizeKey.self, value: g.size) })
-      .onPreferenceChange(AskBoxSizeKey.self) { [weak self, weak p] size in
-        guard let self = self, let p = p, size.height > 0 else { return }
-        MainActor.assumeIsolated { self.resize(p, to: size) }
-      }
+      .padding(Self.margin)
+      .frame(width: Self.panelSize.width, height: Self.panelSize.height, alignment: .top)
     p.contentView = NSHostingView(rootView: root)
     return p
   }
 
-  /// Where the owner left the box: its left edge and top edge. The box resizes downward, so the top edge is the anchor.
+  /// Where the owner left the box: the card's left edge and top edge. The card grows downward, so the top is the anchor.
   private static let savedXKey = "askBoxX", savedTopKey = "askBoxTop"
 
   private func savePosition() {
     guard let f = panel?.frame else { return }
-    UserDefaults.standard.set(Double(f.minX), forKey: Self.savedXKey)
-    UserDefaults.standard.set(Double(f.maxY), forKey: Self.savedTopKey)
+    UserDefaults.standard.set(Double(f.minX + Self.margin), forKey: Self.savedXKey)
+    UserDefaults.standard.set(Double(f.maxY - Self.margin), forKey: Self.savedTopKey)
+  }
+
+  /** The panel frame for a card whose top-left corner is at (left, top), in screen coordinates. */
+  private static func panelFrame(cardLeft: CGFloat, cardTop: CGFloat) -> NSRect {
+    let s = panelSize
+    return NSRect(x: cardLeft - margin, y: cardTop + margin - s.height, width: s.width, height: s.height)
   }
 
   /** "Reset position": forget the saved spot and go back under the menu bar icon. */
   private func resetPosition() {
     UserDefaults.standard.removeObject(forKey: Self.savedXKey)
     UserDefaults.standard.removeObject(forKey: Self.savedTopKey)
-    if let p = panel { place(p, size: p.frame.size) }
+    if let p = panel { place(p) }
   }
 
-  /// The saved spot, only if it is still on a screen (a monitor may have been unplugged).
-  private func savedOrigin(size: NSSize) -> NSPoint? {
+  /// The saved spot, only if the card's top part is still on a screen (a monitor may have been unplugged).
+  private func savedFrame() -> NSRect? {
     let d = UserDefaults.standard
     guard let x = d.object(forKey: Self.savedXKey) as? Double, let top = d.object(forKey: Self.savedTopKey) as? Double else { return nil }
-    let r = NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
-    guard NSScreen.screens.contains(where: { $0.visibleFrame.intersects(r) }) else { return nil }
-    return r.origin
+    let strip = NSRect(x: x, y: top - 80, width: Double(Self.cardWidth), height: 80)
+    guard NSScreen.screens.contains(where: { $0.visibleFrame.intersects(strip) }) else { return nil }
+    return Self.panelFrame(cardLeft: CGFloat(x), cardTop: CGFloat(top))
   }
 
   /** Where the owner left it, else under the menu bar icon, inside the screen. */
-  private func place(_ p: NSPanel, size: NSSize) {
-    if let o = savedOrigin(size: size) {
-      p.setFrame(NSRect(origin: o, size: size), display: true)
+  private func place(_ p: NSPanel) {
+    if let f = savedFrame() {
+      p.setFrame(f, display: true)
       return
     }
-    var origin = NSPoint(x: 0, y: 0)
-    if let b = anchor(), let w = b.window {
-      let r = w.convertToScreen(b.convert(b.bounds, to: nil))
-      origin = NSPoint(x: r.midX - size.width / 2, y: r.minY - 6 - size.height)
-      if let vis = w.screen?.visibleFrame {
-        origin.x = min(max(origin.x, vis.minX + 8), vis.maxX - size.width - 8)
-      }
+    let w = Self.cardWidth
+    var left: CGFloat = 0, top: CGFloat = 0
+    if let b = anchor(), let bw = b.window {
+      let r = bw.convertToScreen(b.convert(b.bounds, to: nil))
+      left = r.midX - w / 2
+      top = r.minY - 6
+      if let vis = bw.screen?.visibleFrame { left = min(max(left, vis.minX + 8), vis.maxX - w - 8) }
     } else if let vis = NSScreen.main?.visibleFrame {
-      origin = NSPoint(x: vis.maxX - size.width - 8, y: vis.maxY - 6 - size.height)
+      left = vis.maxX - w - 8
+      top = vis.maxY - 6
     }
-    p.setFrame(NSRect(origin: origin, size: size), display: true)
-  }
-
-  /** Content changed size: keep the top edge where it is. */
-  private func resize(_ p: NSPanel, to size: NSSize) {
-    var f = p.frame
-    let top = f.maxY
-    f.size = size
-    f.origin.y = top - size.height
-    // Eased, not a jump (the menu opening, a reply arriving). Instant with Reduce Motion or before it is on screen.
-    p.setFrame(f, display: true, animate: p.isVisible && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-    p.invalidateShadow()
+    p.setFrame(Self.panelFrame(cardLeft: left, cardTop: top), display: true)
   }
 
   /** A click in another app closes the box (clicks in Stephen's own windows don't reach a global monitor). */

@@ -2,6 +2,10 @@
 // large centred composer with Talk and Send, three suggestion chips, and Today as one line ("Nothing waiting · What's
 // my day?"; only what app.sock already knows, due items and to-dos come from asking). With messages: the same thread
 // as the Ask box (ChatThreadView) and the composer at the bottom. No weather, no cards.
+//
+// Motion: one layout, not two swapped views. The composer is the same view in both states; the space under it shrinks
+// to nothing when the chat starts, so the composer glides from the centre to the bottom while the greeting and chips
+// fade out and the thread fades in (above and below it, never pushing it). Instant with Reduce Motion.
 
 import SwiftUI
 
@@ -21,51 +25,70 @@ struct HomeView: View {
   @ObservedObject var nav: WindowNav
   let actions: WindowActions
   @State private var draft = ""
+  @FocusState private var composerFocused: Bool
 
   /// No messages yet in this chat (a waiting question or a running command counts as a chat).
   private var isEmpty: Bool { return model.thread.isEmpty && model.confirms.isEmpty && !model.isWorking }
 
   var body: some View {
-    Group {
-      if isEmpty { start.transition(.opacity) } else { chat.transition(.opacity) }
+    let empty = isEmpty
+    VStack(spacing: Space.m) {
+      // Above the composer: the greeting (empty, sits on the composer) or the title and thread (chat, fills).
+      ZStack(alignment: empty ? .bottom : .top) {
+        if empty { greeting.transition(.opacity) } else { thread.transition(.opacity) }
+      }
+      .frame(maxHeight: .infinity)
+      composer
+      // Under the composer: chips and Today while empty. It takes half the free height (so the composer sits in the
+      // middle), then none once the chat starts, which is what moves the composer down.
+      ZStack(alignment: .top) {
+        if empty { extras.transition(.opacity) }
+      }
+      .frame(maxHeight: empty ? .infinity : 0, alignment: .top)
+      .clipped()
     }
-    .stephenAnimation(value: isEmpty)
+    .frame(maxWidth: 720)
+    .padding(.horizontal, Space.xxl).padding(.vertical, Space.xl)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .stephenAnimation(Motion.bar, value: empty)
     .background(Button("") { newChat() }.keyboardShortcut("n").opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
     .onAppear {
       model.refreshSettings()  // the name for the greeting
       model.refreshJobs()
     }
+    // ⌘K and the sidebar's Ask field, while the window is in front: type here instead of opening the Ask box.
+    .onChange(of: nav.focusComposer) { _ in composerFocused = true }
   }
 
-  /// Empty chat: greeting and date, a large centred composer, chips under it, one line for Today.
-  private var start: some View {
+  private var greeting: some View {
     let now = Date()
-    return ScrollView {
-      VStack(spacing: Space.xl) {
-        VStack(spacing: Space.xs) {
-          Text(verbatim: homeGreeting(hour: Calendar.current.component(.hour, from: now), name: model.ownerName))
-            .font(TypeScale.homeTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
-          Text(verbatim: now.formatted(date: .complete, time: .omitted)).font(TypeScale.body).foregroundColor(t.ink2)
-        }
-        VStack(spacing: Space.m) {
-          HStack(spacing: Space.s) {
-            AskField(text: $draft, onMic: actions.talk, large: true, onSubmit: send)
-            PrimaryButton("Send", action: send)
-          }
-          HStack(spacing: Space.s) {
-            ForEach(HOME_SUGGESTIONS, id: \.self) { s in Tag(s) { draft = s } }
-          }
-          todayLine.padding(.top, Space.xs)
-        }
-      }
-      .padding(Space.xxl)
-      .frame(maxWidth: 680)
-      .frame(maxWidth: .infinity, minHeight: 360)
+    return VStack(spacing: Space.xs) {
+      Text(verbatim: homeGreeting(hour: Calendar.current.component(.hour, from: now), name: model.ownerName))
+        .font(TypeScale.homeTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
+      Text(verbatim: now.formatted(date: .complete, time: .omitted)).font(TypeScale.body).foregroundColor(t.ink2)
+    }
+    .padding(.bottom, Space.l)
+  }
+
+  /// The one composer, the same in both states (large, Talk and Send).
+  private var composer: some View {
+    HStack(spacing: Space.s) {
+      AskField(text: $draft, onMic: actions.talk, large: true, onSubmit: send).focused($composerFocused)
+      PrimaryButton("Send", action: send)
     }
   }
 
-  /// Messages: the same thread as the Ask box, the composer at the bottom.
-  private var chat: some View {
+  private var extras: some View {
+    VStack(spacing: Space.m) {
+      HStack(spacing: Space.s) {
+        ForEach(HOME_SUGGESTIONS, id: \.self) { s in Tag(s) { draft = s } }
+      }
+      todayLine.padding(.top, Space.xs)
+    }
+  }
+
+  /// Messages: the title with a back arrow, then the same thread as the Ask box.
+  private var thread: some View {
     VStack(spacing: Space.m) {
       HStack(spacing: Space.m) {
         // Back to the empty Home. The chat is not lost: it stays in Conversations.
@@ -79,12 +102,8 @@ struct HomeView: View {
           .accessibilityAddTraits(.isHeader)
         Spacer(minLength: 0)
       }
-      .frame(maxWidth: 720).frame(maxWidth: .infinity)
-      ChatThreadView(model: model).frame(maxWidth: 720).frame(maxWidth: .infinity)
-      AskField(text: $draft, onMic: actions.talk, onSubmit: send).frame(maxWidth: 720)
+      ChatThreadView(model: model).frame(maxHeight: .infinity)
     }
-    .padding(.horizontal, Space.xxl).padding(.vertical, Space.xl)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   /// "Nothing waiting · What's my day?" Waiting questions and running jobs come first when there are any.

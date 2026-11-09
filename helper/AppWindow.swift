@@ -95,7 +95,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     super.init()
   }
 
-  @objc func askClicked(_ sender: Any?) { actions.ask() }
+  /// ⌘K: Home's composer when the window is in front, else the Ask box.
+  @objc func askClicked(_ sender: Any?) {
+    if window?.isKeyWindow == true { nav.askHere() } else { actions.ask() }
+  }
 
   func show(page: Page? = nil) {
     if let page = page { nav.page = page }

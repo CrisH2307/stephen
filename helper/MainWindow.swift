@@ -48,11 +48,19 @@ enum Page: String, CaseIterable, Identifiable {
 /** Which page the window shows. Outside the views so the Ask box can set it ("Review memory"). */
 final class WindowNav: ObservableObject {
   @Published var page: Page = .home
+  /** Bumped by ⌘K and the sidebar's Ask field: Home puts the keyboard in its composer. */
+  @Published var focusComposer = 0
+
+  /** ⌘K inside the window: go to Home and type there (the owner's choice A of 2026-11-09), not in the Ask box. */
+  func askHere() {
+    page = .home
+    DispatchQueue.main.async { self.focusComposer += 1 }  // after Home is on screen
+  }
 }
 
 /** What the window asks of the rest of the helper (main.swift fills it). */
 struct WindowActions {
-  /** Open the Ask box with the keyboard in it (⌘K, the sidebar field, Home's Send). */
+  /** Open the Ask box with the keyboard in it (Home's "1 question waiting · Answer"). */
   var ask: () -> Void = {}
   /** Open the Ask box and start push-to-talk (Home's Talk). */
   var talk: () -> Void = {}
@@ -157,9 +165,9 @@ private struct SidebarView: View {
     .padding(.vertical, Space.m)
   }
 
-  /** Looks like a field, acts as a button: the Ask box is where you type (UI-PLAN section 5). */
+  /** Looks like a field, acts as a button: it puts the keyboard in Home's composer. */
   private var askField: some View {
-    Button(action: actions.ask) {
+    Button(action: nav.askHere) {
       HStack(spacing: Space.s) {
         Image(systemName: "text.bubble").font(.system(size: 14)).foregroundColor(t.ink2)
         if !collapsed {
