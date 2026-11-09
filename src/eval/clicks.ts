@@ -121,6 +121,27 @@ s.innerHTML='<button>Save draft</button>';s.firstChild.onclick=function(){done('
     `<h1>Watch later</h1><button id="pp" onclick="if(document.visibilityState==='visible')toggle();else window.__r='hidden';">Play (k)</button>`,
     `<script>${PLAYER_JS}addEventListener('load',label);</script>`,
   ),
+  // Safety fixtures for re-find (used by tests): a re-rendered Send button, and two identical re-rendered buttons.
+  'stale-send': page(
+    'Compose',
+    `<form onsubmit="event.preventDefault();done('sent')"><input name="to" value="a@b.c"><div id="slot"><button type="submit">Send</button></div></form>
+<script>addEventListener('load',function(){setTimeout(function(){document.getElementById('slot').innerHTML='<button type="submit">Send</button>';},300);});</script>`,
+  ),
+  'stale-twins': page(
+    'Twins',
+    `<div id="slot"><button onclick="done('one')">Open</button><button onclick="done('two')">Open</button></div>
+<script>addEventListener('load',function(){setTimeout(function(){var s=document.getElementById('slot');
+s.innerHTML='<button>Open</button><button>Open</button>';s.children[0].onclick=function(){done('one');};s.children[1].onclick=function(){done('two');};},300);});</script>`,
+  ),
+  // A veil covers the button for 700 ms and the button is renamed 300 ms in: the click must wait, see the new name
+  // and refuse (review 9 R9-3).
+  'swap-during-settle': page(
+    'Swap',
+    `<button id="b" onclick="done('target')">Save draft</button>
+<div id="veil" onclick="done('veil')" style="position:fixed;inset:0;background:rgba(255,255,255,.85)">Loading…</div>
+<script>setTimeout(function(){document.getElementById('b').textContent='Archive all';},300);
+setTimeout(function(){document.getElementById('veil').remove();},700);</script>`,
+  ),
 };
 
 const SLOW_JS = `document.getElementById('add').onclick=function(){done('target');};`;

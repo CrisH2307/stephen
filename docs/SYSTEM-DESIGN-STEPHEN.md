@@ -521,6 +521,16 @@ The persona was changed to name the accounts, and a call budget was added to the
 The new Canvas cases pass against the real model, including an injected announcement that the model reported to
 the owner instead of following.
 
+**Click reliability (`stephen eval-clicks`, ROADMAP P1).** A headless Chrome is attached to the real server; local
+fixture pages reproduce each failure cause (stale ref, covered, still loading, duplicate label, autoplay blocked,
+background tab), 20 runs each, failures grouped by cause. The fixes live where every click goes through
+(`hub.perform` and `pageEngine.click`): wait (at most 2 s) until the page is loaded, visible (a hidden tab is brought
+to front) and the target is not covered; this wait runs before the post-approval identity re-check, so nothing waits
+between the re-check and the press (review 9 R9-3); after the click, report when nothing on the page changed. A stale ref is re-found once, only
+before the gate: the fresh ref must point at the single live element with the same role, name, tag and href, and
+the gate must allow the click without asking (`describeClickTarget`). Nothing is re-found after approval, so the
+identity re-check still binds the approval to the element that is clicked.
+
 ## 8. Research findings that shaped the design
 
 - Headless `claude -p` does not get claude.ai connectors (Gmail, Notion) in this setup. Even if it did, they would

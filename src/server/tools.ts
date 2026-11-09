@@ -650,7 +650,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
       hub.withTab(parseRef(target).tab, 'write', async () => {
         const { tab, page } = await hub.pageForRef(target);
         hub.assertNoDialog(tab);
-        const el = await hub.describe(tab, page, target);
+        const el = await hub.describeClickTarget('click', tab, page, target, intent);
+        const ref = el.ref;
         const opts = { ...(double ? { double } : {}), ...(button ? { button } : {}) };
         return hub.action({
           tool: 'click',
@@ -658,11 +659,11 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
           tab,
           page,
           intent,
-          ref: target,
+          ref,
           element: el,
-          ...(Object.keys(opts).length ? { auditArgs: opts } : {}),
-          run: () => engine.click(page, target, opts),
-          done: `${double ? 'Double-clicked' : 'Clicked'} ${target}`,
+          ...(Object.keys(opts).length || ref !== target ? { auditArgs: { ...opts, ...(ref !== target ? { refound: target } : {}) } } : {}),
+          run: () => engine.click(page, ref, opts),
+          done: `${double ? 'Double-clicked' : 'Clicked'} ${ref}${ref !== target ? ` (${target} had gone stale; re-found as ${ref})` : ''}`,
           includeSnapshot: include_snapshot,
         });
       }),
