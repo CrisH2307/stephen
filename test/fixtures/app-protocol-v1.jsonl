@@ -86,3 +86,7 @@
 {"from":"node","kind":"response","msg":{"id":"a38","type":"settings","config":{"voice":{"model":"sonnet","speak":false},"talk":{"length":"balanced","tone":"casual","speak":false,"explain":false,"voice":"elevenlabs","samples":{"brief":{"casual":"Bet, playing lofi beats."}}}},"configPath":"/Users/cris/.stephen/config.json"}}
 {"from":"app","kind":"request","msg":{"id":"a39","type":"settings.set","values":{"tone":"pirate"}}}
 {"from":"node","kind":"response","msg":{"id":"a39","type":"error","message":"tone must be one of casual, friendly, formal"}}
+{"from":"app","kind":"request","msg":{"id":"a40","type":"model.set","model":"haiku","effort":"low"}}
+{"from":"node","kind":"response","msg":{"id":"a40","type":"settings","config":{"voice":{"model":"haiku","effort":"low","speak":false},"talk":{"length":"balanced","tone":"casual","speak":false,"explain":false,"voice":"elevenlabs","samples":{"brief":{"casual":"Bet, playing lofi beats."}}}},"configPath":"/Users/cris/.stephen/config.json"}}
+{"from":"app","kind":"request","msg":{"id":"a41","type":"model.set","effort":"turbo"}}
+{"from":"node","kind":"response","msg":{"id":"a41","type":"error","message":"effort must be default or one of low, medium, high, xhigh, max"}}

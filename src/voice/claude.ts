@@ -181,6 +181,10 @@ export interface ClaudeSettings {
   claudePath: string;
   maxTurns: number;
   model: string | null;
+  /** `--effort` (voice.claudeEffort); null/absent = no flag. */
+  effort?: string | null;
+  /** Live model and effort (Settings > Model), read at the start of every Claude session; wins over model and effort. */
+  modelPrefs?: () => { model: string | null; effort: string | null };
   mcpConfigPath: string;
   /** Optional lock-down flags this `claude` doesn't know (from probeClaudeFlags); they are left out. */
   unsupportedOptionalFlags?: ReadonlySet<string>;
@@ -313,7 +317,10 @@ function lockedArgs(s: ClaudeSettings, memory: readonly string[] | undefined): s
     '--max-turns',
     String(s.maxTurns),
   ];
-  if (s.model) args.push('--model', s.model);
+  const live = s.modelPrefs ? s.modelPrefs() : { model: s.model, effort: s.effort ?? null };
+  if (live.model) args.push('--model', live.model);
+  // ponytail: not probed like the optional lock-down flags; a Claude Code too old for --effort fails the run, update it.
+  if (live.effort) args.push('--effort', live.effort);
   return args;
 }
 

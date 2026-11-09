@@ -6,11 +6,12 @@ import AppKit
 import SwiftUI
 
 enum SettingsItem: String, CaseIterable, Identifiable {
-  case talk, appearance, wake, phone, accounts, browsers, privacy, about
+  case talk, model, appearance, wake, phone, accounts, browsers, privacy, about
   var id: String { return rawValue }
   var title: String {
     switch self {
     case .talk: return "How Stephen talks"
+    case .model: return "Model and effort"
     case .appearance: return "Appearance"
     case .wake: return "Wake word and F5"
     case .phone: return "Phone link"
@@ -23,6 +24,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   var symbol: String {
     switch self {
     case .talk: return "waveform"
+    case .model: return "cpu"
     case .appearance: return "paintpalette"
     case .wake: return "mic"
     case .phone: return "iphone"
@@ -70,6 +72,7 @@ struct SettingsView: View {
   private var pane: some View {
     switch item {
     case .talk: TalkSettingsPane(model: model)
+    case .model: ModelSettingsPane(model: model)
     case .appearance: AppearanceSettings()
     case .wake: WakeSettingsPane(model: model)
     case .phone: PhoneSettingsPane(control: control)
@@ -173,6 +176,69 @@ private struct TalkSettingsPane: View {
     } else {
       voiceNote = "Samples play for the macOS voice only. Choose this voice and Save to hear it in the next reply."
     }
+  }
+}
+
+// MARK: Model and effort
+
+/// Which Claude model and effort Stephen's commands use. Quick to switch (Haiku for small tests). Saved to config.json;
+/// applies from the next command (the listener ends the running conversation so that is the next one).
+private struct ModelSettingsPane: View {
+  @Environment(\.stephenTheme) var t
+  @ObservedObject var model: AppModel
+  @State private var choice = "sonnet"
+  @State private var custom = ""
+  @State private var effort = "default"
+  @State private var loaded = false
+  @State private var saved = false
+  @State private var problem: String? = nil
+
+  private static let aliases = ["haiku", "sonnet", "opus"]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.l) {
+      PaneTitle("Model and effort")
+      Segmented("Model", options: Self.aliases.map { ($0, $0.capitalized) } + [("default", "Default"), ("other", "Other")], selection: $choice.onSet { saved = false })
+      if choice == "other" {
+        TextField("Model name, for example claude-haiku-5-5", text: $custom).textFieldStyle(.roundedBorder).font(TypeScale.body)
+          .accessibilityLabel("Model name").onChange(of: custom) { _ in saved = false }
+      }
+      Segmented("Effort", options: [("default", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra"), ("max", "Max")], selection: $effort.onSet { saved = false })
+      Note("Haiku is fastest and cheapest, good for small tests. Opus with a high effort is slowest and best for hard requests. Default means Claude Code's own choice.")
+      HStack(spacing: Space.m) {
+        PrimaryButton("Save") { save() }
+        if saved { Text(verbatim: "Saved").font(TypeScale.secondary).foregroundColor(t.ok) }
+        if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+      }
+      Note("Applies from your next command. Stephen starts a fresh conversation for it.")
+    }
+    .onAppear(perform: adopt)
+    .onChange(of: model.configJSON) { _ in adopt() }
+  }
+
+  /** Take the saved values the first time they arrive, so later refreshes don't undo unsaved choices. */
+  private func adopt() {
+    guard !loaded, let m = voiceValue(model.configJSON, "model") else { return }
+    if Self.aliases.contains(m) || m == "default" { choice = m } else { choice = "other"; custom = m }
+    effort = voiceValue(model.configJSON, "effort") ?? "default"
+    loaded = true
+  }
+
+  private func save() {
+    problem = nil
+    let name = choice == "other" ? custom.trimmingCharacters(in: .whitespaces) : choice
+    if name.isEmpty { problem = "Type a model name."; return }
+    model.saveModel(model: name, effort: effort) { err in
+      problem = err
+      saved = err == nil
+    }
+  }
+}
+
+private extension Binding {
+  /// Run `change` whenever the value is set (to clear "Saved").
+  func onSet(_ change: @escaping () -> Void) -> Binding<Value> {
+    return Binding(get: { wrappedValue }, set: { wrappedValue = $0; change() })
   }
 }
 

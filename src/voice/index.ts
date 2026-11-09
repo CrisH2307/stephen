@@ -8,6 +8,7 @@
  */
 import { createTts, type TtsSpeaker } from './tts/index.js';
 import { TalkStore, talkFromConfig } from '../app/talk.js';
+import { ModelStore } from '../app/model.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
@@ -366,10 +367,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   // Settings > How Stephen talks: changed live by app.sock settings.set, read at the next command (persona, speak, voice).
   const configPath = env.configPath ?? configFilePath(env.env ?? process.env);
   const talk = new TalkStore(configPath, { ...talkFromConfig(cfg), speak: cfg.speak && !args.dryRun });
+  const modelStore = new ModelStore(configPath, { model: cfg.claudeModel, effort: cfg.claudeEffort ?? null });
   const settings: ClaudeSettings = {
     claudePath: cfg.claudePath,
     maxTurns: cfg.maxTurns,
     model: cfg.claudeModel,
+    effort: cfg.claudeEffort ?? null,
+    modelPrefs: () => modelStore.get(),
     mcpConfigPath,
     followUps: conversation.enabled,
     aboutMe: cfg.aboutMe ?? null,
@@ -561,18 +565,19 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       home,
       queue: listenerQueue(l, a),
       listening: () => true,
-      model: cfg.claudeModel ?? 'default',
+      model: () => modelStore.get().model ?? 'default',
       memory: memoryStore,
       ...(memoryStore ? { proposals: new ProposalStore({ home }) } : {}),
       endConversation: () => a.endConversation(),
       history,
       audit,
-      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get() }),
+      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get() }),
       accounts: allAccounts,
       personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies,
       setTalk: (c) => void talk.set(c),
+      setModel: (c) => void modelStore.set(c),
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
       control: appControl({ home, cliPath, log: err }),
       usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
