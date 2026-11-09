@@ -42,13 +42,18 @@ enum AppTab: String, CaseIterable, Identifiable {
 
 // ───────────────────────────── root ─────────────────────────────
 
+/** Which tab the window shows; the Ask box sets it for "Review memory". */
+final class WindowNav: ObservableObject {
+  @Published var tab: AppTab? = .chat
+}
+
 struct AppRootView: View {
   @ObservedObject var model: AppModel
-  @State private var selection: AppTab? = .chat
+  @ObservedObject var nav: WindowNav
 
   var body: some View {
     HStack(spacing: 0) {
-      List(selection: $selection) {
+      List(selection: $nav.tab) {
         ForEach(AppTab.allCases) { tab in
           Label(tab.title, systemImage: tab.symbol).tag(tab)
         }
@@ -71,7 +76,7 @@ struct AppRootView: View {
     if model.connection != .online {
       OfflineView(model: model)
     } else {
-      switch selection ?? .chat {
+      switch nav.tab ?? .chat {
       case .chat: ChatView(model: model)
       case .memory: MemoryView(model: model)
       case .history: HistoryView(model: model)
@@ -802,14 +807,20 @@ struct AuditRowView: View {
 final class AppWindowController: NSObject, NSWindowDelegate {
   static let frameName = "StephenWindow"
   private let model: AppModel
+  private let nav = WindowNav()
   private var window: NSWindow? = nil
+  /** ⌘K inside the app: open the Ask box. */
+  var onAsk: () -> Void = {}
 
-  init(socketPath: String, log: @escaping (String) -> Void) {
-    model = AppModel(socketPath: socketPath, log: log)
+  init(model: AppModel) {
+    self.model = model
     super.init()
   }
 
-  func show() {
+  @objc func askClicked(_ sender: Any?) { onAsk() }
+
+  func show(tab: AppTab? = nil) {
+    if let tab = tab { nav.tab = tab }
     let w: NSWindow
     if let existing = window {
       w = existing
@@ -818,14 +829,14 @@ final class AppWindowController: NSObject, NSWindowDelegate {
       window = w
     }
     installEditMenuIfNeeded()
-    model.windowOpened()
+    model.opened("window")
     // LSUIElement app: it is never frontmost by itself, so bring it forward with its window.
     NSApp.activate(ignoringOtherApps: true)
     w.makeKeyAndOrderFront(nil)
   }
 
   func windowWillClose(_ notification: Notification) {
-    model.windowClosed()
+    model.closed("window")
   }
 
   private func makeWindow() -> NSWindow {
@@ -837,7 +848,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     w.title = "Stephen"
     w.isReleasedWhenClosed = false
     w.minSize = NSSize(width: 640, height: 420)
-    w.contentView = NSHostingView(rootView: AppRootView(model: model))
+    w.contentView = NSHostingView(rootView: AppRootView(model: model, nav: nav))
     w.delegate = self
     w.center()
     // Remembers size and position across launches (stored in the helper's user defaults).
@@ -855,6 +866,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     let appItem = NSMenuItem(title: "Stephen", action: nil, keyEquivalent: "")
     let appMenu = NSMenu(title: "Stephen")
+    let ask = NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "k")
+    ask.target = self
+    appMenu.addItem(ask)
     appMenu.addItem(
       NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
     appItem.submenu = appMenu
