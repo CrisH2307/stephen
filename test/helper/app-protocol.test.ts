@@ -162,6 +162,13 @@ describe('app.sock protocol v1 fixture', () => {
           expect(['ok', 'error', 'cancelled', 'memory']).toContain(msg.outcome);
           expect((msg.tools as unknown[]).every((t) => typeof t === 'string')).toBe(true);
           expect(typeof msg.ms).toBe('number');
+          if (msg.steps !== undefined) {
+            for (const st of msg.steps as Record<string, unknown>[]) {
+              expect(Object.keys(st).sort()).toEqual(['status', 'text']);
+              expect(['ok', 'refused', 'failed']).toContain(st.status);
+              expect((st.text as string).length).toBeLessThanOrEqual(160);
+            }
+          }
           break;
         case 'error':
           expect(typeof msg.message).toBe('string');

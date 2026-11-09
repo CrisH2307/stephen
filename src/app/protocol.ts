@@ -47,6 +47,7 @@
  *  - `{id, type:"memory.skip", propId}` → `suggestions`.
  *  - `{id, type:"memory.usage"}` → `{id, type:"memory.usage", memory:{percent, warn, bytes, budget}}` (usage.get's memory bar).
  */
+import type { ChatStep } from './steps.js';
 import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import { isProposalId, type MemoryProposal } from '../memory/proposals.js';
@@ -178,7 +179,8 @@ export type AppMessage =
   | { type: 'confirm.end'; confirmId: string }
   | { type: 'state'; state: AppState }
   | { type: 'heard'; text: string; source: string }
-  | { type: 'chat.done'; entryId: string; reply: string; outcome: ChatOutcome; tools: string[]; ms: number };
+  /** `steps`: what Stephen did (src/app/steps.ts), only when there is at least one; an older helper ignores it. */
+  | { type: 'chat.done'; entryId: string; reply: string; outcome: ChatOutcome; tools: string[]; ms: number; steps?: ChatStep[] };
 
 export type ParsedRequest =
   | { kind: 'request'; req: AppRequest }

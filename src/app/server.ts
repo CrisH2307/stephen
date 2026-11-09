@@ -27,7 +27,9 @@ import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/
 import type { ProposalStore } from '../memory/proposals.js';
 import { memoryGraph } from './memory-graph.js';
 import { truncate } from '../safety/text.js';
+import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
+import { commandSteps } from './steps.js';
 import type { CommandReport } from '../voice/assistant.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 import {
@@ -48,6 +50,9 @@ import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
 import type { AppControl } from './control.js';
 import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
+
+/** Audit entries read to build one command's steps (newest first; a command makes far fewer). */
+const STEPS_AUDIT_LIMIT = 100;
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -186,20 +191,32 @@ export class AppServer {
     this.broadcast({ type: 'heard', text: truncate(text, MAX_SAID_CHARS), source });
   }
 
-  /** A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run). */
-  commandDone(r: CommandReport, tools: string[]): void {
+  /**
+   * A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run); `calls`:
+   * the same calls with their error flag, for the action chain. With an audit log, chat.done waits for one audit read
+   * to add `steps`; a failed read just leaves them out.
+   */
+  commandDone(r: CommandReport, tools: string[], calls: ToolCallRecord[] = []): void {
     if (this.endAfterCommand) {
       this.endAfterCommand = false;
       this.o.endConversation();
     }
-    this.broadcast({
-      type: 'chat.done',
+    const msg = {
+      type: 'chat.done' as const,
       entryId: r.id,
       reply: truncate(r.reply, MAX_REPLY_CHARS),
       outcome: r.outcome,
       tools: [...new Set(tools)],
       ms: r.ms,
-    });
+    };
+    const end = Date.now();
+    const audit = this.o.audit;
+    const send = (entries: AuditEntry[]) => {
+      const steps = commandSteps(entries, calls, end - r.ms, end);
+      this.broadcast(steps.length > 0 ? { ...msg, steps } : msg);
+    };
+    if (!audit || r.ms <= 0) return send([]);
+    audit.recent(STEPS_AUDIT_LIMIT).then(send, () => send([]));
   }
 
   // ───────────────────────────── connections ─────────────────────────────

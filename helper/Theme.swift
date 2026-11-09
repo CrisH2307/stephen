@@ -102,6 +102,8 @@ enum TypeScale {
   static let homeTitle = Font.system(size: 34, weight: .semibold, design: .default)
   static let section = Font.system(size: 17, weight: .semibold)
   static let body = Font.system(size: 15)
+  /** Stephen's reply in the chat: the main text, a step up from body (owner, 2026-11-09: bolder, easier to read). */
+  static let reply = Font.system(size: 16, weight: .medium)
   static let secondary = Font.system(size: 13)
   static let sectionLabel = Font.system(size: 11, weight: .medium)
   static let mono = Font.system(size: 13, design: .monospaced)

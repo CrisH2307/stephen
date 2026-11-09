@@ -478,6 +478,8 @@ struct AppMessage: Decodable {
   var outcome: String? = nil
   var tools: [String]? = nil
   var ms: Double? = nil
+  /** chat.done: what Stephen did (src/app/steps.ts); absent from an older listener. */
+  var steps: [ChatStep]? = nil
   // error
   var message: String? = nil
   // history / memory / audit / settings
@@ -518,7 +520,7 @@ struct AppMessage: Decodable {
   var body: String? = nil
 
   enum CodingKeys: String, CodingKey {
-    case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
+    case id, type, version, listening, model, entryId, reply, outcome, tools, ms, steps, message, entries, items, config,
       configPath, state, text, source, accounts, note, jobs, job, on, lines, ok, checks, problems, blocking, context, memory,
       confirmId, title, body, suggestions, nodes, links
   }
@@ -541,6 +543,7 @@ struct AppMessage: Decodable {
     outcome = try? c.decodeIfPresent(String.self, forKey: .outcome)
     tools = try? c.decodeIfPresent([String].self, forKey: .tools)
     ms = try? c.decodeIfPresent(Double.self, forKey: .ms)
+    steps = try? c.decodeIfPresent([ChatStep].self, forKey: .steps)
     message = try? c.decodeIfPresent(String.self, forKey: .message)
     // `entries` holds history entries or audit entries depending on `type`.
     if type == "history" {
@@ -821,8 +824,17 @@ struct ChatBubble: Identifiable, Equatable {
   let id: Int
   let kind: Kind
   let text: String
-  /** Small line under the text: tool names, or where a command came from. */
+  /** Small line: time and (older listener) tool names, or where a command came from. */
   let detail: String
+  /** What Stephen did for this reply, oldest first. */
+  var steps: [ChatStep] = []
+}
+
+/** One line of the action chain. `text` can hold page text (a button label): shown with Text(verbatim:). */
+struct ChatStep: Decodable, Equatable {
+  let text: String
+  /** ok, refused or failed. */
+  let status: String
 }
 
 struct HistoryDay: Identifiable {
@@ -1108,15 +1120,17 @@ final class AppModel: ObservableObject {
     var reply = msg.reply ?? ""
     if reply.isEmpty && outcome == "cancelled" { reply = "Stopped." }
     if reply.isEmpty { reply = "(no reply)" }
+    let steps = msg.steps ?? []
     var detailParts: [String] = []
     let tools = msg.tools ?? []
-    if !tools.isEmpty { detailParts.append(tools.joined(separator: ", ")) }
+    // The chain names the steps; an older listener without steps still gets the tool names.
+    if steps.isEmpty && !tools.isEmpty { detailParts.append(tools.joined(separator: ", ")) }
     if let ms = msg.ms, ms > 0 { detailParts.append(String(format: "%.1f s", ms / 1000)) }
-    addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "))
+    addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "), steps: steps)
   }
 
-  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String) {
-    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail))
+  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = []) {
+    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps))
     nextBubble += 1
     if chat.count > APP_MAX_BUBBLES { chat.removeFirst(chat.count - APP_MAX_BUBBLES) }
   }

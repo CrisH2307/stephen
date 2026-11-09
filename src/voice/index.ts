@@ -458,7 +458,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   let phone: PhoneServer | null = null;
   const onDone = (r: CommandReport) => {
     recordHistory?.(r);
-    app?.commandDone(r, r.ranClaude && toolRunner ? toolRunner.tools().map((t) => t.tool) : []);
+    const calls = r.ranClaude && toolRunner ? toolRunner.tools() : [];
+    app?.commandDone(r, calls.map((t) => t.tool), calls);
   };
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
   // Tests inject env.speaker. The speaker is rebuilt when the voice setting changes, and silent when speak is off.

@@ -270,7 +270,7 @@ ignored; every request has a client `id` echoed in the response; errors are `{id
 | Request (app to node) | Response / events (node to app) |
 |---|---|
 | `{id,type:"hello",version:"1"}` | `{id,type:"hello",version:"1",listening:bool,model:string}` |
-| `{id,type:"chat.send",text}` (≤ 2000 chars) | `{id,type:"chat.accepted",entryId}` now; later push `{type:"chat.done",entryId,reply,outcome,tools:[name],ms}`; `{id,type:"error",message:"busy"}` if a command is running |
+| `{id,type:"chat.send",text}` (≤ 2000 chars) | `{id,type:"chat.accepted",entryId}` now; later push `{type:"chat.done",entryId,reply,outcome,tools:[name],ms,steps?:[{text,status}]}` (steps: the action chain, `src/app/steps.ts`, 2026-11-09); `{id,type:"error",message:"busy"}` if a command is running |
 | `{id,type:"chat.stop"}` | `{id,type:"ok"}` (same as Esc) |
 | `{id,type:"history.list",before?,limit?}` (limit ≤ 100) | `{id,type:"history",entries:[…section 2 history entry…]}` |
 | `{id,type:"history.clear"}` | `{id,type:"ok"}` |
