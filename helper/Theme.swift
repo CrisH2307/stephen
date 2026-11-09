@@ -92,8 +92,18 @@ enum Corner {
   static let window: CGFloat = 12, askBox: CGFloat = 14, list: CGFloat = 12, button: CGFloat = 10, row: CGFloat = 8
 }
 
+/// v3.2: roomier than v3.1 (was 4, 8, 12, 16, 24, 32). Still a 2 pt grid; page padding is xxl, section gaps xl.
 enum Space {
-  static let xs: CGFloat = 4, s: CGFloat = 8, m: CGFloat = 12, l: CGFloat = 16, xl: CGFloat = 24, xxl: CGFloat = 32
+  static let xs: CGFloat = 4, s: CGFloat = 10, m: CGFloat = 16, l: CGFloat = 20, xl: CGFloat = 32, xxl: CGFloat = 40
+}
+
+/// Sidebar sizes. The icon column is the same in both states, so collapsing only clips and fades, nothing jumps.
+enum SidebarMetrics {
+  static let pad = Space.s            // 10 pt each side
+  static let expanded: CGFloat = 220  // content width; the column is 240 with padding
+  static let rail: CGFloat = 40       // content width; the rail is 60 with padding (icon centre at 30)
+  static func content(_ collapsed: Bool) -> CGFloat { return collapsed ? rail : expanded }
+  static func column(_ collapsed: Bool) -> CGFloat { return content(collapsed) + 2 * pad }
 }
 
 /// SF Pro only. Display design for big titles, SF Mono for numbers and ids.
@@ -109,7 +119,7 @@ enum TypeScale {
 
 enum Motion {
   static let state: Double = 0.15
-  static let bar: Double = 0.2
+  static let bar: Double = 0.22
 }
 
 extension View {

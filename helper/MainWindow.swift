@@ -92,13 +92,13 @@ private struct MainWindowView: View {
   var body: some View {
     HStack(spacing: 0) {
       SidebarView(model: model, nav: nav, control: control, actions: actions, collapsed: $collapsed)
-        .frame(width: collapsed ? 60 : 220)
+        .frame(width: SidebarMetrics.column(collapsed), alignment: .leading).clipped()
       Rectangle().fill(t.line).frame(width: 1)
       detail.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .stephenAnimation(Motion.bar, value: collapsed)
     .background(t.ground)
-    .frame(minWidth: 640, minHeight: 420)
+    .frame(minWidth: 720, minHeight: 440)
   }
 
   @ViewBuilder
@@ -127,12 +127,11 @@ private struct SidebarView: View {
   @Binding var collapsed: Bool
 
   var body: some View {
-    VStack(alignment: collapsed ? .center : .leading, spacing: Space.l) {
-      HStack(spacing: Space.s) {
-        if !collapsed {
-          Text(verbatim: "Stephen").font(TypeScale.section).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
-          Spacer(minLength: 0)
-        }
+    // One layout for both states: only the width (animated by the window), the fades and the toggle's side change.
+    VStack(alignment: .leading, spacing: Space.xl) {
+      ZStack(alignment: .leading) {
+        Text(verbatim: "Stephen").font(TypeScale.section).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
+          .padding(.leading, Space.s).opacity(collapsed ? 0 : 1).fixedSize()
         Button { collapsed.toggle() } label: {
           Image(systemName: "sidebar.left").font(.system(size: 16)).foregroundColor(t.ink2).frame(width: 24, height: 24)
         }
@@ -140,36 +139,35 @@ private struct SidebarView: View {
         .keyboardShortcut("\\", modifiers: .command)
         .help(collapsed ? "Show sidebar (⌘\\)" : "Hide sidebar (⌘\\)")
         .accessibilityLabel(collapsed ? "Show sidebar" : "Hide sidebar")
+        .padding(.leading, collapsed ? 8 : 0)
+        .frame(width: SidebarMetrics.content(collapsed), alignment: collapsed ? .leading : .trailing)
       }
-      askField
-      if collapsed {
-        VStack(spacing: Space.xs) { rows(Page.stephen) }
-        Rectangle().fill(t.line).frame(height: 1)
-        VStack(spacing: Space.xs) { rows(Page.you) }
-      } else {
-        SidebarSection("Stephen") { rows(Page.stephen) }
-        SidebarSection("You") { rows(Page.you) }
+      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+      VStack(alignment: .leading, spacing: Space.m) {
+        askField
+        SidebarSection("Stephen", collapsed: collapsed) { rows(Page.stephen) }
+        SidebarSection("You", collapsed: collapsed) { rows(Page.you) }
       }
       Spacer(minLength: 0)
       StatusRow(model: model, control: control, collapsed: collapsed)
     }
-    .padding(.horizontal, collapsed ? Space.s : Space.m)
-    .padding(.vertical, Space.m)
+    .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+    .padding(.horizontal, SidebarMetrics.pad)
+    .padding(.vertical, Space.l)
   }
 
   /** Looks like a field, acts as a button: the Ask box is where you type (UI-PLAN section 5). */
   private var askField: some View {
     Button(action: actions.ask) {
       HStack(spacing: Space.s) {
-        Image(systemName: "text.bubble").font(.system(size: 14)).foregroundColor(t.ink2)
-        if !collapsed {
-          Text(verbatim: "Ask Stephen").font(TypeScale.body).foregroundColor(t.ink2)
-          Spacer(minLength: 0)
-          Text(verbatim: "⌘K").font(TypeScale.secondary).foregroundColor(t.ink2)
-        }
+        Image(systemName: "text.bubble").font(.system(size: 14)).foregroundColor(t.ink2).frame(width: 20)
+        Text(verbatim: "Ask Stephen").font(TypeScale.body).foregroundColor(t.ink2).lineLimit(1).fixedSize().opacity(collapsed ? 0 : 1)
+        Spacer(minLength: 0)
+        Text(verbatim: "⌘K").font(TypeScale.secondary).foregroundColor(t.ink2).opacity(collapsed ? 0 : 1)
       }
-      .padding(.horizontal, Space.s).padding(.vertical, 7)
-      .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
+      .padding(.horizontal, Space.s).padding(.vertical, 9)
+      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+      .clipShape(RoundedRectangle(cornerRadius: Corner.row))
       .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
       .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.line, lineWidth: 1))
       .contentShape(Rectangle())
@@ -199,18 +197,15 @@ private struct StatusRow: View {
   var body: some View {
     let s = listenerWord(connection: model.connection, listening: model.listening, listener: control.listener)
     VStack(alignment: .leading, spacing: Space.xs) {
-      if collapsed {
-        Circle().fill(s.kind.color(t)).frame(width: 8, height: 8).frame(width: 24, height: 24)
-          .help(s.word).accessibilityLabel("Stephen: \(s.word)")
-      } else {
-        HStack(spacing: Space.s) {
-          StatusPill(s.word, kind: s.kind)
-          Spacer(minLength: 0)
-          startStop
-        }
-        if let p = problem {
-          Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
-        }
+      HStack(spacing: Space.s) {
+        StatusPill(s.word, kind: s.kind, showWord: !collapsed).padding(.leading, Space.s + 6)  // the dot sits under the icons
+        Spacer(minLength: 0)
+        startStop.opacity(collapsed ? 0 : 1).allowsHitTesting(!collapsed)
+      }
+      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+      .help(collapsed ? s.word : "")
+      if let p = problem, !collapsed {
+        Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
       }
     }
     .onAppear { control.refresh() }

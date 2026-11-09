@@ -46,12 +46,12 @@ struct SettingsView: View {
         Text(verbatim: "Settings").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
           .padding(.bottom, Space.m)
         ForEach(SettingsItem.allCases) { i in
-          SidebarRow(i.title, symbol: i.symbol, selected: item == i) { item = i }
+          SidebarRow(i.title, symbol: i.symbol, selected: item == i, width: 190) { item = i }
         }
         Spacer(minLength: 0)
       }
       .padding(Space.l)
-      .frame(width: 210)
+      .frame(width: 230)
       Rectangle().fill(t.line).frame(width: 1)
       ScrollView {
         pane
