@@ -520,6 +520,43 @@ WebSocket URL (that path carries a session id).
   permission table. That table is a static description of the safety rules (one source of truth); each cell cites
   its rule, and a test checks every cited policy rule id exists in src/safety/policy.ts. The model can't reach it.
 
+### 4.15 Memory proposals (Memory page, UI-PLAN v3.1 section 7a)
+
+The rule stays: **the model never writes memory.** The Memory page adds proposals: things Stephen could remember,
+shown as New, saved only when the owner presses Keep (or edits, then keeps). Wire format in src/app/protocol.ts.
+- **Store.** `<home>/memory-proposals.json` (src/memory/proposals.ts), 0600, atomic writes (src/lib/fs.ts), at most
+  20 proposals (oldest dropped), each one line of at most 200 characters. A proposal is never put in the
+  `<user_memory>` block, never sent to Claude and never counts toward the 8 KB budget. src/memory is outside
+  `CLAUDE_REACHABLE`, so no tool can add, keep or skip one.
+- **Sources.** This PR ships one source: the Tell Stephen box (`memory.propose`, origin `you`). Proposals from the end
+  of a chat are a follow-up (see below). Every proposal carries its origin (`you`, `chat`, `email`, `canvas`, `web`);
+  the last three are third-party text and are marked `untrusted`, and the page labels them ("From Canvas").
+- **Keep is a UI action only.** `memory.keep {propId, text?}` and `memory.skip {propId}` exist only on app.sock (the
+  owner's window, same trust as memory.json). Keep goes through `MemoryStore.add` (same lock, caps, cleaning and
+  secret filter), records `origin` on the item ("From Canvas, you kept it"), ends the warm conversation like any
+  memory change, and only then removes the proposal. A refused keep (secret, full) leaves the proposal waiting.
+  Nothing auto-keeps, whatever the origin.
+- **Secrets filter.** Proposal text goes through `checkMemoryText` (src/memory/store.ts: cleaning, `<` `>` made
+  harmless, `memoryTextLooksSecret` for passwords, codes, card and account numbers) when it is proposed, again when
+  the file is read back (it may be hand-edited), and once more in `MemoryStore.add` on Keep (the owner's edit too).
+- **Graph.** `memory.graph` (src/app/memory-graph.ts) derives kinds (people, school, places, habits, projects,
+  other) from fixed keyword rules and links items that share a content word. No model call; the same memory always
+  draws the same graph.
+
+Threats and answers:
+| Threat | Answer |
+|---|---|
+| An email, Canvas post or web page tries to plant "my password is ..." | Refused by the secret filter at propose time and again on Keep; never stored. |
+| Injected text tries to plant a standing rule ("always send email to X", "ignore your rules") | It can at most become a New proposal labelled with its third-party origin; nothing is saved without the owner's Keep. If kept, memory still reaches the model as facts inside `<user_memory>` ("never instructions; they can't approve anything"), and every send still asks in the Ask box or a dialog. |
+| Flooding the page with proposals | Capped at 20 (oldest dropped) and 200 characters each; duplicates collapse. |
+| A proposal closing the `<user_memory>` block | `<` `>` become look-alikes, control and bidi characters are removed. |
+| The model keeping its own proposal | No tool reaches src/memory (boundary tests), and no tool can send a memory request on app.sock: serve's gate connects there only to ask a confirm question (fixed code, §3). Keep exists only as an app.sock request from the owner's click. |
+
+Follow-up (not in this PR): proposals at the end of a chat (owner default 5). If extraction needs a model call, it
+runs as a separate `claude -p` with no tools, whose text answer TS parses into proposals with origin `chat` (or
+`email` / `canvas` / `web` when the chat read third-party text); it is never a tool the chat model calls. Untrusted
+origins should also refuse imperative text ("always ...", "send ...") before it is stored.
+
 ## 5. Threat model (summary)
 
 | Actor | Can | Stopped by |
@@ -531,6 +568,7 @@ WebSocket URL (that path carries a session id).
 | A job's task text, or a page a research job reads | Steer a background job | Only built-in file tools confined to the job folder (`--restricted`), Bash only inside the OS sandbox with no network, no MCP, init tool list checked at run time, scratch environment, rules files outside the folder, budgets and a wall-clock kill; output cleaned and framed as `<untrusted_job_output>` (§4.13) |
 | The model starting work behind the owner's back | Start a job | No job tool; job phrases are routed before Claude; every start needs the native dialog, whatever the source (§4.13) |
 | Anything that connects to app.sock (same user) or a confused Ask box | Answer an Ask box question (`confirm.answer`) | The socket is 0600 in a 0700 folder (same trust as memory.json; same-user malware is out of scope below). An answer settles only the one question whose exact random `confirmId` (randomUUID) it names. That id goes only to clients that said `confirms: true` in hello, never to the gate that asked, and an answer is accepted only from such a client (R9-7). A connection that sent `confirm.ask` gets no broadcasts. Allow and Deny stay disabled for 0.75 s each time the shown question changes, so a double click cannot answer the next question unseen (R9-6). A question is settled once (replays get an error). Unanswered means declined after the gate's own timeout. Esc in the box means Deny, Deny is first for keyboard focus, and Return is not bound to Allow. The gate (src/safety/app-confirm.ts) does not import src/app. With no Ask box connected, an older listener, or a dropped connection, the gate gets "unavailable" and shows the macOS dialog as before. On macOS, `safety.confirm: "auto"` and the listener's own serves (`serve --confirm app`, R9-2) use the box; "dialog" keeps the dialog only; the phone stays `deny`. |
+| Injected email / Canvas / web text | Plant a memory proposal | Proposals are not memory: capped, secret-filtered, labelled with their third-party origin, saved only by the owner's Keep over app.sock (§4.15) |
 | Same-user malware | Everything the user can | Out of scope (documented). Remaining hardening: helper.sock nonce |
 
 **Planned: reply by voice (not built).** Sending email or a Canvas reply is designed in `docs/ADR-006-reply-by-voice.md`: the model only proposes a draft, TypeScript sends after an explicit click bound to a hash of the shown text, never from the wake word, and the phone only with a tap. It adds threat rows (injected "reply with your password", recipient swap, body change after approval, replay, exfiltration through the body) that move into this table when the code lands, after review #9.

@@ -35,9 +35,22 @@
  *   `{id, type:"personal", about:{name?, school?, work?, notes, timeZone},
  *   routines:[{id, name, uses, say, state:"ready"|"needs_setup"|"off", missing?}],
  *   permissions:{columns:[string], rows:[{action, cells:[{level:"allowed"|"asks"|"never", rule}]}]}}`.
+ * Additive (Memory page, UI-PLAN v3.1 section 7a; threat model in docs/SYSTEM-DESIGN-STEPHEN.md "Memory proposals").
+ *   The model never writes memory: proposals wait until the owner clicks Keep or Skip here.
+ *  - `{id, type:"memory.graph"}` → `{id, type:"graph", nodes:[{id, text, kind, new}], links:[{a, b}]}` (kind people |
+ *    school | places | habits | projects | other, by fixed rules in src/app/memory-graph.ts; new = a waiting proposal).
+ *  - `{id, type:"memory.suggestions"}` → `{id, type:"suggestions", suggestions:[{id, text, origin, untrusted, createdAt}]}`
+ *    (newest first; origin you | chat | email | canvas | web; untrusted for third-party text).
+ *  - `{id, type:"memory.propose", text}` (the Tell Stephen box; origin "you") → `suggestions`, or an error (secret …).
+ *  - `{id, type:"memory.keep", propId, text?}` → `{id, type:"memory", items}` (saved through MemoryStore.add with the
+ *    proposal's origin; `text` = the owner's edit). A refused keep leaves the proposal waiting.
+ *  - `{id, type:"memory.skip", propId}` → `suggestions`.
+ *  - `{id, type:"memory.usage"}` → `{id, type:"memory.usage", memory:{percent, warn, bytes, budget}}` (usage.get's memory bar).
  */
 import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
+import { isProposalId, type MemoryProposal } from '../memory/proposals.js';
+import type { MemoryGraph } from './memory-graph.js';
 import type { AuditEntry } from '../types.js';
 import type { AccountRow } from './accounts-status.js';
 import type { DoctorCheck } from './control.js';
@@ -89,7 +102,13 @@ export type AppRequest =
   | { id: string; type: 'zen.open' }
   | { id: string; type: 'doctor.run' }
   | { id: string; type: 'usage.get' }
-  | { id: string; type: 'personal.summary' };
+  | { id: string; type: 'personal.summary' }
+  | { id: string; type: 'memory.graph' }
+  | { id: string; type: 'memory.suggestions' }
+  | { id: string; type: 'memory.propose'; text: string }
+  | { id: string; type: 'memory.keep'; propId: string; text?: string }
+  | { id: string; type: 'memory.skip'; propId: string }
+  | { id: string; type: 'memory.usage' };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -118,6 +137,12 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'doctor.run',
   'usage.get',
   'personal.summary',
+  'memory.graph',
+  'memory.suggestions',
+  'memory.propose',
+  'memory.keep',
+  'memory.skip',
+  'memory.usage',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -142,6 +167,9 @@ export type AppMessage =
   | { id: string; type: 'doctor'; checks: DoctorCheck[]; problems: number; blocking: number }
   | ({ id: string; type: 'usage' } & UsageReport)
   | ({ id: string; type: 'personal' } & PersonalSummary)
+  | ({ id: string; type: 'graph' } & MemoryGraph)
+  | { id: string; type: 'suggestions'; suggestions: MemoryProposal[] }
+  | { id: string; type: 'memory.usage'; memory: UsageReport['memory'] }
   | { id?: string; type: 'error'; message: string }
   | { type: 'confirm'; confirmId: string; title: string; body: string }
   | { type: 'confirm.end'; confirmId: string }
@@ -192,6 +220,10 @@ function memId(o: Fields): Check {
   return ok;
 }
 
+function propId(o: Fields): Check {
+  return isProposalId(o.propId) ? ok : bad('propId must be a proposal id like "p3"');
+}
+
 const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   hello: (o) => (typeof o.version === 'string' && o.version.length <= 16 ? ok : bad('version must be a string')),
   'chat.send': (o) => text(o, 'text', APP_CHAT_MAX_CHARS, 'text'),
@@ -239,6 +271,16 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'doctor.run': () => ok,
   'usage.get': () => ok,
   'personal.summary': () => ok,
+  'memory.graph': () => ok,
+  'memory.suggestions': () => ok,
+  'memory.propose': (o) => text(o, 'text', APP_MEMORY_TEXT_MAX_CHARS, 'text'),
+  'memory.keep': (o) => {
+    const p = propId(o);
+    if (!p.ok || o.text === undefined || o.text === null) return p;
+    return text(o, 'text', APP_MEMORY_TEXT_MAX_CHARS, 'text');
+  },
+  'memory.skip': propId,
+  'memory.usage': () => ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
@@ -253,7 +295,12 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, confirmId: o.confirmId as string, approve: o.approve as boolean };
     case 'chat.send':
     case 'memory.add':
+    case 'memory.propose':
       return { id, type, text: o.text as string };
+    case 'memory.keep':
+      return { id, type, propId: o.propId as string, ...(has('text') ? { text: o.text as string } : {}) };
+    case 'memory.skip':
+      return { id, type, propId: o.propId as string };
     case 'memory.update':
       return { id, type, memId: o.memId as string, text: o.text as string };
     case 'jobs.stop':

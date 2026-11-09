@@ -44,6 +44,13 @@ const RESPONSES: Record<string, string[]> = {
   'usage.get': ['usage', 'error'],
   // Personal page (src/app/personal.ts), read-only.
   'personal.summary': ['personal', 'error'],
+  // Memory page (UI-PLAN v3.1 section 7a): proposals are kept or skipped only by the owner's click.
+  'memory.graph': ['graph', 'error'],
+  'memory.suggestions': ['suggestions', 'error'],
+  'memory.propose': ['suggestions', 'error'],
+  'memory.keep': ['memory', 'error'],
+  'memory.skip': ['suggestions', 'error'],
+  'memory.usage': ['memory.usage', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -53,6 +60,9 @@ const GATE_ONLY_RESPONSES = ['confirm.result'];
 const RESPONSE_TYPES = [...new Set(Object.values(RESPONSES).flat())];
 const PUSH_TYPES = ['state', 'heard', 'chat.done', 'confirm', 'confirm.end'];
 const STATES = ['idle', 'listening', 'recording', 'working', 'speaking'];
+/** Where a proposal (and a kept item) came from; email, canvas and web are third-party text. */
+const ORIGINS = ['you', 'chat', 'email', 'canvas', 'web'];
+const KINDS = ['people', 'school', 'places', 'habits', 'projects', 'other'];
 
 type Msg = Record<string, unknown> & { type: string; id?: string };
 interface Line {
@@ -163,7 +173,8 @@ describe('app.sock protocol v1 fixture', () => {
           break;
         case 'memory':
           for (const m of msg.items as Record<string, unknown>[]) {
-            expect(Object.keys(m).sort()).toEqual(['createdAt', 'id', 'source', 'text', 'updatedAt']);
+            expect(Object.keys(m).filter((k) => k !== 'origin').sort()).toEqual(['createdAt', 'id', 'source', 'text', 'updatedAt']);
+            if (m.origin !== undefined) expect(ORIGINS).toContain(m.origin);
             expect((m.text as string).length).toBeLessThanOrEqual(200);
           }
           expect((msg.items as unknown[]).length).toBeLessThanOrEqual(30);
@@ -219,6 +230,35 @@ describe('app.sock protocol v1 fixture', () => {
           expect(Object.keys(m).sort()).toEqual(['budget', 'bytes', 'percent', 'warn']);
           expect(m.budget).toBe(8192);
           if (msg.context !== null) expect(Object.keys(msg.context as object).sort()).toEqual(['percent', 'tokens', 'warn', 'window']);
+          break;
+        }
+        case 'memory.usage': {
+          const m = msg.memory as Record<string, unknown>;
+          expect(Object.keys(m).sort()).toEqual(['budget', 'bytes', 'percent', 'warn']);
+          break;
+        }
+        case 'suggestions':
+          for (const p of msg.suggestions as Record<string, unknown>[]) {
+            expect(Object.keys(p).sort()).toEqual(['createdAt', 'id', 'origin', 'text', 'untrusted']);
+            expect(p.id).toMatch(/^p[1-9]\d*$/);
+            expect(ORIGINS).toContain(p.origin);
+            expect(p.untrusted).toBe(['email', 'canvas', 'web'].includes(p.origin as string));
+            expect((p.text as string).length).toBeLessThanOrEqual(200);
+          }
+          expect((msg.suggestions as unknown[]).length).toBeLessThanOrEqual(20);
+          break;
+        case 'graph': {
+          const ids = new Set<string>();
+          for (const n of msg.nodes as Record<string, unknown>[]) {
+            expect(Object.keys(n).sort()).toEqual(['id', 'kind', 'new', 'text']);
+            expect(KINDS).toContain(n.kind);
+            expect(n.new).toBe((n.id as string).startsWith('p'));
+            ids.add(n.id as string);
+          }
+          for (const l of msg.links as Record<string, unknown>[]) {
+            expect(Object.keys(l).sort()).toEqual(['a', 'b']);
+            expect(ids.has(l.a as string) && ids.has(l.b as string)).toBe(true);
+          }
           break;
         }
         case 'heard':

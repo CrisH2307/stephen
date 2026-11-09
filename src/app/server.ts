@@ -24,6 +24,8 @@ import { LineFramer } from '../helper/framing.js';
 import { listenPrivateSocket, type PrivateSocket } from '../lib/private-socket.js';
 import { MAX_REPLY_CHARS, MAX_SAID_CHARS, newHistoryId, type HistoryEntry, type HistoryStore } from '../history/store.js';
 import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/store.js';
+import type { ProposalStore } from '../memory/proposals.js';
+import { memoryGraph } from './memory-graph.js';
 import { truncate } from '../safety/text.js';
 import type { AuditEntry } from '../types.js';
 import type { CommandReport } from '../voice/assistant.js';
@@ -57,6 +59,7 @@ export const MAX_QUEUED_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 export const MEMORY_OFF_MESSAGE = 'Memory is off (memory.enabled is false in config.json).';
 export const MEMORY_GONE_MESSAGE = "That memory doesn't exist any more.";
+export const PROPOSAL_GONE_MESSAGE = 'That suggestion is no longer waiting.';
 
 /** Where typed chat runs (Listener.submit + Assistant.command in `stephen listen`). */
 export interface AppCommandQueue {
@@ -79,6 +82,8 @@ export interface AppServerOptions {
   model: string;
   /** null = memory.enabled is false. */
   memory: Pick<MemoryStore, 'list' | 'add' | 'update' | 'forget' | 'clear'> | null;
+  /** Memory page proposals (src/memory/proposals.ts). Used only while memory is on; absent = no proposals. */
+  proposals?: ProposalStore;
   /** End the follow-up conversation (after any memory change, like the memory router). */
   endConversation: () => void;
   history: Pick<HistoryStore, 'list' | 'clear'> | null;
@@ -348,6 +353,43 @@ export class AppServer {
     return { id, type: 'memory', items: r.items };
   }
 
+  /**
+   * The Memory page's graph and proposals. Keep is the only way a proposal becomes memory, and only this socket (the
+   * owner's own click) can send it.
+   */
+  private async proposal(
+    req: Extract<AppRequest, { type: 'memory.graph' | 'memory.suggestions' | 'memory.propose' | 'memory.keep' | 'memory.skip' }>,
+    mem: NonNullable<AppServerOptions['memory']>,
+  ): Promise<AppMessage> {
+    const { id } = req;
+    const props = this.o.proposals;
+    const suggestions = (): AppMessage => ({ id, type: 'suggestions', suggestions: props?.list() ?? [] });
+    switch (req.type) {
+      case 'memory.graph':
+        try {
+          return { id, type: 'graph', ...memoryGraph(await mem.list(), props?.list() ?? []) };
+        } catch {
+          return { id, type: 'error', message: MEMORY_MESSAGES.unreadable };
+        }
+      case 'memory.suggestions':
+        return suggestions();
+      case 'memory.propose': {
+        if (!props) return { id, type: 'error', message: 'not available in this listener' };
+        const r = props.propose(req.text, 'you');
+        return r.ok ? suggestions() : { id, type: 'error', message: r.message };
+      }
+      case 'memory.keep': {
+        const p = props?.get(req.propId);
+        if (!p) return { id, type: 'error', message: PROPOSAL_GONE_MESSAGE };
+        const msg = await this.memory(id, () => mem.add(req.text ?? p.text, 'app', p.origin));
+        if (msg.type === 'memory') props!.remove(p.id);
+        return msg;
+      }
+      case 'memory.skip':
+        return props?.remove(req.propId) ? suggestions() : { id, type: 'error', message: PROPOSAL_GONE_MESSAGE };
+    }
+  }
+
   private async answer(req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' }>): Promise<AppMessage> {
     const { id } = req;
     const mem = this.o.memory;
@@ -450,6 +492,15 @@ export class AppServer {
         } catch {
           return { id, type: 'error', message: 'could not read the personal summary' };
         }
+      case 'memory.graph':
+      case 'memory.suggestions':
+      case 'memory.propose':
+      case 'memory.keep':
+      case 'memory.skip':
+        return mem ? this.proposal(req, mem) : { id, type: 'error', message: MEMORY_OFF_MESSAGE };
+      case 'memory.usage':
+        if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };
+        return { id, type: 'memory.usage', memory: (await this.o.usage()).memory };
       case 'window.open': {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };

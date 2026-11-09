@@ -14,6 +14,7 @@ import {
   AppServer,
   MEMORY_GONE_MESSAGE,
   MEMORY_OFF_MESSAGE,
+  PROPOSAL_GONE_MESSAGE,
   appSocketPath,
   assistantQueue,
   type AppCommandQueue,
@@ -27,6 +28,7 @@ import { parseHistoryConfig } from '../../src/history/config.js';
 import { HistoryStore } from '../../src/history/store.js';
 import { parseMemoryConfig } from '../../src/memory/config.js';
 import { MEMORY_MESSAGES, MemoryStore } from '../../src/memory/store.js';
+import { ProposalStore } from '../../src/memory/proposals.js';
 import type { AuditEntry } from '../../src/types.js';
 import type { CommandReport } from '../../src/voice/assistant.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
@@ -119,6 +121,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
   const queue = new FakeQueue();
   const calls = { ends: 0, opens: 0 };
   const memory = new MemoryStore({ home });
+  const proposals = new ProposalStore({ home });
   const history = new HistoryStore({ home, retentionDays: 1 });
   const server = new AppServer({
     home,
@@ -126,6 +129,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     listening: () => true,
     model: 'sonnet',
     memory,
+    proposals,
     endConversation: () => calls.ends++,
     history,
     audit: { recent: async (n) => AUDIT.slice(0, n) },
@@ -154,7 +158,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     clients.push(c);
     return c;
   };
-  return { home, queue, calls, memory, history, server, connect, client: await connect() };
+  return { home, queue, calls, memory, proposals, history, server, connect, client: await connect() };
 }
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'app-protocol-v1.jsonl');
@@ -186,6 +190,8 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
       home,
     );
     h.history.append({ source: 'voice-ptt', said: 'remember my prof', reply: 'Saved', outcome: 'memory', tools: [], followUp: false, ms: 40, turns: 0 });
+    // The fixture's waiting proposal p1 (from Canvas); a32 proposes p2.
+    h.proposals.propose('Lab 4 for SOFE 3980 is due Friday', 'canvas');
 
     const lines = readFileSync(FIXTURE, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as FixtureLine);
     const expected = new Map(lines.filter((l) => l.kind === 'response').map((l) => [l.msg.id!, l.msg]));
@@ -489,6 +495,54 @@ describe('memory, history, settings, audit, window', () => {
     expect(await h.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'usage', context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } });
     const none = await harness({ usage: undefined });
     expect(await none.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('Memory page: propose → suggestions → keep (origin recorded) / skip; nothing is saved without keep', async () => {
+    const h = await harness();
+    const p1 = await h.client.request({ id: 'a', type: 'memory.propose', text: 'I moved to Fit4Less' });
+    expect(p1).toMatchObject({ id: 'a', type: 'suggestions', suggestions: [{ id: 'p1', text: 'I moved to Fit4Less', origin: 'you', untrusted: false }] });
+    expect(await h.memory.list()).toEqual([]);
+    expect(h.calls.ends).toBe(0);
+    h.proposals.propose('Lab 4 is due Friday', 'canvas');
+    const list = await h.client.request({ id: 'b', type: 'memory.suggestions' });
+    expect((list.suggestions as { id: string; untrusted: boolean }[]).map((s) => [s.id, s.untrusted])).toEqual([['p2', true], ['p1', false]]);
+    // a secret is refused before it is ever stored as a proposal
+    expect(await h.client.request({ id: 'c', type: 'memory.propose', text: 'my password is hunter2' })).toEqual({ id: 'c', type: 'error', message: MEMORY_MESSAGES.secret });
+    // keep with edited text: saved through the memory store, origin recorded, proposal gone, conversation ended
+    const kept = await h.client.request({ id: 'd', type: 'memory.keep', propId: 'p2', text: 'Lab 4 is due Thursday' });
+    expect(kept).toMatchObject({ id: 'd', type: 'memory', items: [{ id: 'm1', text: 'Lab 4 is due Thursday', source: 'app', origin: 'canvas' }] });
+    expect(h.calls.ends).toBe(1);
+    expect(h.proposals.list().map((p) => p.id)).toEqual(['p1']);
+    // a refused keep leaves the proposal waiting
+    expect(await h.client.request({ id: 'e', type: 'memory.keep', propId: 'p1', text: 'my bank pin is 4821' })).toEqual({ id: 'e', type: 'error', message: MEMORY_MESSAGES.secret });
+    expect(h.proposals.list().map((p) => p.id)).toEqual(['p1']);
+    expect(await h.client.request({ id: 'f', type: 'memory.skip', propId: 'p1' })).toEqual({ id: 'f', type: 'suggestions', suggestions: [] });
+    expect(await h.client.request({ id: 'g', type: 'memory.skip', propId: 'p1' })).toEqual({ id: 'g', type: 'error', message: PROPOSAL_GONE_MESSAGE });
+    expect(await h.client.request({ id: 'h', type: 'memory.keep', propId: 'p9' })).toEqual({ id: 'h', type: 'error', message: PROPOSAL_GONE_MESSAGE });
+    expect((await h.memory.list()).map((i) => i.text)).toEqual(['Lab 4 is due Thursday']);
+  });
+
+  it('memory.graph and memory.usage', async () => {
+    const h = await harness();
+    await h.memory.add('my gym is Fit4Less', 'cli');
+    h.proposals.propose('I go to Fit4Less every morning', 'you');
+    expect(await h.client.request({ id: 'g', type: 'memory.graph' })).toEqual({
+      id: 'g',
+      type: 'graph',
+      nodes: [
+        { id: 'm1', text: 'my gym is Fit4Less', kind: 'places', new: false },
+        { id: 'p1', text: 'I go to Fit4Less every morning', kind: 'habits', new: true },
+      ],
+      links: [{ a: 'm1', b: 'p1' }],
+    });
+    expect(await h.client.request({ id: 'u', type: 'memory.usage' })).toEqual({ id: 'u', type: 'memory.usage', memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } });
+    const off = await harness({ memory: null });
+    for (const type of ['memory.graph', 'memory.suggestions']) {
+      expect(await off.client.request({ id: 'x', type })).toEqual({ id: 'x', type: 'error', message: MEMORY_OFF_MESSAGE });
+    }
+    expect(await off.client.request({ id: 'y', type: 'memory.propose', text: 'I like tea' })).toEqual({ id: 'y', type: 'error', message: MEMORY_OFF_MESSAGE });
+    const noUsage = await harness({ usage: undefined });
+    expect(await noUsage.client.request({ id: 'u', type: 'memory.usage' })).toEqual({ id: 'u', type: 'error', message: 'not available in this listener' });
   });
 
   it('personal.summary answers from the listener (read-only); without it, an error', async () => {
