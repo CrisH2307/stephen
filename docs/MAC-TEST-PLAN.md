@@ -175,7 +175,11 @@ Setup: `npm run build`, restart `node dist/cli.js listen`.
       unverified for gmail.readonly, that's fine for your own use). Then `node dist/cli.js connect gmail <label>` once
       per label (the Testing-mode refresh tokens expire after 7 days; production ones don't).
 
-## 11. Work batch of 2026-11-08 (PRs #11 to #30, tracker issue #10)
+## 11. Work batch of 2026-11-08 (PRs #11 to #31, tracker issue #10)
+**Test first, on `qa`** (docs/BRANCHING.md): `git fetch && git checkout qa && npm install && npm run build &&
+node dist/cli.js install-helper`, run the checks below, then merge the PRs into `main` in this order. A failed check
+is fixed on its PR branch and merged into `qa` again.
+
 Merge in this order (tested as one local merge: no conflicts, full suite and Swift compile in the handover PR). Use
 "Create a merge commit" and delete each branch after merging, so the next stacked PR retargets to `main` by itself.
 Merging #23 also lands P2 (#15, #18), because #23 already contains them with the conflicts resolved; GitHub then
