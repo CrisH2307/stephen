@@ -10,6 +10,7 @@ import { stat } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import type { ElementHandle, Frame, KeyInput, Page } from 'puppeteer-core';
 import { HubError, isHubError } from '../errors.js';
+import { timed } from '../lib/step-timer.js';
 import { assertRefInTab, makeRef, parseRef } from '../refs.js';
 import type {
   ElementInfo,
@@ -228,7 +229,7 @@ async function walkFrame(
 }
 
 async function snapshot(page: Page, tab: TabId, opts: SnapshotOptions): Promise<SnapshotResult> {
-  return withTimeout(
+  return timed('page.snapshot', () => withTimeout(
     retryNav(async () => {
       let frame = page.mainFrame();
       let k = 0;
@@ -273,7 +274,7 @@ async function snapshot(page: Page, tab: TabId, opts: SnapshotOptions): Promise<
     }),
     DEFAULT_TIMEOUT_MS,
     'Snapshot',
-  );
+  ));
 }
 
 // ───────────────────────────── find ─────────────────────────────
@@ -772,13 +773,13 @@ async function clickTarget(
 async function click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<string | void> {
   return withTarget(page, ref, 'click', async (frame, n, d) => {
     await rt(frame, 'watch', true).catch(() => undefined);
-    await clickTarget(page, frame, n, ref, d, opts);
-    return (await reacted(frame)) ? undefined : NO_CHANGE_NOTE;
+    await timed('click.press', () => clickTarget(page, frame, n, ref, d, opts));
+    return (await timed('click.verify', () => reacted(frame))) ? undefined : NO_CHANGE_NOTE;
   });
 }
 
 async function settleFor(page: Page, ref: Ref): Promise<void> {
-  await withTarget(page, ref, 'settle', (frame, n, d) => settle(page, frame, n, d));
+  await timed('click.settle', () => withTarget(page, ref, 'settle', (frame, n, d) => settle(page, frame, n, d)));
 }
 
 async function refind(page: Page, ref: Ref): Promise<Ref | null> {

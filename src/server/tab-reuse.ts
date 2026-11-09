@@ -15,6 +15,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Page } from 'puppeteer-core';
 import { parseDesktopConfig, type ReuseTabs } from '../desktop/config.js';
+import { timed } from '../lib/step-timer.js';
 import type { BrowserName, GateResult, IBrowserManager, TabId, TabInfo } from '../types.js';
 import { NAV_TIMEOUT_MS, type Hub } from './hub.js';
 import { okResult, safeUrl } from './util.js';
@@ -241,7 +242,7 @@ export async function openPage(hub: Hub, spec: OpenPageSpec): Promise<OpenedPage
 }
 
 async function load(page: Page, href: string): Promise<string | void> {
-  const r = await page.goto(href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
+  const r = await timed('page.navigate', () => page.goto(href, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS }));
   if (r && !r.ok()) return `(HTTP ${r.status()})`;
 }
 

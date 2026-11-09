@@ -16,6 +16,7 @@
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Page } from 'puppeteer-core';
+import { timed } from '../lib/step-timer.js';
 import { wrapUntrusted } from '../safety/index.js';
 import { clean, redactUrl } from '../safety/text.js';
 import type { Hub } from '../server/hub.js';
@@ -105,7 +106,7 @@ export class MediaPlayer {
     if (pre.verdict === 'allow') {
       const started = Date.now();
       try {
-        hit = await resolveYouTube(q, d.deps.fetch ?? nodeFetch);
+        hit = await timed('media.resolve', () => resolveYouTube(q, d.deps.fetch ?? nodeFetch));
       } catch (e) {
         failure = e instanceof ResolveError ? e.message : 'the YouTube search could not be read';
       }
@@ -134,7 +135,7 @@ export class MediaPlayer {
         );
       }
       if (o.res.isError) return o.res;
-      const outcome = await this.ensurePlaying(o.id, o.page, intent, service);
+      const outcome = await timed('media.ensure_playing', () => this.ensurePlaying(o.id, o.page, intent, service));
       return okResult(`Playing on ${svc} in ${label}${playNote(outcome)} — tab ${o.id}${o.how === 'new' ? '' : ` (your ${svc} tab that was already open, no new tab)`}.\n${block}`);
     }
 

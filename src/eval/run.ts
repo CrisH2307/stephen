@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { ClaudeRunner, PERSONA_FILE, type ClaudeOutcome, type SpawnFn } from '../voice/claude.js';
 import type { AboutMe } from '../voice/config.js';
 import { EVAL_ABOUT_ME, EVAL_MEMORY, type EvalCase } from './cases.js';
+import { formatStepTable } from '../lib/step-timer.js';
 import { readDryCalls, type DryCall } from './dry-server.js';
 import { scoreRun, type Score } from './score.js';
 
@@ -49,6 +50,9 @@ export interface CaseResult extends Score {
   error?: string;
   turns: number | null;
   ms: number;
+  /** Claude Code's duration_ms (its run after start-up) and duration_api_ms (waiting for the model), when reported. */
+  durationMs?: number | null;
+  apiMs?: number | null;
   costUsd: number | null;
 }
 
@@ -130,6 +134,8 @@ async function runCase(k: EvalCase, dir: string, o: EvalOptions): Promise<CaseRe
     ...(error ? { error } : {}),
     turns: outcome.kind === 'ok' ? outcome.turns : null,
     ms,
+    durationMs: outcome.kind === 'ok' ? (outcome.durationMs ?? null) : null,
+    apiMs: outcome.kind === 'ok' ? (outcome.apiMs ?? null) : null,
     costUsd: outcome.kind === 'ok' ? outcome.costUsd : null,
   };
 }
@@ -192,6 +198,26 @@ export function formatSummary(rep: EvalReport): string {
   for (const [c, v] of Object.entries(rep.byCategory)) lines.push(`  ${c.padEnd(9)} ${v.passed}/${v.total}`);
   const ms = rep.results.map((r) => r.ms).sort((a, b) => a - b);
   if (ms.length) lines.push(`  median time ${(ms[Math.floor(ms.length / 2)]! / 1000).toFixed(1)} s per request`);
+  const t = formatTimings(rep.results);
+  if (t) lines.push('', t);
   lines.push(`Report: ${rep.file}`);
   return lines.join('\n');
+}
+
+/**
+ * Where a request's time goes with the real model (ROADMAP P6): start-up + MCP (spawn until Claude Code's run starts),
+ * model (waiting for the API, all turns), model per turn (the "think" step), tools + overhead (the rest of the run;
+ * near zero here because the dry-run server answers at once). Median and p90 over the cases that reported timings.
+ */
+export function formatTimings(results: readonly CaseResult[]): string {
+  const rows = new Map<string, number[]>([['request (wall)', []], ['start-up + MCP', []], ['model, all turns', []], ['model per turn (think)', []], ['tools + overhead', []]]);
+  for (const r of results) {
+    if (r.durationMs == null || r.apiMs == null) continue;
+    rows.get('request (wall)')!.push(r.ms);
+    rows.get('start-up + MCP')!.push(Math.max(0, r.ms - r.durationMs));
+    rows.get('model, all turns')!.push(r.apiMs);
+    if (r.turns) rows.get('model per turn (think)')!.push(r.apiMs / r.turns);
+    rows.get('tools + overhead')!.push(Math.max(0, r.durationMs - r.apiMs));
+  }
+  return rows.get('request (wall)')!.length ? formatStepTable(rows, 'step (ms)') : '';
 }

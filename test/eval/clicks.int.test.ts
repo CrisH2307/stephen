@@ -3,7 +3,7 @@
  * settle before clicking, re-find once on STALE_REF for clicks the gate allows without asking, verify after.
  */
 import { describe, expect, it } from 'vitest';
-import { CLICK_CASES, formatClickReport, runClickEval, type ClickCase } from '../../src/eval/clicks.js';
+import { CLICK_CASES, formatClickReport, formatStepTimings, runClickEval, type ClickCase } from '../../src/eval/clicks.js';
 import { chromiumArgs, chromiumPath } from '../helpers/chromium.js';
 
 const run = async (cases: readonly ClickCase[], runs = 1) => runClickEval({ runs, cases, executablePath: await chromiumPath(), args: chromiumArgs() });
@@ -16,6 +16,9 @@ describe('stephen eval-clicks', () => {
     const text = formatClickReport(reports);
     expect(text).toMatch(/^case +pass +what/);
     expect(text).not.toMatch(/\b[cz]\d+:e\d+\b/);
+    // P6: every click and its page waits are timed.
+    const steps = formatStepTimings(reports);
+    for (const k of ['tool.click', 'tool.find', 'tool.tab_open', 'click.settle', 'click.press', 'click.verify', 'page.navigate', 'case stale-ref']) expect(steps).toContain(k);
   }, 180_000);
 
   it('never re-finds a gated click (Send) or an ambiguous one: STALE_REF, nothing clicked', async () => {

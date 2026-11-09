@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Page } from 'puppeteer-core';
 import { HubError, errorMessage, isHubError } from '../errors.js';
+import { timed } from '../lib/step-timer.js';
 import { parseRef } from '../refs.js';
 import { buildConfirmer } from '../safety/confirm.js';
 import { redactValue, wrapUntrusted, type ElicitFn, type SafetyDeps } from '../safety/index.js';
@@ -635,7 +636,7 @@ export class Hub {
   /** gate.check (+ extra checks) → re-check → act (raced against dialogs, with timeout) → audit → result. */
   async action(spec: ActionSpec): Promise<CallToolResult> {
     const urlBefore = safeUrl(spec.page);
-    const g = await this.safety().gate.check(this.request(spec, urlBefore));
+    const g = await timed('gate.check', () => this.safety().gate.check(this.request(spec, urlBefore)));
     if (!g.allowed) throw this.denied(g, urlBefore);
     for (const extra of spec.extraChecks ?? []) {
       const x = await this.safety().gate.check(extra);
