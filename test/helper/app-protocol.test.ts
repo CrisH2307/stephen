@@ -302,7 +302,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('main.swift')).toContain('home + "/run/app.sock"');
   });
 
-  it('Ask box usage bars: sends usage.get and decodes the P2 shape (PR #18) without importing it', () => {
+  it('Ask box usage lines: sends usage.get and decodes the P2 shape (PR #18) without importing it', () => {
     // {id,type:"usage",context:{percent,warn,tokens,window}|null,memory:{percent,warn,bytes,budget}}
     expect(client).toContain('type: "usage.get"');
     expect(client).toContain('msg.type == "usage"');
@@ -312,7 +312,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(client).toContain('decodeIfPresent(UsageBar.self, forKey: .memory)');
     const box = read('AskBox.swift');
     expect(box).toContain('if let m = model.usage?.context');
-    expect(box).toContain('let high = warn');
+    // The ⋯ menu is a pop-up menu over the chat (2026-11-09); "almost full" is said in words, not color.
+    expect(box).toMatch(/Menu \{[\s\S]*usageLine\("This chat"/);
+    expect(box).toContain('", almost full"');
   });
 
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
