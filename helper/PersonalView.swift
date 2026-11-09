@@ -27,6 +27,7 @@ struct PersonalView: View {
     .onAppear {
       model.refreshPersonal()
       model.refreshMemory()
+      model.refreshSuggestions()
       model.refreshAccounts()
     }
   }
@@ -94,9 +95,16 @@ struct PersonalView: View {
           QuietButton("Forget", destructive: true) { model.forgetMemory(item.id) }
         }
       }
-      if !model.memory.isEmpty {
-        // Placeholder target until the Memory page PR (section 7a): the current memory list.
-        GroupedRow("See all \(model.memory.count) ›") { QuietButton("Open") { nav.page = .memory } }
+      if !model.memory.isEmpty || !model.suggestions.isEmpty {
+        let new = model.suggestions.count
+        Button { nav.page = .memory } label: {
+          GroupedRow("See all \(model.memory.count), as a graph ›", first: newest.isEmpty) {
+            if new > 0 { StatusPill("\(new) new", kind: .warn) }
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("See all \(model.memory.count) memories as a graph\(new > 0 ? ", \(new) new" : "")")
       }
     }
   }

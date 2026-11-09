@@ -1044,7 +1044,6 @@ final class AppModel: ObservableObject {
   // MARK: memory
 
   func refreshMemory() { memoryRequest(AppRequest.memoryList(newId())) }
-  func addMemory(_ text: String) { memoryRequest(AppRequest.memoryAdd(newId(), text: text)) }
   func updateMemory(_ memId: String, text: String) {
     memoryRequest(AppRequest.memoryUpdate(newId(), memId: memId, text: text))
   }
@@ -1085,11 +1084,16 @@ final class AppModel: ObservableObject {
         self.memoryPageNotice = msg.message ?? "Couldn't read memory."
       }
     }
-    request(AppRequest.memorySuggestions(newId())) { [weak self] msg in self?.takeSuggestions(msg) }
+    refreshSuggestions()
     request(AppRequest.memoryUsage(newId())) { [weak self] msg in
       self?.memoryUsage = msg.type == "memory.usage" ? msg.memory : nil
     }
     refreshMemory()
+  }
+
+  /** Proposals waiting for Keep or Skip (Personal shows the "N new" count). */
+  func refreshSuggestions() {
+    request(AppRequest.memorySuggestions(newId())) { [weak self] msg in self?.takeSuggestions(msg) }
   }
 
   /** Tell Stephen: the owner's words become a proposal (New), saved only after Keep. */

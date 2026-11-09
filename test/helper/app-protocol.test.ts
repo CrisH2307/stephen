@@ -288,7 +288,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   const read = (f: string) => readFileSync(join(helperSourceDir(), f), 'utf8');
   const client = read('AppClient.swift');
   // The window's sources: frame and router, Home, and the older screens.
-  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift'].map(read).join('\n');
+  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift', 'MemoryPage.swift'].map(read).join('\n');
 
   it('AppClient sends every request type and handles every response and push type', () => {
     const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
@@ -335,6 +335,39 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(client).toContain('AppRequest.accountsStatus(newId())');
     // Only system colours.
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
+  });
+
+  it('Memory page (UI-PLAN v3.1 section 7a): graph, list alternative, inspector, proposals, Tell Stephen', () => {
+    const page = read('MemoryPage.swift');
+    expect(window).toContain('case .memory: MemoryPage(model: model, nav: nav)');
+    expect(page).toContain('model.refreshMemoryPage()');
+    // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
+    expect(page).not.toContain('addMemory');
+    expect(page).toContain('model.proposeMemory(text)');
+    expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
+    expect(page).toContain('model.skipProposal(');
+    // Header: back to Personal (also Esc), the usage chip only over 80%, search (⌘F), ⋯.
+    expect(page).toContain('nav.page = .personal');
+    expect(page).toContain('.onExitCommand');
+    expect(page).toContain('if let u = model.memoryUsage, u.warn');
+    expect(page).toContain('.keyboardShortcut("f", modifiers: .command)');
+    for (const chip of ['All', 'People', 'School', 'Places', 'Habits', 'Projects', 'New']) expect(page).toContain(`title: "${chip}"`);
+    // New items dashed amber, selection accent, an accessible list with the same items, labelled nodes.
+    expect(page).toContain('t.warn, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])');
+    expect(page).toContain('isSel ? t.accent');
+    expect(page).toContain('Segmented("Show memory as"');
+    expect(page).toContain('.accessibilityLabel(nodeLabel(n))');
+    // Third-party proposals say so.
+    expect(page).toContain('third-party text');
+    expect(client).toContain('func originLabel(_ origin: String) -> String');
+    expect(client).toContain('if let o = item.origin');
+    // Personal links here with the new count.
+    const personal = read('PersonalView.swift');
+    expect(personal).toContain('as a graph ›');
+    expect(personal).toContain('StatusPill("\\(new) new", kind: .warn)');
+    expect(personal).toContain('model.refreshSuggestions()');
+    // Only theme colours.
+    expect(page).not.toMatch(/Color\((red|green|blue|white|black|hex):/);
   });
 
   it('Jobs tab is wired to the protocol and shows job text verbatim', () => {
