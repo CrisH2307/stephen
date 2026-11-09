@@ -1,7 +1,11 @@
-# Stephen app: UI plan (v3.1, build-ready)
+# Stephen app: UI plan (v3.2, build-ready)
 
 Status: the owner's direction of 2026-11-08, ready for a new chat to build (roadmap P3, after P1 reliable clicks and
 P2 app-first). SwiftUI, in `helper/` (`AppWindow.swift`, `AppClient.swift`, new files as listed in §10).
+**v3.2 (2026-11-08, after the owner tested the v3.1 build):** the Ask box is a draggable chat thread (§5, replaces the
+"one thing at a time" rule), Home uses a chat layout (§6), the sidebar collapses smoothly and marks the current page
+(§4), and the spacing scale is larger (§9). Every changed default is listed in "Decisions to confirm (v3.2)" (§12).
+
 Mockups (row "v3.1"): https://claude.ai/artifact/LPZoKp4HvKkyjAM2ysAUrd (private to the owner).
 
 History: v1 "Storefront" (orange cards) → v2 (anti-slop pass, still card dashboards) → v3 (the owner liked the calm
@@ -43,30 +47,42 @@ Rule for the builder: if a screen starts to look like a specific other product, 
 
 ## 4. Sidebar (main window)
 - Top: wordmark "Stephen" and a collapse button (⌘\). Collapsed = 60 pt icon rail with tooltips; state remembered.
+  **Motion (v3.2):** the icons never move; the wordmark and labels fade while the width animates (0.22 s). There is
+  no layout switch, so nothing jumps. With Reduce Motion it changes at once.
+- **Current page (v3.2):** semibold label, an accent-tinted row background (accent at 12%) and a small accent bar on
+  the leading edge; the change fades. It is also in the accessibility traits, never color alone.
 - **Ask Stephen** field (opens the Ask box, shows "⌘K").
 - Section label "STEPHEN" (11 pt uppercase): **Home**, **Conversations** (what you asked, what Stephen did, refusals;
   replaces History + Audit), **Jobs**.
 - Section label "YOU": **Personal**, **Settings**.
 - Bottom: status row (dot + word: Listening / Stopped / Offline) with **Start/Stop** (P2). Quit is ⌘Q in the menu.
 
-## 5. Ask box (the real chat, in the menu bar)
-A popover under Stephen's menu bar icon, 300 pt wide, 14 pt corners. Opened by clicking the icon, ⌘K, or F5. It shows
-**one thing at a time** and no helper text (the owner's rule: while listening you only care that it listens).
-- **Idle**: the input ("Ask Stephen"), a mic button, a ⋯ button. Nothing else.
-- **Listening**: only your words, live, plus a small level meter. No pill, no hint text.
-- **Working**: your words in ink-2 and one short step line ("Opening YouTube"). Esc stops.
-- **Reply**: the answer only. No tags, no footer. (What Stephen did lives in Conversations.)
-- **Needs your OK**: one question ("Send email to Dr Patel?"), one detail line (subject), two buttons ("Don't send" /
-  "Send"). A spoken yes never counts for sending; that rule is enforced, not printed.
-- **Error/offline**: what failed, one fix button.
-- **⋯ menu**: New chat ⌘N, Open Stephen ⌘O, **This chat: % of context used** (bar), **Memory: % full** (bar, amber
-  with "almost full" over 80%), Review memory, Quit ⌘Q.
+## 5. Ask box (a chat thread, in the menu bar)
+A 360 pt panel under Stephen's menu bar icon, 14 pt corners. Opened by clicking the icon, ⌘K, or F5. It is a real chat,
+like the ones people already know: the current conversation as a scrolling thread, your messages on the right in a soft
+bubble, Stephen's replies on the left, the input at the bottom. (v3.1 showed one thing at a time and only the last
+reply; the owner asked for a thread.) The thread is the same one Home shows, from the one chat in `AppModel`.
+- **Top strip**: drag it to move the box; the position is remembered (and ignored if that spot is off every screen).
+  The ⋯ button is on the strip.
+- **Thread**: your words, Stephen's replies (tools used as a small line), problems named "Problem" with Try again,
+  small grey lines for busy and stopped. "Working…" under the last message; Esc stops it.
+- **Listening**: the thread is replaced by "Listening…" (tap to send when the box's mic started it).
+- **Needs your OK**: a message at the bottom of the thread with the gate's own question and facts and two buttons.
+  Allow and Deny stay off for 0.75 s each time the question changes, Esc denies, and a spoken yes never counts for
+  sending (enforced, not printed).
+- **Offline**: what failed and Try again.
+- **⋯ menu**: New chat ⌘N (the old chat stays in Conversations), Open Stephen ⌘O, **Pin open** (stay open when you
+  click elsewhere), **Reset position**, **This chat: % of context used**, **Memory: % full** (amber over 80%),
+  Review memory, Quit ⌘Q.
 
-## 6. Home (personal, small)
-- Title "Morning, Cris." (SF Pro Display 34 pt semibold) and the date. No weather.
-- **Today** (a plain list, not cards): what is due, how many to-dos, anything waiting for you. Empty when nothing is.
-- The ask field, wide, with Talk and Send; under it 3 small suggestion chips ("Plan my day", "Find internships",
-  "Start a job").
+## 6. Home (chat layout, v3.2)
+Inspired by common chat apps, never a copy of one product's layout (§3).
+- **Empty (no messages in this chat)**: the greeting ("Morning, Cris.", 34 pt) and the date, a large centred composer
+  (with Talk and Send), and the three suggestion chips under it ("Plan my day", "Find internships", "Start a job").
+- **With messages**: the same thread as the Ask box, scrolling, with the composer at the bottom. ⌘N starts a new chat
+  (back to the empty layout).
+- **Today** is one compact line, not a list: "Nothing waiting · What's my day?", "1 question waiting · Answer" or
+  "2 jobs running · See jobs". No weather, no cards.
 
 ## 7. Personal (replaces "Context network")
 One scrolling page of grouped lists (System Settings style), with a narrow right column for permissions:
@@ -125,8 +141,8 @@ Extra themes (same roles; ok/warn/bad use the Light or Dark set by brightness; c
 | Sun | #FFFBEA | #FFFFFF | #EFE6C4 | #221C08 (17.0) | #6B5F35 (6.3) | #3D3200 (white, 12.7) | #8A6A00 (5.1) |
 
 Type: page title 28 Display semibold (-2%), Home title 34; section 17 semibold; body 15/22; secondary 13; section
-label 11 uppercase +8% ink-2. Corners: window 12, Ask box 14, lists and inputs 12, buttons 10, rows 8. Spacing 4 pt
-grid (8, 12, 16, 24, 32). Shadow only on the Ask box (system floating window shadow). Motion 150 ms state, 200 ms bar
+label 11 uppercase +8% ink-2. Corners: window 12, Ask box 14, lists and inputs 12, buttons 10, rows 8. Spacing (v3.2,
+roomier): 4, 10, 16, 20, 32, 40 (xs to xxl); page padding 40, section gaps 32, list rows 16 vertical. Shadow only on the Ask box (system floating window shadow). Motion 150 ms state, 200 ms bar
 expand; none with Reduce Motion. Icons: SF Symbols, regular, 16/18 pt.
 
 ## 10. Build plan (new chat)
@@ -148,3 +164,15 @@ expand; none with Reduce Motion. Icons: SF Symbols, regular, 16/18 pt.
 3. Personal: may you edit About you and Routines here, or view only at first?
 4. Memory budget: what counts as "full" (the size Stephen loads into each chat)? Suggest 8 KB to start.
 5. Should Stephen propose memory from every chat automatically, or only when you say "remember"?
+
+## 12. Decisions to confirm (v3.2)
+Defaults changed from v3.1. Say so if any should go back.
+1. **Ask box is a thread** (was one thing at a time). It keeps your messages when closed and reopened, until ⌘N.
+2. **Ask box is 360 pt wide** (was 300), thread capped at 340 pt tall.
+3. **Position is remembered after a drag**; the box no longer always opens under the icon. "Reset position" undoes it.
+4. **Pin open is off by default** and remembered once switched on.
+5. **Home opens as a centred composer** (greeting, date, composer, chips). Today is one line instead of a list.
+6. **Spacing scale is larger** (10, 16, 20, 32, 40 instead of 8, 12, 16, 24, 32); minimum window 720 x 440.
+7. **Current sidebar page** is semibold with an accent-tinted row and a leading accent bar (was a grey row).
+8. **The chat is the helper's in-memory chat**: it starts empty after the helper restarts. A read-only `chat.history`
+   request could fill it from the listener's history; not built.
