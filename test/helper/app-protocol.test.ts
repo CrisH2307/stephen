@@ -27,6 +27,8 @@ const RESPONSES: Record<string, string[]> = {
   'memory.forget': ['memory', 'error'],
   'memory.clear': ['memory', 'error'],
   'settings.get': ['settings', 'error'],
+  // Settings > How Stephen talks: length, tone, speak, explain, voice; answers with the new settings snapshot.
+  'settings.set': ['settings', 'error'],
   'audit.recent': ['audit', 'error'],
   'accounts.status': ['accounts', 'error'],
   'jobs.list': ['jobs', 'error'],
@@ -396,7 +398,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).toContain('control.start { problem = $0 }');
     expect(main).toContain('control.stop { problem = $0 }');
     for (const w of ['"Listening"', '"Stopped"', '"Offline"']) expect(main).toContain(w);
-    expect(main).toContain('.stephenThemed(savedThemeChoice())');
+    expect(main).toContain('.stephenThemedBySettings()');
     const home = read('HomeView.swift');
     expect(home).toContain('let HOME_SUGGESTIONS = ["Plan my day", "Find internships", "Start a job"]');
     expect(home).toContain('model.confirms.count');

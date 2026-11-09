@@ -82,3 +82,7 @@
 {"from":"node","kind":"response","msg":{"id":"a36","type":"memory","items":[{"id":"m9","text":"I moved to Fit4Less","source":"app","origin":"you","createdAt":"2026-11-08T15:02:00.000Z","updatedAt":"2026-11-08T15:02:00.000Z"}]}}
 {"from":"app","kind":"request","msg":{"id":"a37","type":"memory.skip","propId":"p1"}}
 {"from":"node","kind":"response","msg":{"id":"a37","type":"suggestions","suggestions":[]}}
+{"from":"app","kind":"request","msg":{"id":"a38","type":"settings.set","values":{"length":"balanced","speak":false}}}
+{"from":"node","kind":"response","msg":{"id":"a38","type":"settings","config":{"voice":{"model":"sonnet","speak":false},"talk":{"length":"balanced","tone":"casual","speak":false,"explain":false,"voice":"elevenlabs","samples":{"brief":{"casual":"Bet, playing lofi beats."}}}},"configPath":"/Users/cris/.stephen/config.json"}}
+{"from":"app","kind":"request","msg":{"id":"a39","type":"settings.set","values":{"tone":"pirate"}}}
+{"from":"node","kind":"response","msg":{"id":"a39","type":"error","message":"tone must be one of casual, friendly, formal"}}

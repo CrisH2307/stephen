@@ -648,3 +648,19 @@ database), and Gmail (OAuth desktop flow with PKCE, `gmail.readonly`). Then phas
 change is shown verbatim in a native dialog), phase 3 (built: one warm Claude Code per conversation, §4.12; Mac
 measurements pending) and phase 4 (accessibility-based control of approved apps). Background jobs (§4.13) are built
 up to the start flow; the finish flow (notification, spoken summary, the Jobs tab) comes next.
+
+## How Stephen talks (Settings, UI-PLAN v3.1 section 8)
+
+- `settings.set {values}` on app.sock changes five settings: `length` (brief|balanced|detailed), `tone`
+  (casual|friendly|formal), `speak` (bool), `explain` (bool), `voice` (elevenlabs|kokoro|say). Strict: a non-empty
+  object, only those keys, enum words or booleans, nothing else; anything else is refused and nothing is written.
+- Saved in config.json's `voice` section (`length`, `tone`, `explain`, `speak`, `tts`; only the changed keys, atomic
+  0600 write like `accounts weather set`), so `stephen listen` reads them the same way at start. `settings.get` returns
+  them under `config.talk` with the preview sentences.
+- Threat model: no text from settings reaches the prompt. The persona picks one of three fixed length sentences, one of
+  three fixed tone sentences (the safety sentence is in all of them) and an optional fixed step line (src/voice/talk.ts).
+  Brief + Casual is byte for byte the old persona (test/voice/talk.test.ts). The app.sock owner already has the same
+  trust as editing config.json.
+- When it applies: the persona and speaker read the values at the next command (`ClaudeSettings.talk`, the assistant's
+  `speak` function, a speaker that is rebuilt when the voice changes). A warm conversation that is already running keeps
+  its persona (Claude Code snapshots the system prompt) until the conversation ends.

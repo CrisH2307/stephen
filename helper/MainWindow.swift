@@ -77,7 +77,7 @@ struct AppRootView: View {
 
   var body: some View {
     MainWindowView(model: model, nav: nav, control: control, actions: actions)
-      .stephenThemed(savedThemeChoice())
+      .stephenThemedBySettings()
   }
 }
 
@@ -111,7 +111,7 @@ private struct MainWindowView: View {
       case .conversations: ConversationsPage(model: model)
       case .jobs: JobsView(model: model)
       case .personal: PersonalView(model: model, nav: nav)
-      case .settings: SettingsView(model: model)
+      case .settings: SettingsView(model: model, control: control)
       case .memory: MemoryPage(model: model, nav: nav)
       }
     }

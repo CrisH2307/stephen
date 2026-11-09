@@ -56,6 +56,7 @@ import type { AccountRow } from './accounts-status.js';
 import type { DoctorCheck } from './control.js';
 import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
+import { checkTalkChanges, type TalkState } from '../voice/talk.js';
 import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
@@ -90,6 +91,7 @@ export type AppRequest =
   | { id: string; type: 'memory.forget'; memId: string }
   | { id: string; type: 'memory.clear' }
   | { id: string; type: 'settings.get' }
+  | { id: string; type: 'settings.set'; values: Partial<TalkState> }
   | { id: string; type: 'audit.recent'; limit?: number }
   | { id: string; type: 'accounts.status' }
   | { id: string; type: 'jobs.list' }
@@ -124,6 +126,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'memory.forget',
   'memory.clear',
   'settings.get',
+  'settings.set',
   'audit.recent',
   'accounts.status',
   'jobs.list',
@@ -244,6 +247,10 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'memory.forget': memId,
   'memory.clear': () => ok,
   'settings.get': () => ok,
+  'settings.set': (o) => {
+    const c = checkTalkChanges(o.values);
+    return c.ok ? ok : bad(c.message);
+  },
   'audit.recent': (o) => optionalLimit(o, APP_AUDIT_LIMIT_MAX),
   'accounts.status': () => ok,
   'jobs.list': () => ok,
@@ -301,6 +308,8 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, propId: o.propId as string, ...(has('text') ? { text: o.text as string } : {}) };
     case 'memory.skip':
       return { id, type, propId: o.propId as string };
+    case 'settings.set':
+      return { id, type, values: (checkTalkChanges(o.values) as { changes: Partial<TalkState> }).changes };
     case 'memory.update':
       return { id, type, memId: o.memId as string, text: o.text as string };
     case 'jobs.stop':

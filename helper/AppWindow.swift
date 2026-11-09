@@ -147,58 +147,6 @@ struct HistoryRowView: View {
   }
 }
 
-// ───────────────────────────── settings ─────────────────────────────
-
-struct SettingsView: View {
-  @ObservedObject var model: AppModel
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text(verbatim: "Read-only. To change a setting, edit the config file and restart stephen listen.")
-        .foregroundColor(.secondary)
-      if let notice = model.settingsNotice {
-        NoticeView(text: notice)
-      }
-      ScrollView {
-        Text(verbatim: model.settingsText)
-          .font(.system(.body, design: .monospaced))
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(10)
-      }
-      .background(Color(nsColor: .textBackgroundColor))
-      HStack(spacing: 8) {
-        if let path = model.configPath {
-          Text(verbatim: path)
-            .font(.caption)
-            .foregroundColor(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-        }
-        Spacer()
-        Button("Refresh") { model.refreshSettings() }
-        Button("Open config file") { openConfig() }
-          .disabled(model.configPath == nil)
-      }
-    }
-    .padding(14)
-    .onAppear { model.refreshSettings() }
-  }
-
-  /** Opens the config file in its default app. Only a .json path is opened; if it doesn't exist yet, its folder. */
-  private func openConfig() {
-    guard let path = model.configPath, path.hasPrefix("/") else { return }
-    let url = URL(fileURLWithPath: path)
-    guard url.pathExtension.lowercased() == "json" else { return }
-    var isDir: ObjCBool = false
-    if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && !isDir.boolValue {
-      _ = NSWorkspace.shared.open(url)
-    } else {
-      _ = NSWorkspace.shared.open(url.deletingLastPathComponent())
-    }
-  }
-}
-
 // ───────────────────────────── accounts ─────────────────────────────
 
 /** An accounts.status row in words (Personal > Connected). Where the secret was found, never the secret. */

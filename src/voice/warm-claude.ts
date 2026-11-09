@@ -226,7 +226,7 @@ export class WarmClaude implements WarmProcess {
     }
     if (this.o.personaFile) {
       try {
-        await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory));
+        await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory, this.o.talk?.()));
       } catch (e) {
         this.onClosed();
         throw new Error(`Could not write the persona file (${(e as Error).message}).`);

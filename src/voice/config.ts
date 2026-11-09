@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { TTS_CONFIG_SHAPE } from './tts/config.js';
 import { ConfigError } from '../lib/errors.js';
+import { LENGTHS, TONES } from './talk.js';
 
 /** Offline speech-to-text models the listener can use (see models.ts for the pinned archives). */
 export const ASR_MODELS = [
@@ -147,6 +148,10 @@ const VoiceConfigSchema = z
      * (`stephen install-helper`). The stop phrase keeps working either way.
      */
     wakeWord: z.boolean().default(true),
+    /** Settings > How Stephen talks: reply length, tone, and a closing step line (voice/talk.ts). */
+    length: z.enum(LENGTHS).default('brief'),
+    tone: z.enum(TONES).default('casual'),
+    explain: z.boolean().default(false),
     /** Speak the reply with macOS `say`. */
     speak: z.boolean().default(true),
     /** macOS `say` voice (default: the system voice). */

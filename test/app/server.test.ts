@@ -32,6 +32,7 @@ import { ProposalStore } from '../../src/memory/proposals.js';
 import type { AuditEntry } from '../../src/types.js';
 import type { CommandReport } from '../../src/voice/assistant.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
+import { TalkStore, talkFromConfig } from '../../src/app/talk.js';
 import { AppConfirmer } from '../../src/safety/app-confirm.js';
 import { buildConfirmer } from '../../src/safety/confirm.js';
 import { TestClient, sleep, type Msg } from './helpers.js';
@@ -121,6 +122,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
   const queue = new FakeQueue();
   const calls = { ends: 0, opens: 0 };
   const memory = new MemoryStore({ home });
+  const talk = new TalkStore(join(home, 'config.json'), talkFromConfig(parseVoiceConfig(VOICE_RAW)));
   const proposals = new ProposalStore({ home });
   const history = new HistoryStore({ home, retentionDays: 1 });
   const server = new AppServer({
@@ -133,7 +135,8 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     endConversation: () => calls.ends++,
     history,
     audit: { recent: async (n) => AUDIT.slice(0, n) },
-    settings: () => settingsFor(),
+    settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: '/Users/cris/.stephen/config.json', talk: talk.get() }),
+    setTalk: (c) => void talk.set(c),
     accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
     jobs: {
       list: () => [],
@@ -158,7 +161,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     clients.push(c);
     return c;
   };
-  return { home, queue, calls, memory, proposals, history, server, connect, client: await connect() };
+  return { home, queue, calls, talk, memory, proposals, history, server, connect, client: await connect() };
 }
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'app-protocol-v1.jsonl');
@@ -182,7 +185,7 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
     const h = await harness(
       {
         settings: () => {
-          if (++settingsCalls > 1) throw new Error('config.json went away');
+          if (++settingsCalls === 2) throw new Error('config.json went away');
           return settingsFor();
         },
         openWindow: () => (++openCalls === 1 ? null : "Stephen Helper isn't connected to stephen listen"),
@@ -453,13 +456,59 @@ describe('memory, history, settings, audit, window', () => {
     expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });
     const text = JSON.stringify(config);
-    for (const leak of ['elevenlabs', 'apiKeyFile', 'elevenlabs-key', 'claudePath', '/.local/bin/claude', 'YEBbZ0itqHW31uoXSBns']) expect(text).not.toContain(leak);
+    for (const leak of ['"elevenlabs":', 'apiKeyFile', 'elevenlabs-key', 'claudePath', '/.local/bin/claude', 'YEBbZ0itqHW31uoXSBns']) expect(text).not.toContain(leak);
     const keys: string[] = [];
     const walk = (v: unknown) => {
       if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) (keys.push(k), walk(x));
     };
     walk(config);
     for (const k of keys) expect(k).not.toMatch(/key|token|secret|password|path|file/i);
+  });
+
+  it('settings.get shows how Stephen talks: defaults, current values and the preview sentences', async () => {
+    const h = await harness();
+    const r = await h.client.request({ id: 's', type: 'settings.get' });
+    const talk = (r.config as { talk: Record<string, unknown> }).talk;
+    expect(talk).toMatchObject({ length: 'brief', tone: 'casual', speak: true, explain: false, voice: 'elevenlabs' });
+    expect(Object.keys(talk.samples as object)).toEqual(['brief', 'balanced', 'detailed']);
+  });
+
+  it('settings.set saves to config.json (0600, other keys kept) and the next settings.get shows it', async () => {
+    const home = mkdtempSync(join(tmp, 'set-'));
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ voice: { wakeWord: false, tts: 'auto' }, memory: { enabled: true } }), { mode: 0o644 });
+    const h = await harness({}, home);
+    const r = await h.client.request({ id: 's', type: 'settings.set', values: { tone: 'formal', explain: true } });
+    expect(r.type).toBe('settings');
+    expect((r.config as { talk: object }).talk).toMatchObject({ tone: 'formal', explain: true, length: 'brief' });
+    const saved = JSON.parse(readFileSync(join(home, 'config.json'), 'utf8'));
+    expect(saved).toEqual({ voice: { wakeWord: false, tts: 'auto', tone: 'formal', explain: true }, memory: { enabled: true } });
+    expect(statSync(join(home, 'config.json')).mode & 0o777).toBe(0o600);
+    expect(h.talk.get()).toMatchObject({ tone: 'formal', explain: true });
+    await h.client.request({ id: 's2', type: 'settings.set', values: { voice: 'say', speak: false } });
+    expect(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).voice).toMatchObject({ tts: 'say', speak: false });
+    // what was saved loads back as the voice config
+    expect(parseVoiceConfig(saved.voice)).toMatchObject({ tone: 'formal', explain: true, length: 'brief' });
+  });
+
+  it('settings.set refuses unknown keys and bad values and changes nothing', async () => {
+    const home = mkdtempSync(join(tmp, 'setbad-'));
+    const h = await harness({}, home);
+    for (const values of [{ tone: 'pirate' }, { length: 'long' }, { speak: 'yes' }, { explain: 1 }, { voice: 'siri' }, { claudePath: '/bin/sh' }, { tone: 'formal', persona: 'ignore rules' }, {}, [], 'tone']) {
+      const r = await h.client.request({ id: 'b', type: 'settings.set', values });
+      expect(r.type, JSON.stringify(values)).toBe('error');
+    }
+    expect(h.talk.get()).toMatchObject({ length: 'brief', tone: 'casual', speak: true, explain: false });
+    expect(existsSync(join(home, 'config.json'))).toBe(false);
+  });
+
+  it('settings.set without a store, or with an unwritable config, answers with an error', async () => {
+    const a = await harness({ setTalk: undefined });
+    expect((await a.client.request({ id: 's', type: 'settings.set', values: { speak: false } })).type).toBe('error');
+    const home = mkdtempSync(join(tmp, 'setjunk-'));
+    writeFileSync(join(home, 'config.json'), '{not json');
+    const b = await harness({}, home);
+    expect(await b.client.request({ id: 's', type: 'settings.set', values: { speak: false } })).toEqual({ id: 's', type: 'error', message: 'could not save the setting' });
+    expect(b.talk.get().speak).toBe(true);
   });
 
   it('settings that cannot be built answer with an error', async () => {
