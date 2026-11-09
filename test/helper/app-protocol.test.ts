@@ -408,7 +408,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
     expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
     expect(main).toContain('@AppStorage("sidebarCollapsed")');
-    expect(main).toContain('.frame(width: collapsed ? 60 : 220)');
+    // v3.2: one layout, the column width animates between the 60 pt rail and the 240 pt sidebar (Theme.swift).
+    expect(main).toContain('.frame(width: SidebarMetrics.column(collapsed), alignment: .leading)');
+    expect(read('Theme.swift')).toContain('static let expanded: CGFloat = 220');
+    expect(read('Theme.swift')).toContain('static let rail: CGFloat = 40');
     // Start/Stop go through the helper's StephenControl (one owner of the listener), not a second launcher.
     expect(main).toContain('control.start { problem = $0 }');
     expect(main).toContain('control.stop { problem = $0 }');

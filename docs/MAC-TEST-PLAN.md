@@ -237,3 +237,20 @@ allow the microphone for Stephen Helper once), quit any Terminal listener.
 - [ ] Settings › Appearance: Navy, Rose, Sun, Dark, Light, Follow the Mac → window and Ask box change together.
 - [ ] Conversations (⌘2): one list by day, actions under each reply, "Refused: …" lines; search. Jobs (⌘3): start,
       Stop → moves to Earlier as Stopped; Open output folder.
+
+## 12. UI v3.2 (chat thread, Home chat, sidebar motion, spacing)
+Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
+- [ ] **Ask box thread:** click the menu bar icon, ask two things. Both turns stay in a scrolling thread.
+- [ ] **Drag:** drag the strip at the top, close and reopen: same place. Menu, Reset position: back under the icon.
+- [ ] **Pin:** menu, Pin open, click another app: the box stays. Unpin: it closes on an outside click.
+- [ ] **⌘N:** the thread clears; Conversations still lists the old chat.
+- [ ] **Approval in the thread:** ask Stephen to send an email. The question is a message in the thread, Allow and Deny are
+      dimmed for about a second, Esc denies.
+- [ ] **Home, empty:** greeting, date, a large centred composer, three chips under it. Today is one line.
+- [ ] **Home, with messages:** send a message from Home: the thread shows, the composer sits at the bottom. ⌘N: back to empty.
+- [ ] **Sidebar collapse (⌘\):** the wordmark fades, the width animates, icons do not move. Turn on Reduce Motion in
+      System Settings, Accessibility, Display: it switches at once.
+- [ ] **Current page:** the open page is semibold with a tinted row and a bar on the left. Click through all five pages (⌘1 to ⌘5).
+- [ ] **Spacing:** pages feel roomier, nothing is cut off at the minimum window size (720 x 440).
+- [ ] **All five themes** (Settings, Appearance): Light, Dark, Navy, Rose, Sun, on the Ask box, Home and sidebar.
+
