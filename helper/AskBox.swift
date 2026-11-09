@@ -140,7 +140,9 @@ struct AskBoxView: View {
     switch mode {
     case .chat:
       if !model.thread.isEmpty || !model.confirms.isEmpty || model.isWorking {
-        ChatThreadView(model: model).frame(maxHeight: 340).fixedSize(horizontal: false, vertical: true)
+        // Fixed height once the chat has started (owner, 2026-11-09): the box keeps one size and a long chat scrolls,
+        // instead of growing with every message.
+        ChatThreadView(model: model).frame(height: 340)
       }
       AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)
     case .listening:
