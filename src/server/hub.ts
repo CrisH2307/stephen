@@ -226,7 +226,7 @@ export class Hub {
       const elicit = this.makeElicit();
       this.confirmerInst = this.deps.confirmerFactory
         ? this.deps.confirmerFactory(this.cfg, elicit ? { elicit } : {})
-        : buildConfirmer(this.cfg.safety, elicit ? { elicit } : {});
+        : buildConfirmer(this.cfg.safety, { ...(elicit ? { elicit } : {}), home: this.cfg.home });
     }
     return this.confirmerInst;
   }

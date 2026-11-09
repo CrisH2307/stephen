@@ -212,9 +212,10 @@ place. A symlink at the destination is replaced, never written through. A `voice
 is refused.
 
 **Confirmations.** A headless `claude -p` can't show MCP elicitation prompts. Stephen's safety gate asks for
-confirmation in a **macOS dialog** instead. Click Allow or Deny there. A spoken "yes" is **never** treated as a
-confirmation. The listener starts Stephen's server with `serve --confirm dialog`, so this holds whatever
-`safety.confirm` says in config.json (the flag only accepts `dialog` or `deny`; it can't skip confirmation).
+confirmation in the **Ask box** of Stephen Helper (when it is running) or else a **macOS dialog**. Click Allow or Deny
+there. A spoken "yes" is **never** treated as a confirmation. The listener starts Stephen's server with
+`serve --confirm app` (`deny` for the phone), so this holds whatever `safety.confirm` says in config.json (the flag
+only accepts `app`, `dialog` or `deny`; it can't skip confirmation).
 
 ## One shot (phase 1.8)
 

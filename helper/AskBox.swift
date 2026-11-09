@@ -7,6 +7,7 @@
 // Threading: main thread only (AskBoxController is @MainActor; main.swift reaches it like StatusMenu).
 
 import AppKit
+import Combine
 import SwiftUI
 
 /** Box-only state; everything else is read from AppModel. */
@@ -20,6 +21,7 @@ final class AskBoxState: ObservableObject {
 }
 
 enum AskBoxMode: Equatable {
+  case needsOK(PendingConfirm)
   case offline
   case menu
   case listening
@@ -29,6 +31,7 @@ enum AskBoxMode: Equatable {
   case idle
 
   static func of(_ model: AppModel, _ box: AskBoxState) -> AskBoxMode {
+    if let q = model.confirms.first { return .needsOK(q) }
     if box.menuOpen { return .menu }
     if model.connection != .online { return .offline }
     if model.state == "recording" || box.micHeld { return .listening }
@@ -54,6 +57,33 @@ struct AskBoxActions {
 
 // ───────────────────────────── view ─────────────────────────────
 
+/// Allow and Deny for one question. Both stay disabled for 0.75 s each time the shown question changes, so a double
+/// click, or a click aimed at the menu bar icon as the box opens, can't answer a question the owner hasn't seen (R9-6).
+struct ConfirmButtons: View {
+  @Environment(\.stephenTheme) var t
+  let question: PendingConfirm
+  let waiting: Int
+  let answer: (Bool) -> Void
+  @State private var armed: String? = nil
+
+  var body: some View {
+    let live = armed == question.id
+    HStack(spacing: Space.s) {
+      if waiting > 1 { Text(verbatim: "1 of \(waiting)").font(TypeScale.secondary).foregroundColor(t.ink2) }
+      Spacer()
+      // Deny first, so keyboard focus (Full Keyboard Access) lands on it; Return is not bound to Allow.
+      QuietButton("Deny") { answer(false) }
+      PrimaryButton("Allow") { answer(true) }
+    }
+    .disabled(!live).opacity(live ? 1 : 0.5)
+    .task(id: question.id) {
+      armed = nil
+      try? await Task.sleep(nanoseconds: 750_000_000)
+      if !Task.isCancelled { armed = question.id }
+    }
+  }
+}
+
 struct AskBoxView: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
@@ -75,6 +105,17 @@ struct AskBoxView: View {
   @ViewBuilder
   private func content(_ mode: AskBoxMode) -> some View {
     switch mode {
+    case let .needsOK(q):
+      // The gate's own question (computed facts first, model and page text quoted and labelled). The full fact list
+      // is kept, in a short scroll, because the owner must be able to decide from it alone, as with the dialog.
+      Text(verbatim: q.title).font(TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
+      ScrollView {
+        Text(verbatim: q.body).font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(maxHeight: 160).fixedSize(horizontal: false, vertical: true)
+      .accessibilityLabel("Details: \(q.body)")
+      ConfirmButtons(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
     case .idle:
       HStack(spacing: Space.s) {
         AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)
@@ -156,6 +197,7 @@ struct AskBoxView: View {
 
   private func escape(_ mode: AskBoxMode) {
     switch mode {
+    case let .needsOK(q): model.answerConfirm(q.id, approve: false)  // Esc = Deny, like the dialog
     case .menu: box.menuOpen = false
     case .listening where box.micHeld: actions.micUp()
     case .working: model.stopChat()
@@ -244,6 +286,7 @@ final class AskBoxController: NSObject {
   let box = AskBoxState()
   private var panel: AskPanel? = nil
   private var clickMonitor: Any? = nil
+  private var confirmWatch: AnyCancellable? = nil
   /** The menu bar button the box hangs under. */
   var anchor: () -> NSStatusBarButton? = { nil }
   var openWindow: (AppTab?) -> Void = { _ in }
@@ -254,6 +297,11 @@ final class AskBoxController: NSObject {
   init(model: AppModel) {
     self.model = model
     super.init()
+    // A question from the gate opens the box (focused, so Esc works, but no button is the default).
+    confirmWatch = model.$confirms.receive(on: DispatchQueue.main).sink { [weak self] list in
+      guard !list.isEmpty else { return }
+      MainActor.assumeIsolated { self?.show(focus: true, selectField: false) }
+    }
   }
 
   var isShown: Bool { return panel?.isVisible ?? false }
@@ -263,7 +311,7 @@ final class AskBoxController: NSObject {
   }
 
   /** focus: take the keyboard (click, Cmd+K). F5 shows it without taking focus from the app you are in. */
-  func show(focus: Bool) {
+  func show(focus: Bool, selectField: Bool = true) {
     let p = panel ?? makePanel()
     panel = p
     if !isShown {
@@ -275,11 +323,13 @@ final class AskBoxController: NSObject {
     }
     if focus {
       p.makeKey()
-      DispatchQueue.main.async { p.selectKeyView(following: p.contentView ?? NSView()) }
+      if selectField { DispatchQueue.main.async { p.selectKeyView(following: p.contentView ?? NSView()) } }
     }
   }
 
+  /** Stays open while a question waits: it ends with Allow, Deny (or Esc), or the gate's timeout. */
   func close() {
+    guard model.confirms.isEmpty else { return }
     if box.micHeld { micUp() }
     box.menuOpen = false
     if let m = clickMonitor { NSEvent.removeMonitor(m) }

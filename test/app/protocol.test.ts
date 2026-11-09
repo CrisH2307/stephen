@@ -76,10 +76,27 @@ describe('parseAppRequest', () => {
     expect(parseAppRequest(line({ type: 'future.thing' }))).toEqual({ kind: 'unknown', type: 'future.thing' });
   });
 
-  it('knows every request type of the table plus window.open', () => {
+  it('knows every request type of the table plus window.open and the confirm pair', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open', 'confirm.ask', 'confirm.answer'].sort(),
     );
+  });
+
+  it('confirm.ask / confirm.answer / hello confirms: shapes and caps', () => {
+    const id = '0b6f3c1e-7a2d-4c55-9f10-2b8e4d6a9c01';
+    expect(parseAppRequest(JSON.stringify({ id: 'h', type: 'hello', version: '1', confirms: true }))).toEqual({ kind: 'request', req: { id: 'h', type: 'hello', version: '1', confirms: true } });
+    expect(parseAppRequest(JSON.stringify({ id: 'h', type: 'hello', version: '1', confirms: 'yes' }))).toEqual({ kind: 'request', req: { id: 'h', type: 'hello', version: '1' } });
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 120000, extra: 1 }))).toEqual({
+      kind: 'request',
+      req: { id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 120000 },
+    });
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 'x'.repeat(201), body: 'b', timeoutMs: 1000 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'x'.repeat(4001), timeoutMs: 1000 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 999 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 3600001 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: true }))).toEqual({ kind: 'request', req: { id: 'a', type: 'confirm.answer', confirmId: id, approve: true } });
+    expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: 'yes' })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: 'c1', approve: true })).kind).toBe('invalid');
   });
 });
 

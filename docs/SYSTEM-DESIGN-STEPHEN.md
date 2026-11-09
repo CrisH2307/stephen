@@ -69,7 +69,12 @@ The hard parts are not speech or the LLM call. They are:
 
 Two processes on purpose: **`listen`** holds the owner's trust (memory, history, the window); **`serve`** is what
 the model talks to and holds nothing it could misuse. A test proves `serve` never even loads the memory, app or
-history modules (§6).
+history modules (§6). One link goes the other way: `serve`'s gate connects to the listener's app.sock to show its
+question in the Ask box (`confirm.ask`, src/safety/app-confirm.ts). This is safe because the gate code is fixed (the
+model only triggers it by making a gated call), it speaks only hello and `confirm.ask`, it gets back only its own
+answer, it never sees the random question id, an answer is accepted only from an Ask box, and the listener sends a
+gate connection no pushes (heard text, replies). It cannot send memory or settings requests: no such code is in the
+`serve` graph.
 
 Background jobs (§4.13) are a third kind of process, started only by the listener's job router after a native
 dialog, and never reachable from `serve`:
@@ -481,6 +486,7 @@ next job. Code jobs use the repo worktree instead and leave the inbox alone.
 | Other macOS users | Read files | 0700 dirs / 0600 files, `O_NOFOLLOW`, socket peer checks |
 | A job's task text, or a page a research job reads | Steer a background job | Only built-in file tools confined to the job folder (`--restricted`), Bash only inside the OS sandbox with no network, no MCP, init tool list checked at run time, scratch environment, rules files outside the folder, budgets and a wall-clock kill; output cleaned and framed as `<untrusted_job_output>` (§4.13) |
 | The model starting work behind the owner's back | Start a job | No job tool; job phrases are routed before Claude; every start needs the native dialog, whatever the source (§4.13) |
+| Anything that connects to app.sock (same user) or a confused Ask box | Answer an Ask box question (`confirm.answer`) | The socket is 0600 in a 0700 folder (same trust as memory.json; same-user malware is out of scope below). An answer settles only the one question whose exact random `confirmId` (randomUUID) it names. That id goes only to clients that said `confirms: true` in hello, never to the gate that asked, and an answer is accepted only from such a client (R9-7). A connection that sent `confirm.ask` gets no broadcasts. Allow and Deny stay disabled for 0.75 s each time the shown question changes, so a double click cannot answer the next question unseen (R9-6). A question is settled once (replays get an error). Unanswered means declined after the gate's own timeout. Esc in the box means Deny, Deny is first for keyboard focus, and Return is not bound to Allow. The gate (src/safety/app-confirm.ts) does not import src/app. With no Ask box connected, an older listener, or a dropped connection, the gate gets "unavailable" and shows the macOS dialog as before. On macOS, `safety.confirm: "auto"` and the listener's own serves (`serve --confirm app`, R9-2) use the box; "dialog" keeps the dialog only; the phone stays `deny`. |
 | Same-user malware | Everything the user can | Out of scope (documented). Remaining hardening: helper.sock nonce |
 
 **Planned: reply by voice (not built).** Sending email or a Canvas reply is designed in `docs/ADR-006-reply-by-voice.md`: the model only proposes a draft, TypeScript sends after an explicit click bound to a hash of the shown text, never from the wake word, and the phone only with a tap. It adds threat rows (injected "reply with your password", recipient swap, body change after approval, replay, exfiltration through the body) that move into this table when the code lands, after review #9.

@@ -138,9 +138,17 @@ struct AppRequest: Encodable {
   var before: String? = nil
   var limit: Int? = nil
   var jobId: String? = nil
+  /** hello: this client shows the gate's questions (the Ask box). */
+  var confirms: Bool? = nil
+  var confirmId: String? = nil
+  var approve: Bool? = nil
 
   static func hello(_ id: String) -> AppRequest {
-    return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION)
+    return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
+  }
+  /** The owner's click in the Ask box: answers only the question with this exact id. */
+  static func confirmAnswer(_ id: String, confirmId: String, approve: Bool) -> AppRequest {
+    return AppRequest(id: id, type: "confirm.answer", confirmId: confirmId, approve: approve)
   }
   static func chatSend(_ id: String, text: String) -> AppRequest {
     return AppRequest(id: id, type: "chat.send", text: text)
@@ -172,6 +180,13 @@ struct AppRequest: Encodable {
   }
   /** `usage.get` (P2, PR #18): a listener without it ignores the request and it times out. */
   static func usageGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage.get") }
+}
+
+/** A question from the safety gate waiting for the owner's click (`confirm` push). Title and body are shown verbatim. */
+struct PendingConfirm: Identifiable, Equatable {
+  let id: String
+  let title: String
+  let body: String
 }
 
 /** One bar of the `usage` answer: `{percent, warn, ...}` (warn is true from 80%). Other fields are ignored. */
@@ -380,10 +395,14 @@ struct AppMessage: Decodable {
   // usage: {context: {percent, warn, tokens, window} | null, memory: {percent, warn, bytes, budget}}
   var context: UsageMeter? = nil
   var memory: UsageMeter? = nil
+  // confirm / confirm.end pushes
+  var confirmId: String? = nil
+  var title: String? = nil
+  var body: String? = nil
 
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
-      configPath, state, text, source, accounts, note, jobs, job, context, memory
+      configPath, state, text, source, accounts, note, jobs, job, context, memory, confirmId, title, body
   }
 
   init(localError: String, id: String?) {
@@ -423,6 +442,9 @@ struct AppMessage: Decodable {
     source = try? c.decodeIfPresent(String.self, forKey: .source)
     context = try? c.decodeIfPresent(UsageMeter.self, forKey: .context)
     memory = try? c.decodeIfPresent(UsageMeter.self, forKey: .memory)
+    confirmId = try? c.decodeIfPresent(String.self, forKey: .confirmId)
+    title = try? c.decodeIfPresent(String.self, forKey: .title)
+    body = try? c.decodeIfPresent(String.self, forKey: .body)
   }
 }
 
@@ -651,6 +673,9 @@ final class AppModel: ObservableObject {
   /** Last `usage` answer; nil until one arrives (and again when the listener doesn't know the request). */
   @Published private(set) var usage: AppUsage? = nil
 
+  /** The gate's questions waiting for a click, oldest first. Cleared when the connection drops (the gate falls back). */
+  @Published private(set) var confirms: [PendingConfirm] = []
+
   let socketPath: String
   private let log: (String) -> Void
   private let link: AppConnection
@@ -754,6 +779,7 @@ final class AppModel: ObservableObject {
     let waiting = pending
     pending = [:]
     awaitingReplies = []
+    confirms = []
     for (id, handler) in waiting { handler(AppMessage(localError: "not connected", id: id)) }
     if connection == .online { log("app.sock: disconnected") }
     goOffline(users.isEmpty ? "window closed" : "the connection to stephen listen closed")
@@ -817,6 +843,12 @@ final class AppModel: ObservableObject {
       }
     case "chat.done":
       chatDone(msg)
+    case "confirm":
+      if let id = msg.confirmId, !confirms.contains(where: { $0.id == id }) {
+        confirms.append(PendingConfirm(id: id, title: msg.title ?? "", body: msg.body ?? ""))
+      }
+    case "confirm.end":
+      confirms.removeAll { $0.id == msg.confirmId }
     default:
       break  // unknown types are ignored (protocol v1)
     }
@@ -1014,6 +1046,14 @@ final class AppModel: ObservableObject {
       } else {
         self.jobsNotice = msg.message ?? "error"
       }
+    }
+  }
+
+  /** Allow / Deny for one question. It leaves the box at once; confirm.end (or an error: already gone) follows. */
+  func answerConfirm(_ confirmId: String, approve: Bool) {
+    confirms.removeAll { $0.id == confirmId }
+    request(AppRequest.confirmAnswer(newId(), confirmId: confirmId, approve: approve)) { [weak self] msg in
+      if msg.type == "error" { self?.log("app.sock: confirm answer refused: \(msg.message ?? "error")") }
     }
   }
 

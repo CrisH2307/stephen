@@ -14,6 +14,16 @@
  * from the window is the owner's own click, so it needs no dialog.
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
+ * Additive (Ask box "Needs your OK", UI-PLAN v3.1 section 5; threat model in docs/SYSTEM-DESIGN-STEPHEN.md section 5):
+ *  - `hello` may carry `confirms: true` (this client shows questions: the Ask box), and the hello answer carries
+ *    `confirms: true` (this listener relays them).
+ *  - `{id, type:"confirm.ask", title, body, timeoutMs}` (from the safety gate, src/safety/app-confirm.ts) →
+ *    `{id, type:"confirm.result", outcome:"approved"|"declined"|"unavailable"}` once answered, timed out (declined)
+ *    or when no Ask box is connected (unavailable, so the gate falls back to the dialog).
+ *  - push `{type:"confirm", confirmId, title, body}` to Ask box clients only; push `{type:"confirm.end", confirmId}`
+ *    when that question is gone (answered, timed out, or the asker left).
+ *  - `{id, type:"confirm.answer", confirmId, approve}` → `{id, type:"ok"}`, or an error when that exact id is not
+ *    waiting. It answers only that one question, and never from the connection that asked.
  */
 import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
@@ -33,10 +43,16 @@ export const APP_AUDIT_LIMIT_MAX = 200;
 export const APP_AUDIT_LIMIT_DEFAULT = 100;
 /** Client ids: short strings ("a12"). */
 export const APP_ID_MAX_CHARS = 64;
+/** confirm.ask caps: the same as the macOS dialog (DIALOG_BODY_MAX in src/safety/confirm.ts). */
+export const APP_CONFIRM_TITLE_MAX = 200;
+export const APP_CONFIRM_BODY_MAX = 4000;
+export const APP_CONFIRM_TIMEOUT_MAX_MS = 3600 * 1000;
+/** confirmIds are randomUUID() strings. */
+const CONFIRM_ID_RE = /^[0-9a-f-]{36}$/;
 const MEM_ID_MAX_CHARS = 32;
 
 export type AppRequest =
-  | { id: string; type: 'hello'; version: string }
+  | { id: string; type: 'hello'; version: string; confirms?: boolean }
   | { id: string; type: 'chat.send'; text: string }
   | { id: string; type: 'chat.stop' }
   | { id: string; type: 'history.list'; before?: string; limit?: number }
@@ -51,7 +67,9 @@ export type AppRequest =
   | { id: string; type: 'accounts.status' }
   | { id: string; type: 'jobs.list' }
   | { id: string; type: 'jobs.stop'; jobId: string }
-  | { id: string; type: 'window.open' };
+  | { id: string; type: 'window.open' }
+  | { id: string; type: 'confirm.ask'; title: string; body: string; timeoutMs: number }
+  | { id: string; type: 'confirm.answer'; confirmId: string; approve: boolean };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -72,14 +90,17 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'jobs.list',
   'jobs.stop',
   'window.open',
+  'confirm.ask',
+  'confirm.answer',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
 export type ChatOutcome = 'ok' | 'error' | 'cancelled' | 'memory';
+export type ConfirmResult = 'approved' | 'declined' | 'unavailable';
 
 /** node → app: responses (with the request's id) and pushes (no id). */
 export type AppMessage =
-  | { id: string; type: 'hello'; version: string; listening: boolean; model: string }
+  | { id: string; type: 'hello'; version: string; listening: boolean; model: string; confirms: true }
   | { id: string; type: 'chat.accepted'; entryId: string }
   | { id: string; type: 'ok' }
   | { id: string; type: 'history'; entries: HistoryEntry[] }
@@ -89,7 +110,10 @@ export type AppMessage =
   | { id: string; type: 'accounts'; accounts: AccountRow[]; note?: string }
   | { id: string; type: 'jobs'; jobs: JobRow[] }
   | { id: string; type: 'job'; job: JobRow }
+  | { id: string; type: 'confirm.result'; outcome: ConfirmResult }
   | { id?: string; type: 'error'; message: string }
+  | { type: 'confirm'; confirmId: string; title: string; body: string }
+  | { type: 'confirm.end'; confirmId: string }
   | { type: 'state'; state: AppState }
   | { type: 'heard'; text: string; source: string }
   | { type: 'chat.done'; entryId: string; reply: string; outcome: ChatOutcome; tools: string[]; ms: number };
@@ -162,6 +186,22 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'jobs.list': () => ok,
   'jobs.stop': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? ok : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
   'window.open': () => ok,
+  'confirm.ask': (o) => {
+    const t = text(o, 'title', APP_CONFIRM_TITLE_MAX, 'title');
+    if (!t.ok) return t;
+    const b = text(o, 'body', APP_CONFIRM_BODY_MAX, 'body');
+    if (!b.ok) return b;
+    const ms = o.timeoutMs;
+    return typeof ms === 'number' && Number.isInteger(ms) && ms >= 1000 && ms <= APP_CONFIRM_TIMEOUT_MAX_MS
+      ? ok
+      : bad(`timeoutMs must be a whole number from 1000 to ${APP_CONFIRM_TIMEOUT_MAX_MS}`);
+  },
+  'confirm.answer': (o) =>
+    typeof o.confirmId !== 'string' || !CONFIRM_ID_RE.test(o.confirmId)
+      ? bad('confirmId must be the id from a confirm push')
+      : typeof o.approve !== 'boolean'
+        ? bad('approve must be true or false')
+        : ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
@@ -169,7 +209,11 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
   const has = (k: string) => o[k] !== undefined && o[k] !== null;
   switch (type) {
     case 'hello':
-      return { id, type, version: o.version as string };
+      return { id, type, version: o.version as string, ...(o.confirms === true ? { confirms: true } : {}) };
+    case 'confirm.ask':
+      return { id, type, title: o.title as string, body: o.body as string, timeoutMs: o.timeoutMs as number };
+    case 'confirm.answer':
+      return { id, type, confirmId: o.confirmId as string, approve: o.approve as boolean };
     case 'chat.send':
     case 'memory.add':
       return { id, type, text: o.text as string };

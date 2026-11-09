@@ -332,14 +332,14 @@ export function mcpConfig(
   instance: string | null = null,
   trust: Trust = 'trusted',
 ): { mcpServers: Record<string, { command: string; args: string[] }> } {
-  // --confirm dialog: nobody watches a headless chat, so confirmations must be macOS dialogs (see cli.ts parseServeArgs).
+  // --confirm app: nobody watches a headless chat, so confirmations go to the Ask box, else the macOS dialog (R9-2).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
   // --instance: one serve per Claude process; a serve restarted by Claude Code refuses every call (src/server/instance.ts).
   // --trust wake: a wake-word or phone conversation (R7-2, ADR-005): email shows only who and when (src/accounts/index.ts).
   // --confirm deny for the phone: nobody is at the Mac to answer a dialog, so every confirmation is declined.
   // --tool-log: tool names (never arguments) per call, for the command history (src/server/tool-log.ts).
   const args = [
-    cliPath, 'serve', '--confirm', trust === 'phone' ? 'deny' : 'dialog', '--voice',
+    cliPath, 'serve', '--confirm', trust === 'phone' ? 'deny' : 'app', '--voice',
     ...(instance ? ['--instance', instance] : []),
     ...(trust !== 'trusted' ? ['--trust', 'wake'] : []),
     ...toolLogServeArgs(toolLogPath),

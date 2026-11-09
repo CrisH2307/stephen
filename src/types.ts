@@ -48,7 +48,7 @@ export interface ResolvedConfig {
     extraArgs: string[];
   };
   safety: {
-    confirm: 'auto' | 'elicit' | 'dialog' | 'deny';
+    confirm: 'auto' | 'elicit' | 'app' | 'dialog' | 'deny';
     /** Extra blocked hosts/registrable domains (merged with built-in defaults). */
     blockedDomains: string[];
     /** Extra sensitive hosts/registrable domains (merged with built-in defaults). */

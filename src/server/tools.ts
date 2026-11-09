@@ -212,6 +212,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
       const channel: Record<typeof cfg.safety.confirm, string> = {
         deny: 'risky actions are refused without asking (confirm: deny)',
         dialog: 'risky actions ask the user in a macOS dialog (confirm: dialog)',
+        app: 'risky actions ask the user in the Stephen Ask box, or a macOS dialog (confirm: app)',
         elicit: `risky actions ask the user in Claude Code (confirm: elicit; ${inChat ? 'supported by this client' : 'NOT supported by this client — they will be refused'})`,
         auto: `risky actions ask the user (confirm: auto — in-chat approval ${inChat ? 'available' : 'not available, using a macOS dialog'})`,
       };
