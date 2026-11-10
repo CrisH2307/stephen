@@ -352,7 +352,7 @@ Parameters: rate limit window `RATE_WINDOW_MS` = 60 s; `maxActionsPerMinute` def
 
 Facts about the mechanism: a conversation takes the trust of the command that started it; a command of a different trust ends the process and starts a fresh one (`src/voice/conversation.ts`, `src/voice/warm-claude.ts`). `isTrust` there accepts `trusted`, `wake`, `phone`. Canvas, Calendar, Notion and weather are read in full at every trust (`docs/SYSTEM-DESIGN-STEPHEN.md` section 5, "owner's choice").
 
-Not found: any source or trust parameter inside `src/safety/gate.ts` or `src/safety/policy.ts` (grep for "wake" in `src/safety` returns nothing). The gate decides on the action and session state only. `docs/ADR-005-phone-channel.md` (T3, Bridge rules) says the gate refuses confirm-level actions at wake trust ("confirm at the Mac"); the string "confirm at the Mac" was not found in `src/`.
+Where trust is enforced: not inside `src/safety/gate.ts` or `src/safety/policy.ts`, which decide on the action and session state only, but in how the listener starts `serve` (`src/voice/claude.ts:358`). A phone run's serve gets `--confirm deny`, so every confirmation is declined: this is how the ADR-005 rule that the phone cannot approve confirm-level actions is enforced (`src/voice/claude.ts:355`, `src/phone/server.ts:6`, `src/voice/assistant.ts:13`). A wake-word run gets `--confirm app` on purpose, because the owner is at the Mac and answers in the Ask box. Wake and phone runs both get `--trust wake`, which limits email to who and when (`src/accounts/index.ts:158`, `:262`, `:385`), and phone runs load no memory (`memoryForTrust`, `src/voice/claude.ts:174`).
 
 ### 4.3 Taint and private reads
 
@@ -799,7 +799,7 @@ Neutral questions the facts above raise. No answers are implied.
 
 **Architecture**
 1. Is three local processes plus a per-command MCP server (`listen`, `serve`, helper, optional phone bridge and jobs runner) the right split for one user on one Mac, given that each `claude -p` spawns its own `serve` (section 2b)?
-2. Should the gate know the trust level of the command (wake, phone, trusted) itself? Today trust lives in the listener, routers and `serve --trust wake`, while `src/safety/gate.ts` decides on action and session state only, and ADR-005 describes a wake-trust rule not found in code (section 4.2).
+2. The confirm-deny rule for the phone lives in the argv builder (`src/voice/claude.ts`), not in `src/safety`, and trust reaches `serve` only as `--confirm` and `--trust` flags. Is that the right place for it (section 4.2)?
 3. What would it take to persist the in-memory chat across helper restarts (`chat.history`, resume by replay), and what does replaying turns do to taint and trust (sections 7.4, 8.2)?
 4. The audit log has no command id, so steps and Conversations lines are matched by time (`src/app/steps.ts`, `helper/ConversationsPage.swift`). What breaks if two commands ever overlap?
 5. Is `helper/AppClient.swift` at about 1,790 lines, holding protocol, model and control, a shape that will keep up with the planned eight sidebar pages?
