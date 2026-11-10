@@ -49,7 +49,11 @@ struct ChatThreadView: View {
   }
 }
 
-/** One message. You: right, in a soft bubble. Stephen: left, plain. Problems and info lines are named in words. */
+/**
+ * One message. You: right, in a filled bubble. Stephen: left, in its own box, with the action chain above it. Both
+ * containers are a step darker than the box around them so the messages stand out (owner, 2026-11-09: the containers,
+ * not the text). Problems and info lines are named in words.
+ */
 struct ChatBubbleRow: View {
   @Environment(\.stephenTheme) var t
   let bubble: ChatBubble
@@ -63,15 +67,18 @@ struct ChatBubbleRow: View {
         Spacer(minLength: Space.xxl)
         Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
           .padding(.horizontal, Space.m).padding(.vertical, Space.s)
-          .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
+          .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.line))
       }
       .accessibilityElement(children: .combine).accessibilityLabel("You: \(bubble.text)")
     case .reply:
       // The work first, small and folded; the answer after it, as the main text (owner, 2026-11-09).
       VStack(alignment: .leading, spacing: Space.s) {
         if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
-        Text(verbatim: bubble.text).font(TypeScale.reply).foregroundColor(t.ink).lineSpacing(3).textSelection(.enabled)
+        Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).lineSpacing(2).textSelection(.enabled)
+          .padding(.horizontal, Space.m).padding(.vertical, Space.s)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
+          .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.line, lineWidth: 1))
           .accessibilityLabel("Stephen: \(bubble.text)")
         if bubble.steps.isEmpty && !bubble.detail.isEmpty {
           Text(verbatim: bubble.detail).font(TypeScale.secondary).foregroundColor(t.ink2)
