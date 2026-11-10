@@ -130,6 +130,11 @@ struct AskBoxView: View {
         .padding(.horizontal, Space.s).allowsHitTesting(false)
       }
       menu
+      Button(action: actions.close) {
+        Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(t.ink2)
+          .frame(width: 28, height: 28).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain).help("Close (Esc)").accessibilityLabel("Close")
     }
     .frame(height: 32)
     .accessibilityElement(children: .contain)
