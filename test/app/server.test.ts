@@ -68,6 +68,8 @@ class FakeQueue implements AppCommandQueue {
       source: 'app',
       said: last.text,
       reply: 'Done.',
+      route: 'model',
+      replyMs: 0,
       ranClaude: true,
       followUp: false,
       ms: 1234,
@@ -663,14 +665,14 @@ describe('pushes', () => {
 
   it('voice commands get chat.done too (from commandDone)', async () => {
     const h = await harness();
-    h.server.commandDone({ id: 'h_v', result: 'cancelled', outcome: 'cancelled', source: 'voice-ptt', said: 'x', reply: '', ranClaude: true, followUp: false, ms: 900, turns: 0 }, []);
+    h.server.commandDone({ id: 'h_v', result: 'cancelled', outcome: 'cancelled', source: 'voice-ptt', said: 'x', reply: '', ranClaude: true, followUp: false, ms: 900, turns: 0, route: 'model', replyMs: 0 }, []);
     expect(await h.client.waitFor((m) => m.type === 'chat.done')).toEqual({ type: 'chat.done', entryId: 'h_v', reply: '', outcome: 'cancelled', tools: [], ms: 900 });
   });
 
   it('chat.done carries the action chain as steps when something ran (audit outside the command is left out)', async () => {
     const h = await harness();
     const calls = [{ tool: 'gmail_search', isError: false, ms: 800 }, { tool: 'weather_now', isError: true, ms: 20 }];
-    h.server.commandDone({ id: 'h_s', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1 }, ['gmail_search', 'weather_now'], calls);
+    h.server.commandDone({ id: 'h_s', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search', 'weather_now'], calls);
     const done = await h.client.waitFor((m) => m.type === 'chat.done');
     expect(done.steps).toEqual([
       { text: 'Used gmail_search', status: 'ok' },

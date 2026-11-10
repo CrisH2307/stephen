@@ -97,6 +97,10 @@ export interface CommandReport {
   ms: number;
   /** Claude turns (0 when Claude didn't run or didn't say). */
   turns: number;
+  /** Who answered: a local router, or the model (also "remember X and play Y", where the model runs the rest). */
+  route: 'memory' | 'timer' | 'job' | 'model';
+  /** Milliseconds from the start of the command until the reply text existed (before it was spoken or shown). */
+  replyMs: number;
 }
 
 export interface AssistantOptions {
@@ -177,8 +181,10 @@ export class Assistant {
       this.o.status(`Note: could not report the command (${(e as Error).message}).`);
     }
     let said = text;
-    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms'>): CommandReport => {
-      const full: CommandReport = { ...r, id, source, said, ms: Math.max(0, now() - t0) };
+    let via: CommandReport['route'] = 'model';
+    let replyAt = t0;
+    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs'>): CommandReport => {
+      const full: CommandReport = { ...r, id, source, said, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0) };
       try {
         this.o.onDone?.(full);
       } catch (e) {
@@ -190,10 +196,20 @@ export class Assistant {
       let prefix = '';
       let prompt = text;
       const local = { source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) };
-      const route =
-        (this.o.memory ? await this.o.memory.route(text, { source, raw: opts.raw }) : null) ??
-        (this.o.timers ? await this.o.timers.route(text, local) : null) ??
-        (this.o.jobs ? await this.o.jobs.route(text, local) : null);
+      const routers: [CommandReport['route'], (() => ReturnType<LocalRouter['route']> | ReturnType<MemoryRouter['route']>) | null][] = [
+        ['memory', this.o.memory ? () => this.o.memory!.route(text, { source, raw: opts.raw }) : null],
+        ['timer', this.o.timers ? () => this.o.timers!.route(text, local) : null],
+        ['job', this.o.jobs ? () => this.o.jobs!.route(text, local) : null],
+      ];
+      let route: Awaited<ReturnType<MemoryRouter['route']>> | Awaited<ReturnType<LocalRouter['route']>> = null;
+      for (const [name, ask] of routers) {
+        route = ask ? await ask() : null;
+        if (route) {
+          if (!route.rest) via = name;
+          break;
+        }
+      }
+      replyAt = now();
       if (route) {
         if (route.said !== undefined) said = route.said;
         // A memory change ends the conversation BEFORE anything else runs: a resumed session would keep the old
@@ -228,6 +244,7 @@ export class Assistant {
       } catch (e) {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
+      replyAt = now();
       const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0 };
       if (out.kind === 'cancelled' || this.cancelled) {
         this.o.status('Cancelled.');
@@ -288,7 +305,7 @@ export class Assistant {
     } finally {
       this.phaseNow = 'idle';
     }
-    return { id: newHistoryId(), source: 'cli', said: '', reply: text, result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', ranClaude: false, followUp: false, turns: 0, ms: Math.max(0, now() - t0) };
+    return { id: newHistoryId(), source: 'cli', said: '', reply: text, result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', ranClaude: false, followUp: false, turns: 0, ms: Math.max(0, now() - t0), route: 'timer', replyMs: 0 };
   }
 
   /** The user started talking: let the runner start Claude now (no-op for the one-shot runner). */
