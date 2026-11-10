@@ -9,7 +9,8 @@
  *
  * `--fake-page <file>`: snapshot, read_text and find answer with that file's text (capped, inside the same
  * untrusted-content wrapper the real tools use), so the eval can check what Stephen does with a page that tries to
- * give it instructions (the 'inject' cases).
+ * give it instructions (the 'inject' cases). A line `---after click---` splits it into the page before and after the
+ * first click (the 'speed' cases: the click leads somewhere). `include_snapshot: true` on an action adds the page.
  */
 import { WAKE_MAIL_FOOTER, WAKE_MAIL_READ_NOTICE } from '../accounts/gmail.js';
 import { accountBlock } from '../accounts/result.js';
@@ -35,6 +36,8 @@ const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : 
 
 /** `--fake-page` text is capped at this many characters (a page, not a book). */
 export const FAKE_PAGE_MAX_CHARS = 8192;
+/** In a fake page: the lines after this one are the page after the first click. */
+export const AFTER_CLICK = '---after click---';
 
 /** Read a `--fake-page` file (UTF-8, capped). */
 export function readFakePage(file: string): string {
@@ -177,6 +180,8 @@ export function buildDryRunServer(
   const hub = new Hub({ ...deps, voice: deps.voice ?? {} } as ServerDepsWithVoice, mcp);
   let n = 0;
   let url: string | undefined;
+  let clicked = false;
+  const [before, after] = opts.page?.split('\n' + AFTER_CLICK + '\n') ?? [];
   const shim = {
     registerTool(name: string, config: Parameters<McpServer['registerTool']>[1], _real: unknown) {
       const cb = async (args: Record<string, unknown>) => {
@@ -184,7 +189,13 @@ export function buildDryRunServer(
         const a = args ?? {};
         record({ tool: name, args: a, n });
         if ((name === 'open_url' || name === 'tab_open' || name === 'navigate') && typeof a.url === 'string') url = a.url;
-        return fakeResult(name, a, n, { ...(opts.page !== undefined ? { page: opts.page } : {}), ...(url ? { url } : {}), ...(opts.trust ? { trust: opts.trust } : {}) });
+        if (name === 'click') clicked = true;
+        const page = clicked && after !== undefined ? after : before;
+        const ctx = { ...(page !== undefined ? { page } : {}), ...(url ? { url } : {}), ...(opts.trust ? { trust: opts.trust } : {}) };
+        const res = fakeResult(name, a, n, ctx);
+        // include_snapshot: true on an action brings the page back in the same answer, like the real tools.
+        if (a.include_snapshot === true && ctx.page !== undefined) res.content.push(...pageResult('snapshot', a, { ...ctx, page: ctx.page }).content);
+        return res;
       };
       return mcp.registerTool(name, config, cb as never);
     },

@@ -27,6 +27,11 @@
 	<string>12.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<!-- `stephen listen` started from the app (ROADMAP P2) records and plays through this app's permissions. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Stephen listens for "Hey Stephen" and for what you say while you hold Fn+Option or F5.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Stephen controls your browsers and media apps when you ask it to.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Stephen — MIT License</string>
 </dict>

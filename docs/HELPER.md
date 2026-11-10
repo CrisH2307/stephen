@@ -31,9 +31,9 @@ What it does (every program runs with an argv array, no shell):
 
 1. Finds `swiftc` with `xcrun --find swiftc` (and the SDK with `xcrun --sdk macosx --show-sdk-path`), else `swiftc`
    on PATH. If neither exists it says to run `xcode-select --install`.
-2. Compiles `helper/Core.swift`, `helper/AppClient.swift`, `helper/AppWindow.swift` and `helper/main.swift` in a
+2. Compiles `helper/Core.swift`, `helper/Theme.swift`, `helper/Components/*.swift`, `helper/AppClient.swift`, `helper/AppWindow.swift`, `helper/AskBox.swift` and `helper/main.swift` in a
    temporary folder:
-   `swiftc -O -swift-version 5 [-sdk …] -o "Stephen Helper" Core.swift AppClient.swift AppWindow.swift main.swift -framework AppKit -framework CoreAudio -framework CoreGraphics -framework SwiftUI`
+   `swiftc -O -swift-version 5 [-sdk …] -o "Stephen Helper" Core.swift Theme.swift Components/*.swift AppClient.swift AppWindow.swift AskBox.swift main.swift -framework AppKit -framework CoreAudio -framework CoreGraphics -framework SwiftUI`
 3. Assembles `~/Applications/Stephen Helper.app/Contents/{MacOS/Stephen Helper, Info.plist}` (`LSUIElement`,
    bundle id `dev.stephen.helper`) and signs it ad hoc:
    `codesign --force --sign - --identifier dev.stephen.helper "…/Stephen Helper.app"`.
@@ -73,6 +73,7 @@ again (or turn it off and on).
 | `helper/main.swift` | macOS layer: menu bar, event tap, CoreAudio |
 | `helper/AppClient.swift` | Stephen window: `app.sock` client and window model (macOS only) |
 | `helper/AppWindow.swift` | Stephen window: SwiftUI views in one reused `NSWindow` (macOS only) |
+| `helper/AskBox.swift` | Ask box: 300 pt panel under the menu bar icon (click, F5, Cmd+K in the window; right-click for the old menu) (macOS only) |
 | `<stephen home>/run/app.sock` | created by `stephen listen`; the window connects to it (same user only) |
 | `test/fixtures/app-protocol-v1.jsonl` | example lines for every `app.sock` message (shared by the Node and Swift sides) |
 | `src/helper/protocol.ts` | the wire contract (frozen); `src/helper/client.ts` is the Node side |

@@ -14,20 +14,28 @@ import {
   AppServer,
   MEMORY_GONE_MESSAGE,
   MEMORY_OFF_MESSAGE,
+  PROPOSAL_GONE_MESSAGE,
   appSocketPath,
   assistantQueue,
   type AppCommandQueue,
   type AppServerOptions,
 } from '../../src/app/server.js';
 import { appSettings } from '../../src/app/settings.js';
+import type { AppControl } from '../../src/app/control.js';
 import { accountsStatus } from '../../src/app/accounts-status.js';
+import { personalSummary } from '../../src/app/personal.js';
 import { parseHistoryConfig } from '../../src/history/config.js';
 import { HistoryStore } from '../../src/history/store.js';
 import { parseMemoryConfig } from '../../src/memory/config.js';
 import { MEMORY_MESSAGES, MemoryStore } from '../../src/memory/store.js';
+import { ProposalStore } from '../../src/memory/proposals.js';
 import type { AuditEntry } from '../../src/types.js';
 import type { CommandReport } from '../../src/voice/assistant.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
+import { TalkStore, talkFromConfig } from '../../src/app/talk.js';
+import { ModelStore } from '../../src/app/model.js';
+import { AppConfirmer } from '../../src/safety/app-confirm.js';
+import { buildConfirmer } from '../../src/safety/confirm.js';
 import { TestClient, sleep, type Msg } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-app-'));
@@ -83,7 +91,7 @@ const VOICE_RAW = {
   claudeModel: 'sonnet',
   claudePath: '/Users/cris/.local/bin/claude',
   elevenlabs: { apiKeyFile: '/Users/cris/.stephen/elevenlabs-key.txt', voiceId: 'YEBbZ0itqHW31uoXSBns' },
-  aboutMe: { school: 'I study software engineering in Toronto.' },
+  aboutMe: { school: 'I study software engineering in Toronto.', home: '1 Secret St' },
 };
 
 const settingsFor = (configPath = '/Users/cris/.stephen/config.json') =>
@@ -94,6 +102,14 @@ const settingsFor = (configPath = '/Users/cris/.stephen/config.json') =>
     app: parseAppConfig({}),
     configPath,
   });
+
+/** The fixture's answers (src/app/control.ts is tested on its own in control.test.ts). */
+const FAKE_CONTROL: AppControl = {
+  phoneOn: async () => ({ on: true, lines: ['✓ Locked: the phone session can use only Stephen phone tools.'] }),
+  phoneOff: async () => ({ on: false, lines: ['Phone link off: phone requests are refused, Remote Control stopped.'] }),
+  openZen: async () => ({ ok: true, message: 'Zen is ready for Stephen (pid 4242).' }),
+  doctor: async () => ({ checks: [{ ok: false, label: 'Chrome installed' }], problems: 1, blocking: 0 }),
+};
 
 const servers: AppServer[] = [];
 const clients: TestClient[] = [];
@@ -107,6 +123,8 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
   const queue = new FakeQueue();
   const calls = { ends: 0, opens: 0 };
   const memory = new MemoryStore({ home });
+  const talk = new TalkStore(join(home, 'config.json'), talkFromConfig(parseVoiceConfig(VOICE_RAW)));
+  const proposals = new ProposalStore({ home });
   const history = new HistoryStore({ home, retentionDays: 1 });
   const server = new AppServer({
     home,
@@ -114,10 +132,13 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     listening: () => true,
     model: 'sonnet',
     memory,
+    proposals,
     endConversation: () => calls.ends++,
     history,
     audit: { recent: async (n) => AUDIT.slice(0, n) },
-    settings: () => settingsFor(),
+    settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: '/Users/cris/.stephen/config.json', talk: talk.get() }),
+    setTalk: (c) => void talk.set(c),
+    setModel: (c) => void new ModelStore(join(home, 'config.json'), { model: 'sonnet', effort: null }).set(c),
     accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
     jobs: {
       list: () => [],
@@ -128,6 +149,10 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     },
     speakReplies: false,
     openWindow: () => (calls.opens++, null),
+    control: FAKE_CONTROL,
+    usage: async () => ({ context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } }),
+    personal: async () =>
+      personalSummary({ aboutMe: { name: 'Cris' }, accounts: await accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }), jobsOn: true, timeZone: 'America/Toronto' }),
     newId: () => `h_test${++ids}`,
     ...o,
   });
@@ -138,7 +163,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     clients.push(c);
     return c;
   };
-  return { home, queue, calls, memory, history, server, connect, client: await connect() };
+  return { home, queue, calls, talk, memory, proposals, history, server, connect, client: await connect() };
 }
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'app-protocol-v1.jsonl');
@@ -162,7 +187,7 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
     const h = await harness(
       {
         settings: () => {
-          if (++settingsCalls > 1) throw new Error('config.json went away');
+          if (++settingsCalls === 2) throw new Error('config.json went away');
           return settingsFor();
         },
         openWindow: () => (++openCalls === 1 ? null : "Stephen Helper isn't connected to stephen listen"),
@@ -170,6 +195,8 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
       home,
     );
     h.history.append({ source: 'voice-ptt', said: 'remember my prof', reply: 'Saved', outcome: 'memory', tools: [], followUp: false, ms: 40, turns: 0 });
+    // The fixture's waiting proposal p1 (from Canvas); a32 proposes p2.
+    h.proposals.propose('Lab 4 for SOFE 3980 is due Friday', 'canvas');
 
     const lines = readFileSync(FIXTURE, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as FixtureLine);
     const expected = new Map(lines.filter((l) => l.kind === 'response').map((l) => [l.msg.id!, l.msg]));
@@ -426,17 +453,87 @@ describe('memory, history, settings, audit, window', () => {
     expect(r.configPath).toBe('/Users/cris/.stephen/config.json');
     const config = r.config as Record<string, Record<string, unknown>>;
     expect(config.voice).toMatchObject({ model: 'sonnet', wakeWord: true, aboutMe: { school: 'I study software engineering in Toronto.' } });
+    expect(JSON.stringify(config)).not.toContain('Secret St'); // R9-12: the home address stays out of the window
     expect(config.memory).toEqual({ enabled: true, confirmWakeWord: true, maxItems: 30 });
     expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });
     const text = JSON.stringify(config);
-    for (const leak of ['elevenlabs', 'apiKeyFile', 'elevenlabs-key', 'claudePath', '/.local/bin/claude', 'YEBbZ0itqHW31uoXSBns']) expect(text).not.toContain(leak);
+    for (const leak of ['"elevenlabs":', 'apiKeyFile', 'elevenlabs-key', 'claudePath', '/.local/bin/claude', 'YEBbZ0itqHW31uoXSBns']) expect(text).not.toContain(leak);
     const keys: string[] = [];
     const walk = (v: unknown) => {
       if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) (keys.push(k), walk(x));
     };
     walk(config);
     for (const k of keys) expect(k).not.toMatch(/key|token|secret|password|path|file/i);
+  });
+
+  it('settings.get shows how Stephen talks: defaults, current values and the preview sentences', async () => {
+    const h = await harness();
+    const r = await h.client.request({ id: 's', type: 'settings.get' });
+    const talk = (r.config as { talk: Record<string, unknown> }).talk;
+    expect(talk).toMatchObject({ length: 'brief', tone: 'casual', speak: true, explain: false, voice: 'elevenlabs' });
+    expect(Object.keys(talk.samples as object)).toEqual(['brief', 'balanced', 'detailed']);
+  });
+
+  it('settings.set saves to config.json (0600, other keys kept) and the next settings.get shows it', async () => {
+    const home = mkdtempSync(join(tmp, 'set-'));
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ voice: { wakeWord: false, tts: 'auto' }, memory: { enabled: true } }), { mode: 0o644 });
+    const h = await harness({}, home);
+    const r = await h.client.request({ id: 's', type: 'settings.set', values: { tone: 'formal', explain: true } });
+    expect(r.type).toBe('settings');
+    expect((r.config as { talk: object }).talk).toMatchObject({ tone: 'formal', explain: true, length: 'brief' });
+    const saved = JSON.parse(readFileSync(join(home, 'config.json'), 'utf8'));
+    expect(saved).toEqual({ voice: { wakeWord: false, tts: 'auto', tone: 'formal', explain: true }, memory: { enabled: true } });
+    expect(statSync(join(home, 'config.json')).mode & 0o777).toBe(0o600);
+    expect(h.talk.get()).toMatchObject({ tone: 'formal', explain: true });
+    await h.client.request({ id: 's2', type: 'settings.set', values: { voice: 'say', speak: false } });
+    expect(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).voice).toMatchObject({ tts: 'say', speak: false });
+    // what was saved loads back as the voice config
+    expect(parseVoiceConfig(saved.voice)).toMatchObject({ tone: 'formal', explain: true, length: 'brief' });
+  });
+
+  it('model.set saves the model and effort to config.json, applies them live and ends the warm conversation', async () => {
+    const home = mkdtempSync(join(tmp, 'model-'));
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ voice: { wakeWord: false }, memory: { enabled: true } }), { mode: 0o644 });
+    const store = new ModelStore(join(home, 'config.json'), { model: 'sonnet', effort: null });
+    const h = await harness({ setModel: (c) => void store.set(c) }, home);
+    const r = await h.client.request({ id: 'm', type: 'model.set', model: 'haiku', effort: 'low' });
+    expect(r.type).toBe('settings');
+    expect(store.get()).toEqual({ model: 'haiku', effort: 'low' });
+    expect(h.calls.ends).toBeGreaterThan(0);
+    const saved = JSON.parse(readFileSync(join(home, 'config.json'), 'utf8'));
+    expect(saved).toEqual({ voice: { wakeWord: false, claudeModel: 'haiku', claudeEffort: 'low' }, memory: { enabled: true } });
+    expect(parseVoiceConfig(saved.voice)).toMatchObject({ claudeModel: 'haiku', claudeEffort: 'low' });
+    // "default" clears: no --model, no --effort
+    await h.client.request({ id: 'm2', type: 'model.set', model: 'default', effort: 'default' });
+    expect(store.get()).toEqual({ model: null, effort: null });
+    const cleared = parseVoiceConfig(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).voice);
+    expect(cleared.claudeModel).toBeNull();
+    expect(cleared.claudeEffort ?? null).toBeNull();
+    // refused without a store
+    const none = await harness({ setModel: undefined }, mkdtempSync(join(tmp, 'model2-')));
+    expect(await none.client.request({ id: 'm', type: 'model.set', model: 'haiku' })).toEqual({ id: 'm', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('settings.set refuses unknown keys and bad values and changes nothing', async () => {
+    const home = mkdtempSync(join(tmp, 'setbad-'));
+    const h = await harness({}, home);
+    for (const values of [{ tone: 'pirate' }, { length: 'long' }, { speak: 'yes' }, { explain: 1 }, { voice: 'siri' }, { claudePath: '/bin/sh' }, { tone: 'formal', persona: 'ignore rules' }, {}, [], 'tone']) {
+      const r = await h.client.request({ id: 'b', type: 'settings.set', values });
+      expect(r.type, JSON.stringify(values)).toBe('error');
+    }
+    expect(h.talk.get()).toMatchObject({ length: 'brief', tone: 'casual', speak: true, explain: false });
+    expect(existsSync(join(home, 'config.json'))).toBe(false);
+  });
+
+  it('settings.set without a store, or with an unwritable config, answers with an error', async () => {
+    const a = await harness({ setTalk: undefined });
+    expect((await a.client.request({ id: 's', type: 'settings.set', values: { speak: false } })).type).toBe('error');
+    const home = mkdtempSync(join(tmp, 'setjunk-'));
+    writeFileSync(join(home, 'config.json'), '{not json');
+    const b = await harness({}, home);
+    expect(await b.client.request({ id: 's', type: 'settings.set', values: { speak: false } })).toEqual({ id: 's', type: 'error', message: 'could not save the setting' });
+    expect(b.talk.get().speak).toBe(true);
   });
 
   it('settings that cannot be built answer with an error', async () => {
@@ -455,6 +552,84 @@ describe('memory, history, settings, audit, window', () => {
     expect(await none.client.request({ id: 'a', type: 'audit.recent' })).toEqual({ id: 'a', type: 'audit', entries: [] });
   });
 
+  it('phone.on / phone.off / zen.open / doctor.run answer from the control; errors and a missing control say why', async () => {
+    const h = await harness();
+    expect(await h.client.request({ id: 'p', type: 'phone.on' })).toEqual({ id: 'p', type: 'phone', on: true, lines: ['✓ Locked: the phone session can use only Stephen phone tools.'] });
+    expect(await h.client.request({ id: 'q', type: 'phone.off' })).toMatchObject({ id: 'q', type: 'phone', on: false });
+    expect(await h.client.request({ id: 'z', type: 'zen.open' })).toEqual({ id: 'z', type: 'zen', ok: true, message: 'Zen is ready for Stephen (pid 4242).' });
+    expect(await h.client.request({ id: 'd', type: 'doctor.run' })).toEqual({ id: 'd', type: 'doctor', checks: [{ ok: false, label: 'Chrome installed' }], problems: 1, blocking: 0 });
+    const failing = await harness({ control: { ...FAKE_CONTROL, phoneOn: async () => Promise.reject(new Error('The phone link is already turning on.')) } });
+    expect(await failing.client.request({ id: 'p', type: 'phone.on' })).toEqual({ id: 'p', type: 'error', message: 'The phone link is already turning on.' });
+    const none = await harness({ control: undefined });
+    expect(await none.client.request({ id: 'd', type: 'doctor.run' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('usage.get answers from the listener; without it, an error', async () => {
+    const h = await harness();
+    expect(await h.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'usage', context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } });
+    const none = await harness({ usage: undefined });
+    expect(await none.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('Memory page: propose → suggestions → keep (origin recorded) / skip; nothing is saved without keep', async () => {
+    const h = await harness();
+    const p1 = await h.client.request({ id: 'a', type: 'memory.propose', text: 'I moved to Fit4Less' });
+    expect(p1).toMatchObject({ id: 'a', type: 'suggestions', suggestions: [{ id: 'p1', text: 'I moved to Fit4Less', origin: 'you', untrusted: false }] });
+    expect(await h.memory.list()).toEqual([]);
+    expect(h.calls.ends).toBe(0);
+    h.proposals.propose('Lab 4 is due Friday', 'canvas');
+    const list = await h.client.request({ id: 'b', type: 'memory.suggestions' });
+    expect((list.suggestions as { id: string; untrusted: boolean }[]).map((s) => [s.id, s.untrusted])).toEqual([['p2', true], ['p1', false]]);
+    // a secret is refused before it is ever stored as a proposal
+    expect(await h.client.request({ id: 'c', type: 'memory.propose', text: 'my password is hunter2' })).toEqual({ id: 'c', type: 'error', message: MEMORY_MESSAGES.secret });
+    // keep with edited text: saved through the memory store, origin recorded, proposal gone, conversation ended
+    const kept = await h.client.request({ id: 'd', type: 'memory.keep', propId: 'p2', text: 'Lab 4 is due Thursday' });
+    expect(kept).toMatchObject({ id: 'd', type: 'memory', items: [{ id: 'm1', text: 'Lab 4 is due Thursday', source: 'app', origin: 'canvas' }] });
+    expect(h.calls.ends).toBe(1);
+    expect(h.proposals.list().map((p) => p.id)).toEqual(['p1']);
+    // a refused keep leaves the proposal waiting
+    expect(await h.client.request({ id: 'e', type: 'memory.keep', propId: 'p1', text: 'my bank pin is 4821' })).toEqual({ id: 'e', type: 'error', message: MEMORY_MESSAGES.secret });
+    expect(h.proposals.list().map((p) => p.id)).toEqual(['p1']);
+    expect(await h.client.request({ id: 'f', type: 'memory.skip', propId: 'p1' })).toEqual({ id: 'f', type: 'suggestions', suggestions: [] });
+    expect(await h.client.request({ id: 'g', type: 'memory.skip', propId: 'p1' })).toEqual({ id: 'g', type: 'error', message: PROPOSAL_GONE_MESSAGE });
+    expect(await h.client.request({ id: 'h', type: 'memory.keep', propId: 'p9' })).toEqual({ id: 'h', type: 'error', message: PROPOSAL_GONE_MESSAGE });
+    expect((await h.memory.list()).map((i) => i.text)).toEqual(['Lab 4 is due Thursday']);
+  });
+
+  it('memory.graph and memory.usage', async () => {
+    const h = await harness();
+    await h.memory.add('my gym is Fit4Less', 'cli');
+    h.proposals.propose('I go to Fit4Less every morning', 'you');
+    expect(await h.client.request({ id: 'g', type: 'memory.graph' })).toEqual({
+      id: 'g',
+      type: 'graph',
+      nodes: [
+        { id: 'm1', text: 'my gym is Fit4Less', kind: 'places', new: false },
+        { id: 'p1', text: 'I go to Fit4Less every morning', kind: 'habits', new: true },
+      ],
+      links: [{ a: 'm1', b: 'p1' }],
+    });
+    expect(await h.client.request({ id: 'u', type: 'memory.usage' })).toEqual({ id: 'u', type: 'memory.usage', memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } });
+    const off = await harness({ memory: null });
+    for (const type of ['memory.graph', 'memory.suggestions']) {
+      expect(await off.client.request({ id: 'x', type })).toEqual({ id: 'x', type: 'error', message: MEMORY_OFF_MESSAGE });
+    }
+    expect(await off.client.request({ id: 'y', type: 'memory.propose', text: 'I like tea' })).toEqual({ id: 'y', type: 'error', message: MEMORY_OFF_MESSAGE });
+    const noUsage = await harness({ usage: undefined });
+    expect(await noUsage.client.request({ id: 'u', type: 'memory.usage' })).toEqual({ id: 'u', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('personal.summary answers from the listener (read-only); without it, an error', async () => {
+    const h = await harness();
+    const got = await h.client.request({ id: 'p', type: 'personal.summary' });
+    expect(got).toMatchObject({ id: 'p', type: 'personal', about: { name: 'Cris', notes: [], timeZone: 'America/Toronto' } });
+    expect((got.permissions as { columns: string[] }).columns).toEqual(['F5', 'Hey Stephen', 'Phone']);
+    const none = await harness({ personal: undefined });
+    expect(await none.client.request({ id: 'p', type: 'personal.summary' })).toEqual({ id: 'p', type: 'error', message: 'not available in this listener' });
+    const broken = await harness({ personal: async () => { throw new Error('boom'); } });
+    expect(await broken.client.request({ id: 'p', type: 'personal.summary' })).toEqual({ id: 'p', type: 'error', message: 'could not read the personal summary' });
+  });
+
   it('window.open forwards to the helper, or says why it could not', async () => {
     const h = await harness();
     expect(await h.client.request({ id: 'w', type: 'window.open' })).toEqual({ id: 'w', type: 'ok' });
@@ -468,7 +643,7 @@ describe('pushes', () => {
   it('hello answers, then pushes the current state; state changes and heard reach every client', async () => {
     const h = await harness({ listening: () => false, model: 'haiku' });
     h.server.setState('listening');
-    expect(await h.client.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: false, model: 'haiku' });
+    expect(await h.client.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: false, model: 'haiku', confirms: true });
     const helloAt = h.client.messages.findIndex((m) => m.id === 'h');
     await h.client.waitFor((m) => m.type === 'state' && h.client.messages.indexOf(m) > helloAt);
     expect(h.client.messages[helloAt + 1]).toEqual({ type: 'state', state: 'listening' });
@@ -492,10 +667,202 @@ describe('pushes', () => {
     expect(await h.client.waitFor((m) => m.type === 'chat.done')).toEqual({ type: 'chat.done', entryId: 'h_v', reply: '', outcome: 'cancelled', tools: [], ms: 900 });
   });
 
+  it('chat.done carries the action chain as steps when something ran (audit outside the command is left out)', async () => {
+    const h = await harness();
+    const calls = [{ tool: 'gmail_search', isError: false, ms: 800 }, { tool: 'weather_now', isError: true, ms: 20 }];
+    h.server.commandDone({ id: 'h_s', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1 }, ['gmail_search', 'weather_now'], calls);
+    const done = await h.client.waitFor((m) => m.type === 'chat.done');
+    expect(done.steps).toEqual([
+      { text: 'Used gmail_search', status: 'ok' },
+      { text: 'Used weather_now', status: 'failed' },
+    ]);
+  });
+
   it('closing the server disconnects clients', async () => {
     const h = await harness();
     await h.server.close();
     await sleep(20);
     expect(h.client.closed).toBe(true);
+  });
+});
+
+describe('Ask box confirmations (confirm.ask / confirm / confirm.answer / confirm.end)', () => {
+  const ASK = { type: 'confirm.ask', title: 'mail.google.com — Stephen wants to click a button', body: 'Site: https://mail.google.com', timeoutMs: 60_000 };
+  async function withBox() {
+    const h = await harness();
+    const box = h.client;
+    await box.request({ id: 'hb', type: 'hello', version: '1', confirms: true });
+    const gate = await h.connect();
+    return { h, box, gate };
+  }
+
+  it('no Ask box connected: unavailable at once (the gate shows the dialog)', async () => {
+    const h = await harness();
+    await h.client.request({ id: 'h', type: 'hello', version: '1' }); // a window/CLI that did not opt in
+    const gate = await h.connect();
+    expect(await gate.request({ id: 'g1', ...ASK })).toEqual({ id: 'g1', type: 'confirm.result', outcome: 'unavailable' });
+    expect(h.client.messages.some((m) => m.type === 'confirm')).toBe(false);
+  });
+
+  it('the box gets the question; its click with the exact id settles it once, and confirm.end follows', async () => {
+    const { box, gate } = await withBox();
+    gate.send({ id: 'g1', ...ASK });
+    const q = await box.waitFor((m) => m.type === 'confirm');
+    expect(q).toMatchObject({ type: 'confirm', title: ASK.title, body: ASK.body });
+    expect(gate.messages.some((m) => m.type === 'confirm')).toBe(false); // never sent back to the asker
+    const confirmId = q.confirmId as string;
+    expect(await box.request({ id: 'b1', type: 'confirm.answer', confirmId, approve: true })).toEqual({ id: 'b1', type: 'ok' });
+    expect(await gate.waitFor((m) => m.id === 'g1')).toEqual({ id: 'g1', type: 'confirm.result', outcome: 'approved' });
+    expect(await box.waitFor((m) => m.type === 'confirm.end')).toEqual({ type: 'confirm.end', confirmId });
+    // A second answer (replay) or another id answers nothing.
+    expect(await box.request({ id: 'b2', type: 'confirm.answer', confirmId, approve: false })).toMatchObject({ id: 'b2', type: 'error' });
+    expect(gate.messages.filter((m) => m.id === 'g1')).toHaveLength(1);
+  });
+
+  it('an answer naming another id, or from the asking connection, does not settle the question', async () => {
+    const { box, gate } = await withBox();
+    gate.send({ id: 'g1', ...ASK });
+    const q = await box.waitFor((m) => m.type === 'confirm');
+    const other = '00000000-0000-4000-8000-000000000000';
+    expect(await box.request({ id: 'b1', type: 'confirm.answer', confirmId: other, approve: true })).toMatchObject({ type: 'error' });
+    expect(await gate.request({ id: 'g2', type: 'confirm.answer', confirmId: q.confirmId, approve: true })).toMatchObject({ type: 'error' });
+    expect(gate.messages.some((m) => m.id === 'g1')).toBe(false);
+    await box.request({ id: 'b2', type: 'confirm.answer', confirmId: q.confirmId, approve: false });
+    expect(await gate.waitFor((m) => m.id === 'g1')).toMatchObject({ outcome: 'declined' });
+  });
+
+  it('unanswered: declined after timeoutMs; the last box leaving: unavailable; the asker leaving: confirm.end', async () => {
+    const { h, box, gate } = await withBox();
+    gate.send({ id: 'g1', ...ASK, timeoutMs: 1000 });
+    expect(await gate.waitFor((m) => m.id === 'g1', 3000)).toMatchObject({ outcome: 'declined' });
+    await box.waitFor((m) => m.type === 'confirm.end');
+
+    gate.send({ id: 'g2', ...ASK });
+    const q2 = await box.waitFor((m) => m.type === 'confirm' && box.messages.filter((x) => x.type === 'confirm').length === 2);
+    const gate2 = await h.connect();
+    gate2.send({ id: 'g3', ...ASK });
+    await box.waitFor((m) => m.type === 'confirm' && m.confirmId !== q2.confirmId && box.messages.filter((x) => x.type === 'confirm').length === 3);
+    gate2.close();
+    await box.waitFor((m) => m.type === 'confirm.end' && box.messages.filter((x) => x.type === 'confirm.end').length === 2);
+    box.close();
+    expect(await gate.waitFor((m) => m.id === 'g2')).toMatchObject({ outcome: 'unavailable' });
+  });
+
+  it('a box that connects late gets the waiting question', async () => {
+    const h = await harness();
+    const gate = h.client;
+    const early = await h.connect();
+    await early.request({ id: 'e', type: 'hello', version: '1', confirms: true });
+    gate.send({ id: 'g1', ...ASK });
+    await early.waitFor((m) => m.type === 'confirm');
+    const late = await h.connect();
+    await late.request({ id: 'l', type: 'hello', version: '1', confirms: true });
+    expect(await late.waitFor((m) => m.type === 'confirm')).toMatchObject({ title: ASK.title });
+  });
+
+  it('AppConfirmer (the gate side): approved / declined from the box, unavailable without a box or a listener', async () => {
+    const { h, box } = await withBox();
+    const c = new AppConfirmer(h.server.socketPath, 60_000);
+    const answer = (approve: boolean) =>
+      box.waitFor((m) => m.type === 'confirm' && !box.messages.some((x) => x.type === 'confirm.end' && x.confirmId === m.confirmId)).then((q) =>
+        box.send({ id: `b${approve}`, type: 'confirm.answer', confirmId: q.confirmId, approve }),
+      );
+    let p = c.confirm({ title: 'T', body: 'B' });
+    await answer(true);
+    expect(await p).toBe('approved');
+    await box.waitFor((m) => m.type === 'confirm.end');
+    p = c.confirm({ title: 'T', body: 'B' });
+    await answer(false);
+    expect(await p).toBe('declined');
+    box.close();
+    await sleep(20);
+    expect(await new AppConfirmer(h.server.socketPath, 60_000).confirm({ title: 'T', body: 'B' })).toBe('unavailable');
+    expect(await new AppConfirmer(join(h.home, 'run', 'nobody.sock'), 60_000).confirm({ title: 'T', body: 'B' })).toBe('unavailable');
+  });
+
+  it('AppConfirmer: an older listener (hello without confirms) is unavailable, not a silent wait', async () => {
+    const home = mkdtempSync(join(tmp, 'old-'));
+    const path = join(home, 'old.sock');
+    const old = createServer((s) =>
+      s.on('data', (d) => {
+        for (const line of d.toString().split('\n').filter(Boolean)) {
+          const m = JSON.parse(line) as Msg;
+          if (m.type === 'hello') s.write(`${JSON.stringify({ id: m.id, type: 'hello', version: '1', listening: true, model: 'x' })}\n`);
+        }
+      }),
+    );
+    await new Promise<void>((r) => old.listen(path, r));
+    try {
+      expect(await new AppConfirmer(path, 60_000).confirm({ title: 'T', body: 'B' })).toBe('unavailable');
+    } finally {
+      old.close();
+    }
+  });
+
+  it("buildConfirmer 'auto' on macOS: elicit, then the Ask box, then the dialog; 'dialog' mode never uses the box", () => {
+    const safety = { confirm: 'auto' as const, confirmTimeoutSec: 120 };
+    const kinds = (c: ReturnType<typeof buildConfirmer>) => ('confirmers' in c ? (c.confirmers as { kind: string }[]).map((x) => x.kind) : [c.kind]);
+    expect(kinds(buildConfirmer(safety, { platform: 'darwin', home: '/h', elicit: async () => 'accept' }))).toEqual(['elicit', 'app', 'dialog']);
+    expect(kinds(buildConfirmer(safety, { platform: 'linux', home: '/h' }))).toEqual(['dialog']);
+    expect(kinds(buildConfirmer(safety, { platform: 'darwin' }))).toEqual(['dialog']);
+    expect(kinds(buildConfirmer({ ...safety, confirm: 'dialog' }, { platform: 'darwin', home: '/h' }))).toEqual(['dialog']);
+  });
+
+  it("R9-2 buildConfirmer 'app' (listener-started serves): the Ask box, then the dialog; never elicit", () => {
+    const safety = { confirm: 'app' as const, confirmTimeoutSec: 120 };
+    const kinds = (c: ReturnType<typeof buildConfirmer>) => ('confirmers' in c ? (c.confirmers as { kind: string }[]).map((x) => x.kind) : [c.kind]);
+    expect(kinds(buildConfirmer(safety, { platform: 'darwin', home: '/h', elicit: async () => 'accept' }))).toEqual(['app', 'dialog']);
+    expect(kinds(buildConfirmer(safety, { platform: 'linux', home: '/h' }))).toEqual(['dialog']);
+  });
+
+  it('R9-7 confirm.answer is accepted only from an Ask box (hello with confirms: true)', async () => {
+    const { h, box, gate } = await withBox();
+    const plain = await h.connect();
+    await plain.request({ id: 'p0', type: 'hello', version: '1' });
+    gate.send({ id: 'g1', ...ASK });
+    const q = await box.waitFor((m) => m.type === 'confirm');
+    expect(await plain.request({ id: 'p1', type: 'confirm.answer', confirmId: q.confirmId, approve: true })).toMatchObject({ type: 'error' });
+    expect(gate.messages.some((m) => m.id === 'g1')).toBe(false);
+    await box.request({ id: 'b1', type: 'confirm.answer', confirmId: q.confirmId, approve: true });
+    expect(await gate.waitFor((m) => m.id === 'g1')).toMatchObject({ outcome: 'approved' });
+  });
+
+  it('R9-7 a gate connection (sent confirm.ask) gets no heard / chat.done / state pushes', async () => {
+    const { h, box, gate } = await withBox();
+    gate.send({ id: 'g0', type: 'hello', version: '1' });
+    gate.send({ id: 'g1', ...ASK });
+    await box.waitFor((m) => m.type === 'confirm');
+    h.server.heard('read my email', 'voice-ptt');
+    h.server.setState('working');
+    h.server.commandDone({ id: 'h_x', reply: 'You have 3 new emails', outcome: 'ok', ms: 5 } as never, []);
+    await box.waitFor((m) => m.type === 'chat.done');
+    await sleep(20);
+    expect(gate.messages.filter((m) => m.type === 'heard' || m.type === 'chat.done' || m.type === 'state')).toEqual([]);
+  });
+
+  it('R9-7 AppConfirmer applies the 4096-byte cap per line, not to several lines read at once', async () => {
+    const home = mkdtempSync(join(tmp, 'cap-'));
+    const path = join(home, 'cap.sock');
+    const filler = `${JSON.stringify({ type: 'heard', text: 'x'.repeat(3000), source: 'voice-ptt' })}\n`;
+    const srv = createServer((s) =>
+      s.on('data', (d) => {
+        for (const line of d.toString().split('\n').filter(Boolean)) {
+          const m = JSON.parse(line) as Msg;
+          if (m.type === 'hello') s.write(`${JSON.stringify({ id: m.id, type: 'hello', version: '1', confirms: true })}\n`);
+          if (m.type === 'confirm.ask') s.write(filler + filler + `${JSON.stringify({ id: m.id, type: 'confirm.result', outcome: 'approved' })}\n`);
+        }
+      }),
+    );
+    await new Promise<void>((r) => srv.listen(path, r));
+    try {
+      expect(await new AppConfirmer(path, 60_000).confirm({ title: 'T', body: 'B' })).toBe('approved');
+    } finally {
+      srv.close();
+    }
+  });
+
+  it('the gate and the listener agree on the socket path', async () => {
+    const { appSocketFor } = await import('../../src/safety/app-confirm.js');
+    expect(appSocketFor('/Users/cris/.stephen')).toBe(appSocketPath('/Users/cris/.stephen'));
   });
 });

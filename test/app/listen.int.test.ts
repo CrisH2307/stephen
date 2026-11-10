@@ -2,11 +2,14 @@
  * `stephen listen` serves app.sock (runListen end to end with fake audio engines and --dry-run). Needs the real
  * keyword-spotter model (start-up tokenizes the wake phrases); skipped without it.
  */
-import { existsSync, mkdtempSync, rmSync, statSync, symlinkSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { launchInfoPath } from '../../src/app/control.js';
 import { AppServer, appSocketPath } from '../../src/app/server.js';
+import { phoneDir, phoneOnPath } from '../../src/phone/setup.js';
 import type { AudioSource } from '../../src/voice/audio.js';
 import { runListen, type ListenEnv } from '../../src/voice/index.js';
 import { ASR_ARCHIVES, KWS_MODEL, VAD_MODEL } from '../../src/voice/models.js';
@@ -67,7 +70,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     await waitFor(() => existsSync(sock), 10_000, 'app.sock');
     expect(statSync(sock).mode & 0o777).toBe(0o600);
     const c = await TestClient.connect(sock);
-    expect(await c.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: true, model: 'haiku' });
+    expect(await c.request({ id: 'h', type: 'hello', version: '1' })).toEqual({ id: 'h', type: 'hello', version: '1', listening: true, model: 'haiku', confirms: true });
     await c.waitFor((m) => m.type === 'state' && m.state === 'listening');
 
     const a = await c.request({ id: 'c', type: 'chat.send', text: 'open youtube' });
@@ -84,6 +87,25 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     await t.source.stop();
     expect(await t.running).toBe(0);
     expect(existsSync(sock)).toBe(false);
+    expect(existsSync(launchInfoPath(t.home))).toBe(false); // R9-8: only install-helper writes it
+  });
+
+  it('R9-4: when listening ends, the Remote Control our own `phone on` started is stopped and the marker removed', async () => {
+    const t = start();
+    await waitFor(() => existsSync(appSocketPath(t.home)), 10_000, 'app.sock');
+    // A stand-in whose command line reads as Remote Control, recorded as started by this (the listener's) process.
+    const rc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'claude', 'remote-control'], { stdio: 'ignore' });
+    const exited = new Promise<NodeJS.Signals | null>((r) => rc.on('exit', (_c, sig) => r(sig)));
+    mkdirSync(phoneDir(t.home), { recursive: true });
+    writeFileSync(phoneOnPath(t.home), JSON.stringify({ pid: process.pid, rc: rc.pid }));
+    try {
+      await t.source.stop();
+      expect(await t.running).toBe(0);
+      expect(existsSync(phoneOnPath(t.home))).toBe(false);
+      expect(await exited).toBe('SIGTERM');
+    } finally {
+      rc.kill('SIGKILL');
+    }
   });
 
   it('app.enabled false: no socket', async () => {

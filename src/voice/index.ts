@@ -6,17 +6,23 @@
  * `stephen voice-setup` (or `stephen listen --setup`) calls runVoiceSetup(argv).
  * Config comes from loadConfig().voice — the raw "voice" section of config.json, validated here.
  */
-import { createTts } from './tts/index.js';
+import { createTts, type TtsSpeaker } from './tts/index.js';
+import { TalkStore, talkFromConfig } from '../app/talk.js';
+import { ModelStore } from '../app/model.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
+import { appControl } from '../app/control.js';
+import { usageReport } from '../app/usage.js';
 import { appSettings } from '../app/settings.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
 import { HistoryStore } from '../history/store.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
+import { buildNameList } from './names.js';
 import { MemoryStore } from '../memory/store.js';
+import { ProposalStore } from '../memory/proposals.js';
 import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
@@ -58,6 +64,7 @@ import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } 
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
 import { accountsStatus, phoneAccountRow } from '../app/accounts-status.js';
+import { personalSummary } from '../app/personal.js';
 import { macNotify, macNotifyTitled, type NotifyFn, type NotifyTitledFn } from '../timers/notify.js';
 import { TimerRouter } from '../timers/router.js';
 import { TimerStore } from '../timers/store.js';
@@ -68,7 +75,7 @@ import { JobManager } from '../jobs/manager.js';
 import { purgeJobs } from '../jobs/state.js';
 import { JobRouter } from '../jobs/router.js';
 import { PhoneServer } from '../phone/server.js';
-import { isPhoneOn, phoneAuth, type PhoneAuth } from '../phone/setup.js';
+import { isPhoneOn, phoneAuth, stopPhoneLink, type PhoneAuth } from '../phone/setup.js';
 import type { SpawnFn as JobSpawnFn } from '../jobs/runner.js';
 
 export { LISTEN_USAGE } from './args.js';
@@ -358,13 +365,20 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust) };
   };
   if (!args.dryRun) sweepServeLocks(home, Date.now() - 24 * 3600_000); // file times are real time: left behind by a killed listener
+  // Settings > How Stephen talks: changed live by app.sock settings.set, read at the next command (persona, speak, voice).
+  const configPath = env.configPath ?? configFilePath(env.env ?? process.env);
+  const talk = new TalkStore(configPath, { ...talkFromConfig(cfg), speak: cfg.speak && !args.dryRun });
+  const modelStore = new ModelStore(configPath, { model: cfg.claudeModel, effort: cfg.claudeEffort ?? null });
   const settings: ClaudeSettings = {
     claudePath: cfg.claudePath,
     maxTurns: cfg.maxTurns,
     model: cfg.claudeModel,
+    effort: cfg.claudeEffort ?? null,
+    modelPrefs: () => modelStore.get(),
     mcpConfigPath,
     followUps: conversation.enabled,
     aboutMe: cfg.aboutMe ?? null,
+    talk: () => talk.get(),
     ...(args.dryRun ? {} : { serveInstance }),
   };
   // Check once that this Claude Code knows our lock-down flags: required ones missing → refuse (update Claude Code);
@@ -449,17 +463,25 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   let phone: PhoneServer | null = null;
   const onDone = (r: CommandReport) => {
     recordHistory?.(r);
-    app?.commandDone(r, r.ranClaude && toolRunner ? toolRunner.tools().map((t) => t.tool) : []);
+    const calls = r.ranClaude && toolRunner ? toolRunner.tools() : [];
+    app?.commandDone(r, calls.map((t) => t.tool), calls);
   };
-  const speak = cfg.speak && !args.dryRun;
-  // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts). Tests inject env.speaker.
+  // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
+  // Tests inject env.speaker. The speaker is rebuilt when the voice setting changes, and silent when speak is off.
   let speaker: Speaker = silentSpeaker;
-  if (speak) {
+  if (!args.dryRun) {
     if (env.speaker) speaker = env.speaker;
     else {
-      const tts = createTts(cfg, { home, log: err });
-      void tts.warm().catch(() => {});
-      speaker = tts;
+      let current: { voice: string; tts: TtsSpeaker } | null = null;
+      const ttsFor = (): TtsSpeaker => {
+        const voice = talk.get().voice;
+        if (current?.voice !== voice) current = { voice, tts: createTts({ ...cfg, tts: voice }, { home, log: err }) };
+        return current.tts;
+      };
+      if (talk.get().speak) {
+        void ttsFor().warm().catch(() => {});
+      }
+      speaker = { speak: (t) => ttsFor().speak(t) };
     }
   }
   const chimes = cfg.chimes && !args.dryRun ? (env.chimes ?? new AfplayChimes()) : silentChimes;
@@ -514,7 +536,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       runner,
       speaker,
       chimes,
-      speak,
+      speak: () => talk.get().speak,
       status: out,
       memory: memoryRouter,
       timers: timerRouter,
@@ -529,12 +551,15 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       },
     });
   };
-  const configPath = env.configPath ?? configFilePath(env.env ?? process.env);
   // The phone config's sign-in for the Accounts tab: `claude auth status` takes about a second, so it is cached.
   let signIn: { at: number; value: Promise<PhoneAuth> } | null = null;
   const phoneSignIn = (): Promise<PhoneAuth> => {
     if (!signIn || Date.now() - signIn.at > 5 * 60_000) signIn = { at: Date.now(), value: phoneAuth(home, cfg.claudePath) };
     return signIn.value;
+  };
+  const allAccounts = async () => {
+    const s = await accountsStatus(loaded.accounts);
+    return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
   };
   /** Serve <home>/run/app.sock for the Stephen window; null (with a note) when that isn't possible. */
   const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null): Promise<AppServer | null> => {
@@ -542,19 +567,22 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       home,
       queue: listenerQueue(l, a),
       listening: () => true,
-      model: cfg.claudeModel ?? 'default',
+      model: () => modelStore.get().model ?? 'default',
       memory: memoryStore,
+      ...(memoryStore ? { proposals: new ProposalStore({ home }) } : {}),
       endConversation: () => a.endConversation(),
       history,
       audit,
-      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath }),
-      accounts: async () => {
-        const s = await accountsStatus(loaded.accounts);
-        return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
-      },
+      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get() }),
+      accounts: allAccounts,
+      personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
-      speakReplies: loaded.app.speakReplies && speak,
+      speakReplies: loaded.app.speakReplies,
+      setTalk: (c) => void talk.set(c),
+      setModel: (c) => void modelStore.set(c),
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
+      control: appControl({ home, cliPath, log: err }),
+      usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
       log: err,
     });
     try {
@@ -615,7 +643,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       process.exit(130);
     }
   };
+  // REVIEW-9 R9-4: a `phone on` from the window runs Remote Control as our child; it must not outlive us.
+  const stopOurPhone = () => stopPhoneLink(home, { onlyIfPid: process.pid });
   const onExit = () => {
+    stopOurPhone();
     claude?.killNow();
     warm?.killNow();
     app?.closeSync();
@@ -693,7 +724,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         cooldownSec: cfg.cooldownSec,
         wakeWord,
       },
-      { source, ...engines, assistant, chimes, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
+      { source, ...engines, assistant, chimes, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
     phone = await startPhone(listener, assistant);
@@ -757,6 +788,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       unwatch();
     }
   } finally {
+    stopOurPhone();
     timerStore?.stop();
     finishWatcher?.stop();
     await warm?.shutdown(); // listener exit ends the conversation: kill → close → reset

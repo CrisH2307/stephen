@@ -174,3 +174,83 @@ Setup: `npm run build`, restart `node dist/cli.js listen`.
 - [ ] **Gmail "In production":** Google Cloud Console › APIs & Services › OAuth consent screen › Publish app (stays
       unverified for gmail.readonly, that's fine for your own use). Then `node dist/cli.js connect gmail <label>` once
       per label (the Testing-mode refresh tokens expire after 7 days; production ones don't).
+
+## 11. Work batch of 2026-11-08 (PRs #11 to #31, tracker issue #10)
+**Test first, on `qa`** (docs/BRANCHING.md): `git fetch && git checkout qa && npm install && npm run build &&
+node dist/cli.js install-helper`, run the checks below, then merge the PRs into `main` in this order. A failed check
+is fixed on its PR branch and merged into `qa` again.
+
+Merge in this order (tested as one local merge: no conflicts, full suite and Swift compile in the handover PR). Use
+"Create a merge commit" and delete each branch after merging, so the next stacked PR retargets to `main` by itself.
+Merging #23 also lands P2 (#15, #18), because #23 already contains them with the conflicts resolved; GitHub then
+shows #15 and #18 as merged. Do NOT merge #15/#18 before #17 and #19 (they conflict in that order).
+
+1. #11 docs, UI plan v3.1 + phone lockdown fix. 2. #21 test-helper fix (turns the Zen selftest green).
+3. #12 ADR-006 (P4 design). 4. #30 Review 9. 5. #31 this handover. 6. #14 P7.
+7. #16 → #20 → #22 → #25 (P1 then P6). 8. #13 → #17 → #19 → #23 (brings #15, #18) → #24 → #26 → #27 → #28 → #29 (UI).
+
+Setup after merging: `npm install && npm run build`, `node dist/cli.js install-helper` (re-enable Input Monitoring,
+allow the microphone for Stephen Helper once), quit any Terminal listener.
+
+### 11.1 Base and fixes
+- [ ] #11: `node dist/cli.js phone setup && node dist/cli.js phone check` → locked, all 3 phone tools.
+- [ ] #21: `npx vitest run test/selftest/selftest.int.test.ts` → 3 passed.
+
+### 11.2 Clicks and speed (P1, P6)
+- [ ] #16/#20: `node dist/cli.js eval-clicks` → every case 20/20, "No failures", then a timing table (about 3 min).
+- [ ] Screen unlocked: `node dist/cli.js eval-clicks --youtube --runs 10` → 10/10. If it stops for a confirmation,
+      that is the accounts.google.com frame counting as a private read (open question below).
+- [ ] Real Zen: "Hey Stephen, play One Call Away by Charlie Puth" 10 times → starts every time; a background
+      YouTube tab is brought to front first.
+- [ ] #25: `node dist/cli.js eval --only speed` → passes with 3 calls. Voice: "open hacker news, click the top story
+      and tell me what it's about" → the `claude:` line shows one turn fewer than before.
+
+### 11.3 Names (P7)
+- [ ] #14: with memory "My advisor is Dr. Okafor", say "email okafer" → log shows "Heard: email Okafor".
+- [ ] With memory "My roommate is Mike", "make a timer for ten minutes" and "take a screenshot" run as heard.
+
+### 11.4 App control (P2)
+- [ ] Menu bar (right-click the icon) → Start Stephen: voice works, `~/.stephen/logs/listen.log` fills.
+- [ ] Close the window: still listening, `pgrep -fl "cli.js listen"` shows one process. Stop Stephen → gone.
+- [ ] Phone link on (first time ever: run `node dist/cli.js phone on` once in Terminal for the folder trust; the
+      window refuses until then) → "Locked" and "Phone link on". Stop Stephen → `node dist/cli.js phone status` says
+      off and `pgrep -fl remote-control` is empty; Start again → phone link stays off.
+- [ ] Delete `~/.stephen/run/launch.json`, press Start → "run `stephen install-helper`". Reinstall to restore.
+- [ ] Run doctor… → same checks as `stephen doctor`; `node dist/cli.js doctor --json | grep -c ws://` → 0.
+
+### 11.5 Ask box (UI-PLAN §5)
+- [ ] Click the menu bar icon, type a command, Return → your words in grey and "Working…", then the reply only.
+- [ ] Hold F5 in another app → "Listening…", then the reply; focus stays in that app. ⌘K in the window opens the box.
+- [ ] A gated action (for example a click on a sign-in page) → the box shows the question, Deny / Allow greyed for
+      under a second, Esc denies; no macOS dialog. Quit the helper and repeat → the macOS dialog shows instead.
+- [ ] ⋯ menu: chat context bar (after a first command) and memory bar; amber with "almost full" from 80%.
+
+### 11.6 Main window
+- [ ] ⌘1 to ⌘5 switch pages; ⌘\ collapses the sidebar and the choice survives a restart; status row Start/Stop.
+- [ ] Home: "Morning/Afternoon, Cris." and the date, Today list, Send shows the reply in the Ask box, chips fill.
+- [ ] Personal (⌘4): About you, permission table (Send or submit: Asks you / Asks you / Never), Connected, Routines.
+- [ ] Memory: Personal › See all → graph. Tell Stephen "I moved to Fit4Less" → dashed amber node under Places and a
+      row in New from your chats; `node dist/cli.js memory list` doesn't show it. Keep → solid node, inspector says
+      "You told Stephen · you kept it", `memory list` shows it. Graph / List switch works with VoiceOver.
+- [ ] Settings › How Stephen talks: Detailed + Formal + Explain steps, Save → "Saved", `~/.browser-hub/config.json`
+      has the keys under `voice`; the next reply changes. Speak off → next reply silent. macOS voice → `say`.
+- [ ] Settings › Appearance: Navy, Rose, Sun, Dark, Light, Follow the Mac → window and Ask box change together.
+- [ ] Conversations (⌘2): one list by day, actions under each reply, "Refused: …" lines; search. Jobs (⌘3): start,
+      Stop → moves to Earlier as Stopped; Open output folder.
+
+## 12. UI v3.2 (chat thread, Home chat, sidebar motion, spacing)
+Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
+- [ ] **Ask box thread:** click the menu bar icon, ask two things. Both turns stay in a scrolling thread.
+- [ ] **Drag:** drag the strip at the top, close and reopen: same place. Menu, Reset position: back under the icon.
+- [ ] **Pin:** menu, Pin open, click another app: the box stays. Unpin: it closes on an outside click.
+- [ ] **⌘N:** the thread clears; Conversations still lists the old chat.
+- [ ] **Approval in the thread:** ask Stephen to send an email. The question is a message in the thread, Allow and Deny are
+      dimmed for about a second, Esc denies.
+- [ ] **Home, empty:** greeting, date, a large centred composer, three chips under it. Today is one line.
+- [ ] **Home, with messages:** send a message from Home: the thread shows, the composer sits at the bottom. ⌘N: back to empty.
+- [ ] **Sidebar collapse (⌘\):** the wordmark fades, the width animates, icons do not move. Turn on Reduce Motion in
+      System Settings, Accessibility, Display: it switches at once.
+- [ ] **Current page:** the open page is semibold with a tinted row and a bar on the left. Click through all five pages (⌘1 to ⌘5).
+- [ ] **Spacing:** pages feel roomier, nothing is cut off at the minimum window size (720 x 440).
+- [ ] **All five themes** (Settings, Appearance): Light, Dark, Navy, Rose, Sun, on the Ask box, Home and sidebar.
+

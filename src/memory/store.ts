@@ -40,11 +40,20 @@ export const MEMORY_SOURCES = ['voice-ptt', 'voice-wake', 'app', 'cli', 'phone']
 /** How an item was saved: push-to-talk, wake word (asked in a dialog first), the Stephen app, or the CLI. */
 export type MemorySource = (typeof MEMORY_SOURCES)[number];
 
+/**
+ * Where a kept proposal came from (src/memory/proposals.ts): you (typed in Tell Stephen), chat (a conversation), or
+ * third-party text (email, canvas, web). Absent on items the owner saved directly.
+ */
+export const PROPOSAL_ORIGINS = ['you', 'chat', 'email', 'canvas', 'web'] as const;
+export type ProposalOrigin = (typeof PROPOSAL_ORIGINS)[number];
+
 export interface MemoryItem {
   /** "m7" */
   id: string;
   text: string;
   source: MemorySource;
+  /** Set only when the owner kept a proposal (Memory page). */
+  origin?: ProposalOrigin;
   /** ISO time */
   createdAt: string;
   updatedAt: string;
@@ -163,7 +172,8 @@ export function parseMemoryFile(raw: unknown, maxItems = MAX_MEMORY_ITEMS): Memo
     if (!('text' in c)) continue;
     seen.add(o.id);
     maxN = Math.max(maxN, Number(o.id.slice(1)));
-    items.push({ id: o.id, text: c.text, source: o.source as MemorySource, createdAt: o.createdAt, updatedAt: o.updatedAt });
+    const origin = PROPOSAL_ORIGINS.includes(o.origin as ProposalOrigin) ? { origin: o.origin as ProposalOrigin } : {};
+    items.push({ id: o.id, text: c.text, source: o.source as MemorySource, ...origin, createdAt: o.createdAt, updatedAt: o.updatedAt });
   }
   const next = typeof r.nextId === 'number' && Number.isInteger(r.nextId) && r.nextId > maxN && r.nextId < 1e9 ? r.nextId : maxN + 1;
   return { version: 1, nextId: next, items: items.slice(0, Math.min(maxItems, MAX_MEMORY_ITEMS)) };
@@ -219,7 +229,8 @@ export class MemoryStore {
     return f.file.items;
   }
 
-  async add(text: string, source: MemorySource): Promise<MemoryResult> {
+  /** `origin`: only for a proposal the owner kept (Memory page). */
+  async add(text: string, source: MemorySource, origin?: ProposalOrigin): Promise<MemoryResult> {
     const c = checkMemoryText(text);
     if (!('text' in c)) return this.refuse('add', c.reason, text);
     if (!MEMORY_SOURCES.includes(source)) throw new Error(`unknown memory source ${JSON.stringify(source)}`);
@@ -228,7 +239,7 @@ export class MemoryStore {
       if (same) return { item: same, duplicate: true };
       if (f.items.length >= this.maxItems) return 'full';
       const ts = this.now().toISOString();
-      const item: MemoryItem = { id: `m${f.nextId}`, text: c.text, source, createdAt: ts, updatedAt: ts };
+      const item: MemoryItem = { id: `m${f.nextId}`, text: c.text, source, ...(origin ? { origin } : {}), createdAt: ts, updatedAt: ts };
       f.nextId += 1;
       f.items.push(item);
       return { item };

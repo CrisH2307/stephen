@@ -32,6 +32,9 @@ describe('parseAppRequest', () => {
     ['memory.forget', { id: 'a', type: 'memory.forget', memId: 'm3' }, { id: 'a', type: 'memory.forget', memId: 'm3' }],
     ['memory.clear', { id: 'a', type: 'memory.clear' }, { id: 'a', type: 'memory.clear' }],
     ['settings.get', { id: 'a', type: 'settings.get' }, { id: 'a', type: 'settings.get' }],
+    ['settings.set', { id: 'a', type: 'settings.set', values: { length: 'detailed', tone: 'formal', speak: false, explain: true, voice: 'say' } }, { id: 'a', type: 'settings.set', values: { length: 'detailed', tone: 'formal', speak: false, explain: true, voice: 'say' } }],
+    ['model.set', { id: 'a', type: 'model.set', model: 'haiku', effort: 'low', x: 1 }, { id: 'a', type: 'model.set', model: 'haiku', effort: 'low' }],
+    ['model.set effort only', { id: 'a', type: 'model.set', effort: 'default' }, { id: 'a', type: 'model.set', effort: 'default' }],
     ['audit.recent', { id: 'a', type: 'audit.recent', limit: 200 }, { id: 'a', type: 'audit.recent', limit: 200 }],
     ['accounts.status', { id: 'a', type: 'accounts.status', x: 1 }, { id: 'a', type: 'accounts.status' }],
     ['jobs.list', { id: 'a', type: 'jobs.list', x: 1 }, { id: 'a', type: 'jobs.list' }],
@@ -65,6 +68,12 @@ describe('parseAppRequest', () => {
     ['memory.forget numeric memId', line({ id: 'a', type: 'memory.forget', memId: 7 }), { kind: 'invalid', id: 'a', message: 'memId must be a memory id like "m7"' }],
     ['jobs.stop without jobId', line({ id: 'a', type: 'jobs.stop' }), { kind: 'invalid', id: 'a', message: 'jobId must be a job folder name like 2026-11-05-write-my-report' }],
     ['jobs.stop with a path', line({ id: 'a', type: 'jobs.stop', jobId: '../../etc/passwd' }), { kind: 'invalid', id: 'a', message: 'jobId must be a job folder name like 2026-11-05-write-my-report' }],
+    ['settings.set unknown key', line({ id: 'a', type: 'settings.set', values: { evil: true } }), { kind: 'invalid', id: 'a', message: 'unknown setting "evil"' }],
+    ['settings.set bad tone', line({ id: 'a', type: 'settings.set', values: { tone: 'pirate' } }), { kind: 'invalid', id: 'a', message: 'tone must be one of casual, friendly, formal' }],
+    ['settings.set no values', line({ id: 'a', type: 'settings.set' }), { kind: 'invalid', id: 'a', message: 'values must be an object' }],
+    ['model.set empty', line({ id: 'a', type: 'model.set' }), { kind: 'invalid', id: 'a', message: 'give a model or an effort' }],
+    ['model.set bad model', line({ id: 'a', type: 'model.set', model: 'haiku; rm -rf /' }), { kind: 'invalid', id: 'a', message: 'model must be a model alias or name like "haiku"' }],
+    ['model.set bad effort', line({ id: 'a', type: 'model.set', effort: 'turbo' }), { kind: 'invalid', id: 'a', message: 'effort must be default or one of low, medium, high, xhigh, max' }],
     ['memory.add huge text', line({ id: 'a', type: 'memory.add', text: 'x'.repeat(5000) }), { kind: 'invalid', id: 'a', message: 'text is too long (2000 characters at most)' }],
   ];
   it.each(invalid)('refuses %s', (_name, raw, expected) => {
@@ -76,10 +85,59 @@ describe('parseAppRequest', () => {
     expect(parseAppRequest(line({ type: 'future.thing' }))).toEqual({ kind: 'unknown', type: 'future.thing' });
   });
 
-  it('knows every request type of the table plus window.open', () => {
+  it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'window.open'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage'].sort(),
     );
+  });
+
+  it('confirm.ask / confirm.answer / hello confirms: shapes and caps', () => {
+    const id = '0b6f3c1e-7a2d-4c55-9f10-2b8e4d6a9c01';
+    expect(parseAppRequest(JSON.stringify({ id: 'h', type: 'hello', version: '1', confirms: true }))).toEqual({ kind: 'request', req: { id: 'h', type: 'hello', version: '1', confirms: true } });
+    expect(parseAppRequest(JSON.stringify({ id: 'h', type: 'hello', version: '1', confirms: 'yes' }))).toEqual({ kind: 'request', req: { id: 'h', type: 'hello', version: '1' } });
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 120000, extra: 1 }))).toEqual({
+      kind: 'request',
+      req: { id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 120000 },
+    });
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 'x'.repeat(201), body: 'b', timeoutMs: 1000 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'x'.repeat(4001), timeoutMs: 1000 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 999 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'g1', type: 'confirm.ask', title: 't', body: 'b', timeoutMs: 3600001 })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: true }))).toEqual({ kind: 'request', req: { id: 'a', type: 'confirm.answer', confirmId: id, approve: true } });
+    expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: 'yes' })).kind).toBe('invalid');
+    expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: 'c1', approve: true })).kind).toBe('invalid');
+  });
+
+  it('control requests take only an id; extra fields are dropped', () => {
+    for (const type of ['phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.usage']) {
+      expect(parseAppRequest(line({ id: 'c', type, cmd: 'rm -rf /' }))).toEqual({ kind: 'request', req: { id: 'c', type } });
+      expect(parseAppRequest(line({ type }))).toMatchObject({ kind: 'invalid' });
+    }
+  });
+});
+
+describe('Memory page requests (UI-PLAN v3.1 section 7a)', () => {
+  it('memory.propose takes text (capped like memory.add); extra fields such as origin are dropped', () => {
+    expect(parseAppRequest(line({ id: 'p', type: 'memory.propose', text: 'I moved to Fit4Less', origin: 'canvas' }))).toEqual({
+      kind: 'request',
+      req: { id: 'p', type: 'memory.propose', text: 'I moved to Fit4Less' },
+    });
+    expect(parseAppRequest(line({ id: 'p', type: 'memory.propose' })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 'p', type: 'memory.propose', text: 'x'.repeat(2001) })).kind).toBe('invalid');
+  });
+
+  it('memory.keep takes a proposal id and optional edited text; memory.skip an id', () => {
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3' }))).toEqual({ kind: 'request', req: { id: 'k', type: 'memory.keep', propId: 'p3' } });
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3', text: 'I moved to GoodLife' }))).toEqual({
+      kind: 'request',
+      req: { id: 'k', type: 'memory.keep', propId: 'p3', text: 'I moved to GoodLife' },
+    });
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3', text: null }))).toEqual({ kind: 'request', req: { id: 'k', type: 'memory.keep', propId: 'p3' } });
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'p3', text: 7 })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep', propId: 'm3' })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 'k', type: 'memory.keep' })).kind).toBe('invalid');
+    expect(parseAppRequest(line({ id: 's', type: 'memory.skip', propId: 'p3', text: 'x' }))).toEqual({ kind: 'request', req: { id: 's', type: 'memory.skip', propId: 'p3' } });
+    expect(parseAppRequest(line({ id: 's', type: 'memory.skip', propId: 'p0' })).kind).toBe('invalid');
   });
 });
 

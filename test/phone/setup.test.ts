@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { formatLockdown, runPhoneCli, type PhoneCliEnv } from '../../src/phone/cli.js';
-import { checkPhoneLockdown, compareTools, isPhoneOn, phoneConfigDir, PHONE_AGENT, PHONE_TOOLS, phoneDir, phoneFiles, phoneOnPath, writePhoneFolder } from '../../src/phone/setup.js';
+import { checkPhoneLockdown, compareTools, isPhoneOn, phoneConfigDir, PHONE_AGENT, PHONE_TOOLS, phoneDir, phoneFiles, phoneFolderTrusted, phoneOnPath, stopPhoneLink, writePhoneFolder } from '../../src/phone/setup.js';
 
 const FAKE = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude-init.mjs');
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-phone-')));
@@ -24,6 +24,7 @@ describe('phone folder files (ADR-005: the agent setting is the allow-list)', ()
       disableSkillShellExecution: true,
       disableBundledSkills: true,
       disableWorkflows: true,
+      disableClaudeAiConnectors: true,
     });
     const agent = f[`.claude/agents/${PHONE_AGENT}.md`]!;
     expect(agent).toMatch(new RegExp(`^---\\nname: ${PHONE_AGENT}\\n`));
@@ -163,6 +164,41 @@ describe('stephen phone on | off | status', () => {
   });
 });
 
+describe('R9-4: stopPhoneLink with onlyIfPid (the listener that ran `phone on` exits)', () => {
+  it("removes the marker and stops Remote Control only when the marker is that process's", () => {
+    const home = join(tmp, 'r94');
+    mkdirSync(phoneDir(home), { recursive: true });
+    const killed: number[] = [];
+    const o = { commandOf: () => 'claude remote-control --spawn session', kill: (p: number) => killed.push(p), onlyIfPid: 500 };
+    writeFileSync(phoneOnPath(home), JSON.stringify({ pid: 1, rc: 4242 })); // a Terminal `phone on`: not ours
+    expect(stopPhoneLink(home, o)).toBeNull();
+    expect(existsSync(phoneOnPath(home))).toBe(true);
+    expect(killed).toEqual([]);
+    writeFileSync(phoneOnPath(home), JSON.stringify({ pid: 500, rc: 4242 }));
+    expect(stopPhoneLink(home, o)).toEqual({ pid: 500, rc: 4242 });
+    expect(existsSync(phoneOnPath(home))).toBe(false);
+    expect(killed).toEqual([4242]);
+    expect(stopPhoneLink(home, o)).toBeNull(); // twice (exit event and finally) is harmless
+  });
+});
+
+describe('R9-13: phoneFolderTrusted reads the phone config', () => {
+  it('true for the folder or a parent, false when listed without it, null when unknown', () => {
+    const home = realpathSync(mkdtempSync(join(tmp, 'trust-')));
+    mkdirSync(phoneConfigDir(home), { recursive: true });
+    const write = (j: unknown) => writeFileSync(join(phoneConfigDir(home), '.claude.json'), JSON.stringify(j));
+    expect(phoneFolderTrusted(home)).toBeNull();
+    write({ oauthAccount: {} });
+    expect(phoneFolderTrusted(home)).toBeNull();
+    write({ projects: { '/elsewhere': { hasTrustDialogAccepted: true }, [phoneDir(home)]: { hasTrustDialogAccepted: false } } });
+    expect(phoneFolderTrusted(home)).toBe(false);
+    write({ projects: { [phoneDir(home)]: { hasTrustDialogAccepted: true } } });
+    expect(phoneFolderTrusted(home)).toBe(true);
+    write({ projects: { [home]: { hasTrustDialogAccepted: true } } });
+    expect(phoneFolderTrusted(home)).toBe(true);
+  });
+});
+
 describe('R8-5: the kill switch follows the real Remote Control process', () => {
   it('a marker whose rc pid is gone, or is not Remote Control, is off and removed', () => {
     const home = join(tmp, 'k1');
@@ -198,6 +234,7 @@ describe('R8-1 / R8-7: the phone session has its own Claude Code config', () => 
     await run(['setup'], home); // what /config wrote on the phone is gone at the next setup / on
     expect(readFileSync(join(phoneConfigDir(home), 'settings.json'), 'utf8')).toBe('{}\n');
     expect(env?.CLAUDE_CONFIG_DIR).toBe(phoneConfigDir(home));
+    expect(env?.CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS).toBe('1'); // account plugins start no MCP servers there
   });
 
   it('on refuses while the phone config is not signed in; nothing is started', async () => {

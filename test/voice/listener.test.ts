@@ -15,6 +15,7 @@ function setup(opts: {
   speakMs?: number;
   gates?: Map<number, () => Promise<void>>;
   o?: Partial<ListenerOptions>;
+  names?: string[];
 }) {
   const runner = opts.runner ?? new FakeRunner();
   const speaker = new RecordingSpeaker(opts.speakMs ?? 0);
@@ -24,7 +25,7 @@ function setup(opts: {
   const assistant = new Assistant({ runner, speaker, chimes, speak: true, status });
   const transcriber = new FakeTranscriber(opts.texts);
   const spotter = new ScriptedSpotter(opts.hits);
-  const listener = new Listener({ ...OPTS, ...opts.o }, { source: new ScriptedSource(frames(opts.pattern), opts.gates), spotter, vad: new FakeVad(), transcriber, assistant, chimes, status });
+  const listener = new Listener({ ...OPTS, ...opts.o }, { source: new ScriptedSource(frames(opts.pattern), opts.gates), spotter, vad: new FakeVad(), transcriber, assistant, chimes, status, ...(opts.names ? { names: () => opts.names! } : {}) });
   return { listener, runner, speaker, chimes, lines, transcriber, spotter, assistant };
 }
 
@@ -334,5 +335,19 @@ describe('Listener: pre-warm (phase 3)', () => {
     const t = setup({ pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(40), hits: { 12: 'WAKE' }, texts: ['some video talking'] });
     await t.listener.run();
     expect(t.runner.calls).toEqual(['prewarm']);
+  });
+});
+
+describe('Listener: names (P7)', () => {
+  const PAT = '.'.repeat(60) + 's'.repeat(30) + '.'.repeat(40);
+  it('fixes a close name before Claude sees it', async () => {
+    const t = setup({ pattern: PAT, hits: { 65: 'WAKE' }, texts: ['Hey Stephen, email okafer.'], names: ['Okafor'] });
+    await t.listener.run();
+    expect(t.runner.prompts).toEqual(['email Okafor']);
+  });
+  it('runs a command unchanged when two names fit (never blocks)', async () => {
+    const t = setup({ pattern: PAT, hits: { 65: 'WAKE' }, texts: ['Hey Stephen, call maran.'], names: ['Maren', 'Marin'] });
+    await t.listener.run();
+    expect(t.runner.prompts).toEqual(['call maran']);
   });
 });

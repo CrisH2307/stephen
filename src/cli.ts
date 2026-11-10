@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
@@ -54,7 +54,7 @@ const HELP = `stephen ${packageVersion()} — lets Claude use your Mac's browser
 
 Usage:
   stephen [serve]        Run the MCP server on stdio (what Claude Code starts; tools are mcp__stephen__*)
-  stephen doctor         Check this Mac's setup and print fixes (--network: also check the ElevenLabs account)
+  stephen doctor         Check this Mac's setup and print fixes (--network: also check the ElevenLabs account; --json)
   stephen selftest       Prove each browser works end to end, safely (temporary agent profile,
                          local test pages only; closes what it opened). Options:
                          --browser chrome|zen|all (default all)  --keep-open  --json
@@ -62,6 +62,7 @@ Usage:
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
   stephen eval           score one-shot voice requests with a dry-run of Stephen's tools (--only routes, --jobs 2)
+  stephen eval-clicks    measure click reliability on local test pages in a headless Chrome (--runs 20, --youtube)
   stephen memory list | add "<text>" | forget <id> | clear
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
@@ -207,7 +208,7 @@ async function writable(dir: string): Promise<string | null> {
   }
 }
 
-async function doctor(network = false): Promise<number> {
+async function doctor(network = false, json = false): Promise<number> {
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
 
@@ -310,7 +311,7 @@ async function doctor(network = false): Promise<number> {
         : `Run \`stephen install-zen-launcher\` once, then open Zen with the "${ZEN_LAUNCHER_APP_NAME}" app (or run \`stephen zen-launch\`).`;
       if (readiness === 'ready' || readiness === 'starting') {
         const st = ready.value!.state!;
-        add({ ok: true, label: 'Stephen-ready Zen running', detail: readiness === 'ready' ? `pid ${st.pid}, ${st.wsUrl}` : `pid ${st.pid}, still starting` });
+        add({ ok: true, label: 'Stephen-ready Zen running', detail: readiness === 'ready' ? `pid ${st.pid}, ${urlHost(st.wsUrl)}` : `pid ${st.pid}, still starting` });
       } else if (running) {
         add({
           ok: false,
@@ -359,14 +360,19 @@ async function doctor(network = false): Promise<number> {
     add({ ok: true, info: true, label: 'Modes', detail: `chrome: ${cfg.chrome.mode} · zen: ${cfg.zen.mode} · default browser: ${cfg.defaultBrowser} · confirm: ${cfg.safety.confirm}` });
   }
 
+  const failed = checks.filter((c) => !c.ok);
+  const blocking = failed.filter((c) => c.blocking);
+  if (json) {
+    // For the Stephen window (src/app/control.ts doctor.run).
+    console.log(JSON.stringify({ checks, problems: failed.length, blocking: blocking.length }));
+    return blocking.length ? 1 : 0;
+  }
   const out: string[] = [`stephen doctor (v${packageVersion()})`, ''];
   for (const c of checks) {
     const mark = c.info ? '•' : c.ok ? '✓' : '✗';
     out.push(`${mark} ${c.label}${c.detail ? ` — ${c.detail}` : ''}`);
     if (!c.ok && c.fix) out.push(`    fix: ${c.fix}`);
   }
-  const failed = checks.filter((c) => !c.ok);
-  const blocking = failed.filter((c) => c.blocking);
   out.push(
     '',
     failed.length === 0
@@ -460,7 +466,7 @@ async function main(argv: string[]): Promise<number> {
       await serve(rest);
       return -1; // keep running
     case 'doctor':
-      return doctor(rest.includes('--network'));
+      return doctor(rest.includes('--network'), rest.includes('--json'));
     case 'selftest':
       return selftest(rest);
     case 'install':
@@ -469,13 +475,19 @@ async function main(argv: string[]): Promise<number> {
       return zenLaunch(rest);
     case 'install-zen-launcher':
       return installLauncher(rest);
-    case 'install-helper':
-      return runInstallHelper(rest);
+    case 'install-helper': {
+      const code = await runInstallHelper(rest);
+      // Lets the helper start `stephen listen` itself (ROADMAP P2); owner-only code, loaded on demand.
+      if (code === 0 && !rest.includes('--dry-run')) (await import('./app/control.js')).writeLaunchInfo(loadConfig().home, distCliPath());
+      return code;
+    }
     case 'listen':
       // Loaded on demand: `stephen serve` (the process Claude talks to) never loads memory, app or history code.
       return (await import('./voice/index.js')).runListen(rest);
     case 'eval':
       return (await import('./eval/cli.js')).runEvalCli(rest);
+    case 'eval-clicks':
+      return (await import('./eval/clicks.js')).runClickEvalCli(rest);
     case 'memory':
       return (await import('./memory/cli.js')).runMemoryCli(rest);
     case 'history':
@@ -534,6 +546,18 @@ main(process.argv.slice(2)).then(
  * worktree, a clone) must never carry secrets, and a repo config.json is not the one Stephen reads unless it is a link
  * to it. Pure apart from lstat / realpath.
  */
+/**
+ * host:port of a URL, never its path (REVIEW-9 R9-12: Zen's WebSocket URL carries a session id; doctor output reaches
+ * the window and the log). "connected" when it doesn't parse.
+ */
+export function urlHost(url: string): string {
+  try {
+    return new URL(url).host || 'connected';
+  } catch {
+    return 'connected';
+  }
+}
+
 export function repoPersonalFiles(repo: string, home: string): { label: string; detail: string; fix: string }[] {
   const out: { label: string; detail: string; fix: string }[] = [];
   const envPath = join(repo, '.env');

@@ -129,6 +129,20 @@ describe('claude argv', () => {
     expect(a.filter((x) => x === '')).toHaveLength(2);
   });
 
+  it('adds --effort when given, and live model and effort (Settings > Model) win over the static ones', () => {
+    const a = buildClaudeArgs('hi', { ...settings, model: 'sonnet', effort: 'high', maxTurns: 6 });
+    expect(flagValue(a, '--model')).toBe('sonnet');
+    expect(flagValue(a, '--effort')).toBe('high');
+    let live: { model: string | null; effort: string | null } = { model: 'haiku', effort: 'low' };
+    const s = { ...settings, model: 'sonnet', effort: 'high', maxTurns: 6, modelPrefs: () => live };
+    expect(flagValue(buildClaudeArgs('hi', s), '--model')).toBe('haiku');
+    expect(flagValue(buildClaudeArgs('hi', s), '--effort')).toBe('low');
+    live = { model: null, effort: null };
+    expect(buildClaudeArgs('hi', s)).not.toContain('--model');
+    expect(buildClaudeArgs('hi', s)).not.toContain('--effort');
+    expect(buildClaudeArgs('hi', { ...settings, maxTurns: 6 })).not.toContain('--effort');
+  });
+
   it('adds --model when given, never --resume; an option-looking prompt stays a prompt', () => {
     const a = buildClaudeArgs('--help me', { ...settings, model: 'sonnet', maxTurns: 6 });
     expect(a[1]).toBe(' --help me');
@@ -150,11 +164,11 @@ describe('claude argv', () => {
 
   it('MCP config holds exactly one server: stephen = this node + dist/cli.js serve --confirm dialog --voice', async () => {
     expect(mcpConfig('/usr/local/bin/node', '/opt/stephen/dist/cli.js')).toEqual({
-      mcpServers: { stephen: { command: '/usr/local/bin/node', args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'dialog', '--voice'] } },
+      mcpServers: { stephen: { command: '/usr/local/bin/node', args: ['/opt/stephen/dist/cli.js', 'serve', '--confirm', 'app', '--voice'] } },
     });
     expect(stephenCliPath()).toMatch(/[/\\]dist[/\\]cli\.js$/);
     const file = await writeMcpConfig(join(tmp, 'voice'), '/n', '/c.js');
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ mcpServers: { stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'dialog', '--voice'] } } });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ mcpServers: { stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'app', '--voice'] } } });
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(statSync(join(tmp, 'voice')).mode & 0o777).toBe(0o700);
   });
@@ -168,7 +182,7 @@ describe('claude argv', () => {
     const file = await writeMcpConfig(dir, '/n', '/c.js');
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(file, 'utf8')).mcpServers).toEqual({ stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'dialog', '--voice'] } });
+    expect(JSON.parse(readFileSync(file, 'utf8')).mcpServers).toEqual({ stephen: { command: '/n', args: ['/c.js', 'serve', '--confirm', 'app', '--voice'] } });
     expect(readdirSync(dir)).toEqual(['mcp-config.json']);
   });
 
@@ -288,8 +302,8 @@ describe('ClaudeRunner with a fake claude', () => {
     expect(seen.map((s) => s.trust)).toEqual(['wake', 'wake', 'trusted']);
     expect(flagValue(seen[0]!.args, '--trust')).toBe('wake');
     expect(seen[2]!.args).not.toContain('--trust');
-    expect(mcpConfig('/n', '/c', null, null, null, 'wake').mcpServers.stephen!.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice', '--trust', 'wake']);
-    expect(mcpConfig('/n', '/c').mcpServers.stephen!.args).toEqual(['/c', 'serve', '--confirm', 'dialog', '--voice']);
+    expect(mcpConfig('/n', '/c', null, null, null, 'wake').mcpServers.stephen!.args).toEqual(['/c', 'serve', '--confirm', 'app', '--voice', '--trust', 'wake']);
+    expect(mcpConfig('/n', '/c').mcpServers.stephen!.args).toEqual(['/c', 'serve', '--confirm', 'app', '--voice']);
   });
 
   it('spawns argv directly (no shell), detached, in the private cwd; every command is a fresh session', async () => {

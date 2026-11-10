@@ -9,7 +9,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../src/config.js';
-import { buildDryRunServer, FAKE_PAGE_MAX_CHARS, fakeResult, readDryCalls, readFakePage, type DryCall } from '../../src/eval/dry-server.js';
+import { AFTER_CLICK, buildDryRunServer, FAKE_PAGE_MAX_CHARS, fakeResult, readDryCalls, readFakePage, type DryCall } from '../../src/eval/dry-server.js';
 import { buildServer, type ServerDeps } from '../../src/server/index.js';
 import { parseServeArgs } from '../../src/serve-args.js';
 import { FakeManager, makeEngine, textOf } from '../server/fakes.js';
@@ -101,8 +101,19 @@ describe('dry-run server', () => {
     expect(await call('find', { tab: 'z1', query: 'top story' })).toContain('>\nTop story: a new GO train line\n<');
     expect(await call('find', { tab: 'z1', query: 'weather' })).toContain(page);
     expect(await call('click', { tab: 'z1', target: 'e1', intent: 'x' })).toBe('Done.');
+    // include_snapshot on an action: the page comes back in the same answer (P6)
+    const both = await call('click', { target: 'z1:e1', intent: 'x', include_snapshot: true });
+    expect(both).toMatch(/^Done\.[\s\S]*<untrusted_web_content source="z1"[\s\S]*Top story/);
     // without a page: the neutral empty page, as before
     expect(textOf(fakeResult('read_text', { tab: 'z1' }, 1))).toMatch(/^Page loaded\./);
+  });
+
+  it('a page with an after-click part changes after the first click', async () => {
+    const client = await connect(buildDryRunServer(deps(), '0', () => undefined, { page: `List\n${AFTER_CLICK}\nArticle` }).server);
+    const call = async (name: string, args: Record<string, unknown>) => textOf((await client.callTool({ name, arguments: args })) as CallToolResult);
+    expect(await call('snapshot', { tab: 'z1' })).toContain('>\nList\n<');
+    expect(await call('click', { target: 'z1:e1', intent: 'x', include_snapshot: true })).toMatch(/^Done\.[\s\S]*>\nArticle\n</);
+    expect(await call('read_text', { tab: 'z1' })).toContain('Article');
   });
 
   it('readFakePage caps the text', () => {

@@ -10,6 +10,7 @@ import { stat } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import type { ElementHandle, Frame, KeyInput, Page } from 'puppeteer-core';
 import { HubError, isHubError } from '../errors.js';
+import { timed } from '../lib/step-timer.js';
 import { assertRefInTab, makeRef, parseRef } from '../refs.js';
 import type {
   ElementInfo,
@@ -228,7 +229,7 @@ async function walkFrame(
 }
 
 async function snapshot(page: Page, tab: TabId, opts: SnapshotOptions): Promise<SnapshotResult> {
-  return withTimeout(
+  return timed('page.snapshot', () => withTimeout(
     retryNav(async () => {
       let frame = page.mainFrame();
       let k = 0;
@@ -273,7 +274,7 @@ async function snapshot(page: Page, tab: TabId, opts: SnapshotOptions): Promise<
     }),
     DEFAULT_TIMEOUT_MS,
     'Snapshot',
-  );
+  ));
 }
 
 // ───────────────────────────── find ─────────────────────────────
@@ -678,6 +679,49 @@ async function withHandle<T>(
   );
 }
 
+/** Longest wait for the page to settle before a click (inside the action deadline). */
+const SETTLE_MS = 2_000;
+/** How long after a click a DOM or URL change still counts as the page reacting. */
+const VERIFY_MS = 500;
+const POLL_MS = 100;
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Before a click: wait (at most SETTLE_MS) until the page finished loading (late handlers), is visible (a
+ * background tab is brought to front once: pages and players ignore input while hidden) and the target is not
+ * covered (loading veils). Never fails: a page that does not settle is clicked as before, and a cover that stays is
+ * reported as OBSCURED by clickTarget.
+ */
+async function settle(page: Page, frame: Frame, n: number, d: Deadline): Promise<void> {
+  const until = Math.min(Date.now() + SETTLE_MS, d.at - 1_000);
+  let fronted = false;
+  for (;;) {
+    const main = await rt(page.mainFrame(), 'pageState', null).catch(() => ({ ready: true, visible: true }));
+    const here = frame === page.mainFrame() ? main : await rt(frame, 'pageState', null).catch(() => main);
+    if (!main.visible && !fronted) {
+      fronted = true;
+      await page.bringToFront().catch(() => undefined);
+    }
+    const p = main.ready && here.ready && main.visible ? await rt(frame, 'clickPoint', n) : null;
+    if (p && !('obscured' in p && p.obscured)) return;
+    if (Date.now() + POLL_MS > until) return;
+    await sleep(POLL_MS);
+  }
+}
+
+/** After a click: did the target's document change (DOM or URL) within VERIFY_MS? A navigation counts as a change. */
+async function reacted(frame: Frame): Promise<boolean> {
+  const until = Date.now() + VERIFY_MS;
+  for (;;) {
+    if (frame.detached) return true;
+    const changed = await rt(frame, 'watch', false).catch(() => true);
+    if (changed || Date.now() + POLL_MS > until) return changed;
+    await sleep(POLL_MS);
+  }
+}
+
+const NO_CHANGE_NOTE = '(no change on the page after the click: it may still be loading or the click missed; snapshot to check before retrying)';
+
 /** Click element n of frame at its hit-tested point; OBSCURED (and no click) if something covers it. */
 async function clickTarget(
   page: Page,
@@ -726,8 +770,24 @@ async function clickTarget(
   }
 }
 
-async function click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<void> {
-  await withTarget(page, ref, 'click', (frame, n, d) => clickTarget(page, frame, n, ref, d, opts));
+async function click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<string | void> {
+  return withTarget(page, ref, 'click', async (frame, n, d) => {
+    await rt(frame, 'watch', true).catch(() => undefined);
+    await timed('click.press', () => clickTarget(page, frame, n, ref, d, opts));
+    return (await timed('click.verify', () => reacted(frame))) ? undefined : NO_CHANGE_NOTE;
+  });
+}
+
+async function settleFor(page: Page, ref: Ref): Promise<void> {
+  await timed('click.settle', () => withTarget(page, ref, 'settle', (frame, n, d) => settle(page, frame, n, d)));
+}
+
+async function refind(page: Page, ref: Ref): Promise<Ref | null> {
+  const p = parseRef(ref);
+  const frame = frameByIndex(page, p.frame);
+  if (!frame) return null;
+  const r = await rtx(frame, 'refind', p.n).catch(() => null);
+  return r && issued(r, r.value) ? makeRef(p.tab, p.frame, r.value) : null;
 }
 
 async function hover(page: Page, ref: Ref): Promise<void> {
@@ -1184,6 +1244,8 @@ export const pageEngine: PageEngine = {
   describe,
   describeFocused,
   click,
+  settle: settleFor,
+  refind,
   hover,
   type,
   selectOption,

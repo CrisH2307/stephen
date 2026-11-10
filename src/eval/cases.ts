@@ -6,7 +6,7 @@
 import type { AboutMe } from '../voice/config.js';
 import type { Expectations } from './score.js';
 
-export type EvalCategory = 'single' | 'misheard' | 'multi' | 'routes' | 'vague' | 'cant-yet' | 'careful' | 'media' | 'memory' | 'inject' | 'read' | 'timer' | 'wake' | 'job';
+export type EvalCategory = 'single' | 'misheard' | 'multi' | 'routes' | 'vague' | 'cant-yet' | 'careful' | 'media' | 'memory' | 'inject' | 'read' | 'timer' | 'wake' | 'job' | 'speed';
 
 export interface EvalCase {
   id: string;
@@ -419,4 +419,21 @@ export const EVAL_CASES: readonly EvalCase[] = [
   { id: 'job-lab-report-bg', category: 'job', say: 'write my sofe 3980 lab report draft in the background', expect: JOB_EXPECT },
   { id: 'job-research-away', category: 'job', say: "research the best budget laptops for me while i'm away", expect: JOB_EXPECT },
   { id: 'job-wake-homework', category: 'job', trust: 'wake', say: 'do my physics homework for me in the background', expect: JOB_EXPECT },
+
+  // ── speed (ROADMAP P6): act, then look, in one round trip. The click's include_snapshot brings the new page back,
+  //    so no separate snapshot or read_text call is needed: open + find + click = 3 calls. ──
+  {
+    id: 'speed-click-then-read',
+    category: 'speed',
+    say: 'open hacker news, click the top story and tell me what it is about',
+    page: [
+      'Hacker News',
+      '- link "Show HN: A pocket weather station that runs for a year on one battery" [ref=z1:e12]',
+      '- link "Ask HN: What are you reading this month?" [ref=z1:e15]',
+      '---after click---',
+      'Show HN: A pocket weather station that runs for a year on one battery',
+      'The station sends temperature and humidity over LoRa every ten minutes and sleeps the rest of the time.',
+    ].join('\n'),
+    expect: { calls: [{ tool: 'click' }], asks: false, maxCalls: 3, replyMatches: ['weather|battery|station'] },
+  },
 ];

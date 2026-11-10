@@ -9,17 +9,28 @@
  *    `stephen app` connects briefly next to it. Every client gets every push (state, heard, chat.done).
  *  - A stale socket file (a crashed listener) is replaced only when connecting to it fails; a live one means another
  *    `stephen listen` serves it, and start() refuses. The socket is removed on close (only if it is still ours).
+ *  - Control requests (phone.on/off, zen.open, doctor.run; src/app/control.ts) are the owner's clicks, like jobs.stop.
+ *    Errors they throw go back as `{id, type:"error", message}`.
  *  - Typed chat runs through the AppCommandQueue: the same queue as voice commands (Listener.submit), so the wake
  *    word, Esc and push-to-talk treat it like a voice command and two commands never run at once.
+ *  - Ask box confirmations (protocol.ts, confirm.*): the gate's question is relayed to clients that said
+ *    `confirms: true` in hello, and only an answer naming that exact random confirmId, from another connection,
+ *    settles it. No Ask box → "unavailable" (the gate shows the dialog); unanswered → "declined".
  */
+import { randomUUID } from 'node:crypto';
 import { type Socket } from 'node:net';
 import { join } from 'node:path';
 import { LineFramer } from '../helper/framing.js';
 import { listenPrivateSocket, type PrivateSocket } from '../lib/private-socket.js';
 import { MAX_REPLY_CHARS, MAX_SAID_CHARS, newHistoryId, type HistoryEntry, type HistoryStore } from '../history/store.js';
 import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/store.js';
+import type { ProposalStore } from '../memory/proposals.js';
+import { memoryGraph } from './memory-graph.js';
+import type { ModelChanges } from './model.js';
 import { truncate } from '../safety/text.js';
+import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
+import { commandSteps } from './steps.js';
 import type { CommandReport } from '../voice/assistant.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 import {
@@ -31,10 +42,18 @@ import {
   type AppMessage,
   type AppRequest,
   type AppState,
+  type ConfirmResult,
 } from './protocol.js';
 import type { AppSettings } from './settings.js';
+import type { TalkState } from '../voice/talk.js';
 import type { AccountsStatus } from './accounts-status.js';
 import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
+import type { AppControl } from './control.js';
+import type { PersonalSummary } from './personal.js';
+import type { UsageReport } from './usage.js';
+
+/** Audit entries read to build one command's steps (newest first; a command makes far fewer). */
+const STEPS_AUDIT_LIMIT = 100;
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -47,6 +66,7 @@ export const MAX_QUEUED_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 export const MEMORY_OFF_MESSAGE = 'Memory is off (memory.enabled is false in config.json).';
 export const MEMORY_GONE_MESSAGE = "That memory doesn't exist any more.";
+export const PROPOSAL_GONE_MESSAGE = 'That suggestion is no longer waiting.';
 
 /** Where typed chat runs (Listener.submit + Assistant.command in `stephen listen`). */
 export interface AppCommandQueue {
@@ -65,22 +85,34 @@ export interface AppServerOptions {
   queue: AppCommandQueue;
   /** hello.listening: the microphone is on. */
   listening: () => boolean;
-  /** hello.model: the Claude model voice commands use. */
-  model: string;
+  /** hello.model: the Claude model voice commands use (a function: it can change live, Settings > Model). */
+  model: string | (() => string);
   /** null = memory.enabled is false. */
   memory: Pick<MemoryStore, 'list' | 'add' | 'update' | 'forget' | 'clear'> | null;
+  /** Memory page proposals (src/memory/proposals.ts). Used only while memory is on; absent = no proposals. */
+  proposals?: ProposalStore;
   /** End the follow-up conversation (after any memory change, like the memory router). */
   endConversation: () => void;
   history: Pick<HistoryStore, 'list' | 'clear'> | null;
   /** null = no audit log configured. */
   audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
   settings: () => AppSettings;
+  /** settings.set (How Stephen talks): validated changes in, the saved settings out. Absent = read-only. */
+  setTalk?: (changes: Partial<TalkState>) => void;
+  /** model.set (Settings > Model): validated changes in; applies from the next command. Absent = read-only. */
+  setModel?: (changes: ModelChanges) => void;
   /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
   accounts?: () => Promise<AccountsStatus>;
   /** jobs.list / jobs.stop (background jobs). Absent = jobs are off. */
   jobs?: AppJobs;
   /** app.speakReplies: speak typed-chat replies too. */
   speakReplies: boolean;
+  /** phone.on / phone.off / zen.open / doctor.run (src/app/control.ts). Absent = not available. */
+  control?: AppControl;
+  /** usage.get (src/app/usage.ts). Absent = not available. */
+  usage?: () => Promise<UsageReport>;
+  /** personal.summary (src/app/personal.ts). Absent = not available. */
+  personal?: () => Promise<PersonalSummary>;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
   openWindow: () => string | null;
   log?: (line: string) => void;
@@ -102,6 +134,12 @@ export class AppServer {
   readonly socketPath: string;
   private sock: PrivateSocket | null = null;
   private readonly clients = new Set<Socket>();
+  /** Clients that show confirm questions (hello confirms:true): the Ask box. */
+  private readonly askBoxes = new Set<Socket>();
+  /** Connections that sent confirm.ask: the gate in a serve process. They get no broadcasts (R9-7). */
+  private readonly gates = new Set<Socket>();
+  /** Waiting questions by confirmId: who asked, with which request id. */
+  private readonly confirms = new Map<string, { asker: Socket; id: string; timer: NodeJS.Timeout; push: AppMessage }>();
   private current: AppState = 'idle';
   /** A memory change happened while a command ran: end the conversation again once it is done. */
   private endAfterCommand = false;
@@ -129,6 +167,8 @@ export class AppServer {
   async close(): Promise<void> {
     const sock = this.sock;
     this.sock = null;
+    for (const c of this.confirms.values()) clearTimeout(c.timer);
+    this.confirms.clear();
     for (const c of this.clients) c.destroy();
     this.clients.clear();
     await sock?.close();
@@ -154,20 +194,32 @@ export class AppServer {
     this.broadcast({ type: 'heard', text: truncate(text, MAX_SAID_CHARS), source });
   }
 
-  /** A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run). */
-  commandDone(r: CommandReport, tools: string[]): void {
+  /**
+   * A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run); `calls`:
+   * the same calls with their error flag, for the action chain. With an audit log, chat.done waits for one audit read
+   * to add `steps`; a failed read just leaves them out.
+   */
+  commandDone(r: CommandReport, tools: string[], calls: ToolCallRecord[] = []): void {
     if (this.endAfterCommand) {
       this.endAfterCommand = false;
       this.o.endConversation();
     }
-    this.broadcast({
-      type: 'chat.done',
+    const msg = {
+      type: 'chat.done' as const,
       entryId: r.id,
       reply: truncate(r.reply, MAX_REPLY_CHARS),
       outcome: r.outcome,
       tools: [...new Set(tools)],
       ms: r.ms,
-    });
+    };
+    const end = Date.now();
+    const audit = this.o.audit;
+    const send = (entries: AuditEntry[]) => {
+      const steps = commandSteps(entries, calls, end - r.ms, end);
+      this.broadcast(steps.length > 0 ? { ...msg, steps } : msg);
+    };
+    if (!audit || r.ms <= 0) return send([]);
+    audit.recent(STEPS_AUDIT_LIMIT).then(send, () => send([]));
   }
 
   // ───────────────────────────── connections ─────────────────────────────
@@ -186,7 +238,16 @@ export class AppServer {
       for (const line of lines) this.receive(sock, line);
     });
     sock.on('error', () => undefined);
-    sock.on('close', () => this.clients.delete(sock));
+    sock.on('close', () => {
+      this.clients.delete(sock);
+      this.askBoxes.delete(sock);
+      this.gates.delete(sock);
+      for (const [confirmId, c] of this.confirms) {
+        if (c.asker === sock) this.settle(confirmId, null);
+        // The last Ask box left: the gate shows the dialog instead.
+        else if (this.askBoxes.size === 0) this.settle(confirmId, 'unavailable');
+      }
+    });
   }
 
   private send(sock: Socket, msg: AppMessage): void {
@@ -202,8 +263,9 @@ export class AppServer {
     }
   }
 
+  /** Pushes go to the window and Ask boxes, never to a gate (serve, model-reachable) waiting on a question (R9-7). */
   private broadcast(msg: AppMessage): void {
-    for (const c of this.clients) this.send(c, msg);
+    for (const c of this.clients) if (!this.gates.has(c)) this.send(c, msg);
   }
 
   private receive(sock: Socket, line: string): void {
@@ -218,10 +280,30 @@ export class AppServer {
       this.chat(sock, req);
       return;
     }
+    if (req.type === 'confirm.ask') {
+      this.ask(sock, req);
+      return;
+    }
+    if (req.type === 'confirm.answer') {
+      const c = this.confirms.get(req.confirmId);
+      // Only an Ask box (hello with confirms: true) answers (R9-7).
+      if (!c || c.asker === sock || !this.askBoxes.has(sock)) {
+        this.send(sock, { id: req.id, type: 'error', message: 'That question is no longer waiting.' });
+        return;
+      }
+      this.send(sock, { id: req.id, type: 'ok' });
+      this.settle(req.confirmId, req.approve ? 'approved' : 'declined');
+      return;
+    }
+    if (req.type === 'hello' && req.confirms) {
+      this.askBoxes.add(sock);
+      // A box that connects late still gets the questions already waiting.
+      for (const c of this.confirms.values()) if (c.asker !== sock) this.send(sock, c.push);
+    }
     this.answer(req).then(
       (msg) => {
         this.send(sock, msg);
-        if (req.type === 'hello' && msg.type === 'hello') this.send(sock, { type: 'state', state: this.current });
+        if (req.type === 'hello' && msg.type === 'hello' && !this.gates.has(sock)) this.send(sock, { type: 'state', state: this.current });
       },
       (e: unknown) => this.send(sock, { id: req.id, type: 'error', message: (e as Error).message || 'error' }),
     );
@@ -255,6 +337,32 @@ export class AppServer {
     run.catch((e: unknown) => fail(`Something went wrong: ${(e as Error).message}`));
   }
 
+  /** confirm.ask: relay to the Ask boxes (never back to the asker), or "unavailable" when there is none. */
+  private ask(sock: Socket, req: Extract<AppRequest, { type: 'confirm.ask' }>): void {
+    this.gates.add(sock);
+    const boxes = [...this.askBoxes].filter((b) => b !== sock);
+    if (boxes.length === 0) {
+      this.send(sock, { id: req.id, type: 'confirm.result', outcome: 'unavailable' });
+      return;
+    }
+    const confirmId = randomUUID();
+    const push: AppMessage = { type: 'confirm', confirmId, title: req.title, body: req.body };
+    const timer = setTimeout(() => this.settle(confirmId, 'declined'), req.timeoutMs);
+    timer.unref?.();
+    this.confirms.set(confirmId, { asker: sock, id: req.id, timer, push });
+    for (const b of boxes) this.send(b, push);
+  }
+
+  /** End a question: answer the asker (null = it left), and tell the Ask boxes it is gone. */
+  private settle(confirmId: string, outcome: ConfirmResult | null): void {
+    const c = this.confirms.get(confirmId);
+    if (!c) return;
+    this.confirms.delete(confirmId);
+    clearTimeout(c.timer);
+    if (outcome) this.send(c.asker, { id: c.id, type: 'confirm.result', outcome });
+    for (const b of this.askBoxes) this.send(b, { type: 'confirm.end', confirmId });
+  }
+
   private memoryChanged(): void {
     this.o.endConversation();
     // A running Claude would save its session again when it ends: end the conversation once more after it.
@@ -268,12 +376,49 @@ export class AppServer {
     return { id, type: 'memory', items: r.items };
   }
 
-  private async answer(req: Exclude<AppRequest, { type: 'chat.send' }>): Promise<AppMessage> {
+  /**
+   * The Memory page's graph and proposals. Keep is the only way a proposal becomes memory, and only this socket (the
+   * owner's own click) can send it.
+   */
+  private async proposal(
+    req: Extract<AppRequest, { type: 'memory.graph' | 'memory.suggestions' | 'memory.propose' | 'memory.keep' | 'memory.skip' }>,
+    mem: NonNullable<AppServerOptions['memory']>,
+  ): Promise<AppMessage> {
+    const { id } = req;
+    const props = this.o.proposals;
+    const suggestions = (): AppMessage => ({ id, type: 'suggestions', suggestions: props?.list() ?? [] });
+    switch (req.type) {
+      case 'memory.graph':
+        try {
+          return { id, type: 'graph', ...memoryGraph(await mem.list(), props?.list() ?? []) };
+        } catch {
+          return { id, type: 'error', message: MEMORY_MESSAGES.unreadable };
+        }
+      case 'memory.suggestions':
+        return suggestions();
+      case 'memory.propose': {
+        if (!props) return { id, type: 'error', message: 'not available in this listener' };
+        const r = props.propose(req.text, 'you');
+        return r.ok ? suggestions() : { id, type: 'error', message: r.message };
+      }
+      case 'memory.keep': {
+        const p = props?.get(req.propId);
+        if (!p) return { id, type: 'error', message: PROPOSAL_GONE_MESSAGE };
+        const msg = await this.memory(id, () => mem.add(req.text ?? p.text, 'app', p.origin));
+        if (msg.type === 'memory') props!.remove(p.id);
+        return msg;
+      }
+      case 'memory.skip':
+        return props?.remove(req.propId) ? suggestions() : { id, type: 'error', message: PROPOSAL_GONE_MESSAGE };
+    }
+  }
+
+  private async answer(req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' }>): Promise<AppMessage> {
     const { id } = req;
     const mem = this.o.memory;
     switch (req.type) {
       case 'hello':
-        return { id, type: 'hello', version: APP_PROTOCOL_VERSION, listening: this.o.listening(), model: this.o.model };
+        return { id, type: 'hello', version: APP_PROTOCOL_VERSION, listening: this.o.listening(), model: typeof this.o.model === 'function' ? this.o.model() : this.o.model, confirms: true };
       case 'chat.stop':
         this.o.queue.stop();
         return { id, type: 'ok' };
@@ -313,6 +458,26 @@ export class AppServer {
         } catch {
           return { id, type: 'error', message: 'could not read the config' };
         }
+      case 'settings.set':
+        if (!this.o.setTalk) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          this.o.setTalk(req.values);
+          const s = this.o.settings();
+          return { id, type: 'settings', config: s.config, configPath: s.configPath };
+        } catch {
+          return { id, type: 'error', message: 'could not save the setting' };
+        }
+      case 'model.set':
+        if (!this.o.setModel) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          this.o.setModel({ ...(req.model !== undefined ? { model: req.model } : {}), ...(req.effort !== undefined ? { effort: req.effort as ModelChanges['effort'] } : {}) });
+          // The warm conversation was started with the old model: end it so the next command starts with the new one.
+          this.memoryChanged();
+          const s = this.o.settings();
+          return { id, type: 'settings', config: s.config, configPath: s.configPath };
+        } catch {
+          return { id, type: 'error', message: 'could not save the setting' };
+        }
       case 'audit.recent': {
         if (!this.o.audit) return { id, type: 'audit', entries: [] };
         let entries: AuditEntry[];
@@ -350,6 +515,35 @@ export class AppServer {
           return { id, type: 'error', message: 'could not stop the job' };
         }
       }
+      case 'phone.on':
+      case 'phone.off':
+      case 'zen.open':
+      case 'doctor.run': {
+        const c = this.o.control;
+        if (!c) return { id, type: 'error', message: 'not available in this listener' };
+        if (req.type === 'zen.open') return { id, type: 'zen', ...(await c.openZen()) };
+        if (req.type === 'doctor.run') return { id, type: 'doctor', ...(await c.doctor()) };
+        return { id, type: 'phone', ...(await (req.type === 'phone.on' ? c.phoneOn() : c.phoneOff())) };
+      }
+      case 'usage.get':
+        if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };
+        return { id, type: 'usage', ...(await this.o.usage()) };
+      case 'personal.summary':
+        if (!this.o.personal) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          return { id, type: 'personal', ...(await this.o.personal()) };
+        } catch {
+          return { id, type: 'error', message: 'could not read the personal summary' };
+        }
+      case 'memory.graph':
+      case 'memory.suggestions':
+      case 'memory.propose':
+      case 'memory.keep':
+      case 'memory.skip':
+        return mem ? this.proposal(req, mem) : { id, type: 'error', message: MEMORY_OFF_MESSAGE };
+      case 'memory.usage':
+        if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };
+        return { id, type: 'memory.usage', memory: (await this.o.usage()).memory };
       case 'window.open': {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };

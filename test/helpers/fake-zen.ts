@@ -34,7 +34,10 @@ for (let i = 0; i < args.length; i++) {
 if (!profile) { console.error('fake zen: --profile is required'); process.exit(2); }
 
 const chrome = spawn(${JSON.stringify(chromium)}, [
-  '--user-data-dir=' + profile, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', ...extras, 'about:blank',
+  '--user-data-dir=' + profile, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
+  // Like src/drivers/chrome.ts: without these, Chrome's first-run screen hides the tab on a fresh profile and drops
+  // the press aimed at a cross-site iframe (selftest check 12 on macOS, where tests use the real Chrome).
+  '--no-first-run', '--no-default-browser-check', ...extras, 'about:blank',
 ], { stdio: 'ignore' });
 chrome.on('exit', (code) => process.exit(code ?? 0));
 const stop = () => { try { chrome.kill('SIGTERM'); } catch {} };

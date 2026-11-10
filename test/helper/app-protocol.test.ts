@@ -27,19 +27,45 @@ const RESPONSES: Record<string, string[]> = {
   'memory.forget': ['memory', 'error'],
   'memory.clear': ['memory', 'error'],
   'settings.get': ['settings', 'error'],
+  // Settings > How Stephen talks: length, tone, speak, explain, voice; answers with the new settings snapshot.
+  'settings.set': ['settings', 'error'],
+  'model.set': ['settings', 'error'],
   'audit.recent': ['audit', 'error'],
   'accounts.status': ['accounts', 'error'],
   'jobs.list': ['jobs', 'error'],
   'jobs.stop': ['job', 'error'],
   // Sent by `stephen app` (src/app/cli.ts), not by the window: the listener forwards open_window to the helper.
   'window.open': ['ok', 'error'],
+  // Sent by the safety gate (src/safety/app-confirm.ts), not by the window; answered by the Ask box's click.
+  'confirm.ask': ['confirm.result', 'error'],
+  'confirm.answer': ['ok', 'error'],
+  // ROADMAP P2 control (src/app/control.ts).
+  'phone.on': ['phone', 'error'],
+  'phone.off': ['phone', 'error'],
+  'zen.open': ['zen', 'error'],
+  'doctor.run': ['doctor', 'error'],
+  'usage.get': ['usage', 'error'],
+  // Personal page (src/app/personal.ts), read-only.
+  'personal.summary': ['personal', 'error'],
+  // Memory page (UI-PLAN v3.1 section 7a): proposals are kept or skipped only by the owner's click.
+  'memory.graph': ['graph', 'error'],
+  'memory.suggestions': ['suggestions', 'error'],
+  'memory.propose': ['suggestions', 'error'],
+  'memory.keep': ['memory', 'error'],
+  'memory.skip': ['suggestions', 'error'],
+  'memory.usage': ['memory.usage', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
-const CLI_ONLY_REQUESTS = ['window.open'];
+const CLI_ONLY_REQUESTS = ['window.open', 'confirm.ask'];
+/** Responses only the gate reads. */
+const GATE_ONLY_RESPONSES = ['confirm.result'];
 const RESPONSE_TYPES = [...new Set(Object.values(RESPONSES).flat())];
-const PUSH_TYPES = ['state', 'heard', 'chat.done'];
+const PUSH_TYPES = ['state', 'heard', 'chat.done', 'confirm', 'confirm.end'];
 const STATES = ['idle', 'listening', 'recording', 'working', 'speaking'];
+/** Where a proposal (and a kept item) came from; email, canvas and web are third-party text. */
+const ORIGINS = ['you', 'chat', 'email', 'canvas', 'web'];
+const KINDS = ['people', 'school', 'places', 'habits', 'projects', 'other'];
 
 type Msg = Record<string, unknown> & { type: string; id?: string };
 interface Line {
@@ -137,6 +163,13 @@ describe('app.sock protocol v1 fixture', () => {
           expect(['ok', 'error', 'cancelled', 'memory']).toContain(msg.outcome);
           expect((msg.tools as unknown[]).every((t) => typeof t === 'string')).toBe(true);
           expect(typeof msg.ms).toBe('number');
+          if (msg.steps !== undefined) {
+            for (const st of msg.steps as Record<string, unknown>[]) {
+              expect(Object.keys(st).sort()).toEqual(['status', 'text']);
+              expect(['ok', 'refused', 'failed']).toContain(st.status);
+              expect((st.text as string).length).toBeLessThanOrEqual(160);
+            }
+          }
           break;
         case 'error':
           expect(typeof msg.message).toBe('string');
@@ -150,7 +183,8 @@ describe('app.sock protocol v1 fixture', () => {
           break;
         case 'memory':
           for (const m of msg.items as Record<string, unknown>[]) {
-            expect(Object.keys(m).sort()).toEqual(['createdAt', 'id', 'source', 'text', 'updatedAt']);
+            expect(Object.keys(m).filter((k) => k !== 'origin').sort()).toEqual(['createdAt', 'id', 'source', 'text', 'updatedAt']);
+            if (m.origin !== undefined) expect(ORIGINS).toContain(m.origin);
             expect((m.text as string).length).toBeLessThanOrEqual(200);
           }
           expect((msg.items as unknown[]).length).toBeLessThanOrEqual(30);
@@ -185,12 +219,75 @@ describe('app.sock protocol v1 fixture', () => {
             expect(['ok', 'denied', 'error']).toContain(a.outcome);
           }
           break;
+        case 'phone':
+          expect(typeof msg.on).toBe('boolean');
+          expect((msg.lines as unknown[]).every((l) => typeof l === 'string')).toBe(true);
+          break;
+        case 'zen':
+          expect(typeof msg.ok).toBe('boolean');
+          expect(typeof msg.message).toBe('string');
+          break;
+        case 'doctor':
+          for (const c of msg.checks as Record<string, unknown>[]) {
+            expect(typeof c.ok).toBe('boolean');
+            expect(typeof c.label).toBe('string');
+          }
+          expect(typeof msg.problems).toBe('number');
+          expect(typeof msg.blocking).toBe('number');
+          break;
+        case 'usage': {
+          const m = msg.memory as Record<string, unknown>;
+          expect(Object.keys(m).sort()).toEqual(['budget', 'bytes', 'percent', 'warn']);
+          expect(m.budget).toBe(8192);
+          if (msg.context !== null) expect(Object.keys(msg.context as object).sort()).toEqual(['percent', 'tokens', 'warn', 'window']);
+          break;
+        }
+        case 'memory.usage': {
+          const m = msg.memory as Record<string, unknown>;
+          expect(Object.keys(m).sort()).toEqual(['budget', 'bytes', 'percent', 'warn']);
+          break;
+        }
+        case 'suggestions':
+          for (const p of msg.suggestions as Record<string, unknown>[]) {
+            expect(Object.keys(p).sort()).toEqual(['createdAt', 'id', 'origin', 'text', 'untrusted']);
+            expect(p.id).toMatch(/^p[1-9]\d*$/);
+            expect(ORIGINS).toContain(p.origin);
+            expect(p.untrusted).toBe(['email', 'canvas', 'web'].includes(p.origin as string));
+            expect((p.text as string).length).toBeLessThanOrEqual(200);
+          }
+          expect((msg.suggestions as unknown[]).length).toBeLessThanOrEqual(20);
+          break;
+        case 'graph': {
+          const ids = new Set<string>();
+          for (const n of msg.nodes as Record<string, unknown>[]) {
+            expect(Object.keys(n).sort()).toEqual(['id', 'kind', 'new', 'text']);
+            expect(KINDS).toContain(n.kind);
+            expect(n.new).toBe((n.id as string).startsWith('p'));
+            ids.add(n.id as string);
+          }
+          for (const l of msg.links as Record<string, unknown>[]) {
+            expect(Object.keys(l).sort()).toEqual(['a', 'b']);
+            expect(ids.has(l.a as string) && ids.has(l.b as string)).toBe(true);
+          }
+          break;
+        }
         case 'heard':
           expect(typeof msg.text).toBe('string');
           expect(typeof msg.source).toBe('string');
           break;
         case 'state':
           expect(STATES).toContain(msg.state);
+          break;
+        case 'confirm.result':
+          expect(['approved', 'declined', 'unavailable']).toContain(msg.outcome);
+          break;
+        case 'confirm':
+          expect(msg.confirmId).toMatch(/^[0-9a-f-]{36}$/);
+          expect((msg.title as string).length).toBeLessThanOrEqual(200);
+          expect((msg.body as string).length).toBeLessThanOrEqual(4000);
+          break;
+        case 'confirm.end':
+          expect(typeof msg.confirmId).toBe('string');
           break;
       }
     }
@@ -200,25 +297,49 @@ describe('app.sock protocol v1 fixture', () => {
 describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   const read = (f: string) => readFileSync(join(helperSourceDir(), f), 'utf8');
   const client = read('AppClient.swift');
-  const window = read('AppWindow.swift');
+  // The window's sources: frame and router, Home, and the older screens.
+  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift', 'MemoryPage.swift'].map(read).join('\n');
 
   it('AppClient sends every request type and handles every response and push type', () => {
     const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
-    for (const t of [...windowRequests, ...RESPONSE_TYPES, ...PUSH_TYPES]) expect(client, t).toContain(`"${t}"`);
+    const windowResponses = RESPONSE_TYPES.filter((t) => !GATE_ONLY_RESPONSES.includes(t));
+    for (const t of [...windowRequests, ...windowResponses, ...PUSH_TYPES]) expect(client, t).toContain(`"${t}"`);
     expect(client).toContain('APP_MAX_LINE_BYTES = 256 * 1024');
     expect(client).toContain('APP_CHAT_MAX_CHARS = 2000');
     expect(read('main.swift')).toContain('home + "/run/app.sock"');
   });
 
+  it('Ask box usage lines: sends usage.get and decodes the P2 shape (PR #18) without importing it', () => {
+    // {id,type:"usage",context:{percent,warn,tokens,window}|null,memory:{percent,warn,bytes,budget}}
+    expect(client).toContain('type: "usage.get"');
+    expect(client).toContain('msg.type == "usage"');
+    // P2's UsageBar (percent is a rounded whole number in src/app/usage.ts).
+    expect(client).toMatch(/struct UsageBar: Decodable[\s\S]*let percent: Int[\s\S]*let warn: Bool/);
+    expect(client).toContain('decodeIfPresent(UsageBar.self, forKey: .context)');
+    expect(client).toContain('decodeIfPresent(UsageBar.self, forKey: .memory)');
+    const box = read('AskBox.swift');
+    expect(box).toContain('if let m = model.usage?.context');
+    // The ⋯ menu is a pop-up menu over the chat (2026-11-09); "almost full" is said in words, not color.
+    expect(box).toMatch(/Menu \{[\s\S]*usageLine\("This chat"/);
+    expect(box).toContain('", almost full"');
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
-    for (const src of [window, client]) {
+    for (const src of [window, client, read('AskBox.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];
       expect(bad).toEqual([]);
     }
   });
 
-  it('Accounts tab and the Today card are wired to the protocol', () => {
-    expect(window).toContain('case .accounts: AccountsView(model: model)');
+  it('Personal (accounts, personal.summary, memory) and Home\'s Today row are wired to the protocol', () => {
+    expect(window).toContain('case .personal: PersonalView(model: model, nav: nav)');
+    expect(window).toContain('model.refreshPersonal()');
+    expect(client).toContain('AppRequest.personalSummary(newId())');
+    expect(client).toContain('if type == "personal" { personal = try? PersonalSummary(from: decoder) }');
+    // View only: the one write on the page is Forget (owner default 3).
+    const personal = read('PersonalView.swift');
+    expect(personal.match(/model\.(add|update|clear|forget|stop|send)\w*\(/g)).toEqual(['model.forgetMemory(']);
+    expect(personal).toContain('PermissionTable(');
     expect(window).toContain('model.refreshAccounts()');
     expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
     // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.
@@ -228,18 +349,108 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
   });
 
-  it('Jobs tab is wired to the protocol and shows job text verbatim', () => {
+  it('Memory page (UI-PLAN v3.1 section 7a): graph, list alternative, inspector, proposals, Tell Stephen', () => {
+    const page = read('MemoryPage.swift');
+    expect(window).toContain('case .memory: MemoryPage(model: model, nav: nav)');
+    expect(page).toContain('model.refreshMemoryPage()');
+    // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
+    expect(page).not.toContain('addMemory');
+    expect(page).toContain('model.proposeMemory(text)');
+    expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
+    expect(page).toContain('model.skipProposal(');
+    // Header: back to Personal (also Esc), the usage chip only over 80%, search (⌘F), ⋯.
+    expect(page).toContain('nav.page = .personal');
+    expect(page).toContain('.onExitCommand');
+    expect(page).toContain('if let u = model.memoryUsage, u.warn');
+    expect(page).toContain('.keyboardShortcut("f", modifiers: .command)');
+    for (const chip of ['All', 'People', 'School', 'Places', 'Habits', 'Projects', 'New']) expect(page).toContain(`title: "${chip}"`);
+    // New items dashed amber, selection accent, an accessible list with the same items, labelled nodes.
+    expect(page).toContain('t.warn, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])');
+    expect(page).toContain('isSel ? t.accent');
+    expect(page).toContain('Segmented("Show memory as"');
+    expect(page).toContain('.accessibilityLabel(nodeLabel(n))');
+    // Third-party proposals say so.
+    expect(page).toContain('third-party text');
+    expect(client).toContain('func originLabel(_ origin: String) -> String');
+    expect(client).toContain('if let o = item.origin');
+    // Personal links here with the new count.
+    const personal = read('PersonalView.swift');
+    expect(personal).toContain('as a graph ›');
+    expect(personal).toContain('StatusPill("\\(new) new", kind: .warn)');
+    expect(personal).toContain('model.refreshSuggestions()');
+    // Only theme colours.
+    expect(page).not.toMatch(/Color\((red|green|blue|white|black|hex):/);
+  });
+
+  it('Jobs page is wired to the protocol, shows job text verbatim and names status in words', () => {
+    const jobs = read('JobsPage.swift');
     expect(window).toContain('case .jobs: JobsView(model: model)');
-    expect(window).toContain('model.refreshJobs()');
-    expect(window).toContain('model.stopJob(');
+    expect(jobs).toContain('model.refreshJobs()');
+    expect(jobs).toContain('model.stopJob(');
     expect(client).toContain('AppRequest.jobsList(newId())');
     expect(client).toContain('AppRequest.jobsStop(newId(), jobId:');
-    expect(window).toContain('NSWorkspace.shared.activateFileViewerSelecting');
-    expect(window).toContain("No jobs yet. Say 'while I'm cooking, …' or 'start a job to …'");
+    expect(jobs).toContain('NSWorkspace.shared.activateFileViewerSelecting');
+    expect(jobs).toContain('No jobs yet.');
     // Refresh every 5 s while visible.
-    expect(window).toContain('Timer.publish(every: 5');
-    // Stop only for a job that has not ended.
-    expect(window).toMatch(/if job\.isRunning/);
+    expect(jobs).toContain('Timer.publish(every: 5');
+    // Stop only for a job that has not ended; status is a word (not color alone).
+    expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop"/);
+    for (const w of ['Running', 'Finished', 'Stopped', 'Failed']) expect(jobs).toContain(`"${w}`);
+  });
+
+  it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {
+    const conv = read('ConversationsPage.swift');
+    expect(window).toContain('case .conversations: ConversationsPage(model: model)');
+    expect(window).not.toContain('AuditView');
+    expect(window).not.toContain('HistoryView');
+    expect(conv).toContain('model.refreshHistory(); model.refreshAudit()');
+    expect(conv).toContain('Refused: ');
+    expect(conv).toContain('Search conversations');
+    expect(conv).toContain('Nothing yet.');
+    expect(conv).toContain('Clear all conversations?');
+    expect(conv).toContain('Text(verbatim: entry.said)');
+  });
+
+  it('main window (UI-PLAN v3.1 sections 4 and 6): sidebar pages, shortcuts, remembered collapse, Start/Stop, Home', () => {
+    const main = read('MainWindow.swift');
+    expect(main).toContain('static let stephen: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let you: [Page] = [.personal, .settings]');
+    expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
+    expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
+    expect(main).toContain('@AppStorage("sidebarCollapsed")');
+    // v3.2: one layout, the column width animates between the 60 pt rail and the 240 pt sidebar (Theme.swift).
+    expect(main).toContain('.frame(width: SidebarMetrics.column(collapsed), alignment: .leading)');
+    expect(read('Theme.swift')).toContain('static let expanded: CGFloat = 220');
+    expect(read('Theme.swift')).toContain('static let rail: CGFloat = 40');
+    // Start/Stop go through the helper's StephenControl (one owner of the listener), not a second launcher.
+    expect(main).toContain('control.start { problem = $0 }');
+    expect(main).toContain('control.stop { problem = $0 }');
+    for (const w of ['"Listening"', '"Stopped"', '"Offline"']) expect(main).toContain(w);
+    expect(main).toContain('.stephenThemedBySettings()');
+    const home = read('HomeView.swift');
+    expect(home).toContain('let HOME_SUGGESTIONS = ["Plan my day", "Find internships", "Start a job"]');
+    expect(home).toContain('model.confirms.count');
+    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
+  });
+
+  it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
+    expect(client).toContain('type: "model.set", model: model, effort: effort');
+    expect(read('SettingsPage.swift')).toContain('model.saveModel(model: name, effort: effort)');
+  });
+
+  it('P2 control: the helper owns the listener (not the window), refuses duplicates and a Terminal listener, has the permissions it needs', () => {
+    const main = read('main.swift');
+    expect(main).toContain('let stephenControl = StephenControl(home: home, log: log)');
+    expect(main).toContain('"Start Stephen"');
+    expect(main).toContain('control.start(report)');
+    expect(client).toContain('if case .running = listener { return done("Stephen is already running.") }');
+    expect(client).toContain('LOCAL_PEERPID');
+    expect(client).toContain('p.arguments = [info.cli, "listen"]');
+    expect(client).toContain('st.st_mode & 0o022 == 0');
+    for (const r of ['.phoneOn(', '.phoneOff(', '.zenOpen(', '.doctorRun(']) expect(client).toContain(r);
+    const plist = read('Info.plist');
+    expect(plist).toContain('NSMicrophoneUsageDescription');
+    expect(plist).toContain('NSAppleEventsUsageDescription');
   });
 
   it('the window opens from the menu, --open-window and the open_window command', () => {

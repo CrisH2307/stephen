@@ -5,6 +5,7 @@
  */
 import { execFile } from 'node:child_process';
 import type { ActionRequest, ConfirmOutcome, ConfirmPrompt, Confirmer, PolicyDecision, ResolvedConfig } from '../types.js';
+import { AppConfirmer, appSocketFor } from './app-confirm.js';
 import { isPasteKey, isSecretField } from './classify.js';
 import { parseUrl } from './domains.js';
 import { charLength, clean, hasHiddenChars, stripUnsafe, truncate, visible, visibleCode } from './text.js';
@@ -445,20 +446,32 @@ export class ChainConfirmer implements Confirmer {
 
 export interface ConfirmerDeps {
   elicit?: ElicitLike;
+  /** Stephen's home: on macOS, 'auto' asks in the Ask box (app.sock) before falling back to the dialog. */
+  home?: string;
   platform?: NodeJS.Platform;
   exec?: ExecFn;
 }
 
-/** 'auto' = [elicit if available, dialog]; 'elicit' = [elicit]; 'dialog' = [dialog]; 'deny' = [deny]. */
+/**
+ * 'auto' = [elicit if available, Ask box (macOS, home given), dialog]; 'elicit' = [elicit];
+ * 'app' = [Ask box, dialog] (serves started by `stephen listen`: nobody watches the headless chat, so no elicit);
+ * 'dialog' = [dialog]; 'deny' = [deny].
+ */
 export function buildConfirmer(safety: Pick<ResolvedConfig['safety'], 'confirm' | 'confirmTimeoutSec'>, deps: ConfirmerDeps = {}): Confirmer {
   const dialog = (): Confirmer =>
     new DialogConfirmer({ timeoutSec: safety.confirmTimeoutSec, platform: deps.platform, exec: deps.exec });
   const elicit = deps.elicit ? [new ElicitConfirmer(deps.elicit, safety.confirmTimeoutSec * 1000)] : [];
+  const askBox =
+    deps.home && (deps.platform ?? process.platform) === 'darwin'
+      ? [new AppConfirmer(appSocketFor(deps.home), safety.confirmTimeoutSec * 1000)]
+      : [];
   switch (safety.confirm) {
     case 'auto':
-      return new ChainConfirmer([...elicit, dialog()]);
+      return new ChainConfirmer([...elicit, ...askBox, dialog()]);
     case 'elicit':
       return new ChainConfirmer(elicit);
+    case 'app':
+      return new ChainConfirmer([...askBox, dialog()]);
     case 'dialog':
       return new ChainConfirmer([dialog()]);
     case 'deny':

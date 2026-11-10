@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { expandPath } from '../config.js';
 import { ZEN_ATTACH_ONLY_LABEL, isZenAttachOnly } from '../drivers/zen.js';
 import { HubError, errorMessage } from '../errors.js';
+import { timed } from '../lib/step-timer.js';
 import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
 import type { ActionKind, ActionRequest, AuditEntry, BrowserName, ElementInfo, GateResult, TabInfo } from '../types.js';
@@ -211,6 +212,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
       const channel: Record<typeof cfg.safety.confirm, string> = {
         deny: 'risky actions are refused without asking (confirm: deny)',
         dialog: 'risky actions ask the user in a macOS dialog (confirm: dialog)',
+        app: 'risky actions ask the user in the Stephen Ask box, or a macOS dialog (confirm: app)',
         elicit: `risky actions ask the user in Claude Code (confirm: elicit; ${inChat ? 'supported by this client' : 'NOT supported by this client — they will be refused'})`,
         auto: `risky actions ask the user (confirm: auto — in-chat approval ${inChat ? 'available' : 'not available, using a macOS dialog'})`,
       };
@@ -434,7 +436,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
   // ═════════════════════════════ navigation ═════════════════════════════
 
   async function goto(page: Page, url: string): Promise<string | void> {
-    const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
+    const res = await timed('page.navigate', () => page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS }));
     if (res && !res.ok()) return `(HTTP ${res.status()})`;
   }
 
@@ -650,7 +652,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
       hub.withTab(parseRef(target).tab, 'write', async () => {
         const { tab, page } = await hub.pageForRef(target);
         hub.assertNoDialog(tab);
-        const el = await hub.describe(tab, page, target);
+        const el = await hub.describeClickTarget('click', tab, page, target, intent);
+        const ref = el.ref;
         const opts = { ...(double ? { double } : {}), ...(button ? { button } : {}) };
         return hub.action({
           tool: 'click',
@@ -658,11 +661,11 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
           tab,
           page,
           intent,
-          ref: target,
+          ref,
           element: el,
-          ...(Object.keys(opts).length ? { auditArgs: opts } : {}),
-          run: () => engine.click(page, target, opts),
-          done: `${double ? 'Double-clicked' : 'Clicked'} ${target}`,
+          ...(Object.keys(opts).length || ref !== target ? { auditArgs: { ...opts, ...(ref !== target ? { refound: target } : {}) } } : {}),
+          run: () => engine.click(page, ref, opts),
+          done: `${double ? 'Double-clicked' : 'Clicked'} ${ref}${ref !== target ? ` (${target} had gone stale; re-found as ${ref})` : ''}`,
           includeSnapshot: include_snapshot,
         });
       }),

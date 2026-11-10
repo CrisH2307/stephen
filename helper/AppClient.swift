@@ -23,7 +23,7 @@ let APP_CHAT_MAX_CHARS = 2000
 let APP_MEMORY_MAX_ITEMS = 30
 /** Requests without a response after this long fail with "timed out". */
 let APP_REQUEST_TIMEOUT_SECONDS = 15.0
-/** While the window is open and Stephen isn't reachable, try again this often. */
+/** While someone (window or Ask box) wants the connection and Stephen isn't reachable, try again this often. */
 let APP_RETRY_SECONDS = 3.0
 /** What the Today card on the Chat tab submits, exactly as if it were typed (test/helper/app-protocol.test.ts). */
 let APP_TODAY_PROMPT = "what's my day?"
@@ -138,9 +138,24 @@ struct AppRequest: Encodable {
   var before: String? = nil
   var limit: Int? = nil
   var jobId: String? = nil
+  /** hello: this client shows the gate's questions (the Ask box). */
+  var confirms: Bool? = nil
+  var confirmId: String? = nil
+  var approve: Bool? = nil
+  /** memory.keep / memory.skip: a proposal id ("p3"). */
+  var propId: String? = nil
+  /** settings.set: the changed How-Stephen-talks settings (length, tone, speak, explain, voice). */
+  var values: [String: TalkValue]? = nil
+  /** model.set: a model alias or name ("haiku", "default") and/or an effort level ("low"..."max", "default"). */
+  var model: String? = nil
+  var effort: String? = nil
 
   static func hello(_ id: String) -> AppRequest {
-    return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION)
+    return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
+  }
+  /** The owner's click in the Ask box: answers only the question with this exact id. */
+  static func confirmAnswer(_ id: String, confirmId: String, approve: Bool) -> AppRequest {
+    return AppRequest(id: id, type: "confirm.answer", confirmId: confirmId, approve: approve)
   }
   static func chatSend(_ id: String, text: String) -> AppRequest {
     return AppRequest(id: id, type: "chat.send", text: text)
@@ -162,6 +177,12 @@ struct AppRequest: Encodable {
   }
   static func memoryClear(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.clear") }
   static func settingsGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "settings.get") }
+  static func settingsSet(_ id: String, values: [String: TalkValue]) -> AppRequest {
+    return AppRequest(id: id, type: "settings.set", values: values)
+  }
+  static func modelSet(_ id: String, model: String?, effort: String?) -> AppRequest {
+    return AppRequest(id: id, type: "model.set", model: model, effort: effort)
+  }
   static func auditRecent(_ id: String, limit: Int) -> AppRequest {
     return AppRequest(id: id, type: "audit.recent", limit: limit)
   }
@@ -170,6 +191,121 @@ struct AppRequest: Encodable {
   static func jobsStop(_ id: String, jobId: String) -> AppRequest {
     return AppRequest(id: id, type: "jobs.stop", jobId: jobId)
   }
+  // ROADMAP P2 control (src/app/control.ts); sent by StephenControl below.
+  static func phoneOn(_ id: String) -> AppRequest { return AppRequest(id: id, type: "phone.on") }
+  static func phoneOff(_ id: String) -> AppRequest { return AppRequest(id: id, type: "phone.off") }
+  static func zenOpen(_ id: String) -> AppRequest { return AppRequest(id: id, type: "zen.open") }
+  static func doctorRun(_ id: String) -> AppRequest { return AppRequest(id: id, type: "doctor.run") }
+  static func usageGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage.get") }
+  /** `personal.summary` (src/app/personal.ts), read-only. */
+  static func personalSummary(_ id: String) -> AppRequest { return AppRequest(id: id, type: "personal.summary") }
+  // Memory page (UI-PLAN v3.1 section 7a). Keep and Skip are only ever sent from the owner's click.
+  static func memoryGraph(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.graph") }
+  static func memorySuggestions(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.suggestions") }
+  static func memoryPropose(_ id: String, text: String) -> AppRequest {
+    return AppRequest(id: id, type: "memory.propose", text: text)
+  }
+  static func memoryKeep(_ id: String, propId: String, text: String?) -> AppRequest {
+    return AppRequest(id: id, type: "memory.keep", text: text, propId: propId)
+  }
+  static func memorySkip(_ id: String, propId: String) -> AppRequest {
+    return AppRequest(id: id, type: "memory.skip", propId: propId)
+  }
+  static func memoryUsage(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.usage") }
+}
+
+/** A memory proposal waiting for Keep or Skip (src/memory/proposals.ts). Text is shown verbatim. */
+struct MemoryProposal: Decodable, Identifiable, Equatable {
+  let id: String
+  let text: String
+  /** "you" | "chat" | "email" | "canvas" | "web" */
+  let origin: String
+  /** Third-party text (email, Canvas, web). */
+  let untrusted: Bool
+  var createdAt: String = ""
+}
+
+/** One node of `memory.graph` (src/app/memory-graph.ts): a saved item ("m3") or a proposal ("p2", new). */
+struct GraphNode: Decodable, Identifiable, Equatable {
+  let id: String
+  let text: String
+  /** "people" | "school" | "places" | "habits" | "projects" | "other" */
+  let kind: String
+  let new: Bool
+}
+
+struct GraphLink: Decodable, Equatable {
+  let a: String
+  let b: String
+}
+
+/** The `personal` answer (src/app/personal.ts). The owner's own config and Stephen's fixed rules: shown verbatim. */
+struct PersonalSummary: Decodable, Equatable {
+  struct About: Decodable, Equatable {
+    var name: String? = nil
+    var school: String? = nil
+    var work: String? = nil
+    var notes: [String] = []
+    var timeZone: String = ""
+  }
+  struct Routine: Decodable, Equatable, Identifiable {
+    let id: String
+    let name: String
+    let uses: String
+    let say: String
+    /** "ready" | "needs_setup" | "off" */
+    let state: String
+    var missing: [String]? = nil
+  }
+  struct Cell: Decodable, Equatable {
+    /** "allowed" | "asks" | "never" */
+    let level: String
+    let rule: String
+  }
+  struct Row: Decodable, Equatable {
+    let action: String
+    let cells: [Cell]
+  }
+  struct Permissions: Decodable, Equatable {
+    let columns: [String]
+    let rows: [Row]
+  }
+  let about: About
+  let routines: [Routine]
+  let permissions: Permissions
+}
+
+/** One bar of the `usage` answer (src/app/usage.ts): context has tokens/window, memory has bytes/budget. */
+struct UsageBar: Decodable, Equatable {
+  let percent: Int
+  let warn: Bool
+  var tokens: Int? = nil
+  var window: Int? = nil
+  var bytes: Int? = nil
+  var budget: Int? = nil
+}
+
+/** One check of the `doctor` answer (src/cli.ts doctor --json). */
+struct DoctorCheck: Decodable, Equatable {
+  let ok: Bool
+  let label: String
+  var detail: String? = nil
+  var fix: String? = nil
+  var blocking: Bool? = nil
+  var info: Bool? = nil
+}
+
+/** A question from the safety gate waiting for the owner's click (`confirm` push). Title and body are shown verbatim. */
+struct PendingConfirm: Identifiable, Equatable {
+  let id: String
+  let title: String
+  let body: String
+}
+
+/** The `usage` answer. context is nil when the listener doesn't know it (that bar is hidden). */
+struct AppUsage: Equatable {
+  var context: UsageBar?
+  var memory: UsageBar?
 }
 
 /** One row of `jobs.list` / the `job` answer to `jobs.stop` (src/app/jobs-status.ts). Summary and task are the job's own words: shown verbatim. */
@@ -241,8 +377,10 @@ struct MemoryItem: Decodable, Identifiable, Equatable {
   var source: String = ""
   var createdAt: String = ""
   var updatedAt: String = ""
+  /** Set when the owner kept a proposal: where it came from. */
+  var origin: String? = nil
 
-  enum CodingKeys: String, CodingKey { case id, text, source, createdAt, updatedAt }
+  enum CodingKeys: String, CodingKey { case id, text, source, createdAt, updatedAt, origin }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -251,6 +389,7 @@ struct MemoryItem: Decodable, Identifiable, Equatable {
     source = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? ""
     createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
     updatedAt = (try? c.decodeIfPresent(String.self, forKey: .updatedAt)) ?? ""
+    origin = (try? c.decodeIfPresent(String.self, forKey: .origin)) ?? nil
   }
 }
 
@@ -345,6 +484,8 @@ struct AppMessage: Decodable {
   var outcome: String? = nil
   var tools: [String]? = nil
   var ms: Double? = nil
+  /** chat.done: what Stephen did (src/app/steps.ts); absent from an older listener. */
+  var steps: [ChatStep]? = nil
   // error
   var message: String? = nil
   // history / memory / audit / settings
@@ -359,14 +500,35 @@ struct AppMessage: Decodable {
   // jobs / job
   var jobs: [JobRow]? = nil
   var job: JobRow? = nil
+  // phone (on, lines) / zen (ok, message) / doctor (checks, problems, blocking)
+  var on: Bool? = nil
+  var lines: [String]? = nil
+  var ok: Bool? = nil
+  var checks: [DoctorCheck]? = nil
+  var problems: Int? = nil
+  var blocking: Int? = nil
+  // usage (context is nil when unknown)
+  var context: UsageBar? = nil
+  var memory: UsageBar? = nil
+  // personal (the whole answer)
+  var personal: PersonalSummary? = nil
+  // Memory page: suggestions / graph
+  var suggestions: [MemoryProposal]? = nil
+  var nodes: [GraphNode]? = nil
+  var links: [GraphLink]? = nil
   // state / heard pushes
   var state: String? = nil
   var text: String? = nil
   var source: String? = nil
+  // confirm / confirm.end pushes
+  var confirmId: String? = nil
+  var title: String? = nil
+  var body: String? = nil
 
   enum CodingKeys: String, CodingKey {
-    case id, type, version, listening, model, entryId, reply, outcome, tools, ms, message, entries, items, config,
-      configPath, state, text, source, accounts, note, jobs, job
+    case id, type, version, listening, model, entryId, reply, outcome, tools, ms, steps, message, entries, items, config,
+      configPath, state, text, source, accounts, note, jobs, job, on, lines, ok, checks, problems, blocking, context, memory,
+      confirmId, title, body, suggestions, nodes, links
   }
 
   init(localError: String, id: String?) {
@@ -387,6 +549,7 @@ struct AppMessage: Decodable {
     outcome = try? c.decodeIfPresent(String.self, forKey: .outcome)
     tools = try? c.decodeIfPresent([String].self, forKey: .tools)
     ms = try? c.decodeIfPresent(Double.self, forKey: .ms)
+    steps = try? c.decodeIfPresent([ChatStep].self, forKey: .steps)
     message = try? c.decodeIfPresent(String.self, forKey: .message)
     // `entries` holds history entries or audit entries depending on `type`.
     if type == "history" {
@@ -401,10 +564,92 @@ struct AppMessage: Decodable {
     note = try? c.decodeIfPresent(String.self, forKey: .note)
     jobs = try? c.decodeIfPresent([JobRow].self, forKey: .jobs)
     job = try? c.decodeIfPresent(JobRow.self, forKey: .job)
+    on = try? c.decodeIfPresent(Bool.self, forKey: .on)
+    lines = try? c.decodeIfPresent([String].self, forKey: .lines)
+    ok = try? c.decodeIfPresent(Bool.self, forKey: .ok)
+    checks = try? c.decodeIfPresent([DoctorCheck].self, forKey: .checks)
+    problems = try? c.decodeIfPresent(Int.self, forKey: .problems)
+    blocking = try? c.decodeIfPresent(Int.self, forKey: .blocking)
+    if type == "memory.usage" { memory = try? c.decodeIfPresent(UsageBar.self, forKey: .memory) }
+    suggestions = try? c.decodeIfPresent([MemoryProposal].self, forKey: .suggestions)
+    nodes = try? c.decodeIfPresent([GraphNode].self, forKey: .nodes)
+    links = try? c.decodeIfPresent([GraphLink].self, forKey: .links)
+    if type == "usage" {
+      context = try? c.decodeIfPresent(UsageBar.self, forKey: .context)
+      memory = try? c.decodeIfPresent(UsageBar.self, forKey: .memory)
+    }
+    if type == "personal" { personal = try? PersonalSummary(from: decoder) }
     state = try? c.decodeIfPresent(String.self, forKey: .state)
     text = try? c.decodeIfPresent(String.self, forKey: .text)
     source = try? c.decodeIfPresent(String.self, forKey: .source)
+    confirmId = try? c.decodeIfPresent(String.self, forKey: .confirmId)
+    title = try? c.decodeIfPresent(String.self, forKey: .title)
+    body = try? c.decodeIfPresent(String.self, forKey: .body)
   }
+}
+
+/** One value of settings.set: an enum word or a switch. The listener refuses anything else. */
+enum TalkValue: Encodable, Equatable {
+  case word(String)
+  case on(Bool)
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.singleValueContainer()
+    switch self {
+    case let .word(s): try c.encode(s)
+    case let .on(b): try c.encode(b)
+    }
+  }
+}
+
+/** settings.get config.talk (How Stephen talks): the saved values and the preview sentences (length, then tone). */
+struct TalkSettings: Equatable {
+  var length = "brief"
+  var tone = "casual"
+  var speak = true
+  var explain = false
+  var voice = "elevenlabs"
+  var samples: [String: [String: String]] = [:]
+
+  static var blank: TalkSettings { return TalkSettings() }
+  private init() {}
+
+  /** nil when the listener is older and sends no talk section. */
+  init?(_ config: AppJSON?) {
+    guard case .object(let c)? = config, case .object(let t)? = c["talk"] else { return nil }
+    if case .string(let v)? = t["length"] { length = v }
+    if case .string(let v)? = t["tone"] { tone = v }
+    if case .bool(let v)? = t["speak"] { speak = v }
+    if case .bool(let v)? = t["explain"] { explain = v }
+    if case .string(let v)? = t["voice"] { voice = v }
+    if case .object(let s)? = t["samples"] {
+      for (l, row) in s { if case .object(let r) = row { samples[l] = r.compactMapValues { if case .string(let x) = $0 { return x } else { return nil } } } }
+    }
+  }
+
+  /** The preview line: the listener's sample for this length and tone (computed here, no request). */
+  var preview: String {
+    let base = samples[length]?[tone] ?? "Bet, playing lofi beats."
+    return explain ? base + " First I opened a tab, then I started it." : base
+  }
+
+  /** What differs from `old`, as a settings.set payload (empty when nothing changed). */
+  func changes(from old: TalkSettings) -> [String: TalkValue] {
+    var v: [String: TalkValue] = [:]
+    if length != old.length { v["length"] = .word(length) }
+    if tone != old.tone { v["tone"] = .word(tone) }
+    if speak != old.speak { v["speak"] = .on(speak) }
+    if explain != old.explain { v["explain"] = .on(explain) }
+    if voice != old.voice { v["voice"] = .word(voice) }
+    return v
+  }
+}
+
+/** settings.get config → voice.aboutMe.name (the owner's own config), or "". */
+func aboutMeName(_ config: AppJSON?) -> String {
+  guard case .object(let c)? = config, case .object(let v)? = c["voice"], case .object(let a)? = v["aboutMe"],
+    case .string(let n)? = a["name"]
+  else { return "" }
+  return n
 }
 
 // ───────────────────────────── transport ─────────────────────────────
@@ -483,47 +728,7 @@ final class AppConnection {
     return true
   }
 
-  private func connectSocket() -> (fd: Int32, error: String) {
-    var addr = sockaddr_un()
-    addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-    addr.sun_family = sa_family_t(AF_UNIX)
-    let pathBytes = Array(path.utf8)
-    let capacity = MemoryLayout.size(ofValue: addr.sun_path)
-    guard !pathBytes.isEmpty, pathBytes.count < capacity else {
-      return (-1, "socket path too long (\(pathBytes.count) bytes): \(path)")
-    }
-    withUnsafeMutableBytes(of: &addr.sun_path) { raw in
-      for (k, c) in pathBytes.enumerated() { raw[k] = c }
-      raw[pathBytes.count] = 0
-    }
-
-    let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
-    if fd < 0 { return (-1, "socket(): \(String(cString: strerror(errno)))") }
-    var one: Int32 = 1
-    _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-    // A server that stops reading must not block the write queue forever.
-    var tv = timeval(tv_sec: 5, tv_usec: 0)
-    _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-
-    let len = socklen_t(MemoryLayout<sockaddr_un>.size)
-    let rc = withUnsafePointer(to: &addr) { p -> Int32 in
-      p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa -> Int32 in Darwin.connect(fd, sa, len) }
-    }
-    if rc != 0 {
-      let code = errno
-      _ = Darwin.close(fd)
-      if code == ENOENT || code == ECONNREFUSED { return (-1, "nothing is listening on \(path)") }
-      return (-1, "connect \(path): \(String(cString: strerror(code)))")
-    }
-    // Only talk to a server run by this same user.
-    var uid: uid_t = 0
-    var gid: gid_t = 0
-    if getpeereid(fd, &uid, &gid) != 0 || uid != getuid() {
-      _ = Darwin.close(fd)
-      return (-1, "\(path) belongs to another user; not using it")
-    }
-    return (fd, "")
-  }
+  private func connectSocket() -> (fd: Int32, error: String) { return connectAppSocket(path) }
 
   private func readLoop(_ fd: Int32) {
     var framer = LineFramer(maxBytes: APP_MAX_LINE_BYTES)
@@ -560,6 +765,49 @@ final class AppConnection {
   }
 }
 
+/** Connect to a same-user Unix socket (app.sock). fd < 0 with a reason on failure. */
+func connectAppSocket(_ path: String) -> (fd: Int32, error: String) {
+  var addr = sockaddr_un()
+  addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+  addr.sun_family = sa_family_t(AF_UNIX)
+  let pathBytes = Array(path.utf8)
+  let capacity = MemoryLayout.size(ofValue: addr.sun_path)
+  guard !pathBytes.isEmpty, pathBytes.count < capacity else {
+    return (-1, "socket path too long (\(pathBytes.count) bytes): \(path)")
+  }
+  withUnsafeMutableBytes(of: &addr.sun_path) { raw in
+    for (k, c) in pathBytes.enumerated() { raw[k] = c }
+    raw[pathBytes.count] = 0
+  }
+
+  let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+  if fd < 0 { return (-1, "socket(): \(String(cString: strerror(errno)))") }
+  var one: Int32 = 1
+  _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+  // A server that stops reading must not block the write queue forever.
+  var tv = timeval(tv_sec: 5, tv_usec: 0)
+  _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+  let len = socklen_t(MemoryLayout<sockaddr_un>.size)
+  let rc = withUnsafePointer(to: &addr) { p -> Int32 in
+    p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa -> Int32 in Darwin.connect(fd, sa, len) }
+  }
+  if rc != 0 {
+    let code = errno
+    _ = Darwin.close(fd)
+    if code == ENOENT || code == ECONNREFUSED { return (-1, "nothing is listening on \(path)") }
+    return (-1, "connect \(path): \(String(cString: strerror(code)))")
+  }
+  // Only talk to a server run by this same user.
+  var uid: uid_t = 0
+  var gid: gid_t = 0
+  if getpeereid(fd, &uid, &gid) != 0 || uid != getuid() {
+    _ = Darwin.close(fd)
+    return (-1, "\(path) belongs to another user; not using it")
+  }
+  return (fd, "")
+}
+
 // ───────────────────────────── window model ─────────────────────────────
 
 enum AppConnectionState: Equatable {
@@ -582,8 +830,17 @@ struct ChatBubble: Identifiable, Equatable {
   let id: Int
   let kind: Kind
   let text: String
-  /** Small line under the text: tool names, or where a command came from. */
+  /** Small line: time and (older listener) tool names, or where a command came from. */
   let detail: String
+  /** What Stephen did for this reply, oldest first. */
+  var steps: [ChatStep] = []
+}
+
+/** One line of the action chain. `text` can hold page text (a button label): shown with Text(verbatim:). */
+struct ChatStep: Decodable, Equatable {
+  let text: String
+  /** ok, refused or failed. */
+  let status: String
 }
 
 struct HistoryDay: Identifiable {
@@ -607,6 +864,8 @@ final class AppModel: ObservableObject {
   @Published private(set) var state = "idle"
 
   @Published private(set) var chat: [ChatBubble] = []
+  /** Bubbles with an id at or below this belong to an earlier chat (⌘N). The Ask box and Home both show `thread`. */
+  @Published private(set) var chatSince = 0
   @Published private(set) var awaitingReplies: Set<String> = []
 
   @Published private(set) var memory: [MemoryItem] = []
@@ -619,6 +878,12 @@ final class AppModel: ObservableObject {
   @Published private(set) var settingsText = ""
   @Published private(set) var configPath: String? = nil
   @Published private(set) var settingsNotice: String? = nil
+  /** voice.aboutMe.name from settings.get, for Home's greeting; empty when not set. */
+  @Published private(set) var ownerName = ""
+  /** settings.get config.talk; nil until an answer arrives (or the listener is older). */
+  @Published private(set) var talk: TalkSettings? = nil
+  /** The raw config (voice.wakeWord and so on) for the read-only Settings rows. */
+  @Published private(set) var configJSON: AppJSON? = nil
 
   @Published private(set) var audit: [AuditEntry] = []
   @Published private(set) var auditNotice: String? = nil
@@ -629,13 +894,29 @@ final class AppModel: ObservableObject {
   @Published private(set) var jobs: [JobRow] = []
   @Published private(set) var jobsNotice: String? = nil
 
+  /** Last `usage` answer; nil until one arrives (and again when the listener doesn't know the request). */
+  @Published private(set) var usage: AppUsage? = nil
+  /** personal.summary for the Personal page; personalNotice says why it is missing. */
+  @Published private(set) var personal: PersonalSummary? = nil
+  @Published private(set) var personalNotice: String? = nil
+  /** Memory page (section 7a): the graph, proposals waiting for Keep/Skip, the memory bar, and why one is missing. */
+  @Published private(set) var graphNodes: [GraphNode] = []
+  @Published private(set) var graphLinks: [GraphLink] = []
+  @Published private(set) var suggestions: [MemoryProposal] = []
+  @Published private(set) var memoryUsage: UsageBar? = nil
+  @Published private(set) var memoryPageNotice: String? = nil
+
+  /** The gate's questions waiting for a click, oldest first. Cleared when the connection drops (the gate falls back). */
+  @Published private(set) var confirms: [PendingConfirm] = []
+
   let socketPath: String
   private let log: (String) -> Void
   private let link: AppConnection
   private var pending: [String: (AppMessage) -> Void] = [:]
   private var nextRequest = 1
   private var nextBubble = 1
-  private var windowOpen = false
+  /** Who wants the connection ("window", "askbox"); it closes when nobody does. */
+  private var users: Set<String> = []
   private var retryScheduled = false
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
@@ -666,14 +947,14 @@ final class AppModel: ObservableObject {
 
   // MARK: window lifecycle
 
-  func windowOpened() {
-    windowOpen = true
+  func opened(_ who: String) {
+    users.insert(who)
     if connection != .online { connect() }
   }
 
-  func windowClosed() {
-    windowOpen = false
-    link.close()
+  func closed(_ who: String) {
+    users.remove(who)
+    if users.isEmpty { link.close() }
   }
 
   func retry() {
@@ -681,17 +962,6 @@ final class AppModel: ObservableObject {
   }
 
   var isWorking: Bool { return state == "working" || !awaitingReplies.isEmpty }
-
-  var headerText: String {
-    switch connection {
-    case .connecting: return "Connecting…"
-    case .offline: return "Not connected"
-    case .online:
-      var s = "Idle"
-      if !state.isEmpty { s = state.prefix(1).uppercased() + String(state.dropFirst()) }
-      return listening ? s : s + " (microphone off)"
-    }
-  }
 
   private func connect() {
     if connection == .connecting { return }
@@ -731,18 +1001,19 @@ final class AppModel: ObservableObject {
     let waiting = pending
     pending = [:]
     awaitingReplies = []
+    confirms = []
     for (id, handler) in waiting { handler(AppMessage(localError: "not connected", id: id)) }
     if connection == .online { log("app.sock: disconnected") }
-    goOffline(windowOpen ? "the connection to stephen listen closed" : "window closed")
+    goOffline(users.isEmpty ? "window closed" : "the connection to stephen listen closed")
   }
 
   private func scheduleRetry() {
-    guard windowOpen, !retryScheduled else { return }
+    guard !users.isEmpty, !retryScheduled else { return }
     retryScheduled = true
     DispatchQueue.main.asyncAfter(deadline: .now() + APP_RETRY_SECONDS) { [weak self] in
       guard let self = self else { return }
       self.retryScheduled = false
-      if self.windowOpen && self.connection == .offline { self.connect() }
+      if !self.users.isEmpty && self.connection == .offline { self.connect() }
     }
   }
 
@@ -794,6 +1065,12 @@ final class AppModel: ObservableObject {
       }
     case "chat.done":
       chatDone(msg)
+    case "confirm":
+      if let id = msg.confirmId, !confirms.contains(where: { $0.id == id }) {
+        confirms.append(PendingConfirm(id: id, title: msg.title ?? "", body: msg.body ?? ""))
+      }
+    case "confirm.end":
+      confirms.removeAll { $0.id == msg.confirmId }
     default:
       break  // unknown types are ignored (protocol v1)
     }
@@ -824,6 +1101,19 @@ final class AppModel: ObservableObject {
     return true
   }
 
+  /** The current chat. ponytail: held in memory for as long as the helper runs; older chats are in Conversations (history.list). */
+  var thread: [ChatBubble] { return chat.filter { $0.id > chatSince } }
+
+  /** What the chat is called, from your first message (one line, 40 characters), like other chat apps; "New chat" when empty. */
+  var threadTitle: String {
+    guard let first = thread.first(where: { $0.kind == .said })?.text else { return "New chat" }
+    let line = first.split(whereSeparator: { $0.isNewline }).first.map(String.init) ?? first
+    return line.count > 40 ? String(line.prefix(40)).trimmingCharacters(in: .whitespaces) + "…" : line
+  }
+
+  /** ⌘N: start a new chat. Nothing is deleted; the old messages stay in Conversations. */
+  func newChat() { chatSince = chat.last?.id ?? 0 }
+
   func stopChat() {
     request(AppRequest.chatStop(newId())) { [weak self] msg in
       if msg.type == "error" { self?.addBubble(.problem, msg.message ?? "could not stop", detail: "") }
@@ -836,15 +1126,17 @@ final class AppModel: ObservableObject {
     var reply = msg.reply ?? ""
     if reply.isEmpty && outcome == "cancelled" { reply = "Stopped." }
     if reply.isEmpty { reply = "(no reply)" }
+    let steps = msg.steps ?? []
     var detailParts: [String] = []
     let tools = msg.tools ?? []
-    if !tools.isEmpty { detailParts.append(tools.joined(separator: ", ")) }
+    // The chain names the steps; an older listener without steps still gets the tool names.
+    if steps.isEmpty && !tools.isEmpty { detailParts.append(tools.joined(separator: ", ")) }
     if let ms = msg.ms, ms > 0 { detailParts.append(String(format: "%.1f s", ms / 1000)) }
-    addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "))
+    addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "), steps: steps)
   }
 
-  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String) {
-    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail))
+  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = []) {
+    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps))
     nextBubble += 1
     if chat.count > APP_MAX_BUBBLES { chat.removeFirst(chat.count - APP_MAX_BUBBLES) }
   }
@@ -852,7 +1144,6 @@ final class AppModel: ObservableObject {
   // MARK: memory
 
   func refreshMemory() { memoryRequest(AppRequest.memoryList(newId())) }
-  func addMemory(_ text: String) { memoryRequest(AppRequest.memoryAdd(newId(), text: text)) }
   func updateMemory(_ memId: String, text: String) {
     memoryRequest(AppRequest.memoryUpdate(newId(), memId: memId, text: text))
   }
@@ -874,8 +1165,84 @@ final class AppModel: ObservableObject {
 
   func memoryCaption(_ item: MemoryItem) -> String {
     let when = dateText(item.updatedAt.isEmpty ? item.createdAt : item.updatedAt)
+    if let o = item.origin { return [originLabel(o), "you kept it", when].filter { !$0.isEmpty }.joined(separator: " · ") }
     let how = sourceLabel(item.source)
     return [how, when].filter { !$0.isEmpty }.joined(separator: " · ")
+  }
+
+  // MARK: memory page (section 7a)
+
+  /** Graph, proposals and the memory bar together. */
+  func refreshMemoryPage() {
+    request(AppRequest.memoryGraph(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "graph" {
+        self.graphNodes = msg.nodes ?? []
+        self.graphLinks = msg.links ?? []
+        self.memoryPageNotice = nil
+      } else {
+        self.memoryPageNotice = msg.message ?? "Couldn't read memory."
+      }
+    }
+    refreshSuggestions()
+    request(AppRequest.memoryUsage(newId())) { [weak self] msg in
+      self?.memoryUsage = msg.type == "memory.usage" ? msg.memory : nil
+    }
+    refreshMemory()
+  }
+
+  /** Proposals waiting for Keep or Skip (Personal shows the "N new" count). */
+  func refreshSuggestions() {
+    request(AppRequest.memorySuggestions(newId())) { [weak self] msg in self?.takeSuggestions(msg) }
+  }
+
+  /** Tell Stephen: the owner's words become a proposal (New), saved only after Keep. */
+  func proposeMemory(_ text: String) {
+    request(AppRequest.memoryPropose(newId(), text: text)) { [weak self] msg in
+      self?.takeSuggestions(msg)
+      self?.refreshMemoryPage()
+    }
+  }
+
+  /** The owner's Keep (optionally with their edit): the only way a proposal becomes memory. */
+  func keepProposal(_ propId: String, text: String? = nil) {
+    request(AppRequest.memoryKeep(newId(), propId: propId, text: text)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "memory" {
+        self.memory = msg.items ?? []
+        self.memoryPageNotice = nil
+      } else {
+        self.memoryPageNotice = msg.message ?? "error"
+      }
+      self.refreshMemoryPage()
+    }
+  }
+
+  func skipProposal(_ propId: String) {
+    request(AppRequest.memorySkip(newId(), propId: propId)) { [weak self] msg in
+      self?.takeSuggestions(msg)
+      self?.refreshMemoryPage()
+    }
+  }
+
+  private func takeSuggestions(_ msg: AppMessage) {
+    if msg.type == "suggestions" {
+      suggestions = msg.suggestions ?? []
+    } else {
+      memoryPageNotice = msg.message ?? "error"
+    }
+  }
+
+  /** Where a proposal or a kept item came from, in words. */
+  func originLabel(_ origin: String) -> String {
+    switch origin {
+    case "you": return "You told Stephen"
+    case "chat": return "From your chats"
+    case "email": return "From email"
+    case "canvas": return "From Canvas"
+    case "web": return "From a web page"
+    default: return "From \(origin)"
+    }
   }
 
   // MARK: history
@@ -950,10 +1317,42 @@ final class AppModel: ObservableObject {
       guard let self = self else { return }
       if msg.type == "settings" {
         self.settingsText = (msg.config ?? .object([:])).renderLines().joined(separator: "\n")
+        self.ownerName = aboutMeName(msg.config)
+        self.talk = TalkSettings(msg.config)
+        self.configJSON = msg.config
         self.configPath = msg.configPath
         self.settingsNotice = nil
       } else {
         self.settingsNotice = msg.message ?? "error"
+      }
+    }
+  }
+
+  /** How Stephen talks > Save: only what changed; `done(nil)` on success, else the listener's words. */
+  func saveTalk(_ values: [String: TalkValue], done: @escaping (String?) -> Void) {
+    if values.isEmpty { return done(nil) }
+    request(AppRequest.settingsSet(newId(), values: values)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "settings" {
+        self.talk = TalkSettings(msg.config)
+        self.configJSON = msg.config
+        done(nil)
+      } else {
+        done(msg.message ?? "error")
+      }
+    }
+  }
+
+  /** Settings > Model > Save: only what changed; `done(nil)` on success, else the listener's words. */
+  func saveModel(model: String?, effort: String?, done: @escaping (String?) -> Void) {
+    if model == nil && effort == nil { return done(nil) }
+    request(AppRequest.modelSet(newId(), model: model, effort: effort)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "settings" {
+        self.configJSON = msg.config
+        done(nil)
+      } else {
+        done(msg.message ?? "error")
       }
     }
   }
@@ -991,6 +1390,33 @@ final class AppModel: ObservableObject {
       } else {
         self.jobsNotice = msg.message ?? "error"
       }
+    }
+  }
+
+  /** Allow / Deny for one question. It leaves the box at once; confirm.end (or an error: already gone) follows. */
+  func answerConfirm(_ confirmId: String, approve: Bool) {
+    confirms.removeAll { $0.id == confirmId }
+    request(AppRequest.confirmAnswer(newId(), confirmId: confirmId, approve: approve)) { [weak self] msg in
+      if msg.type == "error" { self?.log("app.sock: confirm answer refused: \(msg.message ?? "error")") }
+    }
+  }
+
+  func refreshPersonal() {
+    request(AppRequest.personalSummary(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "personal", let p = msg.personal {
+        self.personal = p
+        self.personalNotice = nil
+      } else {
+        self.personalNotice = msg.message ?? "Couldn't read the Personal summary."
+      }
+    }
+  }
+
+  func refreshUsage() {
+    request(AppRequest.usageGet(newId())) { [weak self] msg in
+      guard let self = self else { return }
+      self.usage = msg.type == "usage" ? AppUsage(context: msg.context, memory: msg.memory) : nil
     }
   }
 
@@ -1034,5 +1460,330 @@ final class AppModel: ObservableObject {
     case "phone": return "Phone"
     default: return source
     }
+  }
+}
+
+// ───────────────────────────── control: listener, phone, Zen, doctor (ROADMAP P2) ─────────────────────────────
+
+/** app.sock requests that run tools (the phone lock-down check starts Claude Code) get this long. */
+let APP_CONTROL_TIMEOUT_SECONDS = 150.0
+/** listen.log is moved to listen.log.1 when a start finds it bigger than this. */
+let LISTEN_LOG_MAX_BYTES: UInt64 = 2_000_000
+/** Log lines kept for the window. */
+let LISTEN_LOG_MAX_LINES = 500
+
+/** The pid of the process serving a same-user Unix socket (LOCAL_PEERPID), or nil when nothing answers. */
+func appSocketPeerPid(_ path: String) -> pid_t? {
+  let r = connectAppSocket(path)
+  guard r.fd >= 0 else { return nil }
+  defer { _ = Darwin.close(r.fd) }
+  var pid: pid_t = 0
+  var len = socklen_t(MemoryLayout<pid_t>.size)
+  guard getsockopt(r.fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len) == 0, pid > 0 else { return nil }
+  return pid
+}
+
+/** A pid's argv (KERN_PROCARGS2), or [] when gone or not readable. */
+func processArgv(_ pid: pid_t) -> [String] {
+  var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+  var size = 0
+  guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+  var buf = [UInt8](repeating: 0, count: size)
+  guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+  let argc = Int(buf.withUnsafeBytes { $0.load(as: Int32.self) })
+  var i = MemoryLayout<Int32>.size
+  while i < size && buf[i] != 0 { i += 1 }  // the exec path
+  while i < size && buf[i] == 0 { i += 1 }  // its padding
+  var args: [String] = []
+  while args.count < argc && i < size {
+    let start = i
+    while i < size && buf[i] != 0 { i += 1 }
+    args.append(String(decoding: buf[start..<i], as: UTF8.self))
+    i += 1
+  }
+  return args
+}
+
+/** Is this pid still `<node> <…/dist/cli.js> listen` (the process Stop meant to signal)? */
+func isStephenListen(_ pid: pid_t) -> Bool {
+  let a = processArgv(pid)
+  return a.count >= 3 && a[1].hasSuffix("/dist/cli.js") && a[2] == "listen"
+}
+
+/**
+ * One request on its own short connection to app.sock (works with the window closed): send, wait for the answer with
+ * the same id, close. `done` runs on the main queue with the answer or a local error.
+ */
+func appRequestOnce(
+  _ path: String, _ req: AppRequest, timeout: Double = APP_CONTROL_TIMEOUT_SECONDS,
+  _ done: @escaping (AppMessage) -> Void
+) {
+  DispatchQueue.global(qos: .userInitiated).async {
+    let answer = { (m: AppMessage) in DispatchQueue.main.async { done(m) } }
+    guard let data = try? JSONEncoder().encode(req) else {
+      return answer(AppMessage(localError: "could not encode the request", id: req.id))
+    }
+    let r = connectAppSocket(path)
+    guard r.fd >= 0 else { return answer(AppMessage(localError: "Stephen isn't running (\(r.error))", id: req.id)) }
+    defer { _ = Darwin.close(r.fd) }
+    var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
+    _ = setsockopt(r.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    let out = Array(data) + [0x0A]
+    var off = 0
+    while off < out.count {
+      let n = out.withUnsafeBytes { Darwin.write(r.fd, $0.baseAddress! + off, out.count - off) }
+      if n <= 0 { return answer(AppMessage(localError: "could not send the request", id: req.id)) }
+      off += n
+    }
+    var framer = LineFramer(maxBytes: APP_MAX_LINE_BYTES)
+    var buf = [UInt8](repeating: 0, count: 65536)
+    while true {
+      let n = buf.withUnsafeMutableBytes { Darwin.read(r.fd, $0.baseAddress!, $0.count) }
+      if n < 0 && errno == EINTR { continue }
+      if n <= 0 { return answer(AppMessage(localError: n < 0 ? "timed out" : "Stephen closed the connection", id: req.id)) }
+      for line in framer.push(buf[0..<n]) {
+        if let m = try? JSONDecoder().decode(AppMessage.self, from: Data(line.utf8)), m.id == req.id { return answer(m) }
+      }
+    }
+  }
+}
+
+/** Plain text for a `phone` answer (what `stephen phone on|off` printed) or an error. */
+func phoneText(_ msg: AppMessage) -> String {
+  return msg.type == "phone" ? (msg.lines ?? []).joined(separator: "\n") : msg.message ?? "error"
+}
+
+/** nil when Zen for Stephen is ready, else why not (the `zen` answer's message or an error). */
+func zenProblem(_ msg: AppMessage) -> String? {
+  return msg.type == "zen" && msg.ok == true ? nil : msg.message ?? "error"
+}
+
+/** Plain text for a `doctor` answer, like `stephen doctor` prints it. */
+func doctorText(_ msg: AppMessage) -> String {
+  guard msg.type == "doctor" else { return msg.message ?? "error" }
+  var out: [String] = []
+  for c in msg.checks ?? [] {
+    let mark = c.info == true ? "•" : c.ok ? "✓" : "✗"
+    out.append("\(mark) \(c.label)" + (c.detail.map { ": \($0)" } ?? ""))
+    if !c.ok, let fix = c.fix { out.append("    fix: \(fix)") }
+  }
+  let problems = msg.problems ?? 0
+  out.append(problems == 0 ? "All good." : "\(problems) problem\(problems == 1 ? "" : "s") (\(msg.blocking ?? 0) blocking).")
+  return out.joined(separator: "\n")
+}
+
+enum ListenerStatus: Equatable {
+  case stopped
+  /** Started by this helper; app.sock isn't up yet. */
+  case starting
+  /** app.sock answers. `fromApp`: the listener this helper started (only that one can be stopped from the app). */
+  case running(fromApp: Bool)
+}
+
+/**
+ * Starts and stops `stephen listen` (ROADMAP P2) and sends the control requests. Main thread only; owned by main.swift,
+ * not by the window, so a listener started here keeps running when the window closes (and even when the helper quits).
+ *
+ *  - One owner: start does nothing while app.sock answers (a listener runs, from here or from Terminal) or while our
+ *    child is still starting. The child's pid goes to <home>/run/listen.pid; app.sock's peer pid (LOCAL_PEERPID) equal
+ *    to it means "ours", so a restarted helper still knows its listener. Stop refuses a Terminal listener.
+ *    listen.pid is removed when our child exits, or when nothing serves app.sock and we have no child (after a reboot).
+ *  - How to start it: <home>/run/launch.json (node, cli.js, PATH), written only by `stephen install-helper`
+ *    (src/app/control.ts), so a listener run from another checkout never changes what Start runs. It must be ours and
+ *    not group/world-writable; missing or unsafe, Start says to run `stephen install-helper`.
+ *  - Output: <home>/logs/listen.log (0600, rotated at 2 MB); the window tails it with watchLog.
+ *  - Stop: SIGINT (idle: "Bye."; busy: cancels the command), SIGINT again after 3 s, SIGKILL after 10 s. The delayed
+ *    signals go only if that pid's command line is still `<node> <…/dist/cli.js> listen` (REVIEW-9 R9-8: a pid
+ *    reused in between is left alone).
+ */
+final class StephenControl: ObservableObject {
+  @Published private(set) var listener: ListenerStatus = .stopped
+  /** Last lines of listen.log while watchLog(true). */
+  @Published private(set) var logLines: [String] = []
+
+  let home: String
+  private let log: (String) -> Void
+  private var child: Process? = nil
+  private var logTimer: DispatchSourceTimer? = nil
+  private var logOffset: UInt64 = 0
+  private var logPartial = ""
+  private var pollsLeft = 0
+
+  init(home: String, log: @escaping (String) -> Void) {
+    self.home = home
+    self.log = log
+  }
+
+  var appSocketPath: String { return home + "/run/app.sock" }
+  var launchInfoPath: String { return home + "/run/launch.json" }
+  var pidPath: String { return home + "/run/listen.pid" }
+  var logPath: String { return home + "/logs/listen.log" }
+
+  private func recordedPid() -> pid_t? {
+    guard let s = try? String(contentsOfFile: pidPath, encoding: .utf8) else { return nil }
+    return pid_t(s.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  /** Look again: is app.sock answering, and is it our listener? */
+  func refresh() {
+    if let peer = appSocketPeerPid(appSocketPath) {
+      listener = .running(fromApp: peer == recordedPid() || peer == child?.processIdentifier)
+    } else if child?.isRunning == true {
+      listener = .starting
+    } else {
+      listener = .stopped
+      if child == nil { try? FileManager.default.removeItem(atPath: pidPath) }  // stale (helper restarted, reboot)
+    }
+  }
+
+  /** Refresh every second for a while (after start / stop). */
+  private func poll(seconds: Int) {
+    let running = pollsLeft > 0
+    pollsLeft = seconds
+    if running { return }
+    func tick() {
+      refresh()
+      pollsLeft -= 1
+      if pollsLeft > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { tick() } }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { tick() }
+  }
+
+  /** How to run `stephen listen`, or why not. */
+  func readLaunchInfo() -> (node: String, cli: String, path: String)? {
+    var st = stat()
+    guard lstat(launchInfoPath, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG, st.st_uid == getuid(),
+      st.st_mode & 0o022 == 0,
+      let data = FileManager.default.contents(atPath: launchInfoPath),
+      let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let node = j["node"] as? String, let cli = j["cli"] as? String,
+      node.hasPrefix("/"), cli.hasPrefix("/"),
+      FileManager.default.isExecutableFile(atPath: node), FileManager.default.fileExists(atPath: cli)
+    else { return nil }
+    return (node, cli, j["path"] as? String ?? "")
+  }
+
+  /** Start `stephen listen` in the background. `done(nil)` when started (or already starting), else why not. */
+  func start(_ done: (String?) -> Void) {
+    refresh()
+    if case .running = listener { return done("Stephen is already running.") }
+    if listener == .starting { return done(nil) }
+    guard let info = readLaunchInfo() else {
+      return done("Stephen Helper doesn't know how to start Stephen: \(launchInfoPath) is missing or unsafe. Run `stephen install-helper` once in Terminal.")
+    }
+    try? makePrivateDir(home + "/logs")
+    let fm = FileManager.default
+    if let size = (try? fm.attributesOfItem(atPath: logPath))?[.size] as? NSNumber, size.uint64Value > LISTEN_LOG_MAX_BYTES {
+      try? fm.removeItem(atPath: logPath + ".1")
+      try? fm.moveItem(atPath: logPath, toPath: logPath + ".1")
+    }
+    let fd = Darwin.open(logPath, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0o600)
+    guard fd >= 0 else { return done("Couldn't open \(logPath): \(String(cString: strerror(errno)))") }
+    let out = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: info.node)
+    p.arguments = [info.cli, "listen"]
+    var env = ProcessInfo.processInfo.environment
+    if !info.path.isEmpty { env["PATH"] = info.path }
+    env["STEPHEN_HOME"] = home
+    p.environment = env
+    p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+    p.standardInput = FileHandle.nullDevice
+    p.standardOutput = out
+    p.standardError = out
+    p.terminationHandler = { [weak self] proc in
+      let code = proc.terminationStatus
+      DispatchQueue.main.async {
+        if let path = self?.pidPath { try? FileManager.default.removeItem(atPath: path) }
+        self?.log("stephen listen exited (\(code))")
+        self?.refresh()
+      }
+    }
+    do {
+      try p.run()
+    } catch {
+      return done("Couldn't start stephen listen: \(error.localizedDescription)")
+    }
+    try? out.close()  // the child has its own copy
+    child = p
+    _ = fm.createFile(atPath: pidPath, contents: Data("\(p.processIdentifier)\n".utf8), attributes: [.posixPermissions: 0o600])
+    log("started stephen listen, pid \(p.processIdentifier)")
+    listener = .starting
+    poll(seconds: 60)
+    done(nil)
+  }
+
+  /** Stop the listener this helper started. `done(nil)` when asked to stop, else why not. */
+  func stop(_ done: (String?) -> Void) {
+    var target: pid_t? = nil
+    if let peer = appSocketPeerPid(appSocketPath) {
+      guard peer == recordedPid() || peer == child?.processIdentifier else {
+        return done("This Stephen was started in Terminal. Stop it there with Ctrl-C.")
+      }
+      target = peer
+    } else if let c = child, c.isRunning {
+      target = c.processIdentifier
+    }
+    guard let pid = target else {
+      refresh()
+      return done("Stephen isn't running.")
+    }
+    log("stopping stephen listen, pid \(pid)")
+    kill(pid, SIGINT)
+    let alive = { isStephenListen(pid) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if alive() { kill(pid, SIGINT) } }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+      if alive() {
+        self?.log("stephen listen didn't stop; killing pid \(pid)")
+        kill(pid, SIGKILL)
+      }
+    }
+    poll(seconds: 12)
+    done(nil)
+  }
+
+  // MARK: control requests (need a running listener)
+
+  func phoneOn(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .phoneOn("c-phone-on"), done) }
+  func phoneOff(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .phoneOff("c-phone-off"), done) }
+  func openZen(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .zenOpen("c-zen"), done) }
+  func runDoctor(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .doctorRun("c-doctor"), done) }
+  /** This chat's context % (nil when unknown) and memory % for the ⋯ menu; quick, so a short timeout. */
+  func usage(_ done: @escaping (AppMessage) -> Void) {
+    appRequestOnce(appSocketPath, .usageGet("c-usage"), timeout: APP_REQUEST_TIMEOUT_SECONDS, done)
+  }
+
+  // MARK: log
+
+  /** Tail listen.log into logLines every second while on (the window calls this when it shows the log). */
+  func watchLog(_ on: Bool) {
+    logTimer?.cancel()
+    logTimer = nil
+    guard on else { return }
+    logLines = []
+    logPartial = ""
+    let size = (try? FileManager.default.attributesOfItem(atPath: logPath))?[.size] as? NSNumber
+    logOffset = (size?.uint64Value ?? 0) > 64_000 ? size!.uint64Value - 64_000 : 0
+    readLog()
+    let t = DispatchSource.makeTimerSource(queue: .main)
+    t.schedule(deadline: .now() + 1, repeating: 1)
+    t.setEventHandler { [weak self] in self?.readLog() }
+    t.resume()
+    logTimer = t
+  }
+
+  private func readLog() {
+    guard let h = FileHandle(forReadingAtPath: logPath) else { return }
+    defer { try? h.close() }
+    let size = h.seekToEndOfFile()
+    if size < logOffset { logOffset = 0 }  // rotated
+    guard size > logOffset else { return }
+    h.seek(toFileOffset: logOffset)
+    let data = h.readData(ofLength: Int(min(size - logOffset, 1_000_000)))
+    logOffset += UInt64(data.count)
+    var parts = (logPartial + String(decoding: data, as: UTF8.self)).components(separatedBy: "\n")
+    logPartial = parts.removeLast()
+    logLines.append(contentsOf: parts)
+    if logLines.count > LISTEN_LOG_MAX_LINES { logLines.removeFirst(logLines.count - LISTEN_LOG_MAX_LINES) }
   }
 }

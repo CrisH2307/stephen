@@ -212,9 +212,10 @@ place. A symlink at the destination is replaced, never written through. A `voice
 is refused.
 
 **Confirmations.** A headless `claude -p` can't show MCP elicitation prompts. Stephen's safety gate asks for
-confirmation in a **macOS dialog** instead. Click Allow or Deny there. A spoken "yes" is **never** treated as a
-confirmation. The listener starts Stephen's server with `serve --confirm dialog`, so this holds whatever
-`safety.confirm` says in config.json (the flag only accepts `dialog` or `deny`; it can't skip confirmation).
+confirmation in the **Ask box** of Stephen Helper (when it is running) or else a **macOS dialog**. Click Allow or Deny
+there. A spoken "yes" is **never** treated as a confirmation. The listener starts Stephen's server with
+`serve --confirm app` (`deny` for the phone), so this holds whatever `safety.confirm` says in config.json (the flag
+only accepts `app`, `dialog` or `deny`; it can't skip confirmation).
 
 ## One shot (phase 1.8)
 
@@ -606,6 +607,14 @@ tried ("Cannot find ID for token Ste"). Beam search alone changed results withou
 some foreign-voice transcripts). Hotwords could not help with arbitrary song or artist names anyway; they would
 only bias fixed words such as "Stephen", which the keyword spotter already handles. So: none for now. If you switch
 to a transducer model later, `OfflineRecognizer.createStream("…hotwords…")` is the hook.
+
+**Names after the fact (P7, `src/voice/names.ts`).** Because no engine here takes hints, the command text is checked
+against names taken from the capitalised words in the owner's memory items (read fresh per command; the first word of
+an item is skipped, it is capitalised by grammar). A word is fixed only if it is not an ordinary English word (built-in
+list), the name has 5+ letters, and it is one edit away from exactly one name. Anything unsure is left as heard: a
+command is never blocked or questioned over a name (review 9, R9-1). No contacts (Stephen has no access), and Canvas course names
+are not used (nothing caches them; fetching at listen time would be a network call). The list only changes spelling;
+it is never sent as instructions.
 
 ## Wake phrases (phase 1.6)
 
