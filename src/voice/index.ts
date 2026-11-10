@@ -11,6 +11,7 @@ import { TalkStore, talkFromConfig } from '../app/talk.js';
 import { ModelStore } from '../app/model.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
 import { appControl } from '../app/control.js';
@@ -27,6 +28,7 @@ import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
 import { toolLogPath } from '../server/tool-log.js';
+import { LatencyMonitor } from '../telemetry/latency.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
 import { Assistant, type CommandReport, type CommandRunner, type Trust } from './assistant.js';
@@ -461,7 +463,28 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   // The Stephen window (app.sock): started once the listener exists; until then (and with --text) it stays null.
   let app: AppServer | null = null;
   let phone: PhoneServer | null = null;
+  // Latency monitor (plan A2): ids, code words and times only. The listener begins voice triggers; typed, phone and
+  // --text commands begin here, when the assistant starts them.
+  const loopDelay = monitorEventLoopDelay({ resolution: 10 });
+  loopDelay.enable();
+  const latency = args.dryRun
+    ? null
+    : new LatencyMonitor({ home, log: err, loop: { reset: () => loopDelay.reset(), p99Ms: () => loopDelay.percentile(99) / 1e6 } });
+  try {
+    latency?.purge();
+  } catch (e) {
+    err(`Note: couldn't clear old latency logs (${(e as Error).message}).`);
+  }
+  const onStart = (c: { id: string; source: CommandReport['source']; said: string }) => {
+    latency?.begin(c.id, c.source === 'voice-ptt' ? 'ptt' : c.source === 'voice-wake' ? 'wake' : c.source);
+    latency?.mark(c.id, 'commandStart');
+    app?.heard(c.said, c.source);
+  };
   const onDone = (r: CommandReport) => {
+    const end = Date.now();
+    latency?.mark(r.id, 'replyReady', end - Math.max(0, r.ms - r.replyMs));
+    latency?.mark(r.id, 'done', end);
+    latency?.end(r.id, r.result, { route: r.route, followUp: r.followUp, turns: r.turns });
     recordHistory?.(r);
     const calls = r.ranClaude && toolRunner ? toolRunner.tools() : [];
     app?.commandDone(r, calls.map((t) => t.tool), calls);
@@ -542,7 +565,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       timers: timerRouter,
       jobs: jobRouter,
       onDone,
-      onStart: (c) => app?.heard(c.said, c.source),
+      onStart,
       ...hooks,
       onPhase: (p) => {
         hooks.onPhase?.(p);
@@ -724,7 +747,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         cooldownSec: cfg.cooldownSec,
         wakeWord,
       },
-      { source, ...engines, assistant, chimes, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
+      { source, ...engines, assistant, chimes, latency, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
     phone = await startPhone(listener, assistant);
