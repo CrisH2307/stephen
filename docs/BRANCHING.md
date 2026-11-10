@@ -14,11 +14,13 @@
    install-helper`, then the batch's MAC-TEST-PLAN section.
 4. A failed check is fixed on its own feature branch (never on `qa` directly), carried down any stacked PRs, then
    merged into `qa` again and retested.
-5. When `qa` passes, the owner merges the PRs into `main` in merge order. Then `main` is merged into `qa`, so `qa`
-   starts the next batch equal to `main`.
+5. When `qa` passes, one release PR `qa` → `main` (`[release] qa → main, batch <date>`, the PR list and the test
+   result in the body) is merged with a merge commit, by the owner or by the agent when the owner says so. The feature
+   PRs then show as merged (base `main`) or are closed with a link to the release PR (stacked ones). Then `main` is
+   merged into `qa`, so `qa` starts the next batch equal to `main`. First release: #39 (2026-11-09).
 
 ## Rules
-- `qa` is never merged into `main` as one PR: each change reaches production through its own reviewed PR.
+- Each change is still reviewed in its own PR; it reaches `main` through the release PR of its batch.
 - `qa` only moves forward with merges; no force-push, so anyone on it can always `git pull`.
 - Nothing lands on `qa` without the full suite passing there.
 - Never push straight to `main`.
