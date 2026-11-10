@@ -1,9 +1,10 @@
 # Handover: Ask box and Home transitions still look bad
 
-Status: open bug, handed to a new agent. The owner's Mac test of `qa` at `ce29aca` (PR #38) says the transition is still
-bad after my first fix. I could not see the screen recording (it was in a temp folder that no longer existed, and there
-is no ffmpeg here), so the causes below are **hypotheses from reading the code, not measured**. First step for you: ask
-the owner to re-send a short recording (QuickTime, Cmd+Shift+5) and watch it frame by frame.
+Status: **fixed** (2026-11-09, PR #40, now in `main`; the owner tested it on the Mac). Measured from the owner's
+recording at 10 frames a second: causes 1 and 2 below were real, plus one more: during the fade SwiftUI laid out the old
+and the new content together, so the box measured as both. The fix was option A (a fixed transparent panel; only the
+card's height eases, content clipped to it), the ⋯ menu became a normal pop-up menu over the chat, and Home became one
+layout whose composer glides (option C without `matchedGeometryEffect`). Kept below for the record.
 
 ## What the owner sees
 Opening or closing the Ask box's ⋯ menu, a reply arriving, and Home going between its empty layout and the thread, look
