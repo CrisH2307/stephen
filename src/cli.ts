@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
 // Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
@@ -145,13 +146,16 @@ async function serve(argv: string[] = []): Promise<void> {
   // --session-state: the gate's memory follows the voice conversation (imported now if present, saved on change).
   const withState = opts.sessionState ? withSessionState(createSafety, opts.sessionState) : createSafety;
   // --assume-private-read: arm the taint before the first action (after the state binding, so it is saved too).
+  // --command-file: the audit log stamps the listener's command id on each entry. The gate never sees the id.
+  const commandFile = opts.commandFile;
+  const withCmd: typeof createSafety = commandFile ? (c, d) => withState(c, { ...d, commandId: () => readCommandId(commandFile) }) : withState;
   const safetyFactory: typeof createSafety = opts.assumePrivateRead
     ? (c, d) => {
-        const s = withState(c, d);
+        const s = withCmd(c, d);
         s.gate.notePrivateData('private');
         return s;
       }
-    : withState;
+    : withCmd;
   const deps: ServerDepsWithVoice = {
     cfg,
     manager,
@@ -159,6 +163,7 @@ async function serve(argv: string[] = []): Promise<void> {
     safetyFactory,
     ...(opts.voice ? { voice: {} } : {}),
     ...(opts.toolLog ? { toolLog: opts.toolLog } : {}),
+    ...(commandFile ? { commandFile } : {}),
     ...(restarted ? { restarted } : {}),
     ...(opts.trust ? { trust: opts.trust } : {}),
   };

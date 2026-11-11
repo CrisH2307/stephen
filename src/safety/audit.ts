@@ -4,6 +4,7 @@
  */
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
+import { validCommandId } from '../lib/command-id.js';
 import type { AuditEntry, IAuditLog } from '../types.js';
 import { charLength, clean, digest, redactUrl, stripUnsafe, truncate } from './text.js';
 
@@ -75,7 +76,7 @@ function sanitizeArgs(value: unknown, key: string, depth: number): unknown {
 /**
  * Defense in depth for every entry written (gate's and the server's): URLs lose query/fragment,
  * intent is capped and stripped of control characters, code/prompt text become length + hash,
- * typed values become their length only, secret-named keys are dropped.
+ * typed values become their length only, secret-named keys are dropped. `cmd` stays only as a valid command id.
  */
 export function sanitizeEntry(entry: AuditEntry): AuditEntry {
   const out: AuditEntry = { ...entry };
@@ -85,6 +86,7 @@ export function sanitizeEntry(entry: AuditEntry): AuditEntry {
   if (out.element !== undefined) out.element = clean(out.element, 120);
   if (out.error !== undefined) out.error = clean(redactUrlsIn(out.error), 800);
   if (out.args) out.args = sanitizeArgs(scrubSecrets(out.args), '', 0) as Record<string, unknown>;
+  if ('cmd' in out && !validCommandId(out.cmd)) delete out.cmd;
   return out;
 }
 
@@ -97,6 +99,11 @@ export interface AuditLogOptions {
   maxBytes?: number;
   keep?: number;
   now?: () => Date;
+  /**
+   * `serve --command-file`: asked once per entry, when append() is called. Its id is written as `cmd`.
+   * A throw or a bad id means the entry is written without `cmd`. An entry never brings its own `cmd`.
+   */
+  commandId?: () => string | undefined;
 }
 
 export class AuditLog implements IAuditLog {
@@ -104,6 +111,7 @@ export class AuditLog implements IAuditLog {
   private readonly maxBytes: number;
   private readonly keep: number;
   private readonly now: () => Date;
+  private readonly commandId: (() => string | undefined) | undefined;
   private queue: Promise<void> = Promise.resolve();
   private permsChecked = false;
 
@@ -112,10 +120,19 @@ export class AuditLog implements IAuditLog {
     this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
     this.keep = Math.max(1, opts.keep ?? DEFAULT_KEEP);
     this.now = opts.now ?? (() => new Date());
+    this.commandId = opts.commandId;
   }
 
   append(entry: Omit<AuditEntry, 'ts'> & { ts?: string }): Promise<void> {
-    const full: AuditEntry = sanitizeEntry({ ...entry, ts: entry.ts ?? this.now().toISOString() });
+    let cmd: string | undefined;
+    try {
+      cmd = this.commandId?.();
+    } catch {
+      cmd = undefined;
+    }
+    // `cmd` comes from this log's own reader only, so a caller can't label an entry itself.
+    const { cmd: _ignored, ...rest } = entry as AuditEntry;
+    const full: AuditEntry = sanitizeEntry({ ...rest, ts: entry.ts ?? this.now().toISOString(), ...(cmd !== undefined ? { cmd } : {}) });
     const line = `${JSON.stringify(full)}\n`;
     // Serialize writes so rotation never races an append.
     const run = this.queue.then(() => this.write(line));

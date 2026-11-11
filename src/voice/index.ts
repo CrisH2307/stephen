@@ -27,7 +27,7 @@ import { ProposalStore } from '../memory/proposals.js';
 import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
-import { toolLogPath } from '../server/tool-log.js';
+import { commandFilePath, toolLogPath } from '../server/tool-log.js';
 import { LatencyMonitor } from '../telemetry/latency.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
@@ -358,13 +358,16 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   });
   if (!args.dryRun) history.purge(); // drop expired history (and old Claude transcripts) at start, not only on the next command (R5-6)
   const toolLog = history.enabled ? toolLogPath(home) : null;
-  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog);
+  // The command id file goes with the tool log (plan A2): the runner that resets the log also writes the id.
+  // Not for `--text`: that is a second process next to a running listener, and it must not relabel its command.
+  const commandFile = toolLog && args.text === null ? commandFilePath(home) : null;
+  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, null, 'trusted', commandFile);
   // A fresh `serve --instance` per Claude process (R7-1): the config is rewritten before each spawn (one Claude
   // process at a time: the next spawns only after the previous group is gone), and the runner checks the serve's lock.
   // A wake-word conversation's serve also gets `--trust wake` (R7-2: email shows only who and when).
   const serveInstance = async (trust: Trust): Promise<ServeInstance> => {
     const id = newServeInstance();
-    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust) };
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust, commandFile) };
   };
   if (!args.dryRun) sweepServeLocks(home, Date.now() - 24 * 3600_000); // file times are real time: left behind by a killed listener
   // Settings > How Stephen talks: changed live by app.sock settings.set, read at the next command (persona, speak, voice).
@@ -399,7 +402,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   }
   // Persona (+ aboutMe + memory) in a 0600 file instead of argv when this Claude Code takes the flag (voice.personaFile).
   if (resolvePersonaFile(cfg.personaFile, probe)) settings.personaFile = join(voiceDir, PERSONA_FILE);
-  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath, sessionStatePath, toolLog))}`);
+  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath, sessionStatePath, toolLog, null, 'trusted', commandFile))}`);
   else if (!stephenCliBuilt(cliPath)) err(`Note: ${cliPath} does not exist yet — run \`npm run build\` first, or Claude can't start Stephen's tools.`);
 
   // Memory (memory.enabled): "remember …" / "forget …" are handled before Claude, and the saved texts reach Claude
@@ -457,7 +460,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   }
   // Dry runs never resume (nothing ran before them); real runs continue a conversation inside the follow-up window.
   const inner: CommandRunner | null = warm ?? (claude ? new ConversationRunner(claude, conversation) : null);
-  const toolRunner = inner && toolLog ? new ToolLogRunner(inner, toolLog, err) : null;
+  const toolRunner = inner && toolLog ? new ToolLogRunner(inner, toolLog, err, commandFile) : null;
   const runner: CommandRunner = toolRunner ?? inner ?? new DryRunRunner(settings, out);
   const recordHistory = args.dryRun ? undefined : historyRecorder(history, toolRunner ? () => toolRunner.tools() : null, err);
   // The Stephen window (app.sock): started once the listener exists; until then (and with --text) it stays null.

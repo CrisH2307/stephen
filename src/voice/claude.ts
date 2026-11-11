@@ -14,7 +14,7 @@ import { writePrivateFileAtomicSync } from '../lib/fs.js';
 import { killGroup } from '../lib/process.js';
 import { stripUnsafe, truncate } from '../safety/text.js';
 import { removeServeLock } from '../server/instance.js';
-import { toolLogServeArgs } from '../server/tool-log.js';
+import { commandFileServeArgs, toolLogServeArgs } from '../server/tool-log.js';
 import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
 import { DEFAULT_TALK, EXPLAIN_LINE, LENGTH_LINES, TONE_LINES, type TalkPrefs } from './talk.js';
@@ -347,6 +347,7 @@ export function mcpConfig(
   toolLogPath: string | null = null,
   instance: string | null = null,
   trust: Trust = 'trusted',
+  commandFilePath: string | null = null,
 ): { mcpServers: Record<string, { command: string; args: string[] }> } {
   // --confirm app: nobody watches a headless chat, so confirmations go to the Ask box, else the macOS dialog (R9-2).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
@@ -354,11 +355,13 @@ export function mcpConfig(
   // --trust wake: a wake-word or phone conversation (R7-2, ADR-005): email shows only who and when (src/accounts/index.ts).
   // --confirm deny for the phone: nobody is at the Mac to answer a dialog, so every confirmation is declined.
   // --tool-log: tool names (never arguments) per call, for the command history (src/server/tool-log.ts).
+  // --command-file: the command id file; serve stamps the id on tool-log records and audit entries (a label only).
   const args = [
     cliPath, 'serve', '--confirm', trust === 'phone' ? 'deny' : 'app', '--voice',
     ...(instance ? ['--instance', instance] : []),
     ...(trust !== 'trusted' ? ['--trust', 'wake'] : []),
     ...toolLogServeArgs(toolLogPath),
+    ...commandFileServeArgs(commandFilePath),
     ...(sessionStatePath ? ['--session-state', sessionStatePath] : []),
   ];
   return { mcpServers: { [MCP_SERVER_NAME]: { command: nodePath, args } } };
@@ -392,8 +395,9 @@ export async function writeMcpConfig(
   toolLogPath: string | null = null,
   instance: string | null = null,
   trust: Trust = 'trusted',
+  commandFilePath: string | null = null,
 ): Promise<string> {
-  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust), null, 2) + '\n');
+  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust, commandFilePath), null, 2) + '\n');
 }
 
 /** <home>/voice/persona.txt: the persona file of file mode (ClaudeSettings.personaFile). */

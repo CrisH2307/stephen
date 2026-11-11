@@ -9,8 +9,16 @@
  * result. After a cancel, the old group can still be finishing a tool for up to the kill grace period, so the log is
  * emptied again in the `beforeSend` hook, which the warm runner calls once that group is gone and right before the
  * command goes out (docs/REVIEW-7.md R7-10). Recording never fails a command: errors are only logged.
+ *
+ * The command id file (plan A2, src/lib/command-id.ts) follows the same two steps. It is removed when a run starts,
+ * so a cancelled command's group that is still dying writes records without an id, never with the new one. The new
+ * id is written in `beforeSend`, right after the log reset. It stays after the run: a late record of that command
+ * still gets the right id. With the one-shot runner (voice.warm false) `beforeSend` has no "group is gone" promise:
+ * a cancelled command's serve can take up to 8 s to shut down (src/server/index.ts), and an audit entry it writes in
+ * that time gets the next command's id. The id is a label for joining logs, so that is a wrong label, nothing more.
  */
 import type { HistoryStore } from '../history/store.js';
+import { clearCommandFile, validCommandId, writeCommandFile } from '../lib/command-id.js';
 import { readToolLog, resetToolLog, type ToolCallRecord } from '../server/tool-log.js';
 import type { ClaudeOutcome } from './claude.js';
 import type { CommandReport, CommandRunner, RunHooks, Trust } from './assistant.js';
@@ -22,6 +30,8 @@ export class ToolLogRunner implements CommandRunner {
     private readonly inner: CommandRunner,
     readonly path: string,
     private readonly log: (line: string) => void = () => undefined,
+    /** `<home>/voice/command.json`, or null: no command id file. */
+    readonly commandFile: string | null = null,
   ) {}
 
   /** The tool calls of the last run (empty before the first). */
@@ -32,8 +42,13 @@ export class ToolLogRunner implements CommandRunner {
   async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     this.calls = [];
     this.reset();
+    this.commandId(undefined);
+    const beforeSend = () => {
+      this.reset();
+      this.commandId(hooks.id);
+    };
     try {
-      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), beforeSend: () => this.reset() });
+      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), beforeSend });
     } finally {
       this.calls = readToolLog(this.path);
     }
@@ -59,6 +74,18 @@ export class ToolLogRunner implements CommandRunner {
     this.inner.prewarm?.(trust);
   }
 
+  /** Write the id of the command going out, or remove the file (no id, or one that is not a command id). */
+  private commandId(id: string | undefined): void {
+    if (!this.commandFile) return;
+    try {
+      // A valid id replaces the file in one rename. Anything else removes it, so an old id never stays.
+      if (validCommandId(id)) writeCommandFile(this.commandFile, id!);
+      else clearCommandFile(this.commandFile);
+    } catch (e) {
+      this.log(`Note: could not write the command id file ${this.commandFile} (${(e as Error).message}).`);
+    }
+  }
+
   private reset(): void {
     try {
       resetToolLog(this.path);
@@ -68,7 +95,10 @@ export class ToolLogRunner implements CommandRunner {
   }
 }
 
-/** The Assistant's onDone hook: append one history entry per command. Never throws. */
+/**
+ * The Assistant's onDone hook: append one history entry per command. Never throws.
+ * A tool's `cmd` is left out: the entry has the id itself, and history lines stay as they were before plan A2.
+ */
 export function historyRecorder(store: HistoryStore, tools: (() => ToolCallRecord[]) | null, log: (line: string) => void): (r: CommandReport) => void {
   return (r) => {
     try {
@@ -78,7 +108,7 @@ export function historyRecorder(store: HistoryStore, tools: (() => ToolCallRecor
         said: r.said,
         reply: r.reply,
         outcome: r.outcome,
-        tools: r.ranClaude && tools ? tools() : [],
+        tools: r.ranClaude && tools ? tools().map(({ tool, isError, ms }) => ({ tool, isError, ms })) : [],
         followUp: r.followUp,
         ms: r.ms,
         turns: r.turns,
