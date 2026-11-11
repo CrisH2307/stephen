@@ -21,6 +21,8 @@
  *  - Nothing spoken is ever a confirmation: risky actions are confirmed in a macOS dialog by the MCP server.
  */
 import { PTT_MAX_HOLD_MS, PTT_MIN_HOLD_MS } from '../helper/protocol.js';
+import { newHistoryId } from '../history/store.js';
+import type { LatencyOutcome, LatencyTrace } from '../telemetry/latency.js';
 import type { Assistant, CommandReport, CommandResult } from './assistant.js';
 import type { AudioSource } from './audio.js';
 import { correctNames } from './names.js';
@@ -82,6 +84,14 @@ export interface ListenerDeps {
   names?: () => string[];
   /** Every listener state change (the same states as the menu bar; the Stephen app shows them). */
   onState?: (s: MenuState) => void;
+  /** Latency monitor (src/telemetry/latency.ts): the listener mints the command id at the trigger and reports stages. */
+  latency?: LatencyTrace | null;
+}
+
+/** A helper key time (epoch ms) is used only when it is close to our own clock; otherwise our clock. */
+function keyTime(at: unknown): number {
+  const now = Date.now();
+  return typeof at === 'number' && Math.abs(at - now) < 5000 ? at : now;
 }
 
 /** Audio kept from before the keyword's first token (KWS token times lag the speech a little). */
@@ -170,6 +180,10 @@ export class Listener {
   private ignoredWakes = 0;
   /** The wake that started the current capture was a bare "Stephen" (stricter transcript check). */
   private bareWake = false;
+  /** Command id of the capture or recording in progress (minted at the trigger); null once it is being processed. */
+  private cmdId: string | null = null;
+  /** When the VAD last said "speaking" in the current wake-word capture (epoch ms). */
+  private lastSpeechAt = 0;
 
   constructor(
     private readonly o: ListenerOptions,
@@ -206,6 +220,19 @@ export class Listener {
 
   private get helperUp(): boolean {
     return !!this.d.helper?.connected;
+  }
+
+  /** The capture in progress ended without becoming a command: write its latency row. */
+  private traceEnd(outcome: LatencyOutcome): void {
+    if (this.cmdId) this.d.latency?.end(this.cmdId, outcome);
+    this.cmdId = null;
+  }
+
+  /** A wake word that was heard but not acted on still gets a row (trigger failures, plan 7.0). */
+  private traceIgnoredWake(): void {
+    const id = newHistoryId();
+    this.d.latency?.begin(id, 'wake');
+    this.d.latency?.end(id, 'wake_ignored');
   }
 
   private menu(s: MenuState): void {
@@ -274,6 +301,7 @@ export class Listener {
     this.d.assistant.endConversation();
     if (this.state === 'capturing' || this.state === 'recording') {
       this.d.status(`Cancelled (${reason}).`);
+      this.traceEnd('cancelled');
       this.toListening();
       return true;
     }
@@ -363,6 +391,7 @@ export class Listener {
       // Unknown (null: just (re)connected, no audio event yet) is treated like playing — fail closed (review #4 #2).
       if (this.d.helper!.audioPlaying !== false) {
         this.ignoredWakes++;
+        this.traceIgnoredWake();
         this.d.status(`Ignored "${this.o.wakePhrase}" — sound is playing (it may be a video talking). Hold F5 to talk.`);
         return;
       }
@@ -371,6 +400,7 @@ export class Listener {
     }
     if (this.cooldownLeftSec > 0) {
       this.ignoredWakes++;
+      this.traceIgnoredWake();
       this.d.status(
         `Ignored "${this.o.wakePhrase}" — the wake word is paused for ${Math.ceil(this.cooldownLeftSec)} s more after the last command ` +
           '(a page or video may be talking). Press Enter to talk now.',
@@ -406,6 +436,8 @@ export class Listener {
 
   private beginCapture(hit: KeywordHit): void {
     this.wakeCount++;
+    this.cmdId = newHistoryId();
+    this.d.latency?.begin(this.cmdId, 'wake');
     this.bareWake = !!hit.bare;
     this.d.chimes.play('wake');
     this.d.assistant.prewarm('wake'); // start Claude while the user talks (phase 3; recording + ASR take ≥ 2 s)
@@ -451,8 +483,8 @@ export class Listener {
     const h = this.d.helper;
     if (!h) return;
     this.helperOffs.push(
-      h.on('ptt_down', () => this.onPttDown()),
-      h.on('ptt_up', (e) => ((e as { aborted?: boolean }).aborted ? this.abortPtt() : this.onPttUp(e.heldMs))),
+      h.on('ptt_down', (e) => this.onPttDown(keyTime(e.at))),
+      h.on('ptt_up', (e) => ((e as { aborted?: boolean }).aborted ? this.abortPtt() : this.onPttUp(e.heldMs, keyTime(e.at)))),
       h.on('esc', () => {
         // Same path as "stephen stop"; when idle it only ends the follow-up conversation.
         if (this.state !== 'listening') this.cancel('Esc');
@@ -461,10 +493,13 @@ export class Listener {
     );
   }
 
-  private onPttDown(): void {
+  private onPttDown(at: number = Date.now()): void {
     if (this.exitRequested || this.state === 'recording') return;
     // A new press cancels whatever is running (Claude or the spoken reply) or an unfinished wake-word capture.
     if (this.state === 'busy') this.cancel('push-to-talk');
+    this.traceEnd('cancelled'); // an unfinished wake-word capture
+    this.cmdId = newHistoryId();
+    this.d.latency?.begin(this.cmdId, 'ptt', at);
     this.capture = [];
     this.speechFlags = [];
     this.capturedSec = 0;
@@ -480,17 +515,20 @@ export class Listener {
   private abortPtt(): void {
     if (this.state !== 'recording') return;
     this.d.status('Push-to-talk was interrupted (the helper disconnected) — nothing was sent. Hold F5 and try again.');
+    this.traceEnd('aborted');
     this.toListening();
   }
 
-  private onPttUp(heldMs: number): void {
+  private onPttUp(heldMs: number, at: number = Date.now()): void {
     if (this.state !== 'recording') return; // already sent at the length cap, or cancelled
     const min = this.o.pttMinHoldMs ?? PTT_MIN_HOLD_MS;
     if (heldMs < min) {
       this.d.status(`Ignored a ${Math.round(heldMs)} ms tap — hold F5 while you speak.`);
+      this.traceEnd('short_press');
       this.toListening();
       return;
     }
+    if (this.cmdId) this.d.latency?.mark(this.cmdId, 'speechEnd', at); // key up is the hard end of speech
     this.finishPtt();
   }
 
@@ -501,6 +539,7 @@ export class Listener {
     this.capturedSec += frame.length / SAMPLE_RATE;
     if (this.capturedSec * 1000 >= (this.o.pttMaxHoldMs ?? PTT_MAX_HOLD_MS)) {
       this.d.status('Push-to-talk limit reached — sending what I have.');
+      if (this.cmdId) this.d.latency?.mark(this.cmdId, 'speechEnd');
       this.finishPtt();
     }
   }
@@ -529,6 +568,7 @@ export class Listener {
     if (!audio) {
       this.d.status("Didn't hear a command.");
       this.d.chimes.play('done');
+      this.traceEnd('no_speech');
       this.toListening();
       return;
     }
@@ -542,6 +582,7 @@ export class Listener {
     this.capturedSec += dt;
     this.d.vad.accept(frame);
     if (this.d.vad.speaking()) {
+      this.lastSpeechAt = Date.now();
       this.speechSec += dt;
       this.extraSilenceSec = 0;
       if (this.speechSec >= MIN_COMMAND_SPEECH_SEC) this.heardSpeech = true;
@@ -566,6 +607,9 @@ export class Listener {
 
   private finishCapture(): void {
     const audio = concatSamples(this.capture);
+    // The VAD keeps saying "speaking" for silenceSec after the last word (src/voice/engine.ts), so the owner stopped
+    // talking that much before the last speaking frame.
+    if (this.cmdId && this.heardSpeech) this.d.latency?.mark(this.cmdId, 'speechEnd', this.lastSpeechAt - this.o.silenceSec * 1000);
     this.capture = [];
     this.captureEndSample = this.totalSamples;
     const prefix = this.prefix === null ? null : { text: this.prefix, raw: this.prefixRaw };
@@ -576,6 +620,9 @@ export class Listener {
   private startProcessing(audio: Float32Array, ptt: boolean, prefix: { text: string; raw: string } | null = null): void {
     this.state = 'busy';
     this.menu('working');
+    const id = this.cmdId ?? newHistoryId();
+    this.cmdId = null;
+    this.d.latency?.mark(id, 'captureEnd');
     if (ptt) this.d.spotter.restart(); // "hey stephen" said while holding the keys must not cancel this command
     const token: Token = (this.cancelToken = { cancelled: false, reachedClaude: false });
     // The wake phrase must open the transcript after a bare "Stephen" ("Even Stephen agreed…" is not a command)
@@ -585,7 +632,7 @@ export class Listener {
     this.bareWake = false;
     // A push-to-talk press may have cancelled a command that is still winding down: run after it.
     const previous = this.task;
-    this.task = this.process(audio, token, ptt, wake, previous, prefix)
+    this.task = this.process(audio, token, ptt, wake, previous, prefix, id)
       .catch((e: unknown): CommandResult => {
         this.d.status(`Problem: ${(e as Error).message}`);
         return 'error';
@@ -593,9 +640,14 @@ export class Listener {
       .then((r) => {
         if (typeof r === 'object' && r !== null) {
           // Unfinished sentence: keep listening (unless cancelled or a push-to-talk press took over meanwhile).
-          if (this.cancelToken === token && this.state === 'busy' && !this.exitRequested) this.beginContinuation(r.prefix, r.raw);
+          if (this.cancelToken === token && this.state === 'busy' && !this.exitRequested) {
+            this.cmdId = id; // the same command goes on
+            this.beginContinuation(r.prefix, r.raw);
+          } else this.d.latency?.end(id, 'cancelled');
           return;
         }
+        // Normally written already (by process(), or by the assistant's report); a second end does nothing.
+        if (r) this.d.latency?.end(id, r);
         if (r) this.results.push(r);
         // A newer push-to-talk press took over: it owns the state now.
         if (token.reachedClaude) this.lastCommandEndMs = Date.now();
@@ -617,6 +669,7 @@ export class Listener {
   }
 
   private toListening(): void {
+    this.traceEnd('cancelled'); // a capture nobody ended by name
     this.capture = [];
     this.prefix = null;
     this.state = 'listening';
@@ -632,12 +685,15 @@ export class Listener {
     wake: { anchored: boolean; strict: boolean },
     previous: Promise<void>,
     first: { text: string; raw: string } | null = null,
+    id: string = newHistoryId(),
   ): Promise<CommandResult | null | { prefix: string; raw: string }> {
+    const lat = this.d.latency;
     const prefix = first?.text ?? null;
     this.d.status('Transcribing…');
     const t0 = Date.now();
     const raw = await this.d.transcriber.transcribe(audio);
     const ms = Date.now() - t0;
+    lat?.mark(id, 'asrDone');
     const norm = normalizeTranscript(raw, this.o.wakePhrases ?? [this.o.wakePhrase], wake);
     // A continuation carries no wake word (the first part was checked); a repeated "hey stephen" is still stripped.
     const hadWake = prefix !== null || norm.hadWake;
@@ -646,11 +702,13 @@ export class Listener {
     this.d.onTranscript?.(raw, text, ms);
     if (token.cancelled) {
       this.d.status('Cancelled.');
+      lat?.end(id, 'cancelled');
       return 'cancelled';
     }
     // Push-to-talk needs no wake word (the keys are the intent); a spoken "hey stephen" is still stripped.
     if (!ptt && this.o.verifyWake && !hadWake) {
       this.d.status(`Ignored — "${this.o.wakePhrase}" wasn't in the transcript${raw ? ` ("${raw.slice(0, 80)}")` : ''}.`);
+      lat?.end(id, 'no_wake');
       return null;
     }
     // "Stephen, stop" whose STOP the spotter missed: the bare "Stephen" started a capture of… "stop".
@@ -658,6 +716,7 @@ export class Listener {
     if (stop?.hadWake && !stop.text) {
       this.d.assistant.endConversation();
       this.d.status(`Heard "${this.o.stopPhrase}" — nothing to stop.`);
+      lat?.end(id, 'stop_phrase');
       return null;
     }
     // Stopped mid-sentence ("open notion and…"): listen a bit more, once, instead of sending half a request.
@@ -667,17 +726,20 @@ export class Listener {
     if (!text) {
       this.d.status("Didn't hear a command.");
       this.d.chimes.play('done');
+      lat?.end(id, 'no_speech');
       return 'error';
     }
     await previous; // never two Claude runs at once
     if (token.cancelled) {
       this.d.status('Cancelled.');
+      lat?.end(id, 'cancelled');
       return 'cancelled';
     }
     this.d.status(`Heard: "${text}"`);
     token.reachedClaude = true;
     // The source decides memory trust: Fn+Option is a key audio can't press; the wake word can come from a video.
     const fullRaw = first ? `${first.raw} ${raw}` : raw;
-    return this.d.assistant.handle(text, { source: ptt ? 'voice-ptt' : 'voice-wake', raw: fullRaw });
+    lat?.mark(id, 'commandStart');
+    return this.d.assistant.handle(text, { source: ptt ? 'voice-ptt' : 'voice-wake', raw: fullRaw, id });
   }
 }

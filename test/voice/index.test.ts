@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -70,6 +70,22 @@ describe('stephen listen --text', () => {
     expect(run!.persona!.mode).toBe(0o600);
     // Review 5 R5-3: the file only exists while claude runs.
     expect(existsSync(file)).toBe(false);
+  });
+
+  it('plan A2: a command leaves one latency row with its history id, and nothing of what was said', async () => {
+    const home = join(tmp, 'home-latency');
+    const t = env({ claudePath: fakeClaudePath() }, {}, home);
+    expect(await runListen(['--text', 'open my secret diary'], t.e)).toBe(0);
+    const dir = join(home, 'telemetry');
+    const text = readdirSync(dir).map((f) => readFileSync(join(dir, f), 'utf8')).join('');
+    const rows = text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as { id: string; stages: Record<string, number> });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ trigger: 'cli', route: 'model', outcome: 'ok', tier: null });
+    expect(Object.keys(rows[0]!.stages).sort()).toEqual(['commandStart', 'done', 'replyReady']);
+    expect(rows[0]!.stages.replyReady).toBeLessThanOrEqual(rows[0]!.stages.done!);
+    expect(text).not.toMatch(/secret|diary/i);
+    const hist = readdirSync(join(home, 'history')).map((f) => readFileSync(join(home, 'history', f), 'utf8')).join('');
+    expect((JSON.parse(hist.split('\n')[0]!) as { id: string }).id).toBe(rows[0]!.id);
   });
 
   it('follow-ups (fake claude + --text): within the window the 2nd command resumes the 1st session; after it, fresh', async () => {
