@@ -377,6 +377,8 @@ export interface AuditEntry {
   outcome: 'ok' | 'denied' | 'error';
   error?: string;
   intent?: string;
+  /** The listener's command id (`serve --command-file`), `h_<16 hex>`. A label for joining logs, never an input. */
+  cmd?: string;
 }
 
 /** Implementation: src/safety/audit.ts (AuditLog). */

@@ -265,6 +265,7 @@ export class ConversationRunner implements CommandRunner {
     const memory = this.conversation.currentMemoryKey();
     let out: ClaudeOutcome;
     try {
+      hooks.beforeSend?.();
       out = await this.inner.run(prompt, resume ? { resume, trust } : { trust });
     } catch (e) {
       this.conversation.end();

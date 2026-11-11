@@ -53,9 +53,12 @@ export interface CommandRunner {
 export interface RunHooks {
   /** The command's trust (default `wake`, the most cautious). A conversation of another trust is never continued. */
   trust?: Trust;
+  /** The command's id (CommandReport.id). ToolLogRunner writes it to the command id file. A label only. */
+  id?: string;
   /**
-   * Called right before the command goes to Claude, once every earlier process group is gone (warm runner), so
-   * nothing of an earlier, cancelled command can still write after this point (docs/REVIEW-7.md R7-10).
+   * Called right before the command goes to Claude. The warm runner calls it once every earlier process group is
+   * gone, so nothing of an earlier, cancelled command can still write after this point (docs/REVIEW-7.md R7-10).
+   * The one-shot runner calls it right before it starts Claude, without that guarantee.
    */
   beforeSend?: () => void;
 }
@@ -240,7 +243,7 @@ export class Assistant {
       this.o.status(followUp ? 'Working… (follow-up)' : 'Working…');
       let out: ClaudeOutcome;
       try {
-        out = await this.o.runner.run(prompt, { trust });
+        out = await this.o.runner.run(prompt, { trust, id });
       } catch (e) {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }

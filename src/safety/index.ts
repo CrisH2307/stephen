@@ -16,10 +16,15 @@ export interface SafetyDeps {
   platform?: NodeJS.Platform;
   /** Clock for rate limiting (tests). */
   now?: () => number;
+  /**
+   * `serve --command-file`: the listener's command id, asked by the audit log for each entry it writes (`cmd`).
+   * A label only. It goes to the audit log and nowhere else: the gate is built without it.
+   */
+  commandId?: () => string | undefined;
 }
 
 export function createSafety(cfg: ResolvedConfig, deps?: SafetyDeps): { gate: ISafetyGate; audit: IAuditLog } {
-  const audit = new AuditLog({ path: cfg.auditLogPath });
+  const audit = new AuditLog({ path: cfg.auditLogPath, ...(deps?.commandId ? { commandId: deps.commandId } : {}) });
   const confirmer =
     deps?.confirmer ?? buildConfirmer(cfg.safety, { elicit: deps?.elicit, platform: deps?.platform, home: cfg.home });
   const gate = new SafetyGate({ safety: cfg.safety, confirmer, audit, now: deps?.now });

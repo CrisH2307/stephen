@@ -215,7 +215,7 @@ export class AppServer {
     const end = Date.now();
     const audit = this.o.audit;
     const send = (entries: AuditEntry[]) => {
-      const steps = commandSteps(entries, calls, end - r.ms, end);
+      const steps = commandSteps(entries, calls, end - r.ms, end, r.id);
       this.broadcast(steps.length > 0 ? { ...msg, steps } : msg);
     };
     if (!audit || r.ms <= 0) return send([]);
