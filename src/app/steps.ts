@@ -7,9 +7,10 @@
  * element label can still be page text, so the helper shows every line with Text(verbatim:) and nothing here goes back
  * to the model.
  *
- * ponytail: audit entries are matched by time (the audit has no command id). The listener runs one command at a time,
- * so its own commands never mix; a phone job acting in the same seconds could add a line. Add a command id to the
- * audit if that shows up.
+ * Entries are matched by time, as before. An entry that carries this command's id (`cmd`, written by
+ * `serve --command-file`) is also shown when it was written outside that time. The id only adds steps and never
+ * hides one: it is a label and can be wrong in rare cases, and a refusal must not go missing because of it.
+ * So a background job acting in the same seconds can still add a line.
  */
 import { truncate } from '../safety/text.js';
 import type { ToolCallRecord } from '../server/tool-log.js';
@@ -31,13 +32,16 @@ function actionText(a: AuditEntry): string {
   return [a.kind ?? a.tool, a.element].filter((s) => !!s).join(' ');
 }
 
-/** The steps of a command that ran from `startMs` to `endMs` (epoch ms). `audit` may be in any order. */
-export function commandSteps(audit: AuditEntry[], calls: ToolCallRecord[], startMs: number, endMs: number): ChatStep[] {
+/**
+ * The steps of command `id` that ran from `startMs` to `endMs` (epoch ms). `audit` may be in any order.
+ * Without `id` every entry is matched by time only.
+ */
+export function commandSteps(audit: AuditEntry[], calls: ToolCallRecord[], startMs: number, endMs: number, id?: string): ChatStep[] {
   const steps: ChatStep[] = [];
   const auditTools = new Set<string>();
   const inside = audit
     .map((a) => ({ a, t: Date.parse(a.ts) }))
-    .filter(({ t }) => Number.isFinite(t) && t >= startMs - SLACK_MS && t <= endMs + SLACK_MS)
+    .filter(({ a, t }) => Number.isFinite(t) && ((id !== undefined && a.cmd === id) || (t >= startMs - SLACK_MS && t <= endMs + SLACK_MS)))
     .sort((x, y) => x.t - y.t);
   for (const { a } of inside) {
     auditTools.add(a.tool);

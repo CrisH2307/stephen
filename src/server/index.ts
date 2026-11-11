@@ -8,6 +8,7 @@ import type { Confirmer, IBrowserManager, PageEngine, ResolvedConfig } from '../
 import { Hub } from './hub.js';
 import { SERVER_INSTRUCTIONS } from './instructions.js';
 import { withRestartRefusal } from './instance.js';
+import { readCommandId } from '../lib/command-id.js';
 import { fileToolLogger, withToolLog } from './tool-log.js';
 import { registerTools } from './tools.js';
 import { log, withTimeout } from './util.js';
@@ -32,6 +33,8 @@ export interface ServerDeps {
   actionTimeoutMs?: number;
   /** `serve --tool-log <file>`: append `{tool,isError,ms}` per call (never arguments or results; see tool-log.ts). */
   toolLog?: string;
+  /** `serve --command-file <file>`: the command id stamped as `cmd` on each tool-log record (a label only). */
+  commandFile?: string;
   /**
    * `serve --instance` found its lock taken (Claude Code restarted serve, docs/REVIEW-7.md R7-1): every tool answers
    * RESTARTED_NOTICE and nothing runs; this is called after each refusal (serve exits non-zero).
@@ -67,7 +70,8 @@ export function buildServer(deps: ServerDeps): McpServer {
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
   const hub = new Hub(deps, mcp);
-  const logged = deps.toolLog ? withToolLog(mcp, fileToolLogger(deps.toolLog)) : mcp;
+  const commandFile = deps.commandFile;
+  const logged = deps.toolLog ? withToolLog(mcp, fileToolLogger(deps.toolLog), undefined, commandFile ? () => readCommandId(commandFile) : undefined) : mcp;
   // The refusal goes outside the tool log, so a refused call is still logged (as an error).
   registerTools(deps.restarted ? withRestartRefusal(logged, deps.restarted) : logged, hub);
   return mcp;

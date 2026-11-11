@@ -36,6 +36,18 @@ describe('commandSteps (the action chain under a reply)', () => {
     expect(steps.every((s) => [...s.text].length <= MAX_STEP_CHARS)).toBe(true);
   });
 
+  it('with a command id: the id adds this command\'s late entries and never hides an entry inside the time window', () => {
+    const audit: AuditEntry[] = [
+      { ts: at(12), tool: 'click', kind: 'click', element: 'button "Mine"', outcome: 'ok', cmd: 'h_00000000000000aa' },
+      { ts: at(13), tool: 'click', kind: 'click', element: 'button "Other command"', outcome: 'ok', cmd: 'h_00000000000000bb' },
+      { ts: at(14), tool: 'type', kind: 'type', element: 'textbox "No id"', outcome: 'ok' },
+      { ts: at(50), tool: 'click', kind: 'click', element: 'button "Mine, late"', outcome: 'ok', cmd: 'h_00000000000000aa' },
+      { ts: at(51), tool: 'click', kind: 'click', element: 'button "No id, outside"', outcome: 'ok' },
+    ];
+    expect(commandSteps(audit, [], T0, T1, 'h_00000000000000aa').map((s) => s.text)).toEqual(['click button "Mine"', 'click button "Other command"', 'type textbox "No id"', 'click button "Mine, late"']);
+    expect(commandSteps(audit, [], T0, T1).map((s) => s.text)).toEqual(['click button "Mine"', 'click button "Other command"', 'type textbox "No id"']);
+  });
+
   it('nothing ran: no steps', () => {
     expect(commandSteps([], [], T0, T1)).toEqual([]);
   });

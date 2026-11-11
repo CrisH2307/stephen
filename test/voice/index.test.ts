@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -150,6 +150,20 @@ describe('stephen listen --text', () => {
     expect(existsSync(join(zhome, 'voice', 'conversation-state.json'))).toBe(false);
     expect(zero.out).not.toContain('Working… (follow-up)');
     expect(existsSync(join(zhome, 'voice', 'conversation.json'))).toBe(false);
+  });
+
+  it('--text next to a running listener: no --command-file for its serve, and the listener\'s command.json is untouched', async () => {
+    const home = join(tmp, 'home-text-command-file');
+    const file = join(home, 'voice', 'command.json');
+    mkdirSync(join(home, 'voice'), { recursive: true, mode: 0o700 });
+    const daemon = '{"id":"h_00000000000000aa"}\n'; // the id of the command the daemon listener is running
+    writeFileSync(file, daemon, { mode: 0o600 });
+    const before = statSync(file);
+    const t = env({ claudePath: fakeClaudePath() }, { env: { ...process.env, FAKE_CLAUDE_LOG: join(tmp, 'text-command-file.log') } }, home);
+    expect(await runListen(['--text', 'open youtube'], t.e)).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(daemon);
+    expect(statSync(file).ino).toBe(before.ino); // not rewritten either
+    expect(JSON.parse(readFileSync(join(home, 'voice', 'mcp-config.json'), 'utf8')).mcpServers.stephen.args).not.toContain('--command-file');
   });
 
   it('--text runs (fake) Claude and speaks the cleaned-up reply', async () => {
