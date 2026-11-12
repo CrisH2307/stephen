@@ -70,6 +70,8 @@ Usage:
                          Show your recent commands (kept on this Mac only), or delete them
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
+  stephen mac-checks [--json]
+                         Pass or fail for the technical checks of the Mac test plan, section 13
   stephen jobs [list] | status <id> | show <id> | stop <id>
                          Background jobs ("Stephen, start a job to …"; each start asks in a dialog)
   stephen phone login | on | off | status | setup | check
@@ -501,6 +503,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./history/cli.js')).runHistoryCli(rest);
     case 'latency':
       return (await import('./telemetry/cli.js')).runLatencyCli(rest);
+    case 'mac-checks':
+      return (await import('./checks/mac-checks.js')).runMacChecksCli(rest);
     case 'jobs':
       // Owner-only, and the per-job supervisor (`jobs _run`): loaded on demand, never by `stephen serve`.
       return (await import('./jobs/cli.js')).runJobsCli(rest);
