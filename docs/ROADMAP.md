@@ -1,5 +1,22 @@
 # Stephen: roadmap (as of 2026-11-08)
 
+> **Source of truth (2026-11-12): `docs/research/PLAN-REVIEW-2026-11.md` section 4** (two-week plan) and `docs/research/PRODUCT-PLAN-2026-11.md` section 4.2 (phases). This file is history plus the older phase notes below. Where the names differ, use the table.
+
+## Phase names (2026-11)
+
+The headings below keep their old names. Two of them (2b, 3) mean something else in the plan, so do not read them as the plan's phases.
+
+| Plan phase (current) | What it is | Older heading in this file |
+|---|---|---|
+| 1.9a Truth pass | Latency monitor, accuracy baseline, Mac test pass, A3, A4, A7, A8, A9, A5 | none |
+| 1.9b Memory close | Owner-only origin, memory accuracy set, recall fix, B3, B4 | "Phase 1.9" |
+| 1.9c Stephen app close | Split `AppClient.swift`, persisted conversations, UI pages, Review 10, release | "Phase 1.9", P3 UI redesign |
+| 2b Fast and right (runs BEFORE 2a) | Command grammar, Tier 1 fast path, ASR choice, endpointing | "Phase 3 - follow-ups and speed" and P6 (partly) |
+| 2a Read accounts, hardened | Gmail, Canvas, Notion, Calendar: already built; consent, token refresh, injection evals | "Next: phase 2a" |
+| 3 Polish and publish | Docs sync, chat titles, report, MCP SDK, TTS choice | none (old "Phase 3" is 2b above) |
+| 4 Decision gate | Sending actions, Accessibility control, auth, signing, Windows spike | "Phase 4 - cursor control" and "Phase 2b - careful actions" |
+
+
 ## Next order (owner's list of 2026-11-08, sorted; draft until the owner agrees)
 Done from the 11-02 order below: items 1 to 5 (briefing, warm session, Notion + Gmail, jobs, phone), reviews 7 and 8,
 plus play from the phone, the Canvas inbox and secrets out of the repo. Each item below: plan first, small subtasks
