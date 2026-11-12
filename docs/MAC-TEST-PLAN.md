@@ -254,3 +254,38 @@ Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
 - [ ] **Spacing:** pages feel roomier, nothing is cut off at the minimum window size (720 x 440).
 - [ ] **All five themes** (Settings, Appearance): Light, Dark, Navy, Rose, Sun, on the Ask box, Home and sidebar.
 
+
+## 13. Latency monitor and command id (A2, issue #43, PRs #44, #46, #47)
+Build from `qa` (section 0), start Stephen, then give about 10 real commands: 3 with "Hey Stephen", 3 with F5, 1 typed in
+the Ask box, 1 timer ("set a timer for one minute"), and 2 that use the browser ("open YouTube"). Paths below use
+`~/.browser-hub`; use your own home folder if it differs.
+
+### 13.1 The log is written and private
+- [ ] `ls -ld ~/.browser-hub/telemetry` → `drwx------`. `ls -l ~/.browser-hub/telemetry` → one file
+      `latency-<today>.jsonl` with `-rw-------`.
+- [ ] `tail -3 ~/.browser-hub/telemetry/latency-*.jsonl` → one line per command with `id` (`h_` + 16 hex), `trigger`,
+      `route`, `outcome` and `stages`. No words you said, no URL, no page text.
+- [ ] Pick a word you said (for example "YouTube"): `grep -ci youtube ~/.browser-hub/telemetry/*.jsonl` → 0.
+- [ ] Triggers that are not commands get a row too: tap F5 very briefly → a line with `"outcome":"short_press"`. Say
+      "Hey Stephen" and stay silent → `"outcome":"no_speech"`.
+- [ ] Press Esc while Stephen works → a line with `"outcome":"cancelled"`.
+
+### 13.2 `stephen latency`
+- [ ] `node dist/cli.js latency` → "Latency, last 7 days: N triggers", an `outcomes:` line, then one block per trigger
+      and route (for example `ptt / model`, `wake / timer`) with `step`, `n`, `p50`, `p95`, then "Slowest".
+- [ ] The numbers feel right: a command that felt slow is in the Slowest list, with a time close to what you felt.
+- [ ] `node dist/cli.js latency --days 1` → "last day". `--json` → JSON. `--days 2` → "--days must be 1, 7 or 30".
+- [ ] A block marked `OVER` is slower than the plan's target. Note which ones; this is a result, not a failure.
+
+### 13.3 One id joins the logs
+- [ ] Give one browser command. Right after the reply (the tool log is reset by the next command):
+      `grep -o '"cmd":"h_[0-9a-f]*"' ~/.browser-hub/voice/tool-log.jsonl | sort -u` → exactly one id.
+- [ ] That id is the `id` of the last line in `~/.browser-hub/telemetry/latency-<today>.jsonl`.
+- [ ] `grep -c <that id> ~/.browser-hub/audit.log` → 1 or more.
+- [ ] `cat ~/.browser-hub/voice/command.json` → `{"id":"h_…"}` with the same id, and `ls -l` on it shows `-rw-------`.
+
+### 13.4 Nothing got worse
+- [ ] Wake word, F5, the Ask box and the spoken reply work as in sections 2, 3 and 11.5.
+- [ ] An action that asks you (for example a click on a sign-in page) still asks. A spoken "yes" does not confirm.
+
+Send back: the output of `node dist/cli.js latency --days 1` and any box you could not tick.
