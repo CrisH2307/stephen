@@ -1,3 +1,11 @@
+> **SUPERSEDED on 2026-11-12** by `docs/research/PLAN-REVIEW-2026-11.md` section 4 and `docs/research/HANDOFF-2026-11-12.md`. Do not start from this file. What happens to its items (review 3.2, handoff prompt A point 2):
+> - UI items (`ui/live-steps`, `ui/section-pages`, `ui/connected-permissions`, `ui/recents`) wait until `ui/split-appclient` (C5) lands.
+> - `ui/chat-title` moves to phase 3.
+> - `fix/model-everywhere` folds into `fix/claude-cli-contract` (A5 with A8).
+> - Review 10 splits: 10a now (`docs/review-10a`), 10b later; then one release `qa` to `main`.
+>
+> The text below is kept as history and for its rules (section 5).
+
 # Handoff prompt for the next session (2026-11-09, after release #39)
 
 Paste everything below the line into a new Claude Code session opened in this repo. (The 2026-11-09 morning version of

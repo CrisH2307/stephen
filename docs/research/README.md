@@ -13,3 +13,9 @@
 **Product plan and handoff (2026-11-10).** These two files make recommendations, unlike the dossier.
 `PRODUCT-PLAN-2026-11.md`: status, product decisions and fixed constraints, assumed defaults for Cris to confirm, phased roadmap from 1.9, language verdict, market summary, success metrics, open technical questions.
 `HANDOFF-PROMPT-CLAUDE-CODE.md`: ready-to-paste prompt that starts a Claude Code session from that plan (Fable owns technical design; RPI workflow; Cris commits and pushes).
+
+**Review and handoff (2026-11-12).** Which doc wins: `PLAN-REVIEW-2026-11.md` section 4 governs the next two weeks. Where it disagrees with `PRODUCT-PLAN-2026-11.md`, the review wins; the plan keeps its stale facts corrected in place and marked.
+`PLAN-REVIEW-2026-11.md`: independent review of the plan: fact check, ten findings, two-week plan (section 4), owner answers (5.1).
+`IDEAS-RESEARCH-2026-11.md`: research behind the plan's ideas (revision 3); background, not a work order.
+`HANDOFF-2026-11-12.md`: who does what (dev lane and review lane) and the two paste-ready prompts.
+`FINDINGS-LEDGER.md`: one table of every open or recently closed finding, with owner lane and issue or branch; update it in the same PR as the fix.

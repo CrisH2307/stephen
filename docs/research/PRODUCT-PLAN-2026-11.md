@@ -2,19 +2,21 @@
 
 What to build, in what order, and how to tell it worked. A Claude Code session starts here; Fable owns the technical design.
 
-**Snapshot.** `main` @ `29b0a7d`, `qa` @ `719c512`, identical trees, through PR #42 (2026-11-10). **Revised 2026-11-10 with owner answers** (sections 3 and 8). Facts come from the 2026-11-10 inventory, the research pass, repo spot checks and `STEPHEN-DOSSIER.md`. Targets marked as proposals are not measurements. No secrets. No em dashes.
+**Corrections pass (2026-11-12).** Facts the independent review found stale or wrong are fixed in place and marked "(corrected 2026-11-12, review fact N)". Source: `PLAN-REVIEW-2026-11.md` section 1. Owner decisions (section 3) and targets are unchanged. Where this plan and the review's section 4 disagree, the review governs the next two weeks.
+
+**Snapshot.** `main` @ `29b0a7d`, `qa` @ `719c512`, identical trees, through PR #42 (2026-11-10) (corrected 2026-11-12, review fact 1: stale; `qa` @ `1b6eb8c` is 13 commits ahead, `main` @ `425608a` has PR #85 that `qa` lacks). **Revised 2026-11-10 with owner answers** (sections 3 and 8). Facts come from the 2026-11-10 inventory, the research pass, repo spot checks and `STEPHEN-DOSSIER.md`. Targets marked as proposals are not measurements. No secrets. No em dashes.
 
 ---
 
 ## 1. Status as of 2026-11-10
 
-- **Built fast, verified lightly.** 250 commits from 10-30 to 11-09, nine security reviews, release #39 merged. Mac-only paths (Seatbelt, CGEventTap, CoreAudio, Keychain, TCC) reviewed by reading only; every box in `docs/MAC-TEST-PLAN.md` is unticked.
-- **Safety core is the strongest part:** deterministic gate, taint on read, trust per conversation, no spoken confirmations. Two P0 findings open (severity is this plan's call; REVIEW-3 #5 rated the redirect gap Low-Med): open_url redirect gaps (VERIFY-3 #5, PARTIAL) and the YouTube `accounts.google.com` frame counted as a private read.
-- **Tests green on the Mac, not Linux.** Mac 11-09: 3,143 passed, 0 failed. Linux 11-10: 2 failures (`process-cwd` platform difference; `memory-flow.test.ts:197` "forget that" same-millisecond tie). No Swift unit tests; `AppClient.swift` about 1,790 lines.
-- **Speed is unmeasured where it matters.** No Mac end-of-speech to first-audio number. On the Mac: request median 3,407 ms, model 1,774 ms per turn. Warm conversations cut spawn overhead from 1.3-1.6 s to 0.01-0.03 s. The owner calls 3 s bad.
-- **Accuracy is the owner's biggest complaint.** By his estimate about 6 of 10 spoken commands are done right. Nothing in the repo measures this. Known weak numbers: whisper-small.en 77.4% on accented speech; YouTube click success about 7 in 10 before the P1 click fixes (not re-measured); bare "Stephen" wakes on 33 of 180 negatives.
-- **Phase 1.9 was built, not closed.** Open: memory proposals accept `chat`, `email`, `canvas`, `web` origins (`src/memory/store.ts:47`); the transcript is lost on restart; Conversations matches steps to audit lines by time.
-- **Next queue drifts to UI:** five of six build items in `docs/HANDOFF-NEXT.md`. No daily-use evidence (first Mac run 11-05).
+- **Built fast, verified lightly.** 250 commits from 10-30 to 11-09 (corrected 2026-11-12, review fact 2: 232 commits reachable from `719c512`, first dated 2026-10-31), nine security reviews, release #39 merged. Mac-only paths (Seatbelt, CGEventTap, CoreAudio, Keychain, TCC) reviewed by reading only; every box in `docs/MAC-TEST-PLAN.md` is unticked (corrected 2026-11-12, review fact 4: partly; 0 of 87 ticked, but real Mac checks are recorded in `HANDOVER.md`, `REVIEW-9.md` and the #49 comment).
+- **Safety core is the strongest part:** deterministic gate, taint on read, trust per conversation, no spoken confirmations. Two P0 findings open (severity is this plan's call; REVIEW-3 #5 rated the redirect gap Low-Med): open_url redirect gaps (VERIFY-3 #5, PARTIAL; corrected 2026-11-12, review fact 5: `//host` and bare host are already flagged, `src/desktop/url.ts:122-124,141-145`; only a site's own 302 is open, accepted by the owner, #51) and the YouTube `accounts.google.com` frame counted as a private read.
+- **Tests green on the Mac, not Linux.** Mac 11-09: 3,143 passed, 0 failed (host unverified here, review fact 7). Linux 11-10: 2 failures (`process-cwd` platform difference; `memory-flow.test.ts:197` "forget that" same-millisecond tie) (corrected 2026-11-12, review fact 8: on 11-12 Linux had 1 failure, `process-cwd`; the tie is real but flaky, and `src/jobs/runner.ts:192` has the same Mac tty literal, fact 9). No Swift unit tests; `AppClient.swift` about 1,790 lines (1,801 now, review fact 11). "No Swift unit tests" is partly wrong: `test/helper/swift.int.test.ts` compiles `helper/Core.swift` and drives it (corrected 2026-11-12, review fact 10).
+- **Speed is unmeasured where it matters.** No Mac end-of-speech to first-audio number. Request median 3,407 ms, model 1,774 ms per turn (corrected 2026-11-12, review fact 12: host unverified; source is PR #22 from the 11-08 away batch). Warm conversations cut spawn overhead from 1.3-1.6 s to 0.01-0.03 s (corrected 2026-11-12, review fact 13: those numbers are from the Linux cloud box, `SYSTEM-DESIGN-STEPHEN.md:371`, not the Mac). First Mac data (#43): wake endpoint wait 1,500 ms, ASR 0.6 to 0.7 s, first audio 0.6 to 0.7 s after the reply text. The owner calls 3 s bad.
+- **Accuracy is the owner's biggest complaint.** By his estimate about 6 of 10 spoken commands are done right. Nothing in the repo measures this. Known weak numbers: whisper-small.en 77.4% on accented speech; YouTube click success about 7 in 10 before the P1 click fixes (not re-measured); bare "Stephen" wakes on 33 of 180 negatives (corrected 2026-11-12, review fact 18: misattributed; 33/180 is the spotter with all four phrases on look-alike sentences, `VOICE.md:664`; end to end no bare-"Stephen" wake became a false command, `VOICE.md:671-674`).
+- **Phase 1.9 was built, not closed.** Open: memory proposals accept `chat`, `email`, `canvas`, `web` origins in the type only (`src/memory/store.ts:47`); the one writer passes `you` (`src/app/server.ts:403`) (corrected 2026-11-12, review fact 26); the window's chat is lost on restart, but each command's said, reply and tools are on disk by id for 1 day (corrected 2026-11-12, review fact 27); Conversations matches steps to audit lines by time, and A2 now adds lines carrying the command's id (corrected 2026-11-12, review fact 28).
+- **Next queue drifts to UI:** five of six build items in `docs/HANDOFF-NEXT.md` (now superseded, 2026-11-12). No daily-use evidence (first Mac run 11-05).
 - **Verdict:** the engineering is ahead of the product. The next two weeks should produce measurements (latency monitor, accuracy baseline) and closed findings, not features.
 
 ---
@@ -116,9 +118,9 @@ Dependencies override priority: a task never starts before the tasks it depends 
 | A6 | Accuracy baseline: labelled replay set of 100 real commands, errors split by stage | H | The 6/10 problem is fixed blind | M | A2 | P0 | 1.9a |
 | A1 | Mac test pass, sections 0 to 12; file every fail | H | Mac-only safety paths stay unverified | M | none | P0 | 1.9a |
 | A3 | YouTube account-frame taint rule; measure play and pause | H | Music, the first priority, keeps failing | S | A1 | P0 | 1.9a |
-| A4 | GitHub issue for open_url redirect gaps; Claude verifies the fix (Q11) | M | Open finding on a no-prompt path | S | none | P0 | 1.9a |
+| A4 | GitHub issue for open_url redirect gaps; Claude verifies the fix (Q11). Corrected 2026-11-12, review fact 5: 2 of 3 cases already closed; residual accepted, docs plus one test (#51) | M | Open finding on a no-prompt path | S | none | P0 | 1.9a |
 | A7 | Fix "forget that" same-ms tie; platform-aware `process-cwd` test | M | Wrong item deleted; red suite on Linux | S | none | P0 | 1.9a |
-| B1 | Memory: only origin `you`; remove other origins and end-of-chat proposals | M | Untrusted text can reach memory | S | none | P0 | 1.9b |
+| B1 | Memory: only origin `you`; remove other origins and end-of-chat proposals. Corrected 2026-11-12, review fact 26: tiny hardening, the types only | M | Untrusted text can reach memory | S | none | P0 | 1.9b |
 | B2 | Memory accuracy test set (7.4) | M | Memory regressions unseen | S | B1 | P0 | 1.9b |
 | C1 | Persist conversations and steps by command id | H | Transcript lost on restart | M | A2 | P0 | 1.9c |
 | C5 | Split `AppClient.swift` into small files (Q13) | M | Every UI change is risky and slow to review | M | none | P0 | 1.9c |
@@ -135,16 +137,16 @@ Dependencies override priority: a task never starts before the tasks it depends 
 | A5 | `fix/model-everywhere`; probe `--effort` | L | Jobs and eval ignore the model picker | S | none | P1 | 1.9a |
 | B5 | Memory recall investigation and fix (Q15) | M | "Stephen forgets" stays unexplained | M | B2 | P1 | 1.9b |
 | B3 | Move owner data to `~/.stephen`; rotate the ElevenLabs key | L | Leaked key stays live | S | none | P1 | 1.9b |
-| C6 | Authenticate helper.sock (Q10) | L | Blocks any later Swift audio move | S | none | P1 | 1.9c |
+| C6 | Authenticate helper.sock (Q10). Corrected 2026-11-12, review fact 35: peer user check exists (`helper/Core.swift:705`); only the nonce is missing | L | Blocks any later Swift audio move | S | none | P1 | 1.9c |
 | C3 | Minimum Swift test layer | M | UI regressions unseen | M | C5 | P1 | 1.9c |
 | E7 | False-wake prevention (Q12) | M | Stephen acts when not addressed | M | A6 | P1 | 2b |
-| E4 | Endpointing tuning; F5 release as hard end of speech | H | About 0.5 s wasted on every command | S | A2, A6 | P1 | 2b |
+| E4 | Endpointing tuning; F5 release as hard end of speech. Corrected 2026-11-12, review fact 21: the F5 part is already built (`listener.ts:522-533`); wake endpoint is the work | H | About 0.5 s wasted on every command | S | A2, A6 | P1 | 2b |
 | E3 | Smallest voice tool profile that keeps the eval rate | M | Slow turns, more wrong tool picks | M | A6 | P1 | 2b |
 | D4 | Implement the Zen sign-in path chosen in A9 | H | Account work blocked in Zen | M | A9 | P1 | 2a |
 | D2 | Briefing as a timed, first-class flow | M | Daily value stays ad hoc | M | A2 | P1 | 2a |
 | F1 | Haiku chat titles and UI polish | L | Cosmetic | S | C2 | P1 | 3 |
 | F3 | Eval and latency report, OWASP mapping, demo | M | No published evidence | M | D3 | P1 | 3 |
-| B4 | Behaviour when the memory budget is full | L | Silent drop of the 31st item | S | B1 | P2 | 1.9b |
+| B4 | Behaviour when the memory budget is full. Corrected 2026-11-12, review fact 33: already built, `add` returns `full` and Stephen says "My memory is full" (`store.ts:95,240`) | L | (not a silent drop) | S | B1 | P2 | 1.9b |
 | E5 | Fold announce into play; acknowledgement policy | M | 0.7 to 1.5 s lost on media | S | E1 | P2 | 2b |
 | E8 | Lazy imports and Node compile cache (Q16) | L | Cold starts stay about 0.9 s | S | A2 | P2 | 2b |
 | F4 | MCP SDK v1 to v2 behind a tool-schema contract test (Q17) | L | A forced, rushed migration later | M | C4 | P2 | 3 |
@@ -254,10 +256,10 @@ All targets are proposals until the 1.9a baselines exist.
 
 | Stage | Suspect | Evidence |
 |---|---|---|
-| Trigger | Start or end of speech clipped; false or missed wake | Recall 82/90 clean, 74/90 noisy; endpoint silence 0.8 to 1.5 s |
+| Trigger | Start or end of speech clipped; false or missed wake | Recall 82/90 clean, 74/90 noisy; endpoint silence 0.8 to 1.5 s (F5 release already ends speech, `src/voice/listener.ts:522-533`; corrected 2026-11-12, review fact 21) |
 | Hearing (ASR) | whisper-small.en on accented English; no hotwords possible in this stack | 77.4% accented vs 97.3% clean; `docs/VOICE.md` |
 | Hearing (names) | App, site, song and people names misspelled | Name fix exists only for names in memory, one edit away (`src/voice/names.ts`) |
-| Understanding | Model reads a noisy transcript literally; 27 KB of tool schemas to choose from | No eval uses noisy transcripts |
+| Understanding | Model reads a noisy transcript literally; 42.4 KB of tool definitions (39 tools) to choose from (corrected 2026-11-12, review fact 25: measured on `qa`; 27 KB and 29 tools was the October figure) | Eval category `misheard` has 6 cases (`src/eval/cases.ts:73-79`) and the persona already says names are misheard (corrected 2026-11-12, review fact 30: "no eval uses noisy transcripts" was wrong) |
 | Action | Right tool, failed click or wrong tab | YouTube about 7 in 10 before P1 fixes |
 
 **Measurement plan (A6).** With the owner's opt-in, record 100 real commands (audio kept locally in an owner-only folder, separate from telemetry, deletable). The owner labels each: what he said, what he wanted. Then score three ways: (1) replay the audio through each ASR model, intent preserved or not (hearing errors); (2) type the correct text into Stephen, right tool and arguments or not (understanding errors); (3) right call but failed outcome (action errors). Trigger failures are counted from the monitor. Output: one table of error share per stage. The largest share is fixed first; the set becomes a regression suite.
@@ -337,18 +339,18 @@ The owner asked for trade-offs and a decision on each. Where an answer is unclea
 
 | # | Question | Owner answer | Recommendation (pros, cons) and decision |
 |---|---|---|---|
-| 1 | Where do the seconds go on the Mac? | Speed means how fast Stephen responds and acts; commands fast, work may be slow | **Decision: build the monitor (A2) before any optimization.** Pro: ends guessing. Con: a few days with no visible speed-up |
+| 1 | Where do the seconds go on the Mac? | Speed means how fast Stephen responds and acts; commands fast, work may be slow | **Decision: build the monitor (A2) before any optimization** (corrected 2026-11-12, review finding 3: A2 is mostly done on `qa`, PRs #44, #46, #47, #84)**.** Pro: ends guessing. Con: a few days with no visible speed-up |
 | 2 | Does ASR decoding block the event loop? | Research it | **Decision: keep the current design, verify by measurement.** The repo already decodes off the main thread. See 8.1 |
-| 3 | Which ASR model for the owner's voice? | Read as the speaking voice: ElevenLabs is "for fun"; pick the cheapest good one for market | A small clarification: this question is about hearing (speech-to-text), not speaking. Both answered. **ASR decision: choose on the replay set; Parakeet is the expected winner** (8.2). **TTS decision: keep ElevenLabs now; decide at F5** (8.2) |
+| 3 | Which ASR model for the owner's voice? | Read as the speaking voice: ElevenLabs is "for fun"; pick the cheapest good one for market | A small clarification: this question is about hearing (speech-to-text), not speaking. Both answered. **ASR decision: choose on the replay set; Parakeet is the expected winner** (8.2) (corrected 2026-11-12, review fact 15: contradicted by `docs/VOICE.md:584-586`; on accented speech whisper-small.en 77.4%, Parakeet v2 73.2%, v3 75.4%; Parakeet wins on speed only). **TTS decision: keep ElevenLabs now; decide at F5** (8.2) |
 | 4 | Which commands can skip the model? | Fast path only for single commands | **Decision: fast path = Tier 1 (2.5).** Pro: only route under 3 s. Con: a second code path; it must call the same gate, trust and audit, with a test that proves it |
 | 5 | Endpointing; F5 release as hard end? | If cheapest, yes | **Decision: yes (E4).** F5 release ends speech at once. Wake path: lower silence toward 0.5 s only if the replay set shows no extra clipping. Con: a speaker who pauses mid-sentence gets cut off, so tune on his own recordings |
 | 6 | Smallest voice tool profile? | Smallest if fine. Real problem: about 6 of 10 commands right | **Decision: two profiles (E3):** a small voice profile, the full set on escalation. Pro: faster turns, fewer wrong tool picks. Con: a missing tool fails a task, so keep only if the eval rate holds. The real problem is now the top metric (7.0) |
 | 7 | Pin and probe the Claude Code CLI? | Take time and search | **Decision: exact version pin plus a contract probe in `doctor` (A8).** See 8.3 |
 | 8 | One command id across conversations, steps and audit? | Suggested NLP or text mining | A small clarification: this is about giving each command one id so its records join exactly. **Decision: the listener mints one id at the trigger; every stage, audit line, step and monitor row carries it (A2, C1).** The NLP idea is adopted where it fits: accuracy work (E6, 7.0) |
 | 9 | Trust and taint of replayed turns? | Cares about accurate text, taint and trust | **Decision: resumed history is shown as stored; if it re-enters the model it is quoted as untrusted data, with the conversation's highest taint restored and the lower of the original and current trust.** Pro: no laundering. Con: some resumed chats cannot act without a fresh request |
-| 10 | Authenticate helper.sock now? | If cheap, yes | **Decision: yes (C6):** peer user check plus a per-launch nonce. Pro: about a day; unblocks a Swift audio move. Con: does not stop a same-user attacker (out of scope until U7) |
-| 11 | Complete fix for open_url redirects? | Make it a GitHub issue assigned to Claude to verify the fix | **Decision: file the issue (A4)** with the three cases (site 302, `?u=//host`, bare host) as failing tests; Claude verifies each is closed |
-| 12 | Cut false wakes? | Try to prevent them | **Decision (E7): make bare "Stephen" opt-in, off by default** (33 of 180 false wakes); keep the transcript check and the audio-playing gate. Pro: cheap. Con: one more syllable. Echo cancellation needs Swift: only on the 5.4 trigger |
+| 10 | Authenticate helper.sock now? | If cheap, yes | **Decision: yes (C6):** peer user check (already built, review fact 35) plus a per-launch nonce. Pro: about a day; unblocks a Swift audio move. Con: does not stop a same-user attacker (out of scope until U7) |
+| 11 | Complete fix for open_url redirects? | Make it a GitHub issue assigned to Claude to verify the fix | **Decision: file the issue (A4)** with the three cases (site 302, `?u=//host`, bare host) as failing tests; Claude verifies each is closed (corrected 2026-11-12, review fact 5: `//host` and bare host already pass, `test/desktop/redirect-bare.test.ts`; owner accepted the site-302 residual, #51) |
+| 12 | Cut false wakes? | Try to prevent them | **Decision (E7): make bare "Stephen" opt-in, off by default** (33 of 180 false wakes, spotter only, see review fact 18); keep the transcript check and the audio-playing gate. Pro: cheap. Con: one more syllable. Echo cancellation needs Swift: only on the 5.4 trigger |
 | 13 | Swift tests; split the client file? | Make it small first; research later | **Decision: split first (C5), no behaviour change, then tests (C3)** |
 | 14 | Zen (Gecko) vs Chromium BiDi; owner's browser | Zen is detected as a bot; sign-in to Claude or Gmail loops. Research it | **Decision: confirm the cause (A9), then split sign-in from automation and route bot-checked sites away from the debug port (D4).** See 8.4 |
 | 15 | "Forget that" tie; timestamp order | If Stephen forgets, that is a memory problem; find out how to improve it | Two things: the tie bug (A7: order by a sequence counter, not the clock) and recall (B5). **Decision: investigate with the failure list in 8.5 before changing design** |
@@ -381,13 +383,13 @@ No source read measured English with the owner's accent, so public numbers only 
 - **Nemotron streaming:** 7.3% WER at 0.56 s delay (same paper); streaming could shrink endpoint wait later.
 - **Whisper large-v3-turbo:** described as coping well with accents ([Spokenly](https://spokenly.app/blog/parakeet-vs-whisper)), but 1.6 GB and slowest.
 
-**Decision (E2):** score small.en, Parakeet v2 and v3, and Moonshine on the replay set; pick the highest intent accuracy with Mac decode p50 under 300 ms. Test SpeechAnalyzer only if none reaches 95%.
+**Decision (E2):** score small.en, Parakeet v2 and v3, and Moonshine on the replay set; pick the highest intent accuracy with Mac decode p50 under 300 ms. (Corrected 2026-11-12, review fact 15 and finding 4: on the repo's own accented test whisper-small.en scored highest, and the 300 ms rule would exclude it at 0.6 to 0.7 s measured on the Mac; the owner keeps the choice open.) Test SpeechAnalyzer only if none reaches 95%.
 
 **TTS.** ElevenLabs Flash v2.5 costs about 50 USD per 1M characters; its free plan is non-commercial. Cheaper: OpenAI tts-1 15, Inworld TTS-2 Flash 15, Azure HD 22, Deepgram Aura-2 30 ([Gradium, Sept 2026](https://gradium.ai/content/how-to-compare-tts-pricing-across-providers-2026)); local Kokoro and macOS `say` are free. **Decision:** keep ElevenLabs now. For market (F5): Kokoro if Mac first audio is under 300 ms (private, free), otherwise the cheapest cloud voice that passes a listening test.
 
 ### 8.3 Q7: pin and probe the Claude Code CLI
 
-Findings: the documented settings are a release channel (`autoUpdatesChannel`: stable or latest) and `minimumVersion`; `DISABLE_AUTOUPDATER=1` and `autoUpdates: false` circulate, but users report they are not always honoured on native installs ([claude-code issue 56723](https://github.com/anthropics/claude-code/issues/56723), [issue 13213](https://github.com/anthropics/claude-code/issues/13213)). Releases land several times a week ([changelog](https://code.claude.com/docs/en/changelog.md), not fetched here). Stephen has seen 2.1.314 to 2.1.319 and has no version check today (repo grep).
+Findings: the documented settings are a release channel (`autoUpdatesChannel`: stable or latest) and `minimumVersion`; `DISABLE_AUTOUPDATER=1` and `autoUpdates: false` circulate, but users report they are not always honoured on native installs ([claude-code issue 56723](https://github.com/anthropics/claude-code/issues/56723), [issue 13213](https://github.com/anthropics/claude-code/issues/13213)). Releases land several times a week ([changelog](https://code.claude.com/docs/en/changelog.md), not fetched here). Stephen has seen 2.1.314 to 2.1.319 and has no `claude --version` check today (repo grep; corrected 2026-11-12, review fact 23: a flag probe of 9 lock-down flags exists, `src/voice/claude.ts:757-793`; `--effort` is not probed).
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -417,8 +419,8 @@ Cause, high confidence: Firefox sets `navigator.webdriver` to true whenever its 
 Stephen's store is tiny (30 items of 200 characters) and every item is placed in the system prompt on each run (`src/voice/claude.ts`). So the usual cause, retrieval miss (about 70% of wrong answers in retrieval systems, per [Hyperspell](https://www.hyperspell.com/blog/memory-failure-modes)), mostly does not apply. Likely causes, in order to check (B5):
 
 1. **Never stored.** Only an explicit, correctly heard "remember" writes. A misheard trigger, a wake-word "remember" waiting on a dialog, or a fact said in passing leaves nothing.
-2. **Not delivered.** Phone trust gets no memory; a warm conversation may hold an older copy; the 31st item is dropped.
-3. **Delivered but unused.** Models use the middle of a long prompt worst: about 55% accuracy mid-context vs 75% at the start ([Mem0](https://mem0.ai/blog/memory-retrieval-strategies-for-ai-agents)); memory sits after 42 KB of prompt.
-4. **Not memory at all.** Conversation history is lost on restart (C1 fixes this).
+2. **Not delivered.** Phone trust gets no memory; a warm conversation may hold an older copy (corrected 2026-11-12, review fact 32: wrong, a memory change ends the conversation, `src/app/server.ts:368-369`); the 31st item is dropped (corrected, review fact 33: wrong, Stephen says the memory is full).
+3. **Delivered but unused.** Models use the middle of a long prompt worst: about 55% accuracy mid-context vs 75% at the start ([Mem0](https://mem0.ai/blog/memory-retrieval-strategies-for-ai-agents)); memory sits after about 42 KB of tool definitions (corrected 2026-11-12, review fact 25: persona 7.3 KB; memory is already the last block of the prompt, fact 31).
+4. **Not memory at all.** The window's chat is lost on restart; per-command history is on disk for 1 day (corrected 2026-11-12, review fact 27; C1 extends this).
 
 Patterns that fit a small personal store: keep everything in context (no vector database needed at this size); put memory near the end of the prompt with a line telling the model to use it; confirm each save aloud and show it in the Memory page; resolve conflicts by newest wins; log a "should have remembered" mark so each miss is classified 1 to 4. Add retrieval (keyword plus embeddings) only when the store outgrows the budget. **Decision:** classify real misses first, then fix the largest class; do not let the model write memory (fixed constraint 4).
