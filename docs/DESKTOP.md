@@ -240,6 +240,25 @@ If the JXA can't determine the lock or secure-input state, Stephen falls back to
 secure input is on. None of these checks need a privacy (TCC) grant: no Accessibility, Screen
 Recording or Automation.
 
+## Known limit: a site's own redirect
+
+`open_url` hands the URL to the browser and never sees the response. Stephen checks two redirect shapes
+before that (`redirectSignals` in `src/desktop/url.ts`, tests in `test/desktop/redirect-bare.test.ts`):
+a redirector or open-endpoint host, and an address hidden in a query value, fragment or path (a full URL,
+`//host`, or a bare host). What it cannot check is the site's own HTTP 302, or a script redirect, after the
+browser has opened the page: an ordinary-looking `https://attacker.example/x` can send the browser anywhere.
+
+What still protects the owner: after a private read in the conversation (Gmail, Canvas, Notion, calendar or
+a private page), opening a host not seen before asks first when the URL carries anything beyond a bare
+origin (a path, a sub-domain other than `www`, a query or a fragment). That is the `first-destination` rule
+in `src/safety/policy.ts` (`untrustedDestinationHosts`), reached through the gate in `openParsed`. Approving
+trusts that host for the rest of the session. A bare origin such as `https://attacker.example/` does not ask,
+and with no private read in the conversation nothing asks at all.
+
+The owner accepted this residual on 2026-11-12 for conversations with no private read (plan review Q3).
+Test: `test/desktop/open-url-residual.test.ts`. The long-term fix is a disposable browser profile (F8),
+which is not scheduled.
+
 ## Shared rules
 
 - **Locked screen.** `open_app`, `open_url` and `play_media` refuse with "Your Mac is locked". They also refuse when
