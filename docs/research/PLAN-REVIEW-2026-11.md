@@ -280,6 +280,19 @@ Not in these two weeks: C1 build, C2 (starts with `ui/live-steps` in week three)
 
 Owner actions that are not questions: rotate the ElevenLabs key today; merge PR #92; run Mac test sections 0 to 10 once item 5 lands.
 
+### 5.1 Owner answers (2026-11-12)
+
+| # | Answer | Effect |
+|---|---|---|
+| Q1 | Yes, the simplest version | A6a: opt-in recorder, 30 days, delete command, off switch. TTS stays ElevenLabs (owner has credits); key rotation is the owner's call |
+| Q2 | Yes, and real Zen must connect and open YouTube | A3 acceptance adds: on the Mac, "Zen for Stephen" attaches and plays a YouTube video with no prompt |
+| Q3 | Accept | A4 is docs plus one test |
+| Q4 | Cut from `qa` freely. Everything lands in `qa`; `main` is production and the owner handles releases | Branch base question closed |
+| Q5 | Yes | Review 10a now, by an agent that did not write the code |
+| Q6 | 7 days | Command text and replies kept 7 days; recents view-only first |
+| Q7 | Keep the targets. The dev team is already fixing F5 (#86) | E4a and ADR-008 use the plan's numbers, wake gets +0.8 s until E4a lands |
+| Q8 | Approve | F10a (allow-list test) now, F10b deferred, G7 stays at the phase 4 gate |
+
 ## 6. Team handoff message (paste-ready)
 
 ```
