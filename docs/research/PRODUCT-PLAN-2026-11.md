@@ -48,7 +48,8 @@ What to build, in what order, and how to tell it worked. A Claude Code session s
 
 - Sending or writing anything: mail, replies, calendar, Notion (U5; ADR-006 stays Proposed; revisit only if a task becomes urgent).
 - Cursor, keyboard or Accessibility control; desktop screenshots (U8).
-- Authentication, authorization, multi-user, distribution, notarization (U7: later, after the functions are finished).
+- Authentication, authorization, multi-user, distribution, notarization (U7: later, after the functions are finished). They are now dated decisions, not open-ended ones (U9; order in `IDEAS-RESEARCH-2026-11.md` 9.4).
+- Any Windows code or cross-platform UI work (U9: Mac first). Allowed and proposed: keeping macOS-only calls behind one platform layer (F10).
 - Browser dashboard; model-written memory, timers or jobs.
 - API key or Agent SDK (U6).
 - Competing with Siri or ChatGPT on general knowledge, dictation, full-duplex chat.
@@ -91,10 +92,11 @@ All eight defaults are now decided by Cris. Labels U1 to U8 are used across this
 | U2 | What latency is fast enough? | Simple commands must reply fast; 3 s feels bad. Work tasks may be slower. Adopted as the two-tier policy (2.5). Nobody has measured, so build a latency monitor first (A2). |
 | U3 | Memory proposals from untrusted origins? | Agreed: only origin `you`; remove `chat`, `email`, `canvas`, `web`. A more general design may come later. |
 | U4 | What comes next? | Wanted a scored task table so the order is explicit. Delivered as section 4.1; it governs the order. |
-| U5 | Should Stephen ever send (ADR-006)? | Read-only for now. Revisit if a task becomes urgent during building; Claude raises it, Cris decides. |
+| U5 | Should Stephen ever send (ADR-006)? | Read-only for now. Revisit if a task becomes urgent during building; Claude raises it, Cris decides. Order when revisited (2026-11-11): reply drafts (ADR-006) first; business calls are a distant bet. Messaging the owner himself (away report) is allowed; "call me" is for alerts or very urgent items only, later. |
 | U6 | Subscription `claude -p`? | Yes, if better for the product. Stay on ADR-003; add pin and probe (A8). |
 | U7 | Single user forever? | No: Stephen is an ongoing product. Finish the functions first, add authentication and authorization later. Do not build it now, and do not block it (keep owner data under one root; no hard-coded user). |
 | U8 | Desktop control beyond safe verbs? | Out of scope. Agreed. |
+| U9 | Which platforms and users? (2026-11-11) | Mac first, then Windows. Target regular users; students are a small segment. Scheduled runs are a user opt-in setting. Owner hardware: MacBook Pro 14-inch, M5 family, RAM to confirm (base M5 ships with 16 GB); plan: Claude Pro. |
 
 Also open: the YouTube account-frame rule (assumed: non-private for play, pause, seek keys only); handing generic questions to Siri AI after macOS 27; English-only ASR; a public phase 3 report.
 
@@ -147,6 +149,8 @@ Dependencies override priority: a task never starts before the tasks it depends 
 | E8 | Lazy imports and Node compile cache (Q16) | L | Cold starts stay about 0.9 s | S | A2 | P2 | 2b |
 | F4 | MCP SDK v1 to v2 behind a tool-schema contract test (Q17) | L | A forced, rushed migration later | M | C4 | P2 | 3 |
 | F5 | TTS choice for a market version (Q3) | L | Cost and licence unknown at launch | S | A2 | P2 | 3 |
+| F10 | **Proposed, owner to approve.** Portability seam: every macOS-only call (`osascript`, `open`, `security`, `afplay`, `say`, TCC checks, Mac paths) behind one platform layer, with a lint; no behaviour change, no Windows code | M | Windows later means untangling Mac calls from product logic | S to M | C5, B3 | P2 | 3 |
+| G7 | **Proposed, owner to approve.** Windows feasibility spike (throwaway, no UI): core starts, voice addons load, ASR and Tier 1 latency on a plain Windows laptop, `claude -p` stays warm, one gated Chrome task | M | The Windows decision is made on guesses | M | F10, Phase 3 exit | future bet | late (4 gate) |
 
 ### 4.2 Roadmap
 
@@ -172,7 +176,7 @@ Exit: every Mac test box ticked or filed; monitor running with at least 50 real 
 
 **Phase 3: Polish and publish (about 1 week).** F2 (P0); F1, F3 (P1); F4, F5 (P2). Exit: docs pass a stale-claim checklist; report written with real numbers.
 
-**Phase 4: Decision gate (not scheduled).** ADR-006 drafts, Accessibility control, authentication and authorization (U7), P5. Each needs an owner decision and its own threat model. Entry: phases 1.9 to 3 exits met and 30 days of reliability data.
+**Phase 4: Decision gate (not scheduled).** ADR-006 drafts (first when U5 is revisited), Accessibility control, authentication and authorization (U7), how users reach Claude and who pays, Mac signing and onboarding, then the Windows spike (G7, proposed), P5. Each needs an owner decision and its own threat model. Entry: phases 1.9 to 3 exits met and 30 days of reliability data.
 
 ---
 
@@ -209,6 +213,8 @@ Rejected: Rust core; Python; Bun or Deno (cheap to probe later).
 - **Bun runtime** if cold starts exceed about 30% of real commands and serve start stays above 500 ms after E8.
 - **Rust or Swift for serve or gate** only if distribution (U7) or a direct API (U6) arrives.
 - **Anything** if idle total RSS exceeds about 1 GB or idle CPU about 2% of a core, measured.
+
+**Effect of the Windows decision (U9).** Mac first, Windows later strengthens this verdict. The parts that carry Stephen's value (gate, taint, MCP tools, routing, audit, evals) are TypeScript and run on both systems; rewriting the core in Swift would lock it to the Mac, and in Rust would reset the review evidence for no user-visible gain. It also raises the bar for the "audio front end to Swift" trigger: a Swift voice stack would have to be rebuilt for Windows, so that move now needs a gain worth a platform fork. The working rule is thin platform code: the Swift helper holds only what must be native (window, hotkey, dialogs), and macOS-only calls sit behind one layer (F10, proposed). The Windows shell (one cross-platform UI, or a separate native Windows app) is not chosen here; criteria and options are in `IDEAS-RESEARCH-2026-11.md` section 9.
 
 ### 5.5 Measure first (all through the monitor, phase 1.9a)
 
