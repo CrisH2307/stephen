@@ -19,6 +19,9 @@
  *   phone.on, zen.open and doctor.run can take up to a minute or more (the lock-down check starts Claude Code).
  * Additive (ROADMAP P2, src/app/usage.ts): `{id, type:"usage.get"}` → `{id, type:"usage", context:{percent, warn, tokens,
  *   window} | null, memory:{percent, warn, bytes, budget}}` (warn at 80%; context null when unknown).
+ * Additive (plan A2, src/telemetry/cli.ts): `{id, type:"latency.get", days?}` (days 1, 7 or 30; default 7) →
+ *   `{id, type:"latency", days, triggers, text}`: the `stephen latency` report as plain text (ids, code words and
+ *   numbers only), for Settings > Speed.
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
  * Additive (Ask box "Needs your OK", UI-PLAN v3.1 section 5; threat model in docs/SYSTEM-DESIGN-STEPHEN.md section 5):
@@ -107,6 +110,7 @@ export type AppRequest =
   | { id: string; type: 'zen.open' }
   | { id: string; type: 'doctor.run' }
   | { id: string; type: 'usage.get' }
+  | { id: string; type: 'latency.get'; days?: number }
   | { id: string; type: 'personal.summary' }
   | { id: string; type: 'memory.graph' }
   | { id: string; type: 'memory.suggestions' }
@@ -143,6 +147,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'zen.open',
   'doctor.run',
   'usage.get',
+  'latency.get',
   'personal.summary',
   'memory.graph',
   'memory.suggestions',
@@ -173,6 +178,7 @@ export type AppMessage =
   | { id: string; type: 'zen'; ok: boolean; message: string }
   | { id: string; type: 'doctor'; checks: DoctorCheck[]; problems: number; blocking: number }
   | ({ id: string; type: 'usage' } & UsageReport)
+  | { id: string; type: 'latency'; days: number; triggers: number; text: string }
   | ({ id: string; type: 'personal' } & PersonalSummary)
   | ({ id: string; type: 'graph' } & MemoryGraph)
   | { id: string; type: 'suggestions'; suggestions: MemoryProposal[] }
@@ -286,6 +292,7 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'zen.open': () => ok,
   'doctor.run': () => ok,
   'usage.get': () => ok,
+  'latency.get': (o) => (o.days === undefined || o.days === null || o.days === 1 || o.days === 7 || o.days === 30 ? ok : bad('days must be 1, 7 or 30')),
   'personal.summary': () => ok,
   'memory.graph': () => ok,
   'memory.suggestions': () => ok,
@@ -331,6 +338,8 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, ...(has('before') ? { before: o.before as string } : {}), ...(has('limit') ? { limit: o.limit as number } : {}) };
     case 'audit.recent':
       return { id, type, ...(has('limit') ? { limit: o.limit as number } : {}) };
+    case 'latency.get':
+      return { id, type, ...(has('days') ? { days: o.days as number } : {}) };
     default:
       return { id, type } as AppRequest;
   }

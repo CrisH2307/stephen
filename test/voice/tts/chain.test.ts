@@ -136,6 +136,20 @@ describe('ElevenLabs', () => {
     expect(t.lastProvider).toBe('elevenlabs');
   });
 
+  it('onAudio fires when a player starts: once for an ElevenLabs reply, once for say, never without sound', async () => {
+    let n = 0;
+    const deps = { home: home(false), baseUrl: el.baseUrl, play: afplayPlayer(afplay.path), sayCommand: say.path, log: (l: string) => logs.push(l), tmpRoot: audioTmp, onAudio: () => void n++ };
+    const withKey = createTts(cfg(), { ...deps, findKey: async () => ({ found: { key: FAKE_KEY, source: 'keychain' as const, where: 'macOS Keychain' }, notes: [] }) });
+    await withKey.speak('Hello.').done;
+    expect([withKey.lastProvider, n]).toEqual(['elevenlabs', 1]);
+    const noKey = createTts(cfg({ tts: 'say' }), { ...deps, findKey: async () => ({ found: null, notes: [] }), onAudio: () => {
+      n++;
+      throw new Error('a hook that throws');
+    } });
+    await noKey.speak('Hello.').done;
+    expect([noKey.lastProvider, n]).toEqual(['say', 2]); // and the throwing hook did not break speech
+  });
+
   it('cannot reach the server → network failure → say', async () => {
     const t = createTts(cfg(), {
       home: home(false),

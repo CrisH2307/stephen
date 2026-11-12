@@ -16,6 +16,8 @@
 //   FAKE_CLAUDE_TOOLS tool names per message, e.g. "open_url,announce|media_control" (message 1 | message 2 | …),
 //                     logged to the --tool-log of the --mcp-config, like the Stephen server
 //   FAKE_CLAUDE_DURATION_MS / FAKE_CLAUDE_API_MS  per message: wait this long, report it (api cumulative)
+//   FAKE_CLAUDE_STEPS=<ms>  per message, like a tool turn with --include-partial-messages: a stream_event (first token),
+//                     an assistant line (tool call), <ms> later a user line (tool result), <ms> later the final assistant
 //   FAKE_CLAUDE_INIT_MS  delay before answering initialize; FAKE_CLAUDE_REPLY  the reply text
 //   FAKE_CLAUDE_TRANSCRIPT_DIR  write <dir>/<session id>.jsonl at system/init, like Claude Code's transcript
 // Serve instance (docs/REVIEW-7.md R7-1): when the --mcp-config gives serve `--instance <id>`, the serve child takes
@@ -152,6 +154,16 @@ export async function runStream({ argv, at, mode, logTools }) {
       await new Promise((r) => setTimeout(r, 100)); // it has taken (or found) the lock
     }
     if (duration > 0) await new Promise((r) => setTimeout(r, duration));
+    if (env.FAKE_CLAUDE_STEPS) {
+      const step = () => new Promise((r) => setTimeout(r, Number(env.FAKE_CLAUDE_STEPS)));
+      out({ type: 'stream_event', event: { type: 'message_start' }, session_id: sessionId });
+      out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'SECRET-TOKEN-TEXT' } }, session_id: sessionId });
+      out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'on it' }] }, session_id: sessionId });
+      out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'mcp__stephen__open_url', input: {} }] }, session_id: sessionId });
+      await step();
+      out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'SECRET-TOOL-RESULT' }] }, session_id: sessionId });
+      await step();
+    }
     out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] }, session_id: sessionId });
     out({ type: 'rate_limit_event', rate_limit_info: {} });
     if (mode === 'garbage') {

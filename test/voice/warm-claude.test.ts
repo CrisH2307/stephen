@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { newServeInstance, pidAlive, readServeLock, serveLockPath } from '../../src/server/instance.js';
-import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
+import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, checkClaudeFlags, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
 import { WarmClaude, probeWarmProtocol, userMessageLine, type WarmClaudeOptions } from '../../src/voice/warm-claude.js';
 import { fakeClaudePath, isAlive, readFakeLog, waitFor } from './helpers.js';
 
@@ -120,6 +120,47 @@ describe('WarmClaude against the fake stream-json claude', () => {
     expect(runs[0]!.persona?.text).toContain('my gym is goodlife');
     expect(runs[0]!.persona?.mode).toBe(0o600);
     await p.kill();
+  });
+
+  it('model times come from when the stream lines arrive: model wait, tool wait, first token; never their text', async () => {
+    const t = setup({ FAKE_CLAUDE_DURATION_MS: '60', FAKE_CLAUDE_STEPS: '80' });
+    const p = new WarmClaude(t.o, undefined);
+    await p.ready();
+    const a = await p.turn('open youtube');
+    const b = await p.turn('and pause');
+    for (const out of [a, b]) {
+      if (out.kind !== 'ok') throw new Error('not ok');
+      const m = out.model!;
+      expect(Object.keys(m).sort()).toEqual(['firstTokenMs', 'modelMs', 'toolMs']);
+      // 60 ms to the first model message, 80 ms of tool, 80 ms to the final message (timers are never early by much).
+      expect(m.toolMs).toBeGreaterThanOrEqual(70);
+      expect(m.toolMs).toBeLessThan(400);
+      expect(m.modelMs).toBeGreaterThanOrEqual(125);
+      expect(m.modelMs).toBeLessThan(900);
+      expect(m.firstTokenMs).toBeGreaterThanOrEqual(50);
+      expect(m.firstTokenMs!).toBeLessThanOrEqual(m.modelMs);
+      expect(JSON.stringify(out)).not.toContain('SECRET');
+    }
+    await p.kill();
+  });
+
+  it('without tool lines or partial messages: all the time is model time, and there is no first token', async () => {
+    const t = setup({ FAKE_CLAUDE_DURATION_MS: '40' });
+    const p = new WarmClaude(t.o, undefined);
+    await p.ready();
+    const a = await p.turn('hello');
+    expect(a.kind === 'ok' && a.model).toMatchObject({ toolMs: 0 });
+    expect(a.kind === 'ok' && a.model!.modelMs).toBeGreaterThanOrEqual(30);
+    expect(a.kind === 'ok' && 'firstTokenMs' in a.model!).toBe(false);
+    await p.kill();
+  });
+
+  it('--include-partial-messages only when the settings ask for it (the help probe found it)', () => {
+    expect(buildWarmArgs(SETTINGS)).not.toContain('--include-partial-messages');
+    const args = buildWarmArgs({ ...SETTINGS, partialMessages: true });
+    expect(args.slice(0, 7)).toEqual(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages']);
+    expect(args.slice(7)).toEqual(buildWarmArgs(SETTINGS).slice(6));
+    expect(checkClaudeFlags('claude --print\n  --include-partial-messages  x')).toMatchObject({ ok: false }); // required flags still decide
   });
 
   it('the persona file is deleted after initialize answers, not before', async () => {

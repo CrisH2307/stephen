@@ -33,9 +33,10 @@ export type LatencyOutcome = (typeof LATENCY_OUTCOMES)[number];
  * Stage times in ms after the trigger (wake word heard, or key down).
  * speechEnd = the owner stopped talking (F5: key up); captureEnd = Stephen decided the command ended (so
  * captureEnd - speechEnd is the endpoint wait); asrDone = the transcript is ready; commandStart = handed to the
- * assistant; replyReady = the reply text exists (model or router finished); done = reply spoken or shown.
+ * assistant; replyReady = the reply text exists (model or router finished); firstAudio = the first sound of the spoken
+ * reply started (the player was started; absent when the reply was only shown); done = reply spoken or shown.
  */
-export const LATENCY_STAGES = ['speechEnd', 'captureEnd', 'asrDone', 'commandStart', 'replyReady', 'done'] as const;
+export const LATENCY_STAGES = ['speechEnd', 'captureEnd', 'asrDone', 'commandStart', 'replyReady', 'firstAudio', 'done'] as const;
 export type LatencyStage = (typeof LATENCY_STAGES)[number];
 
 export interface LatencyRecord {
@@ -54,7 +55,17 @@ export interface LatencyRecord {
   stages: Partial<Record<LatencyStage, number>>;
   /** p99 event-loop delay while the command ran, ms (plan 8.1). */
   loopP99Ms?: number;
+  /** Model run only (warm process): time waiting for the model, summed over its turns, ms. */
+  modelMs?: number;
+  /** Model run only: time the tools took (tool call sent → tool result back), summed, ms. */
+  toolMs?: number;
+  /** Model run only: prompt sent → first streamed token, ms. Only when Claude Code streams partial messages. */
+  firstTokenMs?: number;
 }
+
+/** The model-run numbers of a record (LatencyRecord's optional fields). */
+export const LATENCY_MODEL_FIELDS = ['modelMs', 'toolMs', 'firstTokenMs'] as const;
+export type LatencyModelTimes = Partial<Record<(typeof LATENCY_MODEL_FIELDS)[number], number>>;
 
 export const LATENCY_RETENTION_DAYS = 30;
 /** A day file larger than this takes no more lines (about 20,000 commands). */
@@ -91,6 +102,11 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
     if (n !== null) stages[s] = n;
   }
   const loop = ms(o.loopP99Ms);
+  const model: LatencyModelTimes = {};
+  for (const f of LATENCY_MODEL_FIELDS) {
+    const n = ms(o[f]);
+    if (n !== null) model[f] = n;
+  }
   return {
     v: 1,
     id: o.id,
@@ -103,6 +119,7 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
     turns: ms(o.turns) ?? 0,
     stages,
     ...(loop !== null ? { loopP99Ms: loop } : {}),
+    ...model,
   };
 }
 
@@ -113,7 +130,7 @@ export interface LatencyTrace {
   /** Stage reached at `at` (epoch ms, default now). A later mark of the same stage replaces the earlier one. */
   mark(id: string, stage: LatencyStage, at?: number): void;
   /** The trigger is over: write its line. A second end for the same id does nothing. */
-  end(id: string, outcome: LatencyOutcome, extra?: { route?: LatencyRoute | null; followUp?: boolean; turns?: number }): void;
+  end(id: string, outcome: LatencyOutcome, extra?: { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes }): void;
 }
 
 export interface LatencyMonitorOptions {
@@ -152,7 +169,7 @@ export class LatencyMonitor implements LatencyTrace {
     if (t) t.stages[stage] = Math.max(0, Math.round((at ?? this.now()) - t.t0));
   }
 
-  end(id: string, outcome: LatencyOutcome, extra: { route?: LatencyRoute | null; followUp?: boolean; turns?: number } = {}): void {
+  end(id: string, outcome: LatencyOutcome, extra: { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes } = {}): void {
     const t = this.open.get(id);
     if (!t) return;
     this.open.delete(id);
@@ -168,6 +185,7 @@ export class LatencyMonitor implements LatencyTrace {
       turns: extra.turns ?? 0,
       stages: t.stages,
       loopP99Ms: this.o.loop?.p99Ms(),
+      ...extra.model,
     });
     if (!rec) return;
     try {

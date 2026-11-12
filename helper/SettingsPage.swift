@@ -6,7 +6,7 @@ import AppKit
 import SwiftUI
 
 enum SettingsItem: String, CaseIterable, Identifiable {
-  case talk, model, appearance, wake, phone, accounts, browsers, privacy, about
+  case talk, model, appearance, wake, phone, accounts, browsers, privacy, speed, about
   var id: String { return rawValue }
   var title: String {
     switch self {
@@ -18,6 +18,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .accounts: return "Accounts"
     case .browsers: return "Browsers"
     case .privacy: return "Privacy and safety"
+    case .speed: return "Speed"
     case .about: return "About"
     }
   }
@@ -31,6 +32,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .accounts: return "person.crop.circle"
     case .browsers: return "globe"
     case .privacy: return "lock"
+    case .speed: return "speedometer"
     case .about: return "info.circle"
     }
   }
@@ -79,6 +81,7 @@ struct SettingsView: View {
     case .accounts: AccountsSettingsPane(model: model)
     case .browsers: BrowsersSettingsPane(control: control)
     case .privacy: PrivacySettingsPane()
+    case .speed: SpeedSettingsPane(control: control)
     case .about: AboutSettingsPane(model: model, control: control)
     }
   }
@@ -332,6 +335,28 @@ private struct PrivacySettingsPane: View {
       PaneTitle("Privacy and safety")
       Note("What Stephen may do, and what it asks you about first, is listed under Personal. Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep. Changing these rules is not possible from the app yet.")
     }
+  }
+}
+
+/** Read only: the latency log of the last 7 days as `stephen latency` prints it (ids, code words and numbers). */
+private struct SpeedSettingsPane: View {
+  @Environment(\.stephenTheme) var t
+  let control: StephenControl
+  @State private var report = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.l) {
+      PaneTitle("Speed")
+      Note("How long commands took in the last 7 days, from end of speech. Kept on this Mac only.")
+      QuietButton("Refresh") { load() }
+      if !report.isEmpty { Text(verbatim: report).font(TypeScale.mono).foregroundColor(t.ink).textSelection(.enabled) }
+    }
+    .onAppear { load() }
+  }
+
+  private func load() {
+    report = "Loading..."
+    control.latency { report = latencyText($0) }
   }
 }
 

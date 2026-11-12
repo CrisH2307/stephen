@@ -197,6 +197,8 @@ struct AppRequest: Encodable {
   static func zenOpen(_ id: String) -> AppRequest { return AppRequest(id: id, type: "zen.open") }
   static func doctorRun(_ id: String) -> AppRequest { return AppRequest(id: id, type: "doctor.run") }
   static func usageGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "usage.get") }
+  /** `latency.get` (src/telemetry/cli.ts): the latency report of the last 7 days as text. */
+  static func latencyGet(_ id: String) -> AppRequest { return AppRequest(id: id, type: "latency.get") }
   /** `personal.summary` (src/app/personal.ts), read-only. */
   static func personalSummary(_ id: String) -> AppRequest { return AppRequest(id: id, type: "personal.summary") }
   // Memory page (UI-PLAN v3.1 section 7a). Keep and Skip are only ever sent from the owner's click.
@@ -1558,6 +1560,12 @@ func zenProblem(_ msg: AppMessage) -> String? {
   return msg.type == "zen" && msg.ok == true ? nil : msg.message ?? "error"
 }
 
+/** Plain text for a `latency` answer, like `stephen latency` prints it. An older listener answers with an error. */
+func latencyText(_ msg: AppMessage) -> String {
+  guard msg.type == "latency" else { return msg.message ?? "error" }
+  return msg.text ?? ""
+}
+
 /** Plain text for a `doctor` answer, like `stephen doctor` prints it. */
 func doctorText(_ msg: AppMessage) -> String {
   guard msg.type == "doctor" else { return msg.message ?? "error" }
@@ -1748,6 +1756,10 @@ final class StephenControl: ObservableObject {
   func phoneOff(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .phoneOff("c-phone-off"), done) }
   func openZen(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .zenOpen("c-zen"), done) }
   func runDoctor(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .doctorRun("c-doctor"), done) }
+  /** Settings > Speed: the latency report (ids and numbers only); quick, so a short timeout. */
+  func latency(_ done: @escaping (AppMessage) -> Void) {
+    appRequestOnce(appSocketPath, .latencyGet("c-latency"), timeout: APP_REQUEST_TIMEOUT_SECONDS, done)
+  }
   /** This chat's context % (nil when unknown) and memory % for the ⋯ menu; quick, so a short timeout. */
   func usage(_ done: @escaping (AppMessage) -> Void) {
     appRequestOnce(appSocketPath, .usageGet("c-usage"), timeout: APP_REQUEST_TIMEOUT_SECONDS, done)

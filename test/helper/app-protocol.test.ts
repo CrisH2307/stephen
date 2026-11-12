@@ -45,6 +45,8 @@ const RESPONSES: Record<string, string[]> = {
   'zen.open': ['zen', 'error'],
   'doctor.run': ['doctor', 'error'],
   'usage.get': ['usage', 'error'],
+  // Settings > Speed (src/telemetry/cli.ts): the latency report as text.
+  'latency.get': ['latency', 'error'],
   // Personal page (src/app/personal.ts), read-only.
   'personal.summary': ['personal', 'error'],
   // Memory page (UI-PLAN v3.1 section 7a): proposals are kept or skipped only by the owner's click.
@@ -242,6 +244,12 @@ describe('app.sock protocol v1 fixture', () => {
           if (msg.context !== null) expect(Object.keys(msg.context as object).sort()).toEqual(['percent', 'tokens', 'warn', 'window']);
           break;
         }
+        case 'latency':
+          expect(Object.keys(msg).sort()).toEqual(['days', 'id', 'text', 'triggers', 'type']);
+          expect([1, 7, 30]).toContain(msg.days);
+          expect(typeof msg.triggers).toBe('number');
+          expect(typeof msg.text).toBe('string');
+          break;
         case 'memory.usage': {
           const m = msg.memory as Record<string, unknown>;
           expect(Object.keys(m).sort()).toEqual(['budget', 'bytes', 'percent', 'warn']);
@@ -307,6 +315,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(client).toContain('APP_MAX_LINE_BYTES = 256 * 1024');
     expect(client).toContain('APP_CHAT_MAX_CHARS = 2000');
     expect(read('main.swift')).toContain('home + "/run/app.sock"');
+  });
+
+  it('Settings > Speed: sends latency.get and shows the report text verbatim', () => {
+    expect(client).toContain('type: "latency.get"');
+    expect(client).toContain('msg.type == "latency"');
+    const settings = read('SettingsPage.swift');
+    expect(settings).toContain('case .speed: SpeedSettingsPane(control: control)');
+    expect(settings).toMatch(/struct SpeedSettingsPane[\s\S]*control\.latency \{ report = latencyText\(\$0\) \}/);
+    expect(settings).toMatch(/struct SpeedSettingsPane[\s\S]*Text\(verbatim: report\)/);
   });
 
   it('Ask box usage lines: sends usage.get and decodes the P2 shape (PR #18) without importing it', () => {

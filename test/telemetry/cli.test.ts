@@ -110,6 +110,24 @@ describe('buildReport', () => {
     expect(rep.slowest.map((s) => s.ms)).toEqual([1200, 1100, 1000, 900, 800, 700, 600, 500, 400, 300]);
   });
 
+  it('rows for first audio and for the model run\'s own numbers, only where a record has them', () => {
+    const rep = buildReport(
+      [
+        rec(1, { speechEnd: 1000, replyReady: 3000, firstAudio: 3400, done: 5000 }, { modelMs: 1500, toolMs: 400, firstTokenMs: 300 }),
+        rec(2, { speechEnd: 1000, replyReady: 2000, firstAudio: 2600, done: 4000 }, { modelMs: 900, toolMs: 0 }),
+        rec(3, { speechEnd: 1000, replyReady: 2000, done: 2000 }),
+      ],
+      7,
+    );
+    expect(rep.groups[0]!.spans).toMatchObject({
+      'speech → audio': { n: 2, p50: 1600, p95: 2400 },
+      model: { n: 2, p50: 900, p95: 1500 },
+      tools: { n: 2, p50: 0, p95: 400 },
+      'first token': { n: 1, p50: 300, p95: 300 },
+    });
+    expect(Object.keys(buildReport([rec(3, { speechEnd: 0, replyReady: 5 })], 7).groups[0]!.spans)).toEqual(['speech → reply']);
+  });
+
   it('a voice command without end of speech, or with times that run backwards, is not counted in a span', () => {
     expect(spanMs(rec(1, { replyReady: 900 }), 'speech', 'replyReady')).toBeNull();
     expect(spanMs(rec(1, { replyReady: 900 }, { trigger: 'cli' }), 'speech', 'replyReady')).toBe(900);

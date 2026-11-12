@@ -87,7 +87,7 @@ describe('parseAppRequest', () => {
 
   it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'latency.get', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage'].sort(),
     );
   });
 
@@ -106,6 +106,12 @@ describe('parseAppRequest', () => {
     expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: true }))).toEqual({ kind: 'request', req: { id: 'a', type: 'confirm.answer', confirmId: id, approve: true } });
     expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: id, approve: 'yes' })).kind).toBe('invalid');
     expect(parseAppRequest(JSON.stringify({ id: 'a', type: 'confirm.answer', confirmId: 'c1', approve: true })).kind).toBe('invalid');
+  });
+
+  it('latency.get: days is 1, 7 or 30, or left out', () => {
+    expect(parseAppRequest(line({ id: 'l', type: 'latency.get', cmd: 'x' }))).toEqual({ kind: 'request', req: { id: 'l', type: 'latency.get' } });
+    expect(parseAppRequest(line({ id: 'l', type: 'latency.get', days: 30 }))).toEqual({ kind: 'request', req: { id: 'l', type: 'latency.get', days: 30 } });
+    for (const days of [0, 2, 7.5, '7', -1, 365]) expect(parseAppRequest(line({ id: 'l', type: 'latency.get', days })), String(days)).toMatchObject({ kind: 'invalid', message: 'days must be 1, 7 or 30' });
   });
 
   it('control requests take only an id; extra fields are dropped', () => {

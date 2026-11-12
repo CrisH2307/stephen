@@ -456,6 +456,9 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4â
 - `stephen latency [--days 1|7|30] [--json]` shows p50 and p95 per trigger and route for each step, from end of
   speech, marks a group that is over the plan's target, and lists the 10 slowest commands by id (default 7 days).
 - It reads `<home>/telemetry/latency-YYYY-MM-DD.jsonl`: ids, code words and numbers only, kept 30 days.
+- A model run on the warm process also records `modelMs` (waiting for the model), `toolMs` (waiting for tools) and,
+  when this Claude Code lists `--include-partial-messages`, `firstTokenMs`. They are taken from when stream lines
+  arrive, never from what they say. A spoken reply records `firstAudio`, the moment the audio player starts.
 - **Persona file.** `<home>/voice/persona.txt` (persona, aboutMe, memory) exists only while a `claude` run starts and is
   deleted after each run and when `stephen listen` exits.
 - Tool names come from `stephen serve --tool-log <home>/voice/tool-log.jsonl`, which records only

@@ -28,6 +28,7 @@ import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
 import { commandFilePath, toolLogPath } from '../server/tool-log.js';
+import { buildReport, formatReport } from '../telemetry/cli.js';
 import { LatencyMonitor } from '../telemetry/latency.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
@@ -399,6 +400,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       settings.unsupportedOptionalFlags = probe.unsupportedOptional;
       err(`Note: this Claude Code doesn't know ${[...probe.unsupportedOptional].join(', ')}; running without them (update Claude Code for the faster lock-down).`);
     }
+    // First-token time for the latency monitor: only when this Claude Code lists the flag (warm process only).
+    if (probe?.ok && probe.partialMessages) settings.partialMessages = true;
   }
   // Persona (+ aboutMe + memory) in a 0600 file instead of argv when this Claude Code takes the flag (voice.personaFile).
   if (resolvePersonaFile(cfg.personaFile, probe)) settings.personaFile = join(voiceDir, PERSONA_FILE);
@@ -481,13 +484,22 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const onStart = (c: { id: string; source: CommandReport['source']; said: string }) => {
     latency?.begin(c.id, c.source === 'voice-ptt' ? 'ptt' : c.source === 'voice-wake' ? 'wake' : c.source);
     latency?.mark(c.id, 'commandStart');
+    speaking = { id: c.id, marked: false };
     app?.heard(c.said, c.source);
+  };
+  // The command whose reply is being spoken (one at a time). Its first player start is `firstAudio`.
+  let speaking: { id: string; marked: boolean } | null = null;
+  const onAudio = () => {
+    if (!speaking || speaking.marked) return;
+    speaking.marked = true;
+    latency?.mark(speaking.id, 'firstAudio');
   };
   const onDone = (r: CommandReport) => {
     const end = Date.now();
     latency?.mark(r.id, 'replyReady', end - Math.max(0, r.ms - r.replyMs));
     latency?.mark(r.id, 'done', end);
-    latency?.end(r.id, r.result, { route: r.route, followUp: r.followUp, turns: r.turns });
+    if (speaking?.id === r.id) speaking = null;
+    latency?.end(r.id, r.result, { route: r.route, followUp: r.followUp, turns: r.turns, ...(r.model ? { model: r.model } : {}) });
     recordHistory?.(r);
     const calls = r.ranClaude && toolRunner ? toolRunner.tools() : [];
     app?.commandDone(r, calls.map((t) => t.tool), calls);
@@ -501,7 +513,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       let current: { voice: string; tts: TtsSpeaker } | null = null;
       const ttsFor = (): TtsSpeaker => {
         const voice = talk.get().voice;
-        if (current?.voice !== voice) current = { voice, tts: createTts({ ...cfg, tts: voice }, { home, log: err }) };
+        if (current?.voice !== voice) current = { voice, tts: createTts({ ...cfg, tts: voice }, { home, log: err, onAudio }) };
         return current.tts;
       };
       if (talk.get().speak) {
@@ -609,6 +621,14 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
       control: appControl({ home, cliPath, log: err }),
       usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
+      ...(latency
+        ? {
+            latency: (days: number) => {
+              const report = buildReport(latency.read(days), days);
+              return { triggers: report.triggers, text: formatReport(report) };
+            },
+          }
+        : {}),
       log: err,
     });
     try {

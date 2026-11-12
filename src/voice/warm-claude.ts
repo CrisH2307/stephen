@@ -16,7 +16,8 @@
  *    first command's transcript can still be deleted (R7-3).
  *  - Turn: `mcp_status` must still say connected, then ONE line `JSON.stringify({type:'user',…})`; the turn ends at the
  *    next `result` line. `duration_api_ms` and `total_cost_usd` are cumulative per process, so the outcome carries the
- *    difference from the previous result. Every other line type is ignored.
+ *    difference from the previous result. `assistant`, `user` and `stream_event` lines are only timed (ModelTimes:
+ *    when they arrive, never what they say). Every other line type is ignored.
  *  - Anything that isn't a JSON line, or an exit before the result, is an error. One turn at a time.
  * Cancel = kill the whole process group (never the stream `interrupt`: an interrupted tool keeps running).
  * WarmConversationRunner (conversation.ts) owns when a process lives and dies; this class only drives one.
@@ -36,6 +37,7 @@ import {
   writePersonaFile,
   type ClaudeOutcome,
   type ClaudeSettings,
+  type ModelTimes,
   type ResultJson,
   type ServeInstance,
   type SpawnFn,
@@ -133,6 +135,8 @@ export class WarmClaude implements WarmProcess {
   private seq = 0;
   private readonly pending = new Map<string, { resolve: (r: Record<string, unknown>) => void; reject: (e: Error) => void }>();
   private current: ((o: ClaudeOutcome) => void) | null = null;
+  /** The running turn's clock (ModelTimes): `mark` is when the model or a tool started working. */
+  private timing: { sentAt: number; mark: number; phase: 'model' | 'tool'; times: ModelTimes } | null = null;
   private prevApiMs = 0;
   private prevCostUsd = 0;
   private contextTokens: number | null = null;
@@ -347,6 +351,8 @@ export class WarmClaude implements WarmProcess {
         const gone = o.kind === 'ok' ? this.serveProblem() : null;
         resolve(gone ? { kind: 'error', message: `Stephen's tools stopped during that command (${gone}), so I ended the conversation. Say it again.`, sessionId: o.kind === 'ok' ? o.sessionId : null } : o);
       };
+      const t = this.now();
+      this.timing = { sentAt: t, mark: t, phase: 'model', times: { modelMs: 0, toolMs: 0 } };
       this.child?.stdin?.write(userMessageLine(prompt));
     });
   }
@@ -390,8 +396,30 @@ export class WarmClaude implements WarmProcess {
       this.onResult(msg as ResultJson);
     } else if (msg.type === 'assistant') {
       this.contextTokens = contextTokensOf(msg) ?? this.contextTokens;
+      this.clock('tool');
+    } else if (msg.type === 'user') {
+      this.clock('model'); // a tool result went back to the model
+    } else if (msg.type === 'stream_event') {
+      // Only with --include-partial-messages. The first one of a turn is the first token; its text is never read.
+      const t = this.timing;
+      if (t && t.times.firstTokenMs === undefined && (msg.event as { type?: unknown } | undefined)?.type === 'content_block_delta') {
+        t.times.firstTokenMs = Math.max(0, Math.round(this.now() - t.sentAt));
+      }
     }
-    // stream_event, user, system/*, rate_limit_event…: ignored.
+    // system/*, rate_limit_event…: ignored.
+  }
+
+  /**
+   * Turn clock: an `assistant` line ends a wait for the model, a `user` line (tool result) ends a wait for tools.
+   * One model message can arrive as several `assistant` lines; only the first after a wait counts.
+   */
+  private clock(next: 'model' | 'tool'): void {
+    const t = this.timing;
+    if (!t || t.phase === next) return;
+    const now = this.now();
+    t.times[t.phase === 'model' ? 'modelMs' : 'toolMs'] += Math.max(0, Math.round(now - t.mark));
+    t.mark = now;
+    t.phase = next;
   }
 
   get context(): ContextUsage | null {
@@ -402,9 +430,11 @@ export class WarmClaude implements WarmProcess {
     const api = num(res.duration_api_ms);
     const cost = num(res.total_cost_usd);
     const out = outcomeFromResult(res);
+    const model = this.timing?.times;
+    this.timing = null;
     const perCommand: ClaudeOutcome =
       out.kind === 'ok'
-        ? { ...out, apiMs: api !== null ? Math.max(0, api - this.prevApiMs) : null, costUsd: cost !== null ? Math.max(0, cost - this.prevCostUsd) : null }
+        ? { ...out, apiMs: api !== null ? Math.max(0, api - this.prevApiMs) : null, costUsd: cost !== null ? Math.max(0, cost - this.prevCostUsd) : null, ...(model ? { model } : {}) }
         : out;
     if (api !== null) this.prevApiMs = api;
     if (cost !== null) this.prevCostUsd = cost;

@@ -3,7 +3,7 @@
  * `--text` and the Stephen app's typed chat (src/app/server.ts): call command(text, {source, raw}).
  */
 import { newHistoryId } from '../history/store.js';
-import type { ClaudeOutcome } from './claude.js';
+import type { ClaudeOutcome, ModelTimes } from './claude.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
 
@@ -104,6 +104,8 @@ export interface CommandReport {
   route: 'memory' | 'timer' | 'job' | 'model';
   /** Milliseconds from the start of the command until the reply text existed (before it was spoken or shown). */
   replyMs: number;
+  /** The model run's own times, when the runner measured them (warm process). Numbers only. */
+  model?: ModelTimes;
 }
 
 export interface AssistantOptions {
@@ -248,7 +250,7 @@ export class Assistant {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
       replyAt = now();
-      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0 };
+      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}) };
       if (out.kind === 'cancelled' || this.cancelled) {
         this.o.status('Cancelled.');
         this.o.chimes.play('done');
