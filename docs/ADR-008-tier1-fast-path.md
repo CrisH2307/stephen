@@ -184,7 +184,7 @@ listener never sends a fast call".
 | # | Question | Default |
 |---|---|---|
 | 1 | Does a chime count as the first audible response for Tier 1? | Yes (plan review Q7 default) |
-| 2 | Ship option F first (`open_app`, `volume`), browser verbs second? | Yes |
+| 2 | Ship option F first (`open_app`, `volume`), browser verbs second? | Yes. **Accepted by the owner, 2026-11-12:** small fixes first, then the big build |
 | 3 | Should a fast "play" be allowed without resetting the conversation, since no model text is in the query? | No in v1: equality first. Revisit with Review 10b |
 | 4 | Do fast commands appear to the model as context ("what did I just open?") | No in v1 |
 | 5 | Does "stop" on the fast path mean anything beyond the listener's cancel? | No: it stays the existing cancel, plus decision 14 |
