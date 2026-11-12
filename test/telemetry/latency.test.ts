@@ -48,6 +48,20 @@ describe('LatencyMonitor', () => {
     expect(t.logs).toEqual([]);
   });
 
+  it('first audio and the model run\'s own times: numbers only, unknown or bad ones dropped', () => {
+    const t = setup();
+    t.m.begin('h_m', 'ptt');
+    t.clock.t += 900;
+    t.m.mark('h_m', 'firstAudio');
+    t.m.end('h_m', 'ok', { route: 'model', turns: 3, model: { modelMs: 1800.4, toolMs: 620, firstTokenMs: 410 } });
+    t.m.begin('h_n', 'ptt');
+    t.m.end('h_n', 'ok', { route: 'model', model: { modelMs: -5, toolMs: Number.NaN, said: 'secret' } as never });
+    const rows = t.lines().map((l) => JSON.parse(l));
+    expect(rows[0]).toMatchObject({ id: 'h_m', stages: { firstAudio: 900 }, modelMs: 1800, toolMs: 620, firstTokenMs: 410 });
+    expect(Object.keys(rows[1]).sort()).toEqual(['followUp', 'id', 'loopP99Ms', 'outcome', 'route', 'stages', 'tier', 'trigger', 'ts', 'turns', 'v']);
+    expect(parseLatencyRecord({ ...rows[0], firstTokenMs: 'soon' })).not.toHaveProperty('firstTokenMs');
+  });
+
   it('a trigger that never became a command still gets a row; a second end and unknown ids do nothing', () => {
     const t = setup();
     t.m.begin('h_w', 'wake');

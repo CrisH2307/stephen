@@ -153,6 +153,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     openWindow: () => (calls.opens++, null),
     control: FAKE_CONTROL,
     usage: async () => ({ context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } }),
+    latency: () => ({ triggers: 2, text: 'Latency, last 7 days: 2 triggers' }),
     personal: async () =>
       personalSummary({ aboutMe: { name: 'Cris' }, accounts: await accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }), jobsOn: true, timeZone: 'America/Toronto' }),
     newId: () => `h_test${++ids}`,
@@ -564,6 +565,17 @@ describe('memory, history, settings, audit, window', () => {
     expect(await failing.client.request({ id: 'p', type: 'phone.on' })).toEqual({ id: 'p', type: 'error', message: 'The phone link is already turning on.' });
     const none = await harness({ control: undefined });
     expect(await none.client.request({ id: 'd', type: 'doctor.run' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('latency.get answers with the report text for the asked days (default 7); without it, an error', async () => {
+    const asked: number[] = [];
+    const h = await harness({ latency: (days: number) => (asked.push(days), { triggers: 3, text: `report ${days}` }) });
+    expect(await h.client.request({ id: 'l', type: 'latency.get' })).toEqual({ id: 'l', type: 'latency', days: 7, triggers: 3, text: 'report 7' });
+    expect(await h.client.request({ id: 'l2', type: 'latency.get', days: 30 })).toEqual({ id: 'l2', type: 'latency', days: 30, triggers: 3, text: 'report 30' });
+    expect(await h.client.request({ id: 'l3', type: 'latency.get', days: 2 })).toMatchObject({ id: 'l3', type: 'error' });
+    expect(asked).toEqual([7, 30]);
+    const none = await harness({ latency: undefined });
+    expect(await none.client.request({ id: 'l', type: 'latency.get' })).toEqual({ id: 'l', type: 'error', message: 'not available in this listener' });
   });
 
   it('usage.get answers from the listener; without it, an error', async () => {

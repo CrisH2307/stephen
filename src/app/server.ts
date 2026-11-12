@@ -109,6 +109,8 @@ export interface AppServerOptions {
   speakReplies: boolean;
   /** phone.on / phone.off / zen.open / doctor.run (src/app/control.ts). Absent = not available. */
   control?: AppControl;
+  /** latency.get: the `stephen latency` report of the last `days` days as text. Absent = not available. */
+  latency?: (days: number) => { triggers: number; text: string };
   /** usage.get (src/app/usage.ts). Absent = not available. */
   usage?: () => Promise<UsageReport>;
   /** personal.summary (src/app/personal.ts). Absent = not available. */
@@ -524,6 +526,11 @@ export class AppServer {
         if (req.type === 'zen.open') return { id, type: 'zen', ...(await c.openZen()) };
         if (req.type === 'doctor.run') return { id, type: 'doctor', ...(await c.doctor()) };
         return { id, type: 'phone', ...(await (req.type === 'phone.on' ? c.phoneOn() : c.phoneOff())) };
+      }
+      case 'latency.get': {
+        if (!this.o.latency) return { id, type: 'error', message: 'not available in this listener' };
+        const days = req.days ?? 7;
+        return { id, type: 'latency', days, ...this.o.latency(days) };
       }
       case 'usage.get':
         if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };

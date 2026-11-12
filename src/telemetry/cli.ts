@@ -7,12 +7,13 @@
  *
  * Targets (plan 7.1) are proposals. `tier` is null until the command grammar exists (E6), so the check uses the route:
  * a local router (memory, timer, job; 0 model turns) is held to the Tier 1 "action done" target, the model to the
- * Tier 2 "full answer" target (reported, not a gate). Both are checked on speech → reply. First audible response,
- * Esc to silence and wake to chime are not in the log yet (PR 4).
+ * Tier 2 "full answer" target (reported, not a gate). Both are checked on speech → reply. Speech → first audio and the
+ * model's own numbers (model, tools, first token) are shown without a target. Esc to silence and wake to chime are not
+ * in the log.
  */
 import { loadConfig } from '../config.js';
 import { percentile } from '../lib/step-timer.js';
-import { LatencyMonitor, type LatencyRecord, type LatencyStage } from './latency.js';
+import { LATENCY_MODEL_FIELDS, LatencyMonitor, type LatencyRecord, type LatencyStage } from './latency.js';
 
 export const LATENCY_HELP = `stephen latency: how long Stephen takes, from the local latency log (ids and numbers only)
 
@@ -50,8 +51,11 @@ export const SPANS: readonly { name: string; from: From; to: LatencyStage }[] = 
   { name: 'reply', from: 'commandStart', to: 'replyReady' },
   { name: 'output', from: 'replyReady', to: 'done' },
   { name: 'speech → reply', from: 'speech', to: 'replyReady' },
+  { name: 'speech → audio', from: 'speech', to: 'firstAudio' },
   { name: 'speech → done', from: 'speech', to: 'done' },
 ];
+/** Rows from a model run's own numbers (LatencyRecord.modelMs and so on), shown after the spans. */
+export const MODEL_ROWS: Record<(typeof LATENCY_MODEL_FIELDS)[number], string> = { modelMs: 'model', toolMs: 'tools', firstTokenMs: 'first token' };
 /** The span the targets and the slowest list use. */
 export const TOTAL_SPAN = 'speech → reply';
 
@@ -105,6 +109,10 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
       for (const s of SPANS) {
         const v = rs.map((r) => spanMs(r, s.from, s.to)).filter((x): x is number => x !== null);
         if (v.length) spans[s.name] = { n: v.length, p50: percentile(v, 50), p95: percentile(v, 95) };
+      }
+      for (const f of LATENCY_MODEL_FIELDS) {
+        const v = rs.flatMap((r) => (r[f] === undefined ? [] : [r[f]]));
+        if (v.length) spans[MODEL_ROWS[f]] = { n: v.length, p50: percentile(v, 50), p95: percentile(v, 95) };
       }
       const target = route === 'none' ? null : route === 'model' ? TARGETS.model : TARGETS.local;
       const total = spans[TOTAL_SPAN];

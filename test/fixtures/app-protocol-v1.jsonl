@@ -91,3 +91,5 @@
 {"from":"node","kind":"response","msg":{"id":"a40","type":"settings","config":{"voice":{"model":"haiku","effort":"low","speak":false},"talk":{"length":"balanced","tone":"casual","speak":false,"explain":false,"voice":"elevenlabs","samples":{"brief":{"casual":"Bet, playing lofi beats."}}}},"configPath":"/Users/cris/.stephen/config.json"}}
 {"from":"app","kind":"request","msg":{"id":"a41","type":"model.set","effort":"turbo"}}
 {"from":"node","kind":"response","msg":{"id":"a41","type":"error","message":"effort must be default or one of low, medium, high, xhigh, max"}}
+{"from":"app","kind":"request","msg":{"id":"a42","type":"latency.get"}}
+{"from":"node","kind":"response","msg":{"id":"a42","type":"latency","days":7,"triggers":2,"text":"Latency, last 7 days: 2 triggers\noutcomes: ok 2\n\nptt / model  (n=2)\n  step                n       p50       p95\n  speech → reply      2   3000 ms   5000 ms\n\nSlowest 2 (speech → reply):\n  h_00000000000000a2  2026-11-10 10:05  ptt / model  ok  5000 ms\n  h_00000000000000a1  2026-11-10 10:00  ptt / model  ok  3000 ms"}}

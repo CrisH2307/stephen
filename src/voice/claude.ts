@@ -191,6 +191,12 @@ export interface ClaudeSettings {
   /** Optional lock-down flags this `claude` doesn't know (from probeClaudeFlags); they are left out. */
   unsupportedOptionalFlags?: ReadonlySet<string>;
   /**
+   * Warm process only: pass --include-partial-messages, so the stream carries `stream_event` lines and the first
+   * token can be timed (latency monitor). Set only when `claude --help` lists the flag. The text of those lines is
+   * never read.
+   */
+  partialMessages?: boolean;
+  /**
    * Follow-ups are on (voice.followUpWindowSec > 0): sessions are saved so the next command can `--resume`
    * them, so `--no-session-persistence` is left out. Off (default): every run is fresh and nothing is saved.
    */
@@ -238,6 +244,8 @@ export const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 /** Saves nothing to disk; only passed when follow-ups are off (a resumed session must have been saved). */
 export const NO_SESSION_PERSISTENCE = '--no-session-persistence';
+/** Stream partial messages (warm process, for the first-token time). Used only when the help text lists it. */
+export const PARTIAL_MESSAGES = '--include-partial-messages';
 
 /**
  * The flags that lock a headless run down to Stephen's tools. Checked against Claude Code 2.1.314 (`claude
@@ -300,7 +308,7 @@ export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptio
  * stream-json output). Prompts go to stdin as one JSON line each. Pure; unit-tested.
  */
 export function buildWarmArgs(s: ClaudeSettings, memory?: readonly string[]): string[] {
-  return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', ...lockedArgs(s, memory)];
+  return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', ...(s.partialMessages ? [PARTIAL_MESSAGES] : []), ...lockedArgs(s, memory)];
 }
 
 /** Everything after the prompt / output format: MCP config, lock-down, tool rules, persona, turn cap, model. */
@@ -439,9 +447,21 @@ export type ClaudeOutcome =
       /** Claude Code's own timings from the result JSON (`duration_ms`, `duration_api_ms`), when present. */
       durationMs?: number | null;
       apiMs?: number | null;
+      /** Where the turn's time went, from the stream lines (warm process only). Numbers only. */
+      model?: ModelTimes;
     }
   | { kind: 'error'; message: string; sessionId: string | null }
   | { kind: 'cancelled' };
+
+/** One command's model run, measured from its stream lines (src/voice/warm-claude.ts). All in ms. */
+export interface ModelTimes {
+  /** Waiting for the model: prompt or tool result sent → the model's next message, summed. */
+  modelMs: number;
+  /** Tools: the model's message → the tool result, summed. */
+  toolMs: number;
+  /** Prompt sent → first streamed token. Only with --include-partial-messages. */
+  firstTokenMs?: number;
+}
 
 export interface ResultJson {
   type?: string;
@@ -742,7 +762,7 @@ export const OPTIONAL_CLAUDE_FLAGS = ['--no-chrome', NO_SESSION_PERSISTENCE] as 
  * `ok.personaFile`: this help text mentions `--append-system-prompt-file`. Claude Code 2.1.316 accepts the flag but
  * lists it only inside the `--bare` help line, as `--append-system-prompt[-file]`, so both spellings count.
  */
-export type ClaudeFlagProbe = { ok: true; unsupportedOptional: Set<string>; personaFile: boolean } | { ok: false; missing: string[] };
+export type ClaudeFlagProbe = { ok: true; unsupportedOptional: Set<string>; personaFile: boolean; partialMessages?: true } | { ok: false; missing: string[] };
 
 /** Does this `claude --help` text mention `--append-system-prompt-file` (either spelling)? Pure. */
 export function helpMentionsPersonaFile(helpText: string): boolean {
@@ -757,7 +777,7 @@ export function checkClaudeFlags(helpText: string): ClaudeFlagProbe {
   if (!/(^|\s)--print\b/m.test(helpText) || !/claude/i.test(helpText)) return { ok: true, unsupportedOptional: new Set(), personaFile: false };
   const missing = REQUIRED_CLAUDE_FLAGS.filter((f) => !has(f));
   if (missing.length) return { ok: false, missing };
-  return { ok: true, unsupportedOptional: new Set(OPTIONAL_CLAUDE_FLAGS.filter((f) => !has(f))), personaFile: helpMentionsPersonaFile(helpText) };
+  return { ok: true, unsupportedOptional: new Set(OPTIONAL_CLAUDE_FLAGS.filter((f) => !has(f))), personaFile: helpMentionsPersonaFile(helpText), ...(has(PARTIAL_MESSAGES) ? { partialMessages: true as const } : {}) };
 }
 
 /** Runs `claude --help` once (argv, no shell, 15 s timeout). Null if it couldn't run (then nothing is dropped). */
