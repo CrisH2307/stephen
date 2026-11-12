@@ -9,6 +9,7 @@
 import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
+import { helperLogPath } from '../helper/paths.js';
 import { COMMAND_ID_RE } from '../lib/command-id.js';
 import { LATENCY_OUTCOMES, LATENCY_RETENTION_DAYS, LATENCY_ROUTES, LATENCY_STAGES, LATENCY_TRIGGERS, latencyDir } from '../telemetry/latency.js';
 
@@ -113,9 +114,34 @@ function modeProblem(p: string, want: 'dir' | 'file', mode: number): string | nu
   return (st.mode & 0o777) === mode ? null : `${p} has mode ${octal(st.mode)}, expected ${octal(mode)}`;
 }
 
+/**
+ * helper.log lines (helper/main.swift) that say the key listener is on or off. Matched at the start of the message,
+ * after the ISO timestamp the helper writes. Anything else in the log is ignored and never shown.
+ */
+const TAP_START = 'Stephen Helper ';
+const TAP_ON = ['event tap installed', 'Input Monitoring available; listening'];
+const TAP_OFF = ['event tap could not be created', 'event tap found disabled', 'Input Monitoring not granted'];
+const KEYS_FIX = 'open System Settings, Privacy & Security, Input Monitoring: remove Stephen Helper, add it again, then quit and reopen it';
+/** Newest tap line since the helper's last start: its fixed phrase, timestamp and whether the tap is on. */
+function lastTapLine(log: string): { started: boolean; tap: { on: boolean; phrase: string; at: string } | null } {
+  let started = false;
+  let tap: { on: boolean; phrase: string; at: string } | null = null;
+  for (const l of lines(log)) {
+    const m = /^(\S+) (.*)$/.exec(l);
+    if (!m || !ISO_RE.test(m[1]!)) continue;
+    const msg = m[2]!;
+    if (msg.startsWith(TAP_START) && msg.includes(' starting, pid ')) (started = true), (tap = null);
+    const on = TAP_ON.find((p) => msg.startsWith(p));
+    const off = TAP_OFF.find((p) => msg.startsWith(p));
+    if (on || off) tap = { on: !!on, phrase: (on ?? off)!, at: m[1]! };
+  }
+  return { started, tap };
+}
+
 type Check = (e: CheckEnv) => CheckResult;
 
 const ID = {
+  keys: '0.k1',
   dir: '13.1a',
   files: '13.1b',
   shape: '13.1c',
@@ -130,6 +156,17 @@ const ID = {
 };
 
 export const CHECKS: Check[] = [
+  (e) => {
+    const t = 'the key listener is on (Input Monitoring granted, F5 and Esc reach Stephen)';
+    if (e.platform !== 'darwin') return skip(ID.keys, t, 'the key listener only exists on macOS');
+    const log = text(helperLogPath(e.home));
+    if (log === null) return skip(ID.keys, t, 'no helper log yet: open Stephen Helper first');
+    const { started, tap } = lastTapLine(log);
+    if (!started) return skip(ID.keys, t, 'the helper log has no start line: reopen Stephen Helper');
+    if (!tap) return skip(ID.keys, t, 'the helper started but has not reported the key listener yet (it may have been rebuilt): reopen Stephen Helper and check again');
+    const said = `"${tap.phrase}" at ${tap.at}`;
+    return tap.on ? pass(ID.keys, t, said) : fail(ID.keys, t, `${said}; ${KEYS_FIX}`);
+  },
   (e) => {
     const t = 'the latency folder is private (0700)';
     if (e.platform === 'win32') return skip(ID.dir, t, 'file modes are not checked on Windows');
