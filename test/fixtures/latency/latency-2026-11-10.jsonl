@@ -1,0 +1,7 @@
+{"v":1,"id":"h_00000000000000a1","ts":"2026-11-10T15:00:00.000Z","trigger":"ptt","route":"model","tier":null,"outcome":"ok","followUp":false,"turns":2,"stages":{"speechEnd":1000,"captureEnd":1000,"asrDone":1300,"commandStart":1310,"replyReady":4000,"done":6000},"loopP99Ms":3}
+{"v":1,"id":"h_00000000000000a2","ts":"2026-11-10T15:05:00.000Z","trigger":"ptt","route":"model","tier":null,"outcome":"ok","followUp":true,"turns":3,"stages":{"speechEnd":2000,"captureEnd":2000,"asrDone":2400,"commandStart":2420,"replyReady":7000,"done":9000}}
+{"v":1,"id":"h_00000000000000a3","ts":"2026-11-10T15:10:00.000Z","trigger":"ptt","route":"model","tier":null,"outcome":"error","followUp":false,"turns":6,"stages":{"speechEnd":1500,"captureEnd":1500,"asrDone":1800,"commandStart":1805,"replyReady":10500,"done":12000}}
+{"v":1,"id":"h_00000000000000b1","ts":"2026-11-10T15:20:00.000Z","trigger":"wake","route":"memory","tier":null,"outcome":"ok","followUp":false,"turns":0,"stages":{"speechEnd":2000,"captureEnd":2800,"asrDone":3100,"commandStart":3110,"replyReady":3120,"done":4500},"said":"secret words"}
+{"v":1,"id":"h_00000000000000b2","ts":"2026-11-10T15:25:00.000Z","trigger":"wake","route":null,"tier":null,"outcome":"no_speech","followUp":false,"turns":0,"stages":{}}
+this line is not JSON
+{"v":1,"id":"h_00000000000000c1","ts":"2026-11-10T15:30:00.000Z","trigger":"app","route":"model","tier":null,"outcome":"ok","followUp":false,"turns":1,"stages":{"commandStart":0,"replyReady":2500,"done":2500}}

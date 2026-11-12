@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
@@ -68,6 +68,8 @@ Usage:
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
                          Show your recent commands (kept on this Mac only), or delete them
+  stephen latency [--days 1|7|30] [--json]
+                         How long commands take: p50 and p95 per trigger and route, and the 10 slowest
   stephen jobs [list] | status <id> | show <id> | stop <id>
                          Background jobs ("Stephen, start a job to …"; each start asks in a dialog)
   stephen phone login | on | off | status | setup | check
@@ -497,6 +499,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./memory/cli.js')).runMemoryCli(rest);
     case 'history':
       return (await import('./history/cli.js')).runHistoryCli(rest);
+    case 'latency':
+      return (await import('./telemetry/cli.js')).runLatencyCli(rest);
     case 'jobs':
       // Owner-only, and the per-job supervisor (`jobs _run`): loaded on demand, never by `stephen serve`.
       return (await import('./jobs/cli.js')).runJobsCli(rest);
