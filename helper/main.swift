@@ -478,6 +478,8 @@ core.readAudio = { audioWatcher.isPlaying() }
 core.onUIState = { s in MainActor.assumeIsolated { statusMenu?.setState(s) } }
 core.onQuit = { shutdownAndExit(0) }
 core.onOpenWindow = { MainActor.assumeIsolated { showStephenWindow() } }
+// The Ask box's mic shows "Listening" only while the helper's press is really down (F5 can end a press the box started).
+core.onPressEnded = { MainActor.assumeIsolated { askBox?.box.micHeld = false } }
 keyTap.onF5Down = { MainActor.assumeIsolated { askBox?.show(focus: false) } }
 audioWatcher.onChange = { playing in core.handleAudio(playing: playing) }
 
@@ -505,6 +507,8 @@ watchdog.setEventHandler {
     core.handleTapInterrupted()
     keyTap.install()
   }
+  let keysOff = !keyTap.isEnabled
+  MainActor.assumeIsolated { if askBox?.box.keysOff != keysOff { askBox?.box.keysOff = keysOff } }
 }
 
 MainActor.assumeIsolated {

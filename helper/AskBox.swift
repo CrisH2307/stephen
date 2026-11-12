@@ -21,6 +21,8 @@ final class AskBoxState: ObservableObject {
   @Published var draft = ""
   /** Push-to-talk started from the box's mic button (tap the box again to send). */
   @Published var micHeld = false
+  /** The helper has no working key listener (no Input Monitoring): F5, Fn+Option and Esc never reach Stephen. */
+  @Published var keysOff = false
   /** Stay open when you click elsewhere. Remembered. */
   @Published var pinned = UserDefaults.standard.bool(forKey: "askBoxPinned") {
     didSet { UserDefaults.standard.set(pinned, forKey: "askBoxPinned") }
@@ -159,6 +161,10 @@ struct AskBoxView: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel(box.micHeld ? "Listening. Activate to send." : "Listening")
+      if box.keysOff {
+        Text(verbatim: "F5 and Esc are off: Stephen Helper needs Input Monitoring. Click Listening to send.")
+          .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+      }
     case .offline:
       Text(verbatim: "Can't reach Stephen. Is stephen listen running?").font(TypeScale.body).foregroundColor(t.ink)
       QuietButton("Try again") { model.retry() }
@@ -311,8 +317,9 @@ final class AskBoxController: NSObject {
     panel?.orderOut(nil)
   }
 
-  /** Home's Talk button: open the box and start talking (tap the box again to send). */
+  /** Home's Talk button: open the box and start talking; press it again (or tap the box) to send. */
   func talk() {
+    if box.micHeld { return micUp() }
     show(focus: true, selectField: false)
     micDown()
   }
