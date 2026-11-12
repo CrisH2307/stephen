@@ -81,3 +81,22 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10a-9 | R10a | Low | `chat.done` waits for an unbounded audit read (up to 5 MB) after every command | open | dev | none |
 | R10a-10 | R10a | Info | Limits of "one id joins every log" (listener routes carry no `cmd`) | open | dev | none |
 | R10a-11 | R10a | Info | Swift notes: dead "N questions waiting" branch, scroll carry-over, tall question card | open | dev | none |
+
+## E. Review of `fix/mic-stop-f5` (#86, comment of 2026-11-12)
+
+| ID | Source | Severity | Title | Status | Lane | Issue or branch |
+|---|---|---|---|---|---|---|
+| R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | open | dev | #86, `fix/mic-stop-f5` |
+| R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | open | dev | none |
+| R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | open (decide) | dev | none |
+| R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | confirmed on the Mac | dev | queued with #93, #94 |
+
+## F. Requests from the dev lane (tracker #10, 2026-11-12)
+
+| ID | Source | Severity | Title | Status | Lane | Issue or branch |
+|---|---|---|---|---|---|---|
+| DL-1 | tracker #10 | P0 | Review of the #86 fix | done (comment on #86) | review | #86 |
+| DL-2 | tracker #10 | P0 | `mac-checks`: key listener check | in review | review | `feat/mac-checks-key-listener` |
+| DL-3 | tracker #10 | P1 | Test plan section 0: re-add Input Monitoring after every `install-helper` | in review | review | `docs/mac-test-input-monitoring` |
+| DL-4 | tracker #10 | P1 | Design note: keep the Input Monitoring grant across rebuilds | in review | review | `docs/helper-grant-note` |
+| DL-5 | tracker #10 | P0 | ADR-008 Mac measurements: steps for the owner; 1 of 4 done | in review, 3 open for the owner | review, owner | `docs/adr-008-measurements` |
