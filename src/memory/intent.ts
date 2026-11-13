@@ -47,11 +47,22 @@ const FORGET_ALL_RE =
   /^(?:please )?(?:forget everything(?: you know about me| about me)?|forget all (?:of )?(?:my |your |the )?memories|(?:clear|delete|erase) (?:all )?(?:of )?(?:my |your |the )?memories)$/;
 const FORGET_LAST_RE = /^(?:please )?forget (?:that|the last one|the last thing|what i just said)$/;
 const FORGET_RE = /^(?:please )?(?:forget|stop remembering|(?:delete|remove) (?:the|my) memory (?:about|of)) (?:about |that )?(.+)$/;
-const REMEMBER_RE = /^(?:please )?remember (?:that )?(.+)$/;
+/** Speech to text can leave a wake phrase or "hey" on the front ("hey steven remember ..."); drop it first. */
+const LEAD_RE = /^(?:(?:hey|yo|ok|okay) )?(?:(?:stephen|steven) )?(?:please )?/;
+/** The natural ways to ask for a save. Group 1 = "that" (explicit), group 2 = the fact. */
+const REMEMBER_RES: readonly RegExp[] = [
+  /^(?:also )?remember (?:(?:me )?(that) )?(.+)$/,
+  /^(?:(?:can|could|would|will) you (?:please )?|(?:i want|i need|i would like|i'd like) you to )remember (?:(?:me )?(that) )?(.+)$/,
+  /^(?:don't|dont|do not) forget (?:(that) )?(.+)$/,
+  /^(?:make a note|take note|note|keep in mind) (?:(that) )?(.+)$/,
+];
+/** Forms that could also be a question or a to-do ("can you remember the song ...") save only with "that" or a first-person fact. */
+const NEEDS_FACT_RE = /^(?:(?:can|could|would|will) you|i want|i need|i would like|i'd like|don't|dont|do not|keep in mind|note|make a note|take note)\b/;
+const PERSONAL_RE = /^(?:my|i|i'm|i've|i'll|we|our)\b/;
 
 /** "forget it" and friends are everyday speech, not a memory command. */
 const FORGET_NOT_A_QUERY = new Set(['it', 'about it', 'this', 'them', 'him', 'her', 'everything else', 'that one', 'all that', 'it all']);
-const TRAILING_POLITE_RE = /(?: (?:please|thanks|thank you))+$/;
+const TRAILING_POLITE_RE = /(?: (?:please|thanks|thank you|for me))+$/;
 
 /** Split a remember text at the first joiner followed by a command verb: [saved, command] or null. */
 export function splitRememberTail(words: string): { text: string; rest: string } | null {
@@ -72,7 +83,7 @@ export function splitRememberTail(words: string): { text: string; rest: string }
  * `text`, `rest` and `query` are normalized words; use rawTail(raw, words) to recover the original case.
  */
 export function parseMemoryIntent(command: string): MemoryIntent | null {
-  const s = memoryWords(command);
+  const s = memoryWords(command).replace(LEAD_RE, '');
   if (!s) return null;
   if (LIST_RE.test(s)) return { kind: 'list' };
   if (FORGET_ALL_RE.test(s)) return { kind: 'forget-all' };
@@ -83,9 +94,17 @@ export function parseMemoryIntent(command: string): MemoryIntent | null {
     if (!query || FORGET_NOT_A_QUERY.has(query) || query.startsWith('to ') || query.startsWith('about it ')) return null;
     return { kind: 'forget', query };
   }
-  m = REMEMBER_RE.exec(s);
-  if (m) {
-    let body = m[1]!;
+  // A question mark means a question ("remember my gym?"): when in doubt, do not save.
+  if (/\?["')\s]*$/.test(command)) return null;
+  let body: string | null = null;
+  for (const re of REMEMBER_RES) {
+    const hit = re.exec(s);
+    if (hit && (hit[1] || !NEEDS_FACT_RE.test(s) || PERSONAL_RE.test(hit[2]!))) {
+      body = hit[2]!;
+      break;
+    }
+  }
+  if (body !== null) {
     // "remember to call mom" is a reminder, not a fact; "remember when …" is a question.
     if (/^(?:to|when|what|where|who|how|why|if|me)\b/.test(body)) return null;
     const split = splitRememberTail(body);

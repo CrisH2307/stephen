@@ -11,6 +11,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reduceLinks } from '../accounts/result.js';
 import { stripUnsafe, truncate } from '../safety/text.js';
+import { EFFORTS } from '../voice/config.js';
 
 /** The only tools a job has (`--tools`); the init message must list exactly these (runner checks it). */
 export const JOB_TOOLS = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep'] as const;
@@ -97,6 +98,8 @@ export interface JobSpec {
   /** `<stephen home>/jobs/<id>`: settings, persona, logs, spec (outside the job's reach). */
   metaDir: string;
   model: string;
+  /** The picked effort (Settings > Model); absent = no flag. */
+  effort?: string;
   maxTurns: number;
   maxBudgetUsd: number;
   wallClockMs: number;
@@ -154,6 +157,8 @@ export function buildJobArgs(s: JobSpec): string[] {
     '--session-id', s.sessionId,
     '--name', `stephen-job-${slugOf(s.id)}`,
     '--model', s.model,
+    // Only a known effort level becomes an argument: spec.json is a file on disk, not a trusted value.
+    ...((EFFORTS as readonly string[]).includes(s.effort ?? '') ? ['--effort', s.effort!] : []),
   ];
 }
 

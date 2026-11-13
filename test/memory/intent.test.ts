@@ -63,6 +63,80 @@ const TABLE: Array<[string, MemoryIntent | null]> = [
   ['', null],
 ];
 
+const SAVES: Array<[string, string]> = [
+  ["hey steven remember my locker is 12 west", "my locker is 12 west"],
+  ["hey stephen, remember my cat is tom", "my cat is tom"],
+  ["Stephen remember my cat is tom.", "my cat is tom"],
+  ["ok stephen please remember my desk is by the window", "my desk is by the window"],
+  ["Please remember that my bike is blue.", "my bike is blue"],
+  ["remember me that my bike is blue", "my bike is blue"],
+  ["remember this: my bike is blue", "this my bike is blue"],
+  ["Remember, my bike is blue", "my bike is blue"],
+  ["also remember my bike is blue", "my bike is blue"],
+  ["remember my bike is blue for me", "my bike is blue"],
+  ["remember my bike is blue thanks", "my bike is blue"],
+  ["can you remember that my bike is blue", "my bike is blue"],
+  ["could you please remember my bike is blue", "my bike is blue"],
+  ["would you remember i like green tea", "i like green tea"],
+  ["will you remember that the code word is banana", "the code word is banana"],
+  ["i want you to remember my bike is blue", "my bike is blue"],
+  ["i need you to remember that the shed is open", "the shed is open"],
+  ["i'd like you to remember we meet on fridays", "we meet on fridays"],
+  ["don't forget that my bike is blue", "my bike is blue"],
+  ["dont forget my bike is blue", "my bike is blue"],
+  ["do not forget that the shed is open", "the shed is open"],
+  ["note that my bike is blue", "my bike is blue"],
+  ["make a note that my bike is blue", "my bike is blue"],
+  ["take note that the shed is open", "the shed is open"],
+  ["keep in mind that my bike is blue", "my bike is blue"],
+  ["keep in mind i like green tea", "i like green tea"],
+  ["Hey Steven, could you remember that my bike is blue.", "my bike is blue"],
+  ["REMEMBER MY BIKE IS BLUE", "my bike is blue"],
+  ["remember that i walk to school", "i walk to school"],
+  ["yo stephen remember that my bike is blue and play lofi", "my bike is blue"],
+  ["okay remember my bike is blue", "my bike is blue"],
+  ["please can you remember that i like green tea", "i like green tea"],
+];
+const NOT_SAVES: string[] = [
+  "do you remember my bike",
+  "do you remember that my bike is blue",
+  "what do you remember about my bike",
+  "remember when we rode the bikes?",
+  "remember my bike is blue?",
+  "can you remember the song from the movie",
+  "could you remember what i said",
+  "i don't remember where my bike is",
+  "i can't remember my bike lock code",
+  "don't forget to lock the bike",
+  "don't forget the milk",
+  "do not forget about it",
+  "note the time",
+  "keep in mind the weather",
+  "please remember to call mom",
+  "remember what i said",
+  "remember if i locked it",
+  "hey stephen remember me",
+  "play the song remember the name",
+  "open the note that i saved",
+  "search for note that song lyrics",
+  "turn on remember the milk",
+  "can you remember",
+  "note that",
+  "i want you to remember",
+  "stephen don't forget to call mom",
+];
+
+describe('natural remember phrasings', () => {
+  it.each(SAVES)('saves %j', (cmd, text) => {
+    const i = parseMemoryIntent(cmd);
+    expect(i?.kind).toBe('remember');
+    if (i?.kind === 'remember') expect(i.text).toBe(text);
+  });
+  it.each(NOT_SAVES)('does not save %j', (cmd) => {
+    expect(parseMemoryIntent(cmd)?.kind).not.toBe('remember');
+  });
+});
+
 describe('parseMemoryIntent', () => {
   it.each(TABLE)('%j', (cmd, want) => {
     expect(parseMemoryIntent(cmd)).toEqual(want);

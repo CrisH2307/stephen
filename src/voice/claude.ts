@@ -246,6 +246,8 @@ export const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 export const NO_SESSION_PERSISTENCE = '--no-session-persistence';
 /** Stream partial messages (warm process, for the first-token time). Used only when the help text lists it. */
 export const PARTIAL_MESSAGES = '--include-partial-messages';
+/** Sent only when `claude --help` lists it (OPTIONAL_CLAUDE_FLAGS), so a saved effort can't break every command on an older Claude Code. */
+export const EFFORT_FLAG = '--effort';
 
 /**
  * The flags that lock a headless run down to Stephen's tools. Checked against Claude Code 2.1.314 (`claude
@@ -329,8 +331,7 @@ function lockedArgs(s: ClaudeSettings, memory: readonly string[] | undefined): s
   ];
   const live = s.modelPrefs ? s.modelPrefs() : { model: s.model, effort: s.effort ?? null };
   if (live.model) args.push('--model', live.model);
-  // ponytail: not probed like the optional lock-down flags; a Claude Code too old for --effort fails the run, update it.
-  if (live.effort) args.push('--effort', live.effort);
+  if (live.effort && !s.unsupportedOptionalFlags?.has(EFFORT_FLAG)) args.push(EFFORT_FLAG, live.effort);
   return args;
 }
 
@@ -481,6 +482,47 @@ const ERROR_TEXT: Record<string, string> = {
   error_max_budget_usd: 'That would cost more than allowed, so I stopped.',
 };
 
+// Wording seen in Claude Code 2.1.319 ("Usage limit reached · limit resets 3pm") and earlier builds ("You've hit your limit · resets 3pm").
+const PLAN_LIMIT_RE = /\b(?:usage|plan|session|weekly|5-hour) limit reached\b|\bhit your (?:[a-z0-9-]+ )?limit\b/i;
+const LIMIT_RESET_RE = /\bresets?\s+(?:at\s+)?([^·|(\n]+)/i;
+
+/** The plain message for "plan limit reached" CLI text (with the reset time when the text carries one), else null. Pure. */
+export function planLimitMessage(text: string): string | null {
+  if (!PLAN_LIMIT_RE.test(text)) return null;
+  // The reset time is CLI text: keep only a short clock-like value.
+  const raw = LIMIT_RESET_RE.exec(text)?.[1]?.trim();
+  const at = raw && /^[0-9apm: .]{1,12}$/i.test(raw) ? raw : undefined;
+  return at ? `You've reached your Claude plan limit. It resets at ${at}.` : "You've reached your Claude plan limit.";
+}
+
+/** Claude Code versions Stephen's recorded fixtures (help text, stream-json) come from: the oldest and newest tested. */
+export const TESTED_CLAUDE_MIN = '2.1.316';
+export const TESTED_CLAUDE_MAX = '2.1.319';
+
+const versionParts = (v: string): number[] | null => {
+  const m = /(\d+)\.(\d+)\.(\d+)/.exec(v);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+};
+
+/** `claude --version` output vs the tested range: inside, below, above, or unparseable. Pure. */
+export function claudeVersionStatus(output: string): { version: string | null; status: 'ok' | 'below' | 'above' | 'unknown' } {
+  const v = versionParts(output);
+  if (!v) return { version: null, status: 'unknown' };
+  const cmp = (a: number[], b: number[]) => a[0]! - b[0]! || a[1]! - b[1]! || a[2]! - b[2]!;
+  const status = cmp(v, versionParts(TESTED_CLAUDE_MIN)!) < 0 ? 'below' : cmp(v, versionParts(TESTED_CLAUDE_MAX)!) > 0 ? 'above' : 'ok';
+  return { version: v.join('.'), status };
+}
+
+/** The doctor line for `claude --version` output (null output = could not run). Outside the tested range is a warning, never blocking. */
+export function claudeVersionCheck(output: string | null): { ok: boolean; label: string; detail: string; fix?: string } {
+  const label = 'Claude Code version';
+  const r = claudeVersionStatus(output ?? '');
+  const range = `tested ${TESTED_CLAUDE_MIN} to ${TESTED_CLAUDE_MAX}`;
+  if (r.status === 'ok') return { ok: true, label, detail: `${r.version} (${range})` };
+  if (r.status === 'unknown') return { ok: false, label, detail: `could not read the version (${range})`, fix: 'Check that `claude --version` works (voice.claudePath in config.json).' };
+  return { ok: false, label, detail: `${r.version} is ${r.status === 'below' ? 'older' : 'newer'} than Stephen was ${range}`, fix: r.status === 'below' ? 'Update Claude Code (`claude update`).' : 'It may still work; if voice commands fail, tell the Stephen maintainer.' };
+}
+
 /** Parse `--output-format json` stdout (the last JSON object with type "result"). */
 export function parseClaudeOutput(stdout: string, exitCode: number | null, stderr = ''): ClaudeOutcome {
   let res: ResultJson | null = null;
@@ -513,7 +555,7 @@ export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
-    const msg = ERROR_TEXT[res.subtype ?? ''] ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
+    const msg = ERROR_TEXT[res.subtype ?? ''] ?? planLimitMessage(text) ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
     return { kind: 'error', message: msg, sessionId };
   }
   return {
@@ -756,7 +798,7 @@ export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 /** Lock-down flags without which Stephen refuses to run a voice command (they keep built-in tools and user settings out). */
 export const REQUIRED_CLAUDE_FLAGS = ['--strict-mcp-config', '--tools', '--permission-mode', '--setting-sources', '--allowedTools', '--disallowedTools', '--append-system-prompt', '--mcp-config', '--output-format'] as const; // --max-turns works but is not listed in --help, so it isn't probed
 /** Nice-to-have flags: dropped (with a note) if this `claude` doesn't know them. Older versions lack them. */
-export const OPTIONAL_CLAUDE_FLAGS = ['--no-chrome', NO_SESSION_PERSISTENCE] as const;
+export const OPTIONAL_CLAUDE_FLAGS = ['--no-chrome', NO_SESSION_PERSISTENCE, EFFORT_FLAG] as const;
 
 /**
  * `ok.personaFile`: this help text mentions `--append-system-prompt-file`. Claude Code 2.1.316 accepts the flag but

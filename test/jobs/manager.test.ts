@@ -4,7 +4,7 @@
  * for code jobs, and one end-to-end run through the real `stephen jobs _run` supervisor process (needs the build).
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { runJobsCli } from '../../src/jobs/cli.js';
@@ -67,6 +67,19 @@ describe('plan: what the dialog will show (nothing is created)', () => {
     });
     expect(existsSync(h.root)).toBe(false);
     expect(existsSync(join(h.home, 'jobs'))).toBe(false);
+  });
+
+  it('the model and effort picked in Settings > Model reach the plan and the saved spec; none picked falls back to jobs.model', async () => {
+    const h = harness(tmp, { modelPrefs: () => ({ model: 'haiku', effort: 'low' }) });
+    const p = await h.manager.plan('write my lab report draft');
+    if ('error' in p) throw new Error(p.error);
+    expect(p).toMatchObject({ model: 'haiku', effort: 'low' });
+    await h.manager.start(p, 'voice-ptt');
+    expect(JSON.parse(readFileSync(join(h.home, 'jobs', p.id, 'spec.json'), 'utf8'))).toMatchObject({ spec: { model: 'haiku', effort: 'low' } });
+    const d = harness(tmp, { modelPrefs: () => ({ model: null, effort: null }) });
+    const q = await d.manager.plan('write my lab report draft');
+    expect(q).toMatchObject({ model: 'sonnet' });
+    expect(q).not.toHaveProperty('effort');
   });
 
   it('"with web" turns web on; a one-word task is refused', async () => {

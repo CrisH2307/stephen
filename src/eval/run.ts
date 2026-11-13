@@ -21,6 +21,8 @@ export interface EvalOptions {
   outDir: string;
   claudePath: string;
   model: string | null;
+  /** The picked effort (voice.claudeEffort); null = no flag. */
+  effort?: string | null;
   maxTurns: number;
   nodePath: string;
   cliPath: string;
@@ -96,6 +98,7 @@ async function runCase(k: EvalCase, dir: string, o: EvalOptions): Promise<CaseRe
     claudePath: o.claudePath,
     maxTurns: o.maxTurns,
     model: o.model,
+    effort: o.effort ?? null,
     mcpConfigPath,
     followUps: false, // every case is a fresh one-shot command (and nothing is saved)
     aboutMe: o.aboutMe ?? EVAL_ABOUT_ME,
