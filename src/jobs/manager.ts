@@ -55,6 +55,8 @@ export interface JobManagerOptions {
   /** Stephen's home (`~/.stephen`). */
   home: string;
   config: JobsConfig;
+  /** The model and effort picked in Settings > Model; a null model falls back to jobs.model. */
+  modelPrefs?: () => { model: string | null; effort: string | null };
   /** The owner's zone: the date in an id and the daily cap. */
   timeZone: string;
   /** `claude` (voice.claudePath). */
@@ -87,6 +89,7 @@ export interface JobPlan {
   cwd: string;
   web: boolean;
   model: string;
+  effort?: string;
   maxTurns: number;
   maxBudgetUsd: number;
   wallClockMs: number;
@@ -222,6 +225,7 @@ export class JobManager {
       // No inbox files for a repo job, or when the caller can't show them (a phone job, REVIEW-8 R8-2).
       const inbox = repo || opts.inbox === false ? [] : inboxFiles(join(realRoot, INBOX_DIR));
       if (!Array.isArray(inbox)) return { error: inbox.error };
+      const picked = this.o.modelPrefs?.();
       return {
         id,
         task,
@@ -229,7 +233,8 @@ export class JobManager {
         cwd: repo ? join(folder, 'repo') : folder,
         ...(inbox.length ? { inputs: inbox } : {}),
         web: wantsWeb(task),
-        model: this.o.config.model,
+        model: picked?.model ?? this.o.config.model,
+        ...(picked?.effort ? { effort: picked.effort } : {}),
         maxTurns: this.o.config.maxTurns,
         maxBudgetUsd: this.o.config.maxBudgetUsd,
         wallClockMs: this.o.config.wallClockMin * 60_000,
@@ -322,6 +327,7 @@ export class JobManager {
       cwd: plan.cwd,
       metaDir,
       model: plan.model,
+      ...(plan.effort ? { effort: plan.effort } : {}),
       maxTurns: plan.maxTurns,
       maxBudgetUsd: plan.maxBudgetUsd,
       wallClockMs: plan.wallClockMs,

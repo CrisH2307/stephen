@@ -105,6 +105,14 @@ describe('stephen eval (fake claude, real dry-run server)', () => {
     expect(formatSummary(rep)).toMatch(/^One-shot eval: 1\/3 passed \(model sonnet\)\./);
   }, 60_000);
 
+  it('the picked model and effort reach the claude argv', async () => {
+    const { tmp, env, log } = setup({ 'open youtube': { calls: [], reply: 'Opened YouTube.' } });
+    await runEval({ ...base(tmp, [byId('open-youtube')]), env, model: 'haiku', effort: 'low' });
+    const [r] = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[] });
+    expect(r!.argv[r!.argv.indexOf('--model') + 1]).toBe('haiku');
+    expect(r!.argv[r!.argv.indexOf('--effort') + 1]).toBe('low');
+  }, 30_000);
+
   it('personaFile: the persona with EVAL_MEMORY goes in a per-case 0600 file, not on argv', async () => {
     const { tmp, env, log } = setup({ 'open youtube': { calls: [], reply: 'Opened YouTube.' } });
     await runEval({ ...base(tmp, [byId('open-youtube')]), env, personaFile: true });

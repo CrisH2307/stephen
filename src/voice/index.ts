@@ -52,6 +52,7 @@ import {
   removePersonaFile,
   probeClaudeFlags,
   resolvePersonaFile,
+  EFFORT_FLAG,
 } from './claude.js';
 import { ToolLogRunner, historyRecorder } from './command-log.js';
 import { Conversation, ConversationRunner, WarmConversationRunner, memoryKey } from './conversation.js';
@@ -543,6 +544,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       : new JobManager({
           home,
           config: loaded.jobs,
+          modelPrefs: () => {
+            const p = modelStore.get();
+            return settings.unsupportedOptionalFlags?.has(EFFORT_FLAG) ? { ...p, effort: null } : p;
+          },
           timeZone: loaded.timeZone,
           claudePath: cfg.claudePath,
           auditLogPath: loaded.auditLogPath,
