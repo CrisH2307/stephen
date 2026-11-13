@@ -39,7 +39,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | S4-10 DOC1 | review 4 | P1 | Reconcile docs (this ledger, plan corrections, superseded banners) | in progress | review | `docs/plan-reconcile` |
 | S4-11 REL | review 4 | P0 | Release `qa` to `main` after R10a fixes and Mac sections 0 and 13 | open | owner | PR #92 (sync), release PR none |
 | S4-12 C5 | review 4 | P0 | Split `AppClient.swift` | open | dev | #56, `ui/split-appclient` |
-| S4-13 A2b | review 4 | P0 | Monitor gaps: Esc, chime, tool times, ASR and TTS names, cold or warm | open | dev | #43, `feat/latency-gaps` |
+| S4-13 A2b | review 4 | P0 | Monitor gaps: Esc, chime, tool times, ASR and TTS names, cold or warm | fixed in code, Mac check pending | dev | #43, `feat/latency-gaps` |
 | S4-14 E4a | review 4 | P1 | Wake endpoint p50 at or under 800 ms | open | dev | #73, `fix/wake-endpoint` |
 | S4-15 E6a | review 4 | P0 | Command grammar in shadow mode | open | review | #59, `feat/command-grammar-shadow` |
 | S4-16 A3 | review 4 | P0 | YouTube account-frame rule; real Zen must play YouTube with no prompt | open | dev | #50, `fix/youtube-account-frame` |
@@ -76,7 +76,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10a-4 | R10a | Low | Home Allow and Deny delay starts when the view appears, not when the window is shown | open | dev | none |
 | R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
 | R10a-6 | R10a | Low | `--effort` sent without a probe and saved to config; breaks every command on an old CLI | fixed in code | dev | none (overlaps #65, #67) |
-| R10a-7 | R10a | Low | Latency report mixes cancelled and failed commands into p50, p95 and OVER | open | dev | none |
+| R10a-7 | R10a | Low | Latency report mixes cancelled and failed commands into p50, p95 and OVER | fixed in code | dev | `feat/latency-gaps` |
 | R10a-8 | R10a | Low | At the 300-bubble cap new replies stop scrolling into view | open | dev | none |
 | R10a-9 | R10a | Low | `chat.done` waits for an unbounded audit read (up to 5 MB) after every command | open | dev | none |
 | R10a-10 | R10a | Info | Limits of "one id joins every log" (listener routes carry no `cmd`) | open | dev | none |
