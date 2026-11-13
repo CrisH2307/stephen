@@ -7,11 +7,12 @@
  * element label can still be page text, so the helper shows every line with Text(verbatim:) and nothing here goes back
  * to the model.
  *
- * Entries are matched by time, as before. An entry that carries this command's id (`cmd`, written by
- * `serve --command-file`) is also shown when it was written outside that time. The id only adds steps and never
- * hides one: it is a label and can be wrong in rare cases, and a refusal must not go missing because of it.
- * So a background job acting in the same seconds can still add a line.
+ * Entries are matched by time. An entry that carries this command's id (`cmd`, written by `serve --command-file`)
+ * is also shown when it was written outside that time. An entry labelled with another valid command id is left out,
+ * so one command's refusal never shows under the next. An entry with no id (or an invalid one) is matched by time
+ * only, so a refusal never goes missing. A background job acting in the same seconds can still add a line.
  */
+import { validCommandId } from '../lib/command-id.js';
 import { truncate } from '../safety/text.js';
 import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
@@ -41,7 +42,13 @@ export function commandSteps(audit: AuditEntry[], calls: ToolCallRecord[], start
   const auditTools = new Set<string>();
   const inside = audit
     .map((a) => ({ a, t: Date.parse(a.ts) }))
-    .filter(({ a, t }) => Number.isFinite(t) && ((id !== undefined && a.cmd === id) || (t >= startMs - SLACK_MS && t <= endMs + SLACK_MS)))
+    .filter(({ a, t }) => {
+      if (!Number.isFinite(t)) return false;
+      if (id !== undefined && a.cmd === id) return true;
+      // Another command's valid id drops the entry. No id, or an invalid one, falls back to time only.
+      if (id !== undefined && validCommandId(a.cmd) !== undefined) return false;
+      return t >= startMs - SLACK_MS && t <= endMs + SLACK_MS;
+    })
     .sort((x, y) => x.t - y.t);
   for (const { a } of inside) {
     auditTools.add(a.tool);
