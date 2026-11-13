@@ -56,8 +56,6 @@ struct HomeView: View {
       model.refreshSettings()  // the name for the greeting
       model.refreshJobs()
     }
-    // ⌘K and the sidebar's Ask field, while the window is in front: type here instead of opening the Ask box.
-    .onChange(of: nav.focusComposer) { _ in composerFocused = true }
   }
 
   private var greeting: some View {

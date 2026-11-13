@@ -490,6 +490,13 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).toContain('static let you: [Page] = [.personal, .settings]');
     expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
     expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
+    // #87: the sidebar's "Ask Stephen" row opens the Ask box (WindowActions.ask), it does not just focus Home's composer.
+    expect(main).toContain('Button(action: actions.ask) {');
+    expect(main).not.toContain('Button(action: nav.askHere)');
+    // ⌘K and the menu item open the Ask box too; the old "type in Home" path is gone.
+    expect(read('AppWindow.swift')).toContain('@objc func askClicked(_ sender: Any?) { actions.ask() }');
+    expect(main).not.toContain('askHere');
+    expect(read('main.swift')).toContain('WindowActions(ask: { askBox?.show(focus: true) }');
     expect(main).toContain('@AppStorage("sidebarCollapsed")');
     // v3.2: one layout, the column width animates between the 60 pt rail and the 240 pt sidebar (Theme.swift).
     expect(main).toContain('.frame(width: SidebarMetrics.column(collapsed), alignment: .leading)');
