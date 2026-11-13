@@ -30,6 +30,9 @@ import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/inst
 import { commandFilePath, toolLogPath } from '../server/tool-log.js';
 import { buildReport, formatReport } from '../telemetry/cli.js';
 import { LatencyMonitor } from '../telemetry/latency.js';
+import { defaultDesktopDeps } from '../desktop/system.js';
+import { listApps } from '../desktop/resolve.js';
+import { classify } from './grammar/classify.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
 import { Assistant, type CommandReport, type CommandRunner, type Trust } from './assistant.js';
@@ -481,9 +484,22 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   } catch (e) {
     err(`Note: couldn't clear old latency logs (${(e as Error).message}).`);
   }
+  // Shadow mode (plan 2.5, E6a): the classifier only labels the latency row with its tier and reason code. Its text
+  // outputs never leave this function, and nothing it says changes what Stephen does. Sites: no owner aliases exist yet.
+  let ownerApps: string[] = [];
+  if (latency) void listApps(defaultDesktopDeps()).then((l) => (ownerApps = l.map((a) => a.name))).catch(() => undefined);
+  const shadowTier = (id: string, said: string) => {
+    try {
+      const k = classify(said, { apps: ownerApps, sites: {} });
+      latency?.note(id, k.tier === 1 ? { tier: 1 } : { tier: 2, reason: k.reason });
+    } catch (e) {
+      err(`Note: could not label the latency row (${(e as Error).message}).`);
+    }
+  };
   const onStart = (c: { id: string; source: CommandReport['source']; said: string }) => {
     latency?.begin(c.id, c.source === 'voice-ptt' ? 'ptt' : c.source === 'voice-wake' ? 'wake' : c.source);
     latency?.mark(c.id, 'commandStart');
+    shadowTier(c.id, c.said);
     speaking = { id: c.id, marked: false };
     app?.heard(c.said, c.source);
   };
@@ -494,14 +510,27 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     speaking.marked = true;
     latency?.mark(speaking.id, 'firstAudio');
   };
+  let lastTts: () => string | null = () => null;
   const onDone = (r: CommandReport) => {
     const end = Date.now();
     latency?.mark(r.id, 'replyReady', end - Math.max(0, r.ms - r.replyMs));
     latency?.mark(r.id, 'done', end);
+    const heard = speaking?.id === r.id && speaking.marked;
     if (speaking?.id === r.id) speaking = null;
-    latency?.end(r.id, r.result, { route: r.route, followUp: r.followUp, turns: r.turns, ...(r.model ? { model: r.model } : {}) });
-    recordHistory?.(r);
     const calls = r.ranClaude && toolRunner ? toolRunner.tools() : [];
+    // Names and times only (ToolCallRecord's cmd, isError and the rest stay out). start: model times exist only for the
+    // warm process; a follow-up is --resume; anything else is a fresh one-shot process (inference from what Node sees).
+    latency?.end(r.id, r.result, {
+      route: r.route,
+      followUp: r.followUp,
+      turns: r.turns,
+      ...(r.model ? { model: r.model } : {}),
+      ...(r.ranClaude ? { start: r.model || r.followUp ? 'warm' : 'cold' } : {}),
+      ...(calls.length ? { tools: calls.map((t) => ({ name: t.tool, ms: t.ms })) } : {}),
+      ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
+      ...(heard && lastTts() ? { tts: lastTts()! } : {}),
+    });
+    recordHistory?.(r);
     app?.commandDone(r, calls.map((t) => t.tool), calls);
   };
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
@@ -514,7 +543,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       const ttsFor = (): TtsSpeaker => {
         const voice = talk.get().voice;
         if (current?.voice !== voice) current = { voice, tts: createTts({ ...cfg, tts: voice }, { home, log: err, onAudio }) };
-        return current.tts;
+        const tts = current.tts;
+        lastTts = () => tts.lastProvider;
+        return tts;
       };
       if (talk.get().speak) {
         void ttsFor().warm().catch(() => {});

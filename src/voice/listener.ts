@@ -229,10 +229,10 @@ export class Listener {
   }
 
   /** A wake word that was heard but not acted on still gets a row (trigger failures, plan 7.0). */
-  private traceIgnoredWake(): void {
+  private traceIgnoredWake(ignored: 'sound_playing' | 'audio_unknown' | 'cooldown'): void {
     const id = newHistoryId();
     this.d.latency?.begin(id, 'wake');
-    this.d.latency?.end(id, 'wake_ignored');
+    this.d.latency?.end(id, 'wake_ignored', { ignored });
   }
 
   private menu(s: MenuState): void {
@@ -391,7 +391,7 @@ export class Listener {
       // Unknown (null: just (re)connected, no audio event yet) is treated like playing — fail closed (review #4 #2).
       if (this.d.helper!.audioPlaying !== false) {
         this.ignoredWakes++;
-        this.traceIgnoredWake();
+        this.traceIgnoredWake(this.d.helper!.audioPlaying === null ? 'audio_unknown' : 'sound_playing');
         this.d.status(`Ignored "${this.o.wakePhrase}" — sound is playing (it may be a video talking). Hold F5 to talk.`);
         return;
       }
@@ -400,7 +400,7 @@ export class Listener {
     }
     if (this.cooldownLeftSec > 0) {
       this.ignoredWakes++;
-      this.traceIgnoredWake();
+      this.traceIgnoredWake('cooldown');
       this.d.status(
         `Ignored "${this.o.wakePhrase}" — the wake word is paused for ${Math.ceil(this.cooldownLeftSec)} s more after the last command ` +
           '(a page or video may be talking). Press Enter to talk now.',
@@ -440,6 +440,7 @@ export class Listener {
     this.d.latency?.begin(this.cmdId, 'wake');
     this.bareWake = !!hit.bare;
     this.d.chimes.play('wake');
+    this.d.latency?.mark(this.cmdId, 'chime'); // the player was started (Node cannot see the first sample of sound)
     this.d.assistant.prewarm('wake'); // start Claude while the user talks (phase 3; recording + ASR take ≥ 2 s)
     this.d.status('Wake word heard — listening…');
     const pre = Math.min(hit.startAgoSec + PREROLL_MARGIN_SEC + (hit.bare ? BARE_PREROLL_EXTRA_SEC : 0), MAX_PREROLL_SEC);
@@ -694,6 +695,7 @@ export class Listener {
     const raw = await this.d.transcriber.transcribe(audio);
     const ms = Date.now() - t0;
     lat?.mark(id, 'asrDone');
+    lat?.note(id, { asr: this.d.transcriber.id });
     const norm = normalizeTranscript(raw, this.o.wakePhrases ?? [this.o.wakePhrase], wake);
     // A continuation carries no wake word (the first part was checked); a repeated "hey stephen" is still stripped.
     const hadWake = prefix !== null || norm.hadWake;

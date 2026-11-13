@@ -11,6 +11,9 @@
  */
 import { closeSync, constants as fsConstants, fchmodSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
+import { ASR_MODELS } from '../voice/config.js';
+import type { Reason } from '../voice/grammar/classify.js';
+import type { TtsProviderName } from '../voice/tts/types.js';
 
 export const LATENCY_TRIGGERS = ['wake', 'ptt', 'app', 'phone', 'cli'] as const;
 export type LatencyTrigger = (typeof LATENCY_TRIGGERS)[number];
@@ -34,9 +37,10 @@ export type LatencyOutcome = (typeof LATENCY_OUTCOMES)[number];
  * speechEnd = the owner stopped talking (F5: key up); captureEnd = Stephen decided the command ended (so
  * captureEnd - speechEnd is the endpoint wait); asrDone = the transcript is ready; commandStart = handed to the
  * assistant; replyReady = the reply text exists (model or router finished); firstAudio = the first sound of the spoken
- * reply started (the player was started; absent when the reply was only shown); done = reply spoken or shown.
+ * reply started (the player was started; absent when the reply was only shown); done = reply spoken or shown;
+ * chime = the wake chime was started (Node sees the call to the player, not the first sample of sound).
  */
-export const LATENCY_STAGES = ['speechEnd', 'captureEnd', 'asrDone', 'commandStart', 'replyReady', 'firstAudio', 'done'] as const;
+export const LATENCY_STAGES = ['speechEnd', 'captureEnd', 'asrDone', 'commandStart', 'replyReady', 'firstAudio', 'done', 'chime'] as const;
 export type LatencyStage = (typeof LATENCY_STAGES)[number];
 
 export interface LatencyRecord {
@@ -46,7 +50,7 @@ export interface LatencyRecord {
   ts: string;
   trigger: LatencyTrigger;
   route: LatencyRoute | null;
-  /** Tier 1 or 2 (plan 2.5). null until the command grammar exists (E6). */
+  /** Tier 1 or 2 (plan 2.5), from the classifier in shadow mode (src/voice/grammar); null = not classified. */
   tier: 1 | 2 | null;
   outcome: LatencyOutcome;
   /** The model run continued a conversation (a warm process or --resume). */
@@ -61,11 +65,71 @@ export interface LatencyRecord {
   toolMs?: number;
   /** Model run only: prompt sent → first streamed token, ms. Only when Claude Code streams partial messages. */
   firstTokenMs?: number;
+  /** Time from the owner's cancel to the spoken reply actually stopping, ms (Esc, "stephen stop", barge-in). */
+  silenceMs?: number;
+  /** Speech-to-text model that handled the command (a code word). */
+  asr?: (typeof LATENCY_ASR)[number];
+  /** Text-to-speech engine that spoke the reply (a code word). */
+  tts?: (typeof LATENCY_TTS)[number];
+  /** Model run only: fresh process or warm. */
+  start?: (typeof LATENCY_START)[number];
+  /** The classifier's reason when it said Tier 2 (shadow mode). */
+  reason?: LatencyReason;
+  /** wake_ignored only: why. */
+  ignored?: (typeof LATENCY_IGNORED)[number];
+  /** Which Stephen tools ran and how long each took, in call order. Names only, never arguments or results. */
+  tools?: { name: LatencyToolName; ms: number }[];
+}
+
+/**
+ * What a caller may add to a record besides stages. The strings are loose on purpose: parseLatencyRecord turns an
+ * unknown code word into 'other' (a tool, ASR, TTS, start, ignored) or drops it (a reason), so a caller cannot put text in.
+ */
+export interface LatencyNote {
+  tier?: 1 | 2 | null;
+  reason?: string;
+  asr?: string;
+  tts?: string;
+  start?: string;
+  ignored?: string;
+  silenceMs?: number;
+  tools?: { name: string; ms: number }[];
 }
 
 /** The model-run numbers of a record (LatencyRecord's optional fields). */
 export const LATENCY_MODEL_FIELDS = ['modelMs', 'toolMs', 'firstTokenMs'] as const;
 export type LatencyModelTimes = Partial<Record<(typeof LATENCY_MODEL_FIELDS)[number], number>>;
+
+/**
+ * Closed code lists for the fields below. A value that is not in its list is recorded as 'other' (never the value),
+ * so no free text can reach a record. ASR and TTS come from the config's own lists.
+ */
+export const LATENCY_ASR = [...ASR_MODELS, 'other'] as const;
+export const LATENCY_TTS = ['elevenlabs', 'kokoro', 'say', 'other'] as const satisfies readonly (TtsProviderName | 'other')[];
+/** cold = a fresh model process for this command; warm = a warm process or --resume. */
+export const LATENCY_START = ['cold', 'warm', 'other'] as const;
+/** Why a wake word was not acted on. */
+export const LATENCY_IGNORED = ['sound_playing', 'audio_unknown', 'cooldown', 'other'] as const;
+/** The classifier's reason codes (src/voice/grammar/classify.ts, shadow mode). Only these are ever recorded. */
+export const LATENCY_REASONS = [
+  'empty', 'question', 'compound', 'no_verb', 'leftover_words', 'ambiguous_entity', 'unknown_entity',
+  'fuzzy_only', 'bad_arg', 'empty_payload', 'code_like', 'vague_query',
+] as const satisfies readonly Reason[];
+export type LatencyReason = (typeof LATENCY_REASONS)[number];
+// Compile-time check: a reason added to the classifier must be added to the list above.
+const reasonsCovered: [Exclude<Reason, LatencyReason>] extends [never] ? true : never = true;
+void reasonsCovered;
+/** Stephen's own MCP tools (src/server/tools.ts, src/desktop, src/accounts). test/telemetry compares this to the real server. */
+export const LATENCY_TOOLS = [
+  'browser_status', 'browser_connect', 'tabs_list', 'tab_open', 'tab_focus', 'tab_close', 'navigate', 'history', 'snapshot', 'find',
+  'read_text', 'screenshot', 'click', 'hover', 'type', 'fill_form', 'select_option', 'press_key', 'scroll', 'wait_for', 'upload_file',
+  'handle_dialog', 'recent_actions', 'evaluate', 'open_app', 'open_url', 'play_media', 'media_control', 'volume', 'desktop_status',
+  'canvas_due', 'canvas_announcements', 'canvas_inbox', 'calendar_events', 'notion_todos', 'notion_search', 'gmail_search', 'gmail_read',
+  'weather_now', 'announce', 'other',
+] as const;
+export type LatencyToolName = (typeof LATENCY_TOOLS)[number];
+/** Tool calls kept per record. */
+export const MAX_LATENCY_TOOLS = 12;
 
 export const LATENCY_RETENTION_DAYS = 30;
 /** A day file larger than this takes no more lines (about 20,000 commands). */
@@ -86,6 +150,8 @@ function localDate(d: Date): string {
 
 const ms = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 86_400_000 ? Math.round(v) : null);
 const oneOf = <T extends string>(list: readonly T[], v: unknown): T | null => (typeof v === 'string' && (list as readonly string[]).includes(v) ? (v as T) : null);
+/** A code from a list that ends with 'other': any other string becomes 'other'; a non-string is absent. */
+const code = <T extends string>(list: readonly T[], v: unknown): T | null => (typeof v === 'string' ? (oneOf(list, v) ?? ('other' as T)) : null);
 
 /** A valid record rebuilt field by field from parsed JSON (unknown fields are dropped), or null. */
 export function parseLatencyRecord(v: unknown): LatencyRecord | null {
@@ -107,6 +173,28 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
     const n = ms(o[f]);
     if (n !== null) model[f] = n;
   }
+  const extra: Partial<LatencyRecord> = {};
+  const silence = ms(o.silenceMs);
+  if (silence !== null) extra.silenceMs = silence;
+  const asr = code(LATENCY_ASR, o.asr);
+  if (asr) extra.asr = asr;
+  const tts = code(LATENCY_TTS, o.tts);
+  if (tts) extra.tts = tts;
+  const start = code(LATENCY_START, o.start);
+  if (start) extra.start = start;
+  const ignored = code(LATENCY_IGNORED, o.ignored);
+  if (ignored) extra.ignored = ignored;
+  const reason = oneOf(LATENCY_REASONS, o.reason);
+  if (reason) extra.reason = reason;
+  if (Array.isArray(o.tools)) {
+    const tools: { name: LatencyToolName; ms: number }[] = [];
+    for (const t of o.tools.slice(0, MAX_LATENCY_TOOLS)) {
+      const t0 = t && typeof t === 'object' ? (t as Record<string, unknown>) : null;
+      const n = t0 ? ms(t0.ms) : null;
+      if (t0 && n !== null) tools.push({ name: code(LATENCY_TOOLS, t0.name) ?? 'other', ms: n });
+    }
+    if (tools.length) extra.tools = tools;
+  }
   return {
     v: 1,
     id: o.id,
@@ -120,6 +208,7 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
     stages,
     ...(loop !== null ? { loopP99Ms: loop } : {}),
     ...model,
+    ...extra,
   };
 }
 
@@ -130,8 +219,12 @@ export interface LatencyTrace {
   /** Stage reached at `at` (epoch ms, default now). A later mark of the same stage replaces the earlier one. */
   mark(id: string, stage: LatencyStage, at?: number): void;
   /** The trigger is over: write its line. A second end for the same id does nothing. */
-  end(id: string, outcome: LatencyOutcome, extra?: { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes }): void;
+  end(id: string, outcome: LatencyOutcome, extra?: LatencyEnd): void;
+  /** Add code words and numbers to an open trigger (a later note of the same field replaces the earlier one). */
+  note(id: string, note: LatencyNote): void;
 }
+
+export type LatencyEnd = { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes } & LatencyNote;
 
 export interface LatencyMonitorOptions {
   home: string;
@@ -146,6 +239,7 @@ interface Open {
   t0: number;
   trigger: LatencyTrigger;
   stages: Partial<Record<LatencyStage, number>>;
+  note: LatencyNote;
 }
 
 export class LatencyMonitor implements LatencyTrace {
@@ -161,7 +255,7 @@ export class LatencyMonitor implements LatencyTrace {
     if (!ID_RE.test(id) || this.open.has(id)) return;
     if (this.open.size >= MAX_OPEN) this.open.delete(this.open.keys().next().value!);
     if (this.open.size === 0) this.o.loop?.reset();
-    this.open.set(id, { t0: at ?? this.now(), trigger, stages: {} });
+    this.open.set(id, { t0: at ?? this.now(), trigger, stages: {}, note: {} });
   }
 
   mark(id: string, stage: LatencyStage, at?: number): void {
@@ -169,17 +263,23 @@ export class LatencyMonitor implements LatencyTrace {
     if (t) t.stages[stage] = Math.max(0, Math.round((at ?? this.now()) - t.t0));
   }
 
-  end(id: string, outcome: LatencyOutcome, extra: { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes } = {}): void {
+  note(id: string, note: LatencyNote): void {
+    const t = this.open.get(id);
+    if (t) Object.assign(t.note, note);
+  }
+
+  end(id: string, outcome: LatencyOutcome, extra: LatencyEnd = {}): void {
     const t = this.open.get(id);
     if (!t) return;
     this.open.delete(id);
     const rec = parseLatencyRecord({
+      ...t.note,
+      ...extra,
       v: 1,
       id,
       ts: new Date(t.t0).toISOString(),
       trigger: t.trigger,
       route: extra.route ?? null,
-      tier: null,
       outcome,
       followUp: extra.followUp ?? false,
       turns: extra.turns ?? 0,
