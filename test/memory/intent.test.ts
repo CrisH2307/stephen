@@ -136,4 +136,11 @@ describe('newestWithin', () => {
     expect(newestWithin([a], now)).toBeNull();
     expect(newestWithin([], now)).toBeNull();
   });
+  it('two items saved in the same millisecond: the later-saved (higher id) wins, in any list order', () => {
+    const same = '2026-11-01T11:59:00.000Z';
+    const earlier = { id: 'm4', createdAt: same };
+    const later = { id: 'm5', createdAt: same };
+    expect(newestWithin([earlier, later], now)).toBe(later);
+    expect(newestWithin([later, earlier], now)).toBe(later);
+  });
 });

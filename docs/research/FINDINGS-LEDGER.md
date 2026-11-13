@@ -28,7 +28,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed in code, Mac check pending | dev | #86, `fix/mic-stop-f5` |
-| S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | open | dev | #52, `fix/forget-tie-ps-tty` |
+| S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | fixed in code | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | in review | review | `docs/review-10a`, PR #95 |
 | S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | open | dev | #48, `feat/replay-recorder` |
 | S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
