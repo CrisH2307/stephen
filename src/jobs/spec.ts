@@ -11,7 +11,6 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reduceLinks } from '../accounts/result.js';
 import { stripUnsafe, truncate } from '../safety/text.js';
-import { EFFORTS } from '../voice/config.js';
 
 /** The only tools a job has (`--tools`); the init message must list exactly these (runner checks it). */
 export const JOB_TOOLS = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep'] as const;
@@ -129,6 +128,12 @@ export function jobToolLists(web: boolean): { tools: string[]; allowed: string[]
 }
 
 /**
+ * The effort levels a job may pass to claude. src/jobs loads no voice code (ADR-004 rule 3), so this is a copy of
+ * EFFORTS in src/voice/config.ts; test/jobs/spec.test.ts fails if the two drift.
+ */
+export const JOB_EFFORTS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
  * The argv after `claude` (cwd = spec.cwd). Same rules as buildClaudeArgs: the prompt sits right after `-p`, the
  * variadic tool flags are each followed by another option, empty values are real empty argv elements, no shell.
  * Session persistence stays on, so the owner can `claude --resume <session id>` the job later.
@@ -158,7 +163,7 @@ export function buildJobArgs(s: JobSpec): string[] {
     '--name', `stephen-job-${slugOf(s.id)}`,
     '--model', s.model,
     // Only a known effort level becomes an argument: spec.json is a file on disk, not a trusted value.
-    ...((EFFORTS as readonly string[]).includes(s.effort ?? '') ? ['--effort', s.effort!] : []),
+    ...(JOB_EFFORTS.includes(s.effort ?? '') ? ['--effort', s.effort!] : []),
   ];
 }
 

@@ -7,7 +7,9 @@ import { relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT, listTsFiles } from '../helpers/import-scan.js';
 import { parseJobsConfig } from '../../src/jobs/config.js';
+import { EFFORTS } from '../../src/voice/config.js';
 import {
+  JOB_EFFORTS,
   JOB_ENV_KEYS,
   branchFor,
   buildJobArgs,
@@ -302,5 +304,12 @@ describe('job argv: picked effort', () => {
     const a = buildJobArgs(spec({ effort: 'high' }));
     expect(a[a.indexOf('--effort') + 1]).toBe('high');
     expect(buildJobArgs(spec())).not.toContain('--effort');
+  });
+  it('an effort that is not a known level is never passed (spec.json is a file on disk)', () => {
+    expect(buildJobArgs(spec({ effort: '--dangerously-skip-permissions' }))).not.toContain('--effort');
+    expect(buildJobArgs(spec({ effort: 'ultra' }))).not.toContain('--dangerously-skip-permissions');
+  });
+  it('JOB_EFFORTS is the same list as EFFORTS (src/jobs may not import voice code)', () => {
+    expect([...JOB_EFFORTS]).toEqual([...EFFORTS]);
   });
 });
