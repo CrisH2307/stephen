@@ -31,11 +31,11 @@ import { buildClaudeArgs, checkClaudeFlags } from '../../src/voice/claude.js';
 describe('claude flag probe (owner may run an older Claude Code)', () => {
   const base = 'Usage: claude [options]\n  -p, --print\n --strict-mcp-config --tools <t> --permission-mode <m> --setting-sources <s> --allowedTools --disallowedTools --append-system-prompt --mcp-config <c> --output-format <f>';
   it('all present', () => {
-    expect(checkClaudeFlags(`${base}\n  --no-chrome  x\n  --no-session-persistence y`)).toEqual({ ok: true, unsupportedOptional: new Set(), personaFile: false });
+    expect(checkClaudeFlags(`${base}\n  --no-chrome  x\n  --no-session-persistence y\n  --effort <level> z`)).toEqual({ ok: true, unsupportedOptional: new Set(), personaFile: false });
   });
   it('optional missing → dropped from argv, required kept', () => {
     const p = checkClaudeFlags(base);
-    expect(p).toEqual({ ok: true, unsupportedOptional: new Set(['--no-chrome', '--no-session-persistence']), personaFile: false });
+    expect(p).toEqual({ ok: true, unsupportedOptional: new Set(['--no-chrome', '--no-session-persistence', '--effort']), personaFile: false });
     const args = buildClaudeArgs('open youtube', { claudePath: 'claude', maxTurns: 5, model: null, mcpConfigPath: '/m.json', unsupportedOptionalFlags: (p as { unsupportedOptional: Set<string> }).unsupportedOptional });
     expect(args).not.toContain('--no-chrome');
     expect(args).toContain('--setting-sources');
