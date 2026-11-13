@@ -80,7 +80,9 @@ describe('stephen listen --text', () => {
     const text = readdirSync(dir).map((f) => readFileSync(join(dir, f), 'utf8')).join('');
     const rows = text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as { id: string; stages: Record<string, number> });
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ trigger: 'cli', route: 'model', outcome: 'ok', tier: null });
+    expect(rows[0]).toMatchObject({ trigger: 'cli', route: 'model', outcome: 'ok', start: 'cold' });
+    // Shadow classifier: a tier (1 or 2) and, for Tier 2, a closed reason code; never the text.
+    expect([1, 2]).toContain((rows[0] as unknown as { tier: number }).tier);
     expect(Object.keys(rows[0]!.stages).sort()).toEqual(['commandStart', 'done', 'replyReady']);
     expect(rows[0]!.stages.replyReady).toBeLessThanOrEqual(rows[0]!.stages.done!);
     expect(text).not.toMatch(/secret|diary/i);

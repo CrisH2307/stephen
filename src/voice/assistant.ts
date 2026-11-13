@@ -106,6 +106,8 @@ export interface CommandReport {
   replyMs: number;
   /** The model run's own times, when the runner measured them (warm process). Numbers only. */
   model?: ModelTimes;
+  /** The spoken reply was cut short: ms from the cancel until the speech process ended (a number, for the latency log). */
+  silenceMs?: number;
 }
 
 export interface AssistantOptions {
@@ -142,6 +144,9 @@ export class Assistant {
   private phaseValue: Phase = 'idle';
   private speech: SpeakHandle | null = null;
   private cancelled = false;
+  /** When a cancel hit a reply being spoken (assistant clock), and how long the speech took to end after it. */
+  private silenceFrom: number | null = null;
+  private silenceMs: number | undefined;
   constructor(private readonly o: AssistantOptions) {}
 
   get phase(): Phase {
@@ -179,6 +184,8 @@ export class Assistant {
     const trust = trustOf(source);
     const id = opts.id ?? newHistoryId();
     this.cancelled = false;
+    this.silenceFrom = null;
+    this.silenceMs = undefined;
     this.phaseNow = 'running';
     try {
       this.o.onStart?.({ id, source, said: text });
@@ -189,7 +196,7 @@ export class Assistant {
     let via: CommandReport['route'] = 'model';
     let replyAt = t0;
     const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs'>): CommandReport => {
-      const full: CommandReport = { ...r, id, source, said, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0) };
+      const full: CommandReport = { ...r, id, source, said, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0), ...(this.silenceMs !== undefined ? { silenceMs: this.silenceMs } : {}) };
       try {
         this.o.onDone?.(full);
       } catch (e) {
@@ -289,6 +296,7 @@ export class Assistant {
       this.phaseNow = 'speaking';
       this.speech = this.o.speaker.speak(spoken);
       await this.speech.done;
+      if (this.silenceFrom !== null) this.silenceMs = Math.max(0, now() - this.silenceFrom);
       this.speech = null;
     }
     this.o.chimes.play('done');
@@ -328,6 +336,7 @@ export class Assistant {
     if (this.phaseNow === 'idle') return false;
     this.cancelled = true;
     if (this.phaseNow === 'running') return this.o.runner.cancel();
+    if (this.speech) this.silenceFrom = (this.o.now ?? Date.now)();
     this.speech?.cancel();
     return true;
   }
