@@ -218,7 +218,7 @@ struct AskBoxView: View {
   }
 
   private func escape(_ mode: AskBoxMode) {
-    if let q = model.confirms.first { model.answerConfirm(q.id, approve: false); return }  // Esc = Deny, like the dialog
+    if model.denyFirstConfirm() { return }  // Esc = Deny, like the dialog
     switch mode {
     case .listening where box.micHeld: actions.micCancel()
     case .chat where model.isWorking: model.stopChat()
@@ -360,9 +360,11 @@ final class AskBoxController: NSObject {
     p.isReleasedWhenClosed = false
     p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     p.setAccessibilityLabel("Ask Stephen")
-    // Esc that reaches the panel itself (not the SwiftUI view): cancel a recording, never send it through close().
+    // Esc that reaches the panel itself (not the SwiftUI view): a waiting question first (Deny, R10a-5), then cancel a
+    // recording (never send it through close()), then close.
     p.onEscape = { [weak self] in
       guard let self else { return }
+      if self.model.denyFirstConfirm() { return }
       if self.box.micHeld { self.box.micHeld = false; self.cancelTalk() } else { self.close() }
     }
     let actions = AskBoxActions(

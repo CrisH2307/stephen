@@ -341,8 +341,64 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(box).toContain('", almost full"');
   });
 
+  it('R10a-2 (#94): Try again re-sends only a typed bubble; spoken and phone bubbles show where they came from', () => {
+    const chat = read('Components/ChatThread.swift');
+    // The one guard: the last said bubble, and only when it has no source label. No fallback to an older typed one.
+    expect(chat).toContain(
+      'guard let last = thread.last(where: { $0.kind == .said }), last.detail.isEmpty else { return nil }',
+    );
+    // retry() reaches sendChat only through that guard; it is the file's only sendChat.
+    expect(chat).toContain('if let typed = retryableText(model.thread) { model.sendChat(typed) }');
+    expect(chat.match(/sendChat\(/g)).toHaveLength(1);
+    // The button exists only when the guard passes (nil retry, no button).
+    expect(chat).toContain('retry: canRetry ? { retry() } : nil');
+    expect(chat).toContain('let canRetry = retryableText(thread) != nil');
+    expect(chat).toContain('if isLast, let retry = retry { QuietButton("Try again", action: retry) }');
+    // Typed bubbles get an empty label; heard ones always a non-empty one, even for an unknown or missing source.
+    expect(client).toContain('addBubble(.said, text, detail: "")');
+    expect(client).toContain('addBubble(.said, text, detail: heardLabel(msg.source))');
+    const label = client.match(/func heardLabel\(_ source: String\?\) -> String \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(label).toContain('default: return "Not typed here"');
+    const returns = [...label.matchAll(/return ([^\n]*)/g)].map((m) => m[1]);
+    expect(returns.length).toBeGreaterThanOrEqual(5);
+    for (const r of returns) expect(r, r).toMatch(/^"[^"]+"$/);
+    for (const s of ['voice-ptt', 'voice-wake', 'phone', 'cli']) expect(label).toContain(`case "${s}":`);
+    // Shown under the bubble (verbatim) and read by VoiceOver.
+    expect(chat).toContain('if !bubble.detail.isEmpty {\n          Text(verbatim: bubble.detail)');
+    expect(chat).toContain('"You, \\(bubble.detail): \\(bubble.text)"');
+  });
+
+  it('R10a-5: Esc with a waiting question denies the first one (Ask box panel, Ask box view, main window Home)', () => {
+    // One shared function: first question, approve false, nothing else.
+    const deny = client.match(/func denyFirstConfirm\(\) -> Bool \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(deny).toContain('guard let q = confirms.first else { return false }');
+    expect(deny).toContain('answerConfirm(q.id, approve: false)');
+    expect(deny).not.toContain('approve: true');
+    const box = read('AskBox.swift');
+    // Panel path (cancelOperation -> onEscape): the question before the recording and close.
+    const onEscape = box.match(/p\.onEscape = \{([\s\S]*?)\n    \}/)?.[1] ?? '';
+    expect(onEscape.indexOf('if self.model.denyFirstConfirm() { return }')).toBeGreaterThan(-1);
+    expect(onEscape.indexOf('denyFirstConfirm')).toBeLessThan(onEscape.indexOf('cancelTalk'));
+    expect(onEscape.indexOf('denyFirstConfirm')).toBeLessThan(onEscape.indexOf('close()'));
+    expect(box).toContain('override func cancelOperation(_ sender: Any?) { onEscape() }');
+    // SwiftUI path: question, then recording, then running chat, then close.
+    const esc = box.match(/private func escape\(_ mode: AskBoxMode\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    const order = ['model.denyFirstConfirm()', 'actions.micCancel()', 'model.stopChat()', 'actions.close()'].map((s) => esc.indexOf(s));
+    expect(order.every((i) => i >= 0), esc).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The question card (Ask box and Home both show ChatThreadView): Esc is a key equivalent on it, so it works while
+    // the text field has focus. It only denies, and it sits outside the delayed Allow/Deny buttons.
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toMatch(/if let q = model\.confirms\.first \{[\s\S]*?Button\(""\) \{ model\.denyFirstConfirm\(\) \}\.keyboardShortcut\(\.cancelAction\)/);
+    expect(chat.match(/\.cancelAction/g)).toHaveLength(1);
+    expect(read('HomeView.swift')).toContain('ChatThreadView(model: model)');
+    expect(box).toContain('ChatThreadView(model: model)');
+    // Nothing on the keyboard approves: Allow is only a click.
+    for (const src of [chat, box, read('HomeView.swift')]) expect(src).not.toMatch(/approve: true|answer\(true\)[^\n]*keyboardShortcut/);
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
-    for (const src of [window, client, read('AskBox.swift')]) {
+    for (const src of [window, client, read('AskBox.swift'), read('Components/ChatThread.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];
       expect(bad).toEqual([]);
     }
