@@ -36,7 +36,7 @@ describe('commandSteps (the action chain under a reply)', () => {
     expect(steps.every((s) => [...s.text].length <= MAX_STEP_CHARS)).toBe(true);
   });
 
-  it('with a command id: the id adds this command\'s late entries and never hides an entry inside the time window', () => {
+  it('with a command id: the id adds this command\'s late entries and hides another command\'s', () => {
     const audit: AuditEntry[] = [
       { ts: at(12), tool: 'click', kind: 'click', element: 'button "Mine"', outcome: 'ok', cmd: 'h_00000000000000aa' },
       { ts: at(13), tool: 'click', kind: 'click', element: 'button "Other command"', outcome: 'ok', cmd: 'h_00000000000000bb' },
@@ -44,8 +44,18 @@ describe('commandSteps (the action chain under a reply)', () => {
       { ts: at(50), tool: 'click', kind: 'click', element: 'button "Mine, late"', outcome: 'ok', cmd: 'h_00000000000000aa' },
       { ts: at(51), tool: 'click', kind: 'click', element: 'button "No id, outside"', outcome: 'ok' },
     ];
-    expect(commandSteps(audit, [], T0, T1, 'h_00000000000000aa').map((s) => s.text)).toEqual(['click button "Mine"', 'click button "Other command"', 'type textbox "No id"', 'click button "Mine, late"']);
+    expect(commandSteps(audit, [], T0, T1, 'h_00000000000000aa').map((s) => s.text)).toEqual(['click button "Mine"', 'type textbox "No id"', 'click button "Mine, late"']);
     expect(commandSteps(audit, [], T0, T1).map((s) => s.text)).toEqual(['click button "Mine"', 'click button "Other command"', 'type textbox "No id"']);
+  });
+
+  it('with a command id: drops entries labelled with another valid id, keeps unlabelled ones and its own out-of-window ones', () => {
+    const A = 'h_aaaaaaaaaaaaaaaa';
+    const audit: AuditEntry[] = [
+      { ts: at(12), tool: 'click', kind: 'click', element: 'button "Send"', outcome: 'denied', cmd: 'h_bbbbbbbbbbbbbbbb' },
+      { ts: at(13), tool: 'navigate', kind: 'navigate', element: 'page', outcome: 'ok' },
+      { ts: at(40), tool: 'click', kind: 'click', element: 'button "Mine, late"', outcome: 'ok', cmd: A },
+    ];
+    expect(commandSteps(audit, [], T0, T1, A).map((s) => s.text)).toEqual(['navigate page', 'click button "Mine, late"']);
   });
 
   it('nothing ran: no steps', () => {
