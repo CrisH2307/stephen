@@ -43,7 +43,7 @@
  *  - `{id, type:"memory.graph"}` → `{id, type:"graph", nodes:[{id, text, kind, new}], links:[{a, b}]}` (kind people |
  *    school | places | habits | projects | other, by fixed rules in src/app/memory-graph.ts; new = a waiting proposal).
  *  - `{id, type:"memory.suggestions"}` → `{id, type:"suggestions", suggestions:[{id, text, origin, untrusted, createdAt}]}`
- *    (newest first; origin you | chat | email | canvas | web; untrusted for third-party text).
+ *    (newest first; origin is always you; untrusted is always false).
  *  - `{id, type:"memory.propose", text}` (the Tell Stephen box; origin "you") → `suggestions`, or an error (secret …).
  *  - `{id, type:"memory.keep", propId, text?}` → `{id, type:"memory", items}` (saved through MemoryStore.add with the
  *    proposal's origin; `text` = the owner's edit). A refused keep leaves the proposal waiting.

@@ -17,7 +17,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | RV-3 | review 0.3 | Finding | A2 mostly done on `qa`; `tier` always null, Esc and chime not recorded; only #44 on `main` | open | dev | #43, `feat/latency-gaps` |
 | RV-4 | review 0.4 | Finding | "Parakeet expected winner" contradicts `docs/VOICE.md`; 300 ms rule excludes whisper-small | open | owner | #61 |
 | RV-5 | review 0.5 | Finding | Several plan tasks already built or smaller than stated (see plan corrections) | in progress | review | `docs/plan-reconcile` |
-| RV-6 | review 0.6 | Finding | B1 overstated: non-owner memory origins exist only in the type | open | dev | #53, `fix/memory-origin-you` |
+| RV-6 | review 0.6 | Finding | B1 overstated: non-owner memory origins exist only in the type | fixed in code | dev | #53, `fix/memory-origin-you` |
 | RV-7 | review 0.7 | Finding | Review timing: #32 to #41 and A2 unreviewed; Review 10 too late | in review | review | `docs/review-10a`, PR #95 |
 | RV-8 | review 0.8 | Finding | E1 "same gate" has no code path; needs an ADR before code | open | review | #60, `docs/adr-008-fast-path` |
 | RV-9 | review 0.9 | Finding | Prompt-size baseline stale: 39 tools, 42.4 KB, not 29 and 27 KB | in progress | review | `docs/plan-reconcile` |
@@ -35,7 +35,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | open | dev | #90, #54, #68, `fix/remember-once` |
 | S4-7 | review 4 | P1 | Ask Stephen button does nothing | open | dev | #87, `fix/ask-button` |
 | S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | open | dev | #65, #67, `fix/claude-cli-contract` |
-| S4-9 B1 | review 4 | P0 | Owner-only memory origin | open | dev | #53, `fix/memory-origin-you` |
+| S4-9 B1 | review 4 | P0 | Owner-only memory origin | fixed in code | dev | #53, `fix/memory-origin-you` |
 | S4-10 DOC1 | review 4 | P1 | Reconcile docs (this ledger, plan corrections, superseded banners) | in progress | review | `docs/plan-reconcile` |
 | S4-11 REL | review 4 | P0 | Release `qa` to `main` after R10a fixes and Mac sections 0 and 13 | open | owner | PR #92 (sync), release PR none |
 | S4-12 C5 | review 4 | P0 | Split `AppClient.swift` | open | dev | #56, `ui/split-appclient` |
