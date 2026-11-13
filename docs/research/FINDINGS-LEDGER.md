@@ -71,10 +71,10 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | fixed in code | dev | #93, `fix/steps-other-command` |
-| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | open | dev | #94 |
+| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | fixed in code, Mac check pending | dev | #94, `fix/retry-trust-esc-deny` |
 | R10a-3 | R10a | Low | A failed tool call reads as done in the step list | open | dev | none |
 | R10a-4 | R10a | Low | Home Allow and Deny delay starts when the view appears, not when the window is shown | open | dev | none |
-| R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | open | dev | none |
+| R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
 | R10a-6 | R10a | Low | `--effort` sent without a probe and saved to config; breaks every command on an old CLI | open | dev | none (overlaps #65, #67) |
 | R10a-7 | R10a | Low | Latency report mixes cancelled and failed commands into p50, p95 and OVER | open | dev | none |
 | R10a-8 | R10a | Low | At the 300-bubble cap new replies stop scrolling into view | open | dev | none |
@@ -89,7 +89,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | open | dev | #86, `fix/mic-stop-f5` |
 | R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | open | dev | none |
 | R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | open (decide) | dev | none |
-| R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | confirmed on the Mac | dev | queued with #93, #94 |
+| R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
 
 ## F. Requests from the dev lane (tracker #10, 2026-11-12)
 

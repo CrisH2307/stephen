@@ -820,7 +820,7 @@ enum AppConnectionState: Equatable {
 
 struct ChatBubble: Identifiable, Equatable {
   enum Kind: Equatable {
-    /** What the user typed or said (right side). */
+    /** What the user typed (empty detail) or said (detail names where it came from, see heardLabel). Right side. */
     case said
     /** Stephen's reply (left side). */
     case reply
@@ -836,6 +836,18 @@ struct ChatBubble: Identifiable, Equatable {
   let detail: String
   /** What Stephen did for this reply, oldest first. */
   var steps: [ChatStep] = []
+}
+
+/// Where a spoken (not typed) command came from, shown under its bubble. Never empty, even for an unknown or missing
+/// source: an empty label would make the bubble look typed, and Try again re-sends only typed bubbles (R10a-2).
+func heardLabel(_ source: String?) -> String {
+  switch source {
+  case "voice-ptt": return "Push to talk"
+  case "voice-wake": return "Heard by wake word"
+  case "phone": return "From your phone"
+  case "cli": return "From the command line"
+  default: return "Not typed here"
+  }
 }
 
 /** One line of the action chain. `text` can hold page text (a button label): shown with Text(verbatim:). */
@@ -1061,9 +1073,10 @@ final class AppModel: ObservableObject {
       if let s = msg.state { state = s }
       if state == "idle" { awaitingReplies = [] }
     case "heard":
-      // Typed commands are already in the chat; only voice commands are added here.
+      // Typed commands are already in the chat; only voice commands are added here. The label is never empty: an
+      // empty detail marks a typed bubble, the only kind Try again may re-send (R10a-2).
       if let text = msg.text, msg.source != "app" {
-        addBubble(.said, text, detail: sourceLabel(msg.source ?? ""))
+        addBubble(.said, text, detail: heardLabel(msg.source))
       }
     case "chat.done":
       chatDone(msg)
@@ -1401,6 +1414,14 @@ final class AppModel: ObservableObject {
     request(AppRequest.confirmAnswer(newId(), confirmId: confirmId, approve: approve)) { [weak self] msg in
       if msg.type == "error" { self?.log("app.sock: confirm answer refused: \(msg.message ?? "error")") }
     }
+  }
+
+  /** Esc while a question waits: Deny the first one, only that one. Esc never allows. false when none waits. */
+  @discardableResult
+  func denyFirstConfirm() -> Bool {
+    guard let q = confirms.first else { return false }
+    answerConfirm(q.id, approve: false)
+    return true
   }
 
   func refreshPersonal() {

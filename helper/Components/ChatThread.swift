@@ -16,11 +16,19 @@ struct ChatThreadView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: Space.m) {
           let thread = model.thread
+          let canRetry = retryableText(thread) != nil
           ForEach(thread) { b in
-            ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id) { retry() }.id(b.id)
+            ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil).id(b.id)
           }
           if let q = model.confirms.first {
-            ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }.id("confirm")
+            ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
+              // Esc = Deny, in the Ask box and on Home, even while the text field has focus: a key equivalent runs
+              // before the field editor. No 0.75 s delay: Esc can only deny. One card, so one question per press (R10a-5).
+              .background(
+                Button("") { model.denyFirstConfirm() }.keyboardShortcut(.cancelAction)
+                  .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+              )
+              .id("confirm")
           } else if model.isWorking {
             Text(verbatim: "Working…").font(TypeScale.secondary).foregroundColor(t.ink2)
               .accessibilityLabel("Working. Press Escape to stop.").id("working")
@@ -43,10 +51,17 @@ struct ChatThreadView: View {
     }
   }
 
-  /** Send the last thing you said again (after a problem). */
+  /** Send the last thing you typed again (after a problem). Never spoken words: see retryableText. */
   private func retry() {
-    if let said = model.thread.last(where: { $0.kind == .said })?.text { model.sendChat(said) }
+    if let typed = retryableText(model.thread) { model.sendChat(typed) }
   }
+}
+
+/// The text Try again may re-send: your last message, only if you typed it (no source label). Spoken or phone words
+/// are never re-sent: chat.send runs as typed in the app, full trust, and the app must not claim another source (R10a-2).
+func retryableText(_ thread: [ChatBubble]) -> String? {
+  guard let last = thread.last(where: { $0.kind == .said }), last.detail.isEmpty else { return nil }
+  return last.text
 }
 
 /**
@@ -58,18 +73,27 @@ struct ChatBubbleRow: View {
   @Environment(\.stephenTheme) var t
   let bubble: ChatBubble
   let isLast: Bool
-  let retry: () -> Void
+  /** nil when the last message was not typed: no Try again (R10a-2). */
+  let retry: (() -> Void)?
 
   var body: some View {
     switch bubble.kind {
     case .said:
-      HStack(spacing: 0) {
-        Spacer(minLength: Space.xxl)
-        Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
-          .padding(.horizontal, Space.m).padding(.vertical, Space.s)
-          .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.line))
+      // Spoken or phone words carry where they came from, under the bubble; typed ones have no label.
+      VStack(alignment: .trailing, spacing: 2) {
+        HStack(spacing: 0) {
+          Spacer(minLength: Space.xxl)
+          Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
+            .padding(.horizontal, Space.m).padding(.vertical, Space.s)
+            .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.line))
+        }
+        if !bubble.detail.isEmpty {
+          Text(verbatim: bubble.detail).font(TypeScale.secondary).foregroundColor(t.ink2)
+        }
       }
-      .accessibilityElement(children: .combine).accessibilityLabel("You: \(bubble.text)")
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(bubble.detail.isEmpty ? "You: \(bubble.text)" : "You, \(bubble.detail): \(bubble.text)")
     case .reply:
       // The work first, small and folded; the answer after it, as the main text (owner, 2026-11-09).
       VStack(alignment: .leading, spacing: Space.s) {
@@ -89,7 +113,7 @@ struct ChatBubbleRow: View {
       VStack(alignment: .leading, spacing: Space.s) {
         Text(verbatim: "Problem").sectionLabelStyle(t)
         Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
-        if isLast { QuietButton("Try again", action: retry) }
+        if isLast, let retry = retry { QuietButton("Try again", action: retry) }
       }
     case .info:
       Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
