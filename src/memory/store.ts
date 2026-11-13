@@ -41,10 +41,10 @@ export const MEMORY_SOURCES = ['voice-ptt', 'voice-wake', 'app', 'cli', 'phone']
 export type MemorySource = (typeof MEMORY_SOURCES)[number];
 
 /**
- * Where a kept proposal came from (src/memory/proposals.ts): you (typed in Tell Stephen), chat (a conversation), or
- * third-party text (email, canvas, web). Absent on items the owner saved directly.
+ * Where a kept proposal came from (src/memory/proposals.ts): only `you`, typed by the owner in Tell Stephen. Any other
+ * origin on disk is dropped on read. Absent on items the owner saved directly.
  */
-export const PROPOSAL_ORIGINS = ['you', 'chat', 'email', 'canvas', 'web'] as const;
+export const PROPOSAL_ORIGINS = ['you'] as const;
 export type ProposalOrigin = (typeof PROPOSAL_ORIGINS)[number];
 
 export interface MemoryItem {
@@ -168,11 +168,12 @@ export function parseMemoryFile(raw: unknown, maxItems = MAX_MEMORY_ITEMS): Memo
     const o = it as Record<string, unknown>;
     if (!isMemoryId(o.id) || seen.has(o.id) || typeof o.text !== 'string') continue;
     if (!MEMORY_SOURCES.includes(o.source as MemorySource) || !isIso(o.createdAt) || !isIso(o.updatedAt)) continue;
+    if (o.origin !== undefined && !PROPOSAL_ORIGINS.includes(o.origin as ProposalOrigin)) continue; // any other origin: the item is absent
     const c = checkMemoryText(o.text);
     if (!('text' in c)) continue;
     seen.add(o.id);
     maxN = Math.max(maxN, Number(o.id.slice(1)));
-    const origin = PROPOSAL_ORIGINS.includes(o.origin as ProposalOrigin) ? { origin: o.origin as ProposalOrigin } : {};
+    const origin = o.origin === undefined ? {} : { origin: o.origin as ProposalOrigin };
     items.push({ id: o.id, text: c.text, source: o.source as MemorySource, ...origin, createdAt: o.createdAt, updatedAt: o.updatedAt });
   }
   const next = typeof r.nextId === 'number' && Number.isInteger(r.nextId) && r.nextId > maxN && r.nextId < 1e9 ? r.nextId : maxN + 1;

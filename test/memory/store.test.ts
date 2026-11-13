@@ -274,21 +274,22 @@ describe('MemoryStore', () => {
 });
 
 describe('origin of a kept proposal (Memory page, UI-PLAN v3.1 section 7a)', () => {
-  it('add records the origin; parse keeps a known origin and drops an unknown one', async () => {
+  it('add records the origin; parse keeps a you origin and drops an item with any other origin', async () => {
     const { s } = store();
-    const r = await s.add('Lab 4 is due Friday', 'app', 'canvas');
-    expect(r.ok && r.item).toMatchObject({ id: 'm1', source: 'app', origin: 'canvas' });
+    const r = await s.add('Lab 4 is due Friday', 'app', 'you');
+    expect(r.ok && r.item).toMatchObject({ id: 'm1', source: 'app', origin: 'you' });
     expect((await s.add('I play guitar', 'cli')).ok && (await s.list())[1]).not.toHaveProperty('origin');
-    expect((await s.list())[0]!.origin).toBe('canvas');
+    expect((await s.list())[0]!.origin).toBe('you');
     const f = parseMemoryFile({
       version: 1,
       nextId: 3,
       items: [
-        { id: 'm1', text: 'a fact', source: 'app', origin: 'web', createdAt: T0.toISOString(), updatedAt: T0.toISOString() },
-        { id: 'm2', text: 'b fact', source: 'app', origin: 'model', createdAt: T0.toISOString(), updatedAt: T0.toISOString() },
+        { id: 'm1', text: 'a fact', source: 'app', origin: 'you', createdAt: T0.toISOString(), updatedAt: T0.toISOString() },
+        { id: 'm2', text: 'b fact', source: 'app', origin: 'web', createdAt: T0.toISOString(), updatedAt: T0.toISOString() },
+        { id: 'm3', text: 'c fact', source: 'app', origin: 'model', createdAt: T0.toISOString(), updatedAt: T0.toISOString() },
       ],
     });
-    expect(f!.items[0]!.origin).toBe('web');
-    expect(f!.items[1]).not.toHaveProperty('origin');
+    expect(f!.items.map((i) => i.id)).toEqual(['m1']);
+    expect(f!.items[0]!.origin).toBe('you');
   });
 });

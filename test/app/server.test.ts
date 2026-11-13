@@ -199,7 +199,7 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
     );
     h.history.append({ source: 'voice-ptt', said: 'remember my prof', reply: 'Saved', outcome: 'memory', tools: [], followUp: false, ms: 40, turns: 0 });
     // The fixture's waiting proposal p1 (from Canvas); a32 proposes p2.
-    h.proposals.propose('Lab 4 for SOFE 3980 is due Friday', 'canvas');
+    h.proposals.propose('Lab 4 for SOFE 3980 is due Friday', 'you');
 
     const lines = readFileSync(FIXTURE, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as FixtureLine);
     const expected = new Map(lines.filter((l) => l.kind === 'response').map((l) => [l.msg.id!, l.msg]));
@@ -591,14 +591,14 @@ describe('memory, history, settings, audit, window', () => {
     expect(p1).toMatchObject({ id: 'a', type: 'suggestions', suggestions: [{ id: 'p1', text: 'I moved to Fit4Less', origin: 'you', untrusted: false }] });
     expect(await h.memory.list()).toEqual([]);
     expect(h.calls.ends).toBe(0);
-    h.proposals.propose('Lab 4 is due Friday', 'canvas');
+    h.proposals.propose('Lab 4 is due Friday', 'you');
     const list = await h.client.request({ id: 'b', type: 'memory.suggestions' });
-    expect((list.suggestions as { id: string; untrusted: boolean }[]).map((s) => [s.id, s.untrusted])).toEqual([['p2', true], ['p1', false]]);
+    expect((list.suggestions as { id: string; untrusted: boolean }[]).map((s) => [s.id, s.untrusted])).toEqual([['p2', false], ['p1', false]]);
     // a secret is refused before it is ever stored as a proposal
     expect(await h.client.request({ id: 'c', type: 'memory.propose', text: 'my password is hunter2' })).toEqual({ id: 'c', type: 'error', message: MEMORY_MESSAGES.secret });
     // keep with edited text: saved through the memory store, origin recorded, proposal gone, conversation ended
     const kept = await h.client.request({ id: 'd', type: 'memory.keep', propId: 'p2', text: 'Lab 4 is due Thursday' });
-    expect(kept).toMatchObject({ id: 'd', type: 'memory', items: [{ id: 'm1', text: 'Lab 4 is due Thursday', source: 'app', origin: 'canvas' }] });
+    expect(kept).toMatchObject({ id: 'd', type: 'memory', items: [{ id: 'm1', text: 'Lab 4 is due Thursday', source: 'app', origin: 'you' }] });
     expect(h.calls.ends).toBe(1);
     expect(h.proposals.list().map((p) => p.id)).toEqual(['p1']);
     // a refused keep leaves the proposal waiting
