@@ -134,6 +134,9 @@ export const SCENARIOS: Scenario[] = [
     steps: [{ key: 96 }, { key: 96 }, { keyup: 96 }, { key: 96 }, { keyup: 96 }],
     expect: ['ptt_down', 'ptt_up', 'ptt_down', 'ptt_up'],
   },
+  // Esc in the Ask box goes through the same Esc key-down (main.swift box.cancelTalk), so the press ends after esc
+  // and Node cancels it (test/voice/ptt.test.ts: esc then ptt_up sends nothing).
+  { name: 'started from the app, then Esc in the box: esc, then the press ends', steps: [{ key: 96 }, { key: 53 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
   {
     name: 'started from the app, then Esc, then F5: Esc ends the press, so F5 is not swallowed',
     steps: [{ key: 96 }, { key: 53 }, { key: 96 }, { keyup: 96 }],

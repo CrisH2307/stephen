@@ -526,6 +526,7 @@ MainActor.assumeIsolated {
   box.ptt = { down in
     if down { core.handleKeyDown(keyCode: KEYCODE_F5, isRepeat: false) } else { core.handleKeyUp(keyCode: KEYCODE_F5) }
   }
+  box.cancelTalk = { core.handleKeyDown(keyCode: KEYCODE_ESCAPE, isRepeat: false) }
   askBox = box
 
   var granted = CGPreflightListenEventAccess()
