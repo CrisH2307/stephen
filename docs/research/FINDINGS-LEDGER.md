@@ -33,7 +33,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | open | dev | #48, `feat/replay-recorder` |
 | S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed in code, Mac check pending | dev | #90, #54, #68, `fix/remember-once` |
-| S4-7 | review 4 | P1 | Ask Stephen button does nothing | open | dev | #87, `fix/ask-button` |
+| S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed in code, Mac check pending | dev | #87, `fix/ask-button` |
 | S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | fixed in code | dev | #65, #67, `fix/claude-cli-contract` |
 | S4-9 B1 | review 4 | P0 | Owner-only memory origin | fixed in code | dev | #53, `fix/memory-origin-you` |
 | S4-10 DOC1 | review 4 | P1 | Reconcile docs (this ledger, plan corrections, superseded banners) | in progress | review | `docs/plan-reconcile` |

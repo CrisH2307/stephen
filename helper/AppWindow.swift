@@ -95,10 +95,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     super.init()
   }
 
-  /// ⌘K: Home's composer when the window is in front, else the Ask box.
-  @objc func askClicked(_ sender: Any?) {
-    if window?.isKeyWindow == true { nav.askHere() } else { actions.ask() }
-  }
+  /// ⌘K and the Ask Stephen menu item: open the Ask box, like the sidebar row (owner's choice of 2026-11-13, #87).
+  @objc func askClicked(_ sender: Any?) { actions.ask() }
 
   func show(page: Page? = nil) {
     if let page = page { nav.page = page }
