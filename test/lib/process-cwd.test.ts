@@ -23,7 +23,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('p
       expect(pids).not.toContain(process.pid);
       expect(pidsWithCwdIn(join(tmp, 'jo'))).toEqual([]); // a prefix of the name is not "inside"
       const p = processStart(inside.pid!);
-      expect(p?.tty).toBe('??');
+      expect(p?.tty).toBe(process.platform === 'darwin' ? '??' : '?'); // ps: '??' on macOS, '?' on Linux (no controlling tty)
       expect(p!.startedAt).toBeGreaterThanOrEqual(Math.floor(t0 / 1000) * 1000);
       expect(processStart(999_999)).toBeNull();
     } finally {

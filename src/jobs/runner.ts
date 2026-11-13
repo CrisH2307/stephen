@@ -189,7 +189,7 @@ export class JobSupervisor {
         ? this.d.stragglers(this.s.spec.folder)
         : pidsWithCwdIn(this.s.spec.folder).filter((pid) => {
             const p = processStart(pid);
-            return p !== null && p.tty === '??' && p.startedAt >= Math.floor(since / 1000) * 1000;
+            return p !== null && (p.tty === '??' || p.tty === '?') && p.startedAt >= Math.floor(since / 1000) * 1000;
           });
     } catch {
       return 0;

@@ -176,10 +176,12 @@ export function matchForget<T extends { text: string }>(items: readonly T[], que
   return top.length === 1 ? { match: top[0]! } : { tie: top };
 }
 
-/** The newest item if it was created within `windowMs` of `now` ("forget that"), else null. */
-export function newestWithin<T extends { createdAt: string }>(items: readonly T[], now: Date, windowMs = FORGET_LAST_WINDOW_MS): T | null {
+/** The newest item if it was created within `windowMs` of `now` ("forget that"), else null. Same millisecond: the higher id (saved later; ids are m1, m2, ...). */
+export function newestWithin<T extends { id: string; createdAt: string }>(items: readonly T[], now: Date, windowMs = FORGET_LAST_WINDOW_MS): T | null {
   let newest: T | null = null;
-  for (const it of items) if (!newest || Date.parse(it.createdAt) > Date.parse(newest.createdAt)) newest = it;
+  const at = (x: T) => Date.parse(x.createdAt);
+  const num = (x: T) => Number(x.id.slice(1));
+  for (const it of items) if (!newest || at(it) > at(newest) || (at(it) === at(newest) && num(it) > num(newest))) newest = it;
   if (!newest) return null;
   const age = now.getTime() - Date.parse(newest.createdAt);
   return age >= 0 && age <= windowMs ? newest : null;
