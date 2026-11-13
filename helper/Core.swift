@@ -444,7 +444,11 @@ final class PushToTalk {
     return release(at: t, stillHeld: true)
   }
 
-  /** Esc key-downs → esc; an F5 key-down starts a press (auto-repeats ignored for both). */
+  /**
+   * Esc key-downs → esc; an F5 key-down starts a press (auto-repeats ignored for both). Esc during a press also ends
+   * the press (after the esc, so Node cancels instead of sending): the listener has dropped that recording, so the
+   * next F5 must start a new one, not be swallowed by a press nobody is holding (#86).
+   */
   func keyDown(keyCode: Int64, isRepeat: Bool, at t: Stamp) -> [HelperEventOut] {
     guard !isRepeat else { return [] }
     if keyCode == KEYCODE_F5 {
@@ -455,7 +459,7 @@ final class PushToTalk {
       return [.pttDown(at: t.wallMs)]
     }
     guard keyCode == KEYCODE_ESCAPE else { return [] }
-    return [.esc(at: t.wallMs)]
+    return [.esc(at: t.wallMs)] + (isDown ? release(at: t, stillHeld: !byF5) : [])
   }
 
   /** F5 released → ends an F5 press. Other key-ups are ignored. */
@@ -798,6 +802,8 @@ final class HelperCore {
   var onQuit: () -> Void = {}
   /** `open_window` from the client (main queue). */
   var onOpenWindow: () -> Void = {}
+  /** A push-to-talk press ended, however it ended (F5 or keys released, Esc, max hold, tap lost). Main queue. */
+  var onPressEnded: () -> Void = {}
   var log: (String) -> Void
 
   init(socketPath: String, maxHoldMs: Int64 = PTT_MAX_HOLD_MS, log: @escaping (String) -> Void) {
@@ -884,6 +890,7 @@ final class HelperCore {
         let ms = Int(ptt.maxHoldMs) + 5  // + slack so the tick never lands a millisecond early
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(ms)) { [weak self] in self?.tick() }
       }
+      if case .pttUp = e { onPressEnded() }
     }
   }
 }

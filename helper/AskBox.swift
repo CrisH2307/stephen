@@ -21,6 +21,8 @@ final class AskBoxState: ObservableObject {
   @Published var draft = ""
   /** Push-to-talk started from the box's mic button (tap the box again to send). */
   @Published var micHeld = false
+  /** The helper has no working key listener (no Input Monitoring): F5, Fn+Option and Esc never reach Stephen. */
+  @Published var keysOff = false
   /** Stay open when you click elsewhere. Remembered. */
   @Published var pinned = UserDefaults.standard.bool(forKey: "askBoxPinned") {
     didSet { UserDefaults.standard.set(pinned, forKey: "askBoxPinned") }
@@ -44,6 +46,8 @@ struct AskBoxActions {
   var close: () -> Void
   var micDown: () -> Void
   var micUp: () -> Void
+  /** Esc while the box's mic is on: cancel through the helper's Esc path (never sends). */
+  var micCancel: () -> Void
   var openApp: () -> Void
   var reviewMemory: () -> Void
   var quit: () -> Void
@@ -159,6 +163,10 @@ struct AskBoxView: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel(box.micHeld ? "Listening. Activate to send." : "Listening")
+      if box.keysOff {
+        Text(verbatim: "F5 and Esc don't reach Stephen from other apps (needs Input Monitoring). Here: click to send, Esc to cancel.")
+          .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+      }
     case .offline:
       Text(verbatim: "Can't reach Stephen. Is stephen listen running?").font(TypeScale.body).foregroundColor(t.ink)
       QuietButton("Try again") { model.retry() }
@@ -212,7 +220,7 @@ struct AskBoxView: View {
   private func escape(_ mode: AskBoxMode) {
     if let q = model.confirms.first { model.answerConfirm(q.id, approve: false); return }  // Esc = Deny, like the dialog
     switch mode {
-    case .listening where box.micHeld: actions.micUp()
+    case .listening where box.micHeld: actions.micCancel()
     case .chat where model.isWorking: model.stopChat()
     default: actions.close()
     }
@@ -270,6 +278,8 @@ final class AskBoxController: NSObject {
   var quit: () -> Void = {}
   /** Push-to-talk down/up through the same path as F5. */
   var ptt: (Bool) -> Void = { _ in }
+  /** The Esc key's path in the helper (esc, then the press ends): Esc in the box cancels, never sends. */
+  var cancelTalk: () -> Void = {}
 
   init(model: AppModel) {
     self.model = model
@@ -311,8 +321,9 @@ final class AskBoxController: NSObject {
     panel?.orderOut(nil)
   }
 
-  /** Home's Talk button: open the box and start talking (tap the box again to send). */
+  /** Home's Talk button: open the box and start talking; press it again (or tap the box) to send. */
   func talk() {
+    if box.micHeld { return micUp() }
     show(focus: true, selectField: false)
     micDown()
   }
@@ -349,11 +360,16 @@ final class AskBoxController: NSObject {
     p.isReleasedWhenClosed = false
     p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     p.setAccessibilityLabel("Ask Stephen")
-    p.onEscape = { [weak self] in self?.close() }
+    // Esc that reaches the panel itself (not the SwiftUI view): cancel a recording, never send it through close().
+    p.onEscape = { [weak self] in
+      guard let self else { return }
+      if self.box.micHeld { self.box.micHeld = false; self.cancelTalk() } else { self.close() }
+    }
     let actions = AskBoxActions(
       close: { [weak self] in self?.close() },
       micDown: { [weak self] in self?.micDown() },
       micUp: { [weak self] in self?.micUp() },
+      micCancel: { [weak self] in self?.box.micHeld = false; self?.cancelTalk() },
       openApp: { [weak self] in self?.close(); self?.openWindow(nil) },
       reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) },
       quit: { [weak self] in self?.quit() },

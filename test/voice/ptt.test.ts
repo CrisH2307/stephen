@@ -286,6 +286,29 @@ describe('Esc (helper)', () => {
     expect(t.lines).toContain('Stopped.');
   });
 
+  it('#86: mic started from the app, then Esc (the helper sends esc, then ptt_up): nothing is sent; the next F5 press records and sends', async () => {
+    const t = setup({
+      pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(30) + 's'.repeat(20) + '.'.repeat(40),
+      texts: ['open youtube'],
+      gates: (t) => [
+        [5, down(t)], // the window's mic: the same ptt_down as F5 (helper/main.swift box.ptt)
+        [
+          35,
+          () => {
+            t.fake.emit({ type: 'esc', at: Date.now() });
+            up(t, 30 * MS_PER_FRAME)();
+          },
+        ],
+        [55, down(t)], // F5
+        [85, up(t, 30 * MS_PER_FRAME)],
+      ],
+    });
+    await t.listener.run();
+    expect(t.lines).toContain('Cancelled (Esc).');
+    expect(t.transcriber.heard).toHaveLength(1);
+    expect(t.runner.prompts).toEqual(['open youtube']);
+  });
+
   it('does nothing when idle', async () => {
     const t = setup({ pattern: '.'.repeat(40), texts: [], gates: (t) => [[10, () => t.fake.emit({ type: 'esc', at: Date.now() })]] });
     await t.listener.run();

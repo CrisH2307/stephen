@@ -56,7 +56,9 @@ export class PttModel {
       this.downAt = now;
       return [{ type: 'ptt_down', at: now }];
     }
-    return code === 53 ? [{ type: 'esc', at: now }] : [];
+    if (code !== 53) return [];
+    // Esc also ends a press (after the esc): the listener dropped that recording, so the next F5 must not be swallowed.
+    return [{ type: 'esc', at: now }, ...(this.isDown ? this.release(now, !this.byF5) : [])];
   }
 
   keyUp(code: number, now: number): Out[] {
@@ -126,6 +128,25 @@ export const SCENARIOS: Scenario[] = [
   { name: 'F5 during a Fn+Option press does nothing extra', steps: [{ flags: { fn: true, opt: true } }, { key: 96 }, { keyup: 96 }, { flags: {} }], expect: ['ptt_down', 'ptt_up'] },
   { name: 'F5 max hold sends ptt_up; repeats while still held do not restart', steps: [{ key: 96 }, { wait: SCENARIO_MAX_HOLD_MS + 250 }, { key: 96, repeat: true }, { keyup: 96 }], expect: ['ptt_down', 'ptt_up'] },
   { name: 'Esc during an F5 press', steps: [{ key: 96 }, { key: 53 }, { keyup: 96 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
+  // #86: the window's mic (Ask box, Home's Talk) starts a press through the same F5 key-down (main.swift box.ptt).
+  {
+    name: 'started from the app, then F5: the F5 release ends it, and the next F5 is a new press',
+    steps: [{ key: 96 }, { key: 96 }, { keyup: 96 }, { key: 96 }, { keyup: 96 }],
+    expect: ['ptt_down', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
+  // Esc in the Ask box goes through the same Esc key-down (main.swift box.cancelTalk), so the press ends after esc
+  // and Node cancels it (test/voice/ptt.test.ts: esc then ptt_up sends nothing).
+  { name: 'started from the app, then Esc in the box: esc, then the press ends', steps: [{ key: 96 }, { key: 53 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
+  {
+    name: 'started from the app, then Esc, then F5: Esc ends the press, so F5 is not swallowed',
+    steps: [{ key: 96 }, { key: 53 }, { key: 96 }, { keyup: 96 }],
+    expect: ['ptt_down', 'esc', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
+  {
+    name: 'Esc during a Fn+Option press latches: still holding the keys does not restart it',
+    steps: [{ flags: { fn: true, opt: true } }, { key: 53 }, { flags: { fn: true, opt: true, shift: true } }, { flags: {} }, { flags: { fn: true, opt: true } }, { flags: {} }],
+    expect: ['ptt_down', 'esc', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
 ];
 
 /** Run a scenario against the model with a fake clock (ticks every 10 ms while waiting). */
