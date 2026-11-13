@@ -12,7 +12,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| RV-1 | review 0.1 | Finding | Reliable trigger has no P0 task; F5 works about 1 in 10, mic cannot be stopped | in progress | dev | #86, `fix/mic-stop-f5` |
+| RV-1 | review 0.1 | Finding | Reliable trigger has no P0 task; F5 works about 1 in 10, mic cannot be stopped | fixed in code, Mac check pending | dev | #86, `fix/mic-stop-f5` |
 | RV-2 | review 0.2 | Finding | Tier 1 targets need endpointing; about 2.8 s on the wake path with zero model time | open | dev | #73, `fix/wake-endpoint` |
 | RV-3 | review 0.3 | Finding | A2 mostly done on `qa`; `tier` always null, Esc and chime not recorded; only #44 on `main` | open | dev | #43, `feat/latency-gaps` |
 | RV-4 | review 0.4 | Finding | "Parakeet expected winner" contradicts `docs/VOICE.md`; 300 ms rule excludes whisper-small | open | owner | #61 |
@@ -27,7 +27,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | in progress | dev | #86, `fix/mic-stop-f5` |
+| S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed in code, Mac check pending | dev | #86, `fix/mic-stop-f5` |
 | S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | open | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | in review | review | `docs/review-10a`, PR #95 |
 | S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | open | dev | #48, `feat/replay-recorder` |
