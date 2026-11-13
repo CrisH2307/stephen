@@ -28,11 +28,43 @@ function setup() {
     put('voice/command.json', `{"id":"${ID}"}`);
     put('history/2026-11-10.jsonl', `{"id":"${ID}"}\n`);
     put('audit.log', `{"tool":"navigate","cmd":"${ID}"}\n`);
+    put('logs/helper.log', `2026-11-10T14:00:00Z Stephen Helper 1 (protocol 1) starting, pid 7, home /x\n2026-11-10T14:00:01Z event tap installed\n`);
+    env.platform = 'darwin';
   };
   const status = () => Object.fromEntries(runChecks(env).map((r) => [r.id, r.status]));
   return { home, env, put, good, status };
 }
 const posix = process.platform === 'win32' ? it.skip : it;
+
+const S = '2026-11-11T20:00:00Z Stephen Helper 1 (protocol 1) starting, pid 7, home /x';
+const TAP = (m: string, at = '20:00:05') => `2026-11-11T${at}Z ${m}`;
+
+describe('mac-checks key listener 0.k1', () => {
+  const run = (log: string | null, platform = 'darwin') => {
+    const t = setup();
+    t.env.platform = platform;
+    if (log !== null) t.put('logs/helper.log', log);
+    return runChecks(t.env).find((r) => r.id === '0.k1')!;
+  };
+  it('passes when the newest tap line says installed', () => {
+    const r = run([S, TAP('event tap found disabled; recreating it', '20:01:00'), TAP('event tap installed', '20:01:02')].join('\n'));
+    expect(r.status).toBe('pass');
+    expect(r.detail).toBe('"event tap installed" at 2026-11-11T20:01:02Z');
+  });
+  it('fails when the tap is off, with the fix and no other log text', () => {
+    const r = run([S, TAP('Input Monitoring not granted yet; requested it'), TAP('open youtube secret')].join('\n'));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('Input Monitoring: remove Stephen Helper');
+    expect(r.detail).not.toContain('secret');
+  });
+  it('skips with no log', () => expect(run(null).status).toBe('skip'));
+  it('skips when the helper restarted after the last installed line', () => {
+    const r = run([S, TAP('event tap installed'), S.replace('20:00:00', '21:00:00')].join('\n'));
+    expect(r.status).toBe('skip');
+    expect(r.detail).toContain('not reported');
+  });
+  it('skips on a platform that is not macOS', () => expect(run([S, TAP('event tap installed')].join('\n'), 'linux').status).toBe('skip'));
+});
 
 describe('mac-checks', () => {
   it('skips everything on an empty home, and a skip is not a failure', async () => {
@@ -40,7 +72,7 @@ describe('mac-checks', () => {
     expect(Object.values(t.status()).every((s) => s === 'skip')).toBe(true);
     const out: string[] = [];
     expect(await runMacChecksCli([], { out: (l) => out.push(l), env: t.env })).toBe(0);
-    expect(out.at(-1)).toBe('0 passed, 0 failed, 11 skipped');
+    expect(out.at(-1)).toBe('0 passed, 0 failed, 12 skipped');
   });
 
   it('passes every check on good data', async () => {
@@ -49,7 +81,7 @@ describe('mac-checks', () => {
     expect(Object.values(t.status()).every((s) => s === 'pass')).toBe(true);
     const out: string[] = [];
     expect(await runMacChecksCli([], { out: (l) => out.push(l), env: t.env })).toBe(0);
-    expect(out[0]).toBe('PASS  13.1a  the latency folder is private (0700) (~/telemetry)');
+    expect(out[1]).toBe('PASS  13.1a  the latency folder is private (0700) (~/telemetry)');
   });
 
   posix('fails on a wrong folder mode and a wrong file mode', () => {

@@ -15,7 +15,7 @@ Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suit
 
 | Section | What it covers | Hands checks | Scripted checks |
 |---|---|---|---|
-| 0 | Build and install | 2 | 2 |
+| 0 | Build and install | 2 | 3 |
 | 1 | Accounts, one real call each | 4 | 4 |
 | 2 | Voice with F5 | 6 | 0 |
 | 3 | Voice with the wake word | 5 | 0 |
@@ -33,14 +33,21 @@ Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suit
 ## 0. Build
 - [ ] `[hands]` **0.1** Do: run `git pull`, then `npm install && npm run build`. Use the VS Code terminal, not the VM shell.
   See: both finish with no error.
-- [ ] `[hands]` **0.2** Do: run `node dist/cli.js install-helper`. Then open Privacy & Security, Input Monitoring, and turn
-  Stephen Helper on again. Then quit the helper from the menu bar.
-  See: the install ends with no error. (The Swift code changed: Accounts tab, Today card. This is the first real compile.
+- [ ] `[hands]` **0.2** Do: run `node dist/cli.js install-helper`. Then do this **after every** `install-helper` (a rebuild
+  makes macOS forget the permission, even when the switch still looks on):
+  1. Open System Settings, Privacy & Security, Input Monitoring.
+  2. Select Stephen Helper and click the minus button to remove it.
+  3. Click the plus button and add Stephen Helper again (it is in your Applications folder). Turn its switch on.
+  4. When macOS asks, click Quit & Reopen. If it does not ask, quit Stephen Helper from the menu bar and open it again.
+  See: the install ends with no error, and the Stephen menu says "Input Monitoring: granted". (The Swift code changed: Accounts tab, Today card. This is the first real compile.
   If there are errors, send them.)
 - [ ] `[scripted]` **0.3** Do: run `node dist/cli.js doctor --network`.
   See: every line is green.
 - [ ] `[scripted]` **0.4** Do: run `npx vitest run test/helper/swift.int.test.ts` (the Swift test).
   See: all tests pass.
+- [ ] `[scripted]` **0.5** Do: run `node dist/cli.js mac-checks`.
+  See: the line "the key listener is on" says PASS. If it says FAIL, do the four steps of 0.2 again. (F5 and Esc do
+  nothing without this. It is what broke the test of 2026-11-11. The line needs the key listener check PR merged.)
 
 ## 1. Accounts, one real call each
 - [ ] `[scripted]` **1.1** Do: run `node dist/cli.js accounts`.
