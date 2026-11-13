@@ -9,6 +9,7 @@ import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
 import { parseTtsConfig } from './voice/tts/index.js';
 import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
+import { execFile } from 'node:child_process';
 import { helperDoctorChecks } from './helper/doctor.js';
 import { runInstallHelper } from './helper/install.js';
 import { existsSync, realpathSync } from 'node:fs';
@@ -361,6 +362,11 @@ async function doctor(network = false, json = false): Promise<number> {
     }
 
     for (const c of await helperDoctorChecks(cfg.home)) add(c);
+
+    const claudeVersion = await new Promise<string | null>((res) => {
+      execFile(String(((cfg as Partial<HubConfig>).voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
+    });
+    add((await import('./voice/claude.js')).claudeVersionCheck(claudeVersion));
 
     add({ ok: true, info: true, label: 'Audit log', detail: cfg.auditLogPath });
     add({ ok: true, info: true, label: 'Saved output', detail: cfg.output.saveDir });

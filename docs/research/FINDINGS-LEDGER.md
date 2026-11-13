@@ -34,7 +34,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | open | dev | #90, #54, #68, `fix/remember-once` |
 | S4-7 | review 4 | P1 | Ask Stephen button does nothing | open | dev | #87, `fix/ask-button` |
-| S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | open | dev | #65, #67, `fix/claude-cli-contract` |
+| S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | fixed in code | dev | #65, #67, `fix/claude-cli-contract` |
 | S4-9 B1 | review 4 | P0 | Owner-only memory origin | fixed in code | dev | #53, `fix/memory-origin-you` |
 | S4-10 DOC1 | review 4 | P1 | Reconcile docs (this ledger, plan corrections, superseded banners) | in progress | review | `docs/plan-reconcile` |
 | S4-11 REL | review 4 | P0 | Release `qa` to `main` after R10a fixes and Mac sections 0 and 13 | open | owner | PR #92 (sync), release PR none |
@@ -75,7 +75,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10a-3 | R10a | Low | A failed tool call reads as done in the step list | open | dev | none |
 | R10a-4 | R10a | Low | Home Allow and Deny delay starts when the view appears, not when the window is shown | open | dev | none |
 | R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
-| R10a-6 | R10a | Low | `--effort` sent without a probe and saved to config; breaks every command on an old CLI | open | dev | none (overlaps #65, #67) |
+| R10a-6 | R10a | Low | `--effort` sent without a probe and saved to config; breaks every command on an old CLI | fixed in code | dev | none (overlaps #65, #67) |
 | R10a-7 | R10a | Low | Latency report mixes cancelled and failed commands into p50, p95 and OVER | open | dev | none |
 | R10a-8 | R10a | Low | At the 300-bubble cap new replies stop scrolling into view | open | dev | none |
 | R10a-9 | R10a | Low | `chat.done` waits for an unbounded audit read (up to 5 MB) after every command | open | dev | none |

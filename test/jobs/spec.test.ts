@@ -296,3 +296,11 @@ describe('jobs config (owner defaults 2026-11-05)', () => {
     expect(parseJobsConfig({ wallClockMin: 180, repos: { stephen: '~/code/stephen' }, model: null }).wallClockMin).toBe(180);
   });
 });
+
+describe('job argv: picked effort', () => {
+  it('--effort follows the spec, and is absent without one', () => {
+    const a = buildJobArgs(spec({ effort: 'high' }));
+    expect(a[a.indexOf('--effort') + 1]).toBe('high');
+    expect(buildJobArgs(spec())).not.toContain('--effort');
+  });
+});
