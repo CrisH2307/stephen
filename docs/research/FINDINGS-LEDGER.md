@@ -100,3 +100,18 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | DL-3 | tracker #10 | P1 | Test plan section 0: re-add Input Monitoring after every `install-helper` | in review | review | `docs/mac-test-input-monitoring` |
 | DL-4 | tracker #10 | P1 | Design note: keep the Input Monitoring grant across rebuilds | in review | review | `docs/helper-grant-note` |
 | DL-5 | tracker #10 | P0 | ADR-008 Mac measurements: steps for the owner; 1 of 4 done | in review, 3 open for the owner | review, owner | `docs/adr-008-measurements` |
+
+## G. Review 10b (`docs/REVIEW-10B.md`, PRs #111, #113 to #117) and the manager's jobs of 2026-11-13
+
+| ID | Source | Severity | Title | Status | Lane | Issue or branch |
+|---|---|---|---|---|---|---|
+| R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | open | dev | #122 |
+| R10b-2 | R10b | Medium | `mac-checks` 13.1d false FAIL on the latency fields added by #117 | fixed, in review | review | `fix/mac-checks-latency-fields` |
+| R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | open | dev | #122 |
+| R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | open | dev | #122 |
+| R10b-5 | R10b | Low | `doctor` problem mark for any Claude Code newer than 2.1.319 | open | dev | #123 |
+| R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | open | review | none |
+| LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | open | dev | #121 |
+| MJ-1 | manager job 1 | P0 | Recorder plan review | waiting for the plan (checklist on tracker #10) | review | none |
+| MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
+| MJ-6 | manager job 6 | P1 | Flaky suite research | in progress | review | #109 |
