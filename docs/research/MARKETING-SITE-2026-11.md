@@ -92,7 +92,8 @@ Cris asked (2026-11-17) to see other looks before deciding. Each file has an "Op
 - **Option C, native Mac** (`marketing-mock/option-c.html`): dark navy first, a drawn menu bar with the Ask box open
   under Stephen's icon, and the proof shown as Stephen's own record (time, step, result). Closest to the real app.
 All three keep the same honest copy and pass the same checks (no outside requests, phone width, light and dark).
-Pick one; the other two get deleted before anything is published.
+Decision: the dev team picks one, with Cris (2026-11-17); the other two get deleted before anything is published.
+The review lane suggests C (it shows the real menu bar app asking before it acts); B if a more personal tone is wanted.
 
 ## 4. Visuals each section needs
 
