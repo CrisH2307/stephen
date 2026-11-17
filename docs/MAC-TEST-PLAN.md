@@ -29,6 +29,7 @@ Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suit
 | 11 | Work batch of 2026-11-08 | 19 | 6 |
 | 12 | UI v3.2 | 11 | 0 |
 | 13 | Latency monitor and command id | 9 | 11 |
+| 14 | Week of 2026-11-12: fixes merged into qa | 33 | 5 |
 
 ## 0. Build
 - [ ] `[hands]` **0.1** Do: run `git pull`, then `npm install && npm run build`. Use the VS Code terminal, not the VM shell.
@@ -431,3 +432,105 @@ See: every line says PASS. Tick each box when its id says PASS.
   See: the action still asks. A spoken "yes" does not confirm it.
 
 Send back: the output of `node dist/cli.js latency --days 1`, and any box you could not tick.
+
+## 14. Week of 2026-11-12: fixes merged into qa
+Build first (section 0), including the Input Monitoring steps of 0.2 and check 0.5 (the key listener). Do not skip 0.5: it is the first step of section 14.
+Then start Stephen (`node dist/cli.js listen`) and open the Stephen window.
+The ids in brackets at the end of a check are the findings and pull requests. If a check fails, put that id in the issue title.
+Your memory test items stay in memory. At the end, remove them: `node dist/cli.js memory list`, then `node dist/cli.js memory forget <id>` for each one you added.
+
+### 14.1 Mic and keys (PR #108, issue #86)
+The full acceptance is 20 holds and 10 of each stop. If you have little time, do the small numbers below. If you have time, do the full numbers and say so in the issue.
+- [ ] `[hands]` **14.1** Do: hold F5, say "what time is it", let go. Do this 5 times (full acceptance: 20 times).
+  See: every time Stephen records and sends, and a reply shows. 5 of 5. (#86, #108)
+- [ ] `[hands]` **14.2** Do: open the Stephen window, Home. Click the mic button (its tip says "Talk"), say "what time is it", click the mic button again. Do this 3 times (full: 10).
+  See: the second click sends, the word "Listening…" goes away, and the reply shows. 3 of 3. (#86, #108)
+- [ ] `[hands]` **14.3** Do: click the mic button on Home, say "what time is it", then tap F5. Do this 3 times (full: 10).
+  See: the command is sent, the word "Listening…" goes away, and the reply shows. 3 of 3. (#86, #108)
+- [ ] `[hands]` **14.4** Do: click the mic button on Home, say "what time is it", then press Esc. Do this 3 times (full: 10). Then hold F5 once and say "what time is it".
+  See: each Esc sends nothing and leaves "Listening…". The next F5 hold records and sends on the first try. (#86, #108)
+- [ ] `[hands]` **14.5** Do: hold F5, say "what time is it", press Esc before you let go, then let go. Then hold F5 again and say "what time is it".
+  See: the first hold sends nothing. The second hold records and sends on the first press. (#86, #108)
+- [ ] `[hands]` **14.6** Do: run `node dist/cli.js latency --days 1`.
+  See: the `outcomes:` line has no `aborted`. (#86, #108)
+
+### 14.2 The action list and Try again (PRs #110, #111)
+- [ ] `[hands]` **14.7** Do: ask for a gated action (for example a click on a sign-in page) and click Deny. Right after, ask "what time is it". In the Stephen window, open Conversations and open the steps of the second command (the line like "1 step").
+  See: the refused step of the first command is not under the second command. (R10a-1, #93, #110)
+- [ ] `[scripted]` **14.8** Do: run `npx vitest run test/app/steps.test.ts`.
+  See: all tests pass. (R10a-1, #93, #110)
+- [ ] `[hands]` **14.9** Do: turn Wi-Fi off. Say "Hey Stephen, what's my day". Turn Wi-Fi on again.
+  See: the problem shows. Under your words it says "Heard by wake word". There is no "Try again" button. (R10a-2, #94, #111; the way to make it fail is not in the PR, so this is a guess: if no problem shows, note it in the issue)
+- [ ] `[hands]` **14.10** Do: only if you use the phone page: send a command from the phone while Wi-Fi is off. Otherwise skip.
+  See: the problem shows, under your words it says "From your phone", and there is no "Try again" button. Skip if you do not use the phone. (R10a-2, #94, #111)
+- [ ] `[hands]` **14.11** Do: turn Wi-Fi off. Open the Ask box and type "what time is it", then press Return. Turn Wi-Fi on. Click "Try again".
+  See: the problem shows with a "Try again" button. After the click, the same words are sent again and a reply shows. (R10a-2, #94, #111)
+- [ ] `[hands]` **14.12** Do: ask for a gated action in the Ask box. When the question shows, click in the text field so the cursor is there. Press Esc.
+  See: the question is denied (the action does not run). The box stays or closes, but nothing is allowed. (R10a-5, #94, #111)
+- [ ] `[hands]` **14.13** Do: do the same in the Stephen window, Home: ask for a gated action, click in the text field, press Esc.
+  See: the question is denied. Nothing is allowed. (R10a-5, #94, #111)
+- [ ] `[hands]` **14.14** Do: get two questions waiting at once (the card says "1 of 2"). Press Esc one time.
+  See: only the first question is denied. The second is still waiting. Skip if you cannot get two at once (from the PR text). (R10a-5, #94, #111)
+- [ ] `[hands]` **14.15** Do: with no question waiting, press Esc in the Ask box in three cases: while recording, while a command runs, and with the box idle.
+  See: recording is cancelled and not sent. The running command stops. The idle box closes. (R10a-5, #94, #111)
+
+### 14.3 "forget that" and memory proposals (PRs #112, #113)
+- [ ] `[hands]` **14.16** Do: in the Ask box type "remember my desk is by the window". Then type "remember my bike is blue". Then type "forget that". Then run `node dist/cli.js memory list`.
+  See: Stephen says "Done, forgot: my bike is blue." The list has the desk and not the bike. (S4-2, #52, #112)
+- [ ] `[scripted]` **14.17** Do: run `npx vitest run test/memory/intent.test.ts`.
+  See: all tests pass. This holds the same-millisecond tie that you cannot make by hand. (S4-2, #52, #112) (The Linux tty part of #112 cannot be tested on your Mac. Skip it.)
+- [ ] `[hands]` **14.18** Do: do check 11.6.4 again (tell Stephen "I moved to Fit4Less", open Memory, press Keep). Then run `node dist/cli.js memory list`.
+  See: the same result as 11.6.4: a row under "New from your chats", and after Keep it is in `memory list`. Nothing else changed. (RV-6, S4-9, #53, #113; from the PR text, the only origin left is you)
+- [ ] `[scripted]` **14.19** Do: run `npx vitest run test/memory/proposals.test.ts`.
+  See: all tests pass. (RV-6, S4-9, #53, #113)
+
+### 14.4 Natural ways to say "remember" (PR #114)
+- [ ] `[hands]` **14.20** Do: in the Ask box type these three, one at a time: "Can you remember that my locker is 12 west", "Make a note that my cat is Tom", "Don't forget that the shed is open".
+  See: after each one Stephen says "Bet, saved:" and the words. Each is saved once. `node dist/cli.js memory list` shows all three. (S4-6, #90, #114)
+- [ ] `[hands]` **14.21** Do: hold F5 and say these three, one at a time: "I want you to remember that my bike is blue", "Keep in mind that I like green tea", "Hey Steven, remember my desk is by the window".
+  See: after each one Stephen says "Bet, saved:" and the words. (If a line is already saved, it says "Already got that one" and that is fine.) (S4-6, #90, #114)
+- [ ] `[hands]` **14.22** Do: say "Hey Stephen, remember that my gym is Goodlife" with the wake word.
+  See: a question first: it starts with `Remember this?` and the words. Click Deny: Stephen says "Okay, didn't save it." and nothing is saved. This question shows when the setting `memory.confirmWakeWord` is on. (S4-6, #90, #114)
+- [ ] `[hands]` **14.23** Do: type "Do you remember my bike". Then type "Don't forget the milk". Then run `node dist/cli.js memory list`.
+  See: nothing new is saved by either line. Stephen answers them like normal questions. (S4-6, #90, #114)
+- [ ] `[hands]` **14.24** Do: type "Remember my bike is blue?" (with the question mark).
+  See: nothing new is saved. A question mark never saves. (S4-6, #90, #114)
+
+### 14.5 Claude Code and Stephen (PRs #115, #116)
+- [ ] `[scripted]` **14.25** Do: run `node dist/cli.js doctor`.
+  See: a line "Claude Code version" with your version and `(tested 2.1.316 to 2.1.319)`. If your version is outside the range, the line is a warning and it says older or newer. Send me the line. Doctor still ends without a stop. (S4-8, #65, #115)
+- [ ] `[hands]` **14.26** Do: open Settings, "Model and effort", set the effort to high. Hold F5 and say "what time is it".
+  See: the command runs and a reply shows. Set the effort back to what it was. (S4-8, #65, #115; from the PR text)
+- [ ] `[scripted]` **14.27** Do: run `npx vitest run test/voice/claude-contract.test.ts test/memory/boundary.test.ts test/voice/review4.test.ts`.
+  See: all tests pass. (R10a-6, #67, #116)
+- [ ] `[hands]` **14.28** Do: only if you hit your Claude plan limit this week, send any command.
+  See: the message "You've reached your Claude plan limit." and, when known, "It resets at" and a time. You cannot make this happen on purpose. Skip it if it did not happen. (R10a-6, #67, #115)
+
+### 14.6 Latency monitor (PR #117, issue #43)
+Give a few real commands first (see the start of section 13).
+- [ ] `[hands]` **14.29** Do: say "Hey Stephen, what time is it". While Stephen speaks, press Esc. Then run `node dist/cli.js latency --days 1`.
+  See: a block `wake / model` with a row `wake → chime`. A line `Esc to silence (n=1): p50 ... ms, p95 ... ms` (n can be more). (S4-13, R10a-7, #43, #117)
+- [ ] `[hands]` **14.30** Do: play a video or a song with sound. Say "Hey Stephen" over it. Stop the sound. Run `node dist/cli.js latency --days 1`.
+  See: the `outcomes:` line has `wake_ignored 1 (sound_playing 1)` (the number can be higher). If Stephen answered anyway, say so in the issue. (S4-13, #43, #117)
+- [ ] `[hands]` **14.31** Do: hold F5 and say "open YouTube". Then run `node dist/cli.js latency --days 1`.
+  See: in the `ptt / model` block, rows that start with `tool ` and the tool name, each with p50 and p95. Rows `cold start` or `warm start`. A line `tier (shadow):` with counts. (S4-13, #43, #117)
+- [ ] `[hands]` **14.32** Do: run `node dist/cli.js latency --days 1` and look at the line `ptt / model  (n=..., ok ..`.
+  See: slow or failed commands show as `not timed: cancelled 1` (or `error 1`) and are not inside the p50 and p95 numbers. (R10a-7, #43, #117)
+- [ ] `[hands]` **14.33** Do: run `tail -n 1 ~/.browser-hub/telemetry/latency-$(date +%F).jsonl`.
+  See: one line with an id, numbers and short code words (for example `asr`, `tts`, `start`, `tier`). No words you said, no web address. (Plan Q20, #43, #117) (The report does not print the ASR model or the TTS engine. Only this file has them.)
+
+### 14.7 The Ask box opens from the sidebar and with ⌘K (PR #118, issue #87)
+- [ ] `[hands]` **14.34** Do: open the Stephen window. Click "Ask Stephen ⌘K" in the sidebar.
+  See: the Ask box shows with the cursor in it. (S4-7, #87, #118)
+- [ ] `[hands]` **14.35** Do: close the box. With the Stephen window in front, press ⌘K.
+  See: the same Ask box shows. (S4-7, #87, #118)
+- [ ] `[hands]` **14.36** Do: collapse the sidebar with ⌘\ . Click the Ask Stephen icon.
+  See: the Ask box shows. (S4-7, #87, #118)
+- [ ] `[hands]` **14.37** Do: on Home, click the big text field and type "hello" (do not press Return).
+  See: the letters appear in Home's field. The Ask box does not open. (S4-7, #87, #118)
+
+### 14.8 Last: the key listener off (do this at the end)
+- [ ] `[hands]` **14.38** Do: in System Settings, Privacy & Security, Input Monitoring, turn off Stephen Helper. Quit and reopen Stephen Helper when macOS asks. In the Stephen window click the mic button on Home, say "what time is it", press Esc in the Ask box.
+  See: the box says "F5 and Esc don't reach Stephen from other apps (needs Input Monitoring). Here: click to send, Esc to cancel." Esc sends nothing. Then do the four steps of 0.2 again to turn it back on, and run check 0.5. (#86, #108)
+
+Send back: the output of `node dist/cli.js doctor` (the Claude Code line), `node dist/cli.js latency --days 1`, and any box you could not tick.
