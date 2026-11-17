@@ -341,6 +341,17 @@ with Increase Contrast on, use `lineStrong` for all borders.
   (`helper/AppWindow.swift:43-65`).
 - The sidebar shows "Stephen" then the label "STEPHEN" right under it, as noted in 3.11.
 
+Running (Navy theme, Stephen started in Terminal, two typed messages):
+- Ask box: the time of each reply ("1.7 s", "0.9 s") is a bare number under the reply with no label; a reader cannot
+  tell what it measures. (P5: "Answered in 1.7 s", or move it into the folded steps line.)
+- Ask box: the field outline is barely visible against the card, as the 1.3:1 border contrast predicts. (P9)
+- Ask box: typed messages correctly have no source line.
+- Home in a chat: the round back chevron and the chat title; the big composer with Send. (P12)
+- Sidebar status row: when Stephen runs in Terminal, the Start button is replaced by a small terminal icon with no word
+  (the explanation is only a tooltip, `helper/MainWindow.swift:228-229`). (P5)
+- Not confirmed: the main window showed the chat title "hello" with an empty thread while the Ask box showed the
+  messages. The window was not on the visible screen, so the capture may be stale; Cris to check on screen.
+
 ---
 
 ## 4. Proposals in detail
