@@ -135,7 +135,7 @@ struct ConversationsPage: View {
     }
     .padding(.horizontal, Space.m).padding(.vertical, 8)
     .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
-    .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.line, lineWidth: 1))
+    .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))
   }
 }
 

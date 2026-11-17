@@ -40,7 +40,7 @@ struct QuietButton: View {
         Text(verbatim: title).font(TypeScale.body)
       }
       .foregroundColor(destructive ? t.bad : t.ink).padding(.horizontal, Space.l).padding(.vertical, 8)
-      .background(RoundedRectangle(cornerRadius: Corner.button).stroke(t.line, lineWidth: 1))
+      .background(RoundedRectangle(cornerRadius: Corner.button).stroke(t.lineStrong, lineWidth: 1))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain).accessibilityLabel(title)
@@ -58,7 +58,8 @@ struct Tag: View {
     let label = Text(verbatim: title).font(TypeScale.secondary).foregroundColor(selected ? t.accent : t.ink)
       .padding(.horizontal, Space.m).padding(.vertical, 5)
       .background(Capsule().fill(selected ? t.surface2 : Color.clear))
-      .overlay(Capsule().stroke(selected ? t.accent : t.line, lineWidth: 1))
+      // Only a chip you can click gets the strong outline; a plain label keeps the calm one.
+      .overlay(Capsule().stroke(selected ? t.accent : (action == nil ? t.line : t.lineStrong), lineWidth: 1))
     if let action = action {
       Button(action: action) { label }.buttonStyle(.plain)
         .accessibilityLabel(title).accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -68,7 +69,8 @@ struct Tag: View {
   }
 }
 
-/// Segmented control (Length, Tone). Track is surface-2, the chosen segment is surface with a line.
+/// Segmented control (Length, Tone). Track is surface-2, the chosen segment is surface with a strong outline (3:1 on
+/// the track, #146).
 struct Segmented<Value: Hashable>: View {
   @Environment(\.stephenTheme) var t
   let label: String
@@ -85,7 +87,7 @@ struct Segmented<Value: Hashable>: View {
           Text(verbatim: options[i].title).font(TypeScale.secondary.weight(on ? .semibold : .regular)).foregroundColor(t.ink)
             .padding(.vertical, 6).frame(maxWidth: .infinity)
             .background(RoundedRectangle(cornerRadius: Corner.row - 2).fill(on ? t.surface : Color.clear)
-              .overlay(RoundedRectangle(cornerRadius: Corner.row - 2).stroke(on ? t.line : Color.clear, lineWidth: 1)))
+              .overlay(RoundedRectangle(cornerRadius: Corner.row - 2).stroke(on ? t.lineStrong : Color.clear, lineWidth: 1)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -126,6 +128,30 @@ struct AskField: View {
     }
     .padding(.horizontal, large ? Space.l : Space.m).padding(.vertical, large ? Space.l : 10)
     .background(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).fill(t.surface))
-    .overlay(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).stroke(t.line, lineWidth: 1))
+    .overlay(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).stroke(t.lineStrong, lineWidth: 1))
+  }
+}
+
+/// On / off switch: "on" is the accent track (3:1 or more on its ground and on the off track), "off" is surface-2 with
+/// a strong outline, so on and off differ by colour and not only by knob position (#146). Use with
+/// `.toggleStyle(StephenSwitch())`. ponytail: not used yet; the call sites (SettingsPage, AppearanceSettings) are a
+/// follow-up for the dev lane.
+struct StephenSwitch: ToggleStyle {
+  @Environment(\.stephenTheme) var t
+  func makeBody(configuration: Configuration) -> some View {
+    let on = configuration.isOn
+    return Button { configuration.isOn.toggle() } label: {
+      ZStack(alignment: on ? .trailing : .leading) {
+        Capsule().fill(on ? t.accent : t.surface2)
+          .overlay(Capsule().stroke(on ? t.accent : t.lineStrong, lineWidth: 1))
+        Circle().fill(t.surface).overlay(Circle().stroke(on ? Color.clear : t.lineStrong, lineWidth: 1))
+          .padding(2)
+      }
+      .frame(width: 34, height: 20)
+      .stephenAnimation(value: on)
+    }
+    .buttonStyle(.plain)
+    // VoiceOver reads it as the system switch: its label, on or off.
+    .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
   }
 }
