@@ -111,7 +111,8 @@ struct ChatBubbleRow: View {
       .accessibilityElement(children: .contain)
     case .problem:
       VStack(alignment: .leading, spacing: Space.s) {
-        Text(verbatim: "Problem").sectionLabelStyle(t)
+        Text(verbatim: problemLabel(bubble.steps)).sectionLabelStyle(t)
+        if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
         Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
         if isLast, let retry = retry { QuietButton("Try again", action: retry) }
       }
@@ -119,6 +120,50 @@ struct ChatBubbleRow: View {
       Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
     }
   }
+}
+
+/** A step's outcome: the step text says it in words, the shape says it without colour (#140). */
+enum StepStatus: Equatable {
+  case ok, refused, failed
+  /** From the listener's step status. ponytail: an unknown status shows as failed, never as done. */
+  init(_ raw: String) {
+    switch raw {
+    case "ok": self = .ok
+    case "refused": self = .refused
+    default: self = .failed
+    }
+  }
+}
+
+/** Check = done, hand = refused, x mark = failed. Used by the action chain and by Conversations. */
+struct StepMark: View {
+  @Environment(\.stephenTheme) var t
+  let status: StepStatus
+
+  var body: some View {
+    let (symbol, color): (String, Color) = {
+      switch status {
+      case .ok: return ("checkmark", t.ink2)
+      case .refused: return ("hand.raised.fill", t.warn)
+      case .failed: return ("xmark", t.bad)
+      }
+    }()
+    return Image(systemName: symbol).font(.system(size: 10, weight: .bold)).foregroundColor(color)
+      .frame(width: 12).accessibilityHidden(true)
+  }
+}
+
+/**
+ * The label over a problem message. "Didn't work" only when the steps show a failure and no refusal; "Refused" only
+ * when they show a refusal and no failure. Anything else (no steps, both) stays "Problem": a refusal is never
+ * called "Didn't work".
+ */
+func problemLabel(_ steps: [ChatStep]) -> String {
+  let s = steps.map { StepStatus($0.status) }
+  let refused = s.contains(.refused), failed = s.contains(.failed)
+  if failed && !refused { return "Didn't work" }
+  if refused && !failed { return "Refused" }
+  return "Problem"
 }
 
 /** "3 steps · 9.8 s", folded by default; open, one line per step, refusals and failures named in words. */
@@ -156,8 +201,7 @@ struct ActionChain: View {
         VStack(alignment: .leading, spacing: 4) {
           ForEach(Array(steps.enumerated()), id: \.offset) { _, s in
             HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-              Circle().fill(s.status == "ok" ? t.line : (s.status == "refused" ? t.warn : t.bad))
-                .frame(width: 6, height: 6).accessibilityHidden(true)
+              StepMark(status: StepStatus(s.status))
               Text(verbatim: s.text).font(TypeScale.secondary)
                 .foregroundColor(s.status == "ok" ? t.ink2 : t.ink).fixedSize(horizontal: false, vertical: true)
             }
