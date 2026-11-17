@@ -142,6 +142,8 @@ export const SCENARIOS: Scenario[] = [
     steps: [{ key: 96 }, { key: 53 }, { key: 96 }, { keyup: 96 }],
     expect: ['ptt_down', 'esc', 'ptt_up', 'ptt_down', 'ptt_up'],
   },
+  // #107: a click outside the Ask box while it listens calls cancelTalk (AskBox.close), the same Esc key-down: nothing is sent.
+  { name: '#107: window press, then a click outside the box: esc, then the press ends', steps: [{ key: 96 }, { key: 53 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
   {
     name: 'Esc during a Fn+Option press latches: still holding the keys does not restart it',
     steps: [{ flags: { fn: true, opt: true } }, { key: 53 }, { flags: { fn: true, opt: true, shift: true } }, { flags: {} }, { flags: { fn: true, opt: true } }, { flags: {} }],
