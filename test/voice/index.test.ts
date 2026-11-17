@@ -90,6 +90,16 @@ describe('stephen listen --text', () => {
     expect((JSON.parse(hist.split('\n')[0]!) as { id: string }).id).toBe(rows[0]!.id);
   });
 
+  it('shadow tier: "open youtube" is Tier 1 through the built-in site list (R10b-6)', async () => {
+    const home = join(tmp, 'home-tier');
+    const t = env({ claudePath: fakeClaudePath() }, {}, home);
+    expect(await runListen(['--text', 'open youtube'], t.e)).toBe(0);
+    const dir = join(home, 'telemetry');
+    const rows = readdirSync(dir).flatMap((f) => readFileSync(join(dir, f), 'utf8').split('\n').filter(Boolean)).map((l) => JSON.parse(l) as { tier?: number });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.tier).toBe(1);
+  });
+
   it('follow-ups (fake claude + --text): within the window the 2nd command resumes the 1st session; after it, fresh', async () => {
     const home = join(tmp, 'home-followup');
     const log = join(tmp, 'followup.log');

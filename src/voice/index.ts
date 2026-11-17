@@ -33,6 +33,7 @@ import { LatencyMonitor } from '../telemetry/latency.js';
 import { defaultDesktopDeps } from '../desktop/system.js';
 import { listApps } from '../desktop/resolve.js';
 import { classify } from './grammar/classify.js';
+import { builtinLists } from './grammar/sites.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
 import { Assistant, type CommandReport, type CommandRunner, type Trust } from './assistant.js';
@@ -486,12 +487,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     err(`Note: couldn't clear old latency logs (${(e as Error).message}).`);
   }
   // Shadow mode (plan 2.5, E6a): the classifier only labels the latency row with its tier and reason code. Its text
-  // outputs never leave this function, and nothing it says changes what Stephen does. Sites: no owner aliases exist yet.
+  // outputs never leave this function, and nothing it says changes what Stephen does. Sites: the code-owned built-in list
+  // (no owner aliases exist yet).
   let ownerApps: string[] = [];
   if (latency) void listApps(defaultDesktopDeps()).then((l) => (ownerApps = l.map((a) => a.name))).catch(() => undefined);
   const shadowTier = (id: string, said: string) => {
     try {
-      const k = classify(said, { apps: ownerApps, sites: {} });
+      const k = classify(said, builtinLists(ownerApps));
       latency?.note(id, k.tier === 1 ? { tier: 1 } : { tier: 2, reason: k.reason });
     } catch (e) {
       err(`Note: could not label the latency row (${(e as Error).message}).`);
