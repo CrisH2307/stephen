@@ -276,6 +276,65 @@ describe('the listener: source and trust', () => {
     expect((await t.store.list()).map((i) => [i.text, i.source])).toEqual([['my gym is GoodLife on King St', 'voice-ptt']]);
     expect(t.runner.prompts).toEqual([]);
   });
+
+  describe.each([
+    ['F5', true],
+    ['wake word', false],
+  ])('R10b-1 and R10b-3 questions and bare nouns by %s', (_n, ptt) => {
+    it.each([
+      ["Can you remember my sister's name?", 'q1'],
+      ['Will you remember my birthday?', 'q2'],
+      ['Could you remember my keys', 'q3'],
+      ["Don't forget my keys.", 'k1'],
+      ['Note my keys.', 'k2'],
+      ['Remember that? That was crazy.', 'q4'],
+      ["Remember my sister's name?”", 'q5'],
+    ])('R10b: %j saves nothing and shows no dialog', async (said) => {
+      const t = setup({ texts: [ptt ? said : `Hey Stephen, ${said}`], ptt });
+      await t.listener.run();
+      // The line reached the assistant and went on to Claude (so the test really ran the memory check).
+      await waitFor(() => t.runner.prompts.length === 1, 5000, 'claude');
+      expect(await t.store.list()).toEqual([]);
+      expect(t.confirmer.prompts).toHaveLength(0);
+    });
+  });
+
+  it('R10b-1 phrasings accepted by #114 still save by F5', async () => {
+    const t = setup({ texts: ['Can you remember that my sister is called Ann.'], ptt: true });
+    await t.listener.run();
+    await waitFor(() => t.speaker.said.length === 1, 5000, 'reply');
+    expect((await t.store.list()).map((i) => i.text)).toEqual(['my sister is called Ann']);
+  });
+
+  it('R10b-3 "note that I am allergic to nuts" by F5 still saves', async () => {
+    const t = setup({ texts: ['Note that I am allergic to nuts.'], ptt: true });
+    await t.listener.run();
+    await waitFor(() => t.speaker.said.length === 1, 5000, 'reply');
+    expect((await t.store.list()).map((i) => i.text)).toEqual(['I am allergic to nuts']);
+  });
+
+  it('R10b-4 an opener without "remember" by the wake word saves nothing and shows no dialog', async () => {
+    const t = setup({ texts: ['Hey Stephen, keep in mind that my flight is at nine.'] });
+    await t.listener.run();
+    expect(await t.store.list()).toEqual([]);
+    expect(t.confirmer.prompts).toHaveLength(0);
+  });
+
+  it('R10b-4 the same opener by F5 saves with no dialog', async () => {
+    const t = setup({ texts: ['Keep in mind that my flight is at nine.'], ptt: true });
+    await t.listener.run();
+    await waitFor(() => t.speaker.said.length === 1, 5000, 'reply');
+    expect(t.confirmer.prompts).toHaveLength(0);
+    expect((await t.store.list()).map((i) => i.text)).toEqual(['my flight is at nine']);
+  });
+
+  it('R10b-4 the wake dialog quotes the real opener', async () => {
+    const t = setup({ texts: ['Hey Stephen, can you remember that my sister is called Ann'] });
+    await t.listener.run();
+    expect(t.confirmer.prompts).toHaveLength(1);
+    expect(t.confirmer.prompts[0]!.body).toContain('You said "can you remember that …"');
+    expect(t.confirmer.prompts[0]!.body).not.toContain('You said "remember …"');
+  });
 });
 
 describe('history: one entry per command', () => {

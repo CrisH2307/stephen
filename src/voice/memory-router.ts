@@ -16,7 +16,7 @@
  * as a normal Claude command in the same handle.
  */
 import type { Confirmer } from '../types.js';
-import { matchForget, newestWithin, parseMemoryIntent, rawTail, type MemoryIntent } from '../memory/intent.js';
+import { matchForget, newestWithin, parseDetailed, rawTail, type MemoryIntent } from '../memory/intent.js';
 import { MEMORY_MESSAGES, MemoryStoreError, type MemoryItem, type MemorySource, type MemoryStore } from '../memory/store.js';
 
 export const PHONE_MEMORY_REPLY = "I can't change my memory from your phone. Do that at the Mac (hold F5, or the Stephen app).";
@@ -65,21 +65,21 @@ export class MemoryRouter {
    * (the ASR transcript, or the typed text) used to keep "Dr. Patel" as said. Never throws.
    */
   async route(text: string, opts: { source: CommandSource; raw?: string }): Promise<MemoryRoute | null> {
-    const intent = parseMemoryIntent(text);
-    if (!intent) return null;
+    const parsed = parseDetailed(text, { source: opts.source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) });
+    if (!parsed) return null;
     try {
-      return await this.handle(intent, opts.source, opts.raw ?? text);
+      return await this.handle(parsed.intent, opts.source, opts.raw ?? text, parsed.opener);
     } catch (e) {
       this.o.log?.(`memory: ${(e as Error).message}`);
       return { reply: e instanceof MemoryStoreError ? MEMORY_MESSAGES.unreadable : 'Something went wrong with my memory.', changed: false };
     }
   }
 
-  private async handle(intent: MemoryIntent, source: CommandSource, raw: string): Promise<MemoryRoute> {
+  private async handle(intent: MemoryIntent, source: CommandSource, raw: string, opener?: string): Promise<MemoryRoute> {
     if (source === 'phone' && intent.kind !== 'list') return { reply: PHONE_MEMORY_REPLY, changed: false };
     switch (intent.kind) {
       case 'remember':
-        return this.remember(rawTail(raw, intent.text), source, intent.rest !== undefined ? rawTail(raw, intent.rest) : undefined);
+        return this.remember(rawTail(raw, intent.text), source, intent.rest !== undefined ? rawTail(raw, intent.rest) : undefined, opener);
       case 'remember-code':
         return { reply: MEMORY_MESSAGES.secret, changed: false, said: REFUSED_SECRET_SAID };
       case 'list':
@@ -93,7 +93,7 @@ export class MemoryRouter {
     }
   }
 
-  private async remember(text: string, source: CommandSource, rest: string | undefined): Promise<MemoryRoute> {
+  private async remember(text: string, source: CommandSource, rest: string | undefined, opener = 'remember'): Promise<MemoryRoute> {
     const withRest = (r: MemoryRoute): MemoryRoute => (rest ? { ...r, rest } : r);
     if (source === 'voice-wake' && this.o.confirmWakeWord) {
       const answer = await this.o.confirmer.confirm({
@@ -101,7 +101,7 @@ export class MemoryRouter {
         body:
           `Remember this? "${text}"` +
           (rest ? `\n\nAllow also runs: "${rest}"` : '') +
-          `\n\nYou said "remember …" after the wake word. Allow saves it (it is sent to Claude with every command, and read out through your voice service). Hold F5 to save without this question.`,
+          `\n\nYou said "${opener} …" after the wake word. Allow saves it (it is sent to Claude with every command, and read out through your voice service). Hold F5 to save without this question.`,
       });
       // Denied or unanswered: nothing is saved and the rest of the line is not run either (it may not have been you).
       if (answer === 'unavailable') return { reply: "I couldn't ask you to confirm, so I didn't save it. Hold F5 and say it again.", changed: false };
