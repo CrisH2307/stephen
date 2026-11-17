@@ -79,14 +79,14 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10a-7 | R10a | Low | Latency report mixes cancelled and failed commands into p50, p95 and OVER | fixed in code | dev | `feat/latency-gaps` |
 | R10a-8 | R10a | Low | At the 300-bubble cap new replies stop scrolling into view | fixed in code, Mac check pending | dev | `fix/review-10a-lows` |
 | R10a-9 | R10a | Low | `chat.done` waits for an unbounded audit read (up to 5 MB) after every command | fixed in code | dev | `fix/review-10a-lows` |
-| R10a-10 | R10a | Info | Limits of "one id joins every log" (listener routes carry no `cmd`) | open | dev | none |
-| R10a-11 | R10a | Info | Swift notes: dead "N questions waiting" branch, scroll carry-over, tall question card | open | dev | none |
+| R10a-10 | R10a | Info | Limits of "one id joins every log" (listener routes carry no `cmd`) | closed 2026-11-17: limit documented in `src/voice/command-log.ts` and `docs/VOICE.md` | review | #10 |
+| R10a-11 | R10a | Info | Swift notes: dead "N questions waiting" branch, scroll carry-over, tall question card | open, in #139 part 1 (card id per question, scrolling card, delete the dead branch at `helper/HomeView.swift:112`) | dev | #139 |
 
 ## E. Review of `fix/mic-stop-f5` (#86, comment of 2026-11-12)
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | open | dev | #86, `fix/mic-stop-f5` |
+| R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | fixed in code by #108, Mac check pending (checked 2026-11-17, see #10) | dev | #86, `fix/mic-stop-f5` |
 | R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed in code, Mac check pending | dev | #106, #152 |
 | R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | fixed in code (owner chose cancel, 2026-11-16), Mac check pending | dev | #107, #129 |
 | R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
@@ -118,7 +118,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | open | dev | #122 |
 | R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | open | dev | #122 |
 | R10b-5 | R10b | Low | `doctor` problem mark for any Claude Code newer than 2.1.319 | open | dev | #123 |
-| R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed in PR (not merged) | review | #157 |
+| R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed (#157 merged 2026-11-17) | review | #157 |
 | LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | open | dev | #121 |
 | MJ-1 | manager job 1 | P0 | Recorder plan review | waiting for the plan (checklist on tracker #10) | review | none |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
