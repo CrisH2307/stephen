@@ -49,6 +49,8 @@ export interface Agent {
   /** What the fixture page recorded (window.__r), read by the harness, not the model. */
   result(tab: string): Promise<string>;
   sleep(ms: number): Promise<void>;
+  /** Wait until the page says its own timed change has happened (window.__ready, #109). Fixtures without one are ready at once. */
+  ready(tab: string, ms?: number): Promise<void>;
 }
 
 export interface ClickCase {
@@ -61,7 +63,7 @@ export interface ClickCase {
 
 // ───────────────────────────── fixture pages ─────────────────────────────
 
-const DONE_JS = `window.__r='';function done(w){if(!window.__r)window.__r=w;}`;
+const DONE_JS = `window.__r='';window.__ready=1;function done(w){if(!window.__r)window.__r=w;}`;
 
 function page(title: string, body: string, head = ''): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><script>${DONE_JS}</script>${head}
@@ -84,8 +86,8 @@ export const CLICK_PAGES: Record<string, string> = {
   'stale-ref': page(
     'Draft',
     `<h1>Draft</h1><div id="slot"><button onclick="done('target')">Save draft</button></div>
-<script>addEventListener('load',function(){setTimeout(function(){var s=document.getElementById('slot');
-s.innerHTML='<button>Save draft</button>';s.firstChild.onclick=function(){done('target');};},300);});</script>`,
+<script>window.__ready=0;addEventListener('load',function(){setTimeout(function(){var s=document.getElementById('slot');
+s.innerHTML='<button>Save draft</button>';s.firstChild.onclick=function(){done('target');};window.__ready=1;},300);});</script>`,
   ),
   // A "Loading…" veil covers the page and fades away 700 ms after load.
   'covered-overlay': page(
@@ -128,13 +130,13 @@ s.innerHTML='<button>Save draft</button>';s.firstChild.onclick=function(){done('
   'stale-send': page(
     'Compose',
     `<form onsubmit="event.preventDefault();done('sent')"><input name="to" value="a@b.c"><div id="slot"><button type="submit">Send</button></div></form>
-<script>addEventListener('load',function(){setTimeout(function(){document.getElementById('slot').innerHTML='<button type="submit">Send</button>';},300);});</script>`,
+<script>window.__ready=0;addEventListener('load',function(){setTimeout(function(){document.getElementById('slot').innerHTML='<button type="submit">Send</button>';window.__ready=1;},300);});</script>`,
   ),
   'stale-twins': page(
     'Twins',
     `<div id="slot"><button onclick="done('one')">Open</button><button onclick="done('two')">Open</button></div>
-<script>addEventListener('load',function(){setTimeout(function(){var s=document.getElementById('slot');
-s.innerHTML='<button>Open</button><button>Open</button>';s.children[0].onclick=function(){done('one');};s.children[1].onclick=function(){done('two');};},300);});</script>`,
+<script>window.__ready=0;addEventListener('load',function(){setTimeout(function(){var s=document.getElementById('slot');
+s.innerHTML='<button>Open</button><button>Open</button>';s.children[0].onclick=function(){done('one');};s.children[1].onclick=function(){done('two');};window.__ready=1;},300);});</script>`,
   ),
   // A veil covers the button for 700 ms and the button is renamed 300 ms in: the click must wait, see the new name
   // and refuse (review 9 R9-3).
@@ -168,7 +170,7 @@ export function causeOf(text: string, fallback: Cause): Cause {
   return fallback;
 }
 
-async function expectResult(a: Agent, tab: string, want: string, cause: Cause, waitMs = 1500): Promise<void> {
+async function expectResult(a: Agent, tab: string, want: string, cause: Cause, waitMs = 5000): Promise<void> {
   const until = Date.now() + waitMs;
   let got = '';
   for (;;) {
@@ -179,6 +181,11 @@ async function expectResult(a: Agent, tab: string, want: string, cause: Cause, w
     await a.sleep(100);
   }
   throw new CaseFailure(cause, got ? `the page recorded "${got}" instead of "${want}"` : 'the click had no effect');
+}
+
+/** Poll the page result until `ok` holds (returns at once when it already does), up to `ms`. */
+async function waitResult(a: Agent, tab: string, ok: (r: string) => boolean, ms = 5000): Promise<void> {
+  for (const until = Date.now() + ms; Date.now() < until && !ok(await a.result(tab)); ) await a.sleep(50);
 }
 
 async function findButton(a: Agent, tab: string, query: string, name: RegExp, cause: Cause): Promise<string> {
@@ -195,7 +202,7 @@ export const CLICK_CASES: readonly ClickCase[] = [
     run: async (a) => {
       const tab = await a.open('stale-ref');
       const ref = await findButton(a, tab, 'Save draft', /^save draft$/i, 'other');
-      await a.sleep(600); // the model thinking
+      await a.ready(tab); // the re-render has happened (the model thinking, on a slow machine too)
       await mustClick(a, tab, ref, 'stale ref');
       await expectResult(a, tab, 'target', 'stale ref');
     },
@@ -258,7 +265,7 @@ export const CLICK_CASES: readonly ClickCase[] = [
     what: 'autoplay refused; press the Play button (play_media steps)',
     run: async (a) => {
       const tab = await a.open('autoplay-blocked');
-      await a.sleep(300);
+      await waitResult(a, tab, (r) => r === 'playing' || r === 'blocked'); // autoplay has settled either way
       if (await a.result(tab) === 'playing') return;
       await mustClick(a, tab, await findButton(a, tab, 'play', /^play \(k\)$/i, 'autoplay blocked'), 'autoplay blocked');
       await expectResult(a, tab, 'playing', 'autoplay blocked');
@@ -398,6 +405,10 @@ async function openSession(cfg: ReturnType<typeof loadConfig>, browser: Browser,
       return String(r);
     },
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    async ready(tab, ms = 5000) {
+      const p: Page = await manager.getPage(tab);
+      await p.waitForFunction(() => (window as unknown as { __ready?: unknown }).__ready !== 0, { timeout: ms, polling: 50 }).catch(() => undefined);
+    },
   };
   return {
     agent,
