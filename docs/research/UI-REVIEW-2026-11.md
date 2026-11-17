@@ -11,8 +11,9 @@ Read first and kept: `docs/UI-PLAN.md` (v3.2), `docs/UI-NEXT-PLAN.md`, `docs/DES
 How this was done, and its limits:
 - The Swift code was read, not built or run. Every claim below points to a file and line on `qa`. Sizes such as hit
   targets are worked out from font size plus padding, not measured.
-- The Stephen Helper app was running on this Mac, but window screenshots failed ("could not create image from
-  window"; this terminal has no Screen Recording permission). So no screen was seen. Questions for Cris at the end.
+- Screenshots: after Cris turned on Screen Recording (2026-11-17), two screens were captured with Stephen stopped, in
+  the Navy theme: the main window and the Ask box, both offline. They confirm P5 and P7 (see 3.13). The other screens
+  need the listener running and were not seen. Questions for Cris at the end.
 - Contrast was computed from the hex tokens in `helper/Theme.swift:55-86` with the WCAG 2 formula.
 - Outside references were used for patterns only, never copied. Sources are named next to each idea (section 7).
 
@@ -329,6 +330,17 @@ quiet buttons, chips); darken the Sun accent one step (for example #7A5E00: 5.4:
 both ground colours;
 with Increase Contrast on, use `lineStrong` for all borders.
 
+### 3.13 What the screenshots confirmed (Navy theme, Stephen stopped)
+
+- Main window, offline: the message shows the backticks literally ("run `stephen listen`."), and under it the raw
+  reason "nothing is listening on /Users/.../run/app.sock". The button says "Retry"; the Ask box says "Try again". The
+  Start button is at the bottom of the sidebar, far from the message that names it. (P5, P7)
+- Ask box, offline: "Can't reach Stephen. Is stephen listen running?" with "Try again" only; no Start button. The chat
+  title of the earlier chat ("hello") still shows in the strip. (P5, P7)
+- The offline view does sit on the Navy ground, but its text and button use system styles, as the code says
+  (`helper/AppWindow.swift:43-65`).
+- The sidebar shows "Stephen" then the label "STEPHEN" right under it, as noted in 3.11.
+
 ---
 
 ## 4. Proposals in detail
@@ -475,9 +487,8 @@ Suggested first three after acceptance: P3 (small, safety, already a finding), P
 
 ## 8. Questions for Cris
 
-1. Screenshots of five screens in the Navy theme would let the dev team check this review against the real app: the
-   Ask box with a question waiting, Home empty, Memory at the smallest window size, Settings > How Stephen talks, and the
-   menu bar item while recording.
+1. With Stephen running, screenshots of: the Ask box with a question waiting, Home empty, Memory at the smallest window
+   size, Settings > How Stephen talks, and the menu bar item while recording. The offline screens are done (3.13).
 2. P2(a) needs the listener to send where a command came from with each question. Is a small listener change OK for
    this, or should the card stay as it is until later?
 3. P5 changes "Needs your OK" to "Stephen asks first". Do you like that, or do you prefer another short line?
