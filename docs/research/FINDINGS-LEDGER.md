@@ -118,7 +118,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | open | dev | #122 |
 | R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | open | dev | #122 |
 | R10b-5 | R10b | Low | `doctor` problem mark for any Claude Code newer than 2.1.319 | open | dev | #123 |
-| R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | open | review | none |
+| R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed in PR (not merged) | review | #157 |
 | LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | open | dev | #121 |
 | MJ-1 | manager job 1 | P0 | Recorder plan review | waiting for the plan (checklist on tracker #10) | review | none |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
