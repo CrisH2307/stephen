@@ -578,3 +578,57 @@ At the end, remove your memory test items: `node dist/cli.js memory list`, then 
   See: the first F5 hold records and sends. You do not need to press F5 twice. (#106, #152)
 
 Send back: any box you could not tick, with its id.
+
+## 16. Merges of 2026-11-17 (PRs #157, #159 to #162)
+Section 16 needs section 0 done again: build, `node dist/cli.js install-helper`, the Input Monitoring steps of 0.2 if the helper was rebuilt, then restart Stephen (`node dist/cli.js listen`) and open the Stephen window.
+The ids in brackets are the findings and pull requests. If a check fails, put that id in the issue title.
+At the end, remove your memory test items: `node dist/cli.js memory list`, then `node dist/cli.js memory forget <id>` for each one you added.
+
+### 16.1 Shadow tier uses the site list (PR #157, finding R10b-6)
+- [ ] `[hands]` **16.1** Do: hold F5 and say "open YouTube". Then run `tail -n 1 ~/.browser-hub/telemetry/latency-$(date +%F).jsonl`. You can also run `node dist/cli.js latency --days 1 --json` and look at the tiers.
+  See: the last line has `"tier":1` (not `"tier":2`). In `node dist/cli.js latency --days 1`, the line `tier (shadow):` shows `1` with a count (the text is like `1 1`). The label only shows the tier. What Stephen does is the same as before. (R10b-6, #157)
+
+### 16.2 Menu bar icon by shape (PR #159, issue #143)
+- [ ] `[hands]` **16.2** Do: look at the Stephen Helper icon in the menu bar while you use Stephen. Idle first. Then say "Hey Stephen" (listening), hold F5 and talk (recording), send a command (working), and wait for the spoken reply (speaking). Try a light and a dark menu bar.
+  See: each state has a different shape: a circle (idle), an ear (listening), a filled mic (recording, also red), an hourglass (working), a speaker (speaking). The icon fits both light and dark menu bars. (#143, #159)
+- [ ] `[hands]` **16.3** Do: hover over the icon. Then turn on VoiceOver (⌘F5) and move to the icon. Turn VoiceOver off.
+  See: the tip says "Stephen: Idle" (or the state). VoiceOver says "Stephen, idle" (or the state). (#143, #159)
+- [ ] `[hands]` **16.4** Do: click the icon and read the top line of the menu. Then turn off Stephen Helper in System Settings, Privacy & Security, Input Monitoring, and click the icon again. Turn it back on after (the four steps of 0.2).
+  See: the top line says the state in words ("Stephen: Idle"). With Input Monitoring off, a "!" shows next to the icon, the top line says "Stephen: Input Monitoring is off", and the first item is "Open Input Monitoring settings…". With it on, that item is not there. (#143, #159)
+- [ ] `[hands]` **16.5** Do: click the icon, click "Phone link". Open the menu again. Click "Phone link" again, then open the menu a last time.
+  See: there is one item "Phone link" (not "on" and "off"). After the first click it has a check mark. After the second click the check mark is gone. (#143, #159)
+
+### 16.3 A shape for each step status (PR #160, issue #140)
+- [ ] `[hands]` **16.6** Do: turn Wi-Fi off. In the Ask box type "what's the weather". Turn Wi-Fi on. In the Stephen window, Home, open the steps under the reply.
+  See: the label over the problem says "Didn't work". The failed step says "Tried …, it failed" and has an x mark. (#140, #160)
+- [ ] `[hands]` **16.7** Do: ask for a gated action (for example a click on a sign-in page) and click Deny. Open the steps under the reply.
+  See: the refused step has a hand. If the message is a problem message, the label says "Refused", never "Didn't work". (#140, #160)
+- [ ] `[hands]` **16.8** Do: ask "what time is it" and open its steps.
+  See: a done step has a check mark. The three shapes (check, hand, x) look different even without colour. (#140, #160)
+- [ ] `[hands]` **16.9** Do: open Conversations in the Sun theme, then in the Navy theme (Settings, Appearance). Open the steps of the three commands above.
+  See: the same steps show the same shapes and the same words as in Home. Each tool is on its own line ("Used …" or "Tried …, it failed"), not one line like "Used a, b (failed)". Easy to see in both themes. (#140, #160)
+
+### 16.4 Contrast (PR #161, issue #146)
+- [ ] `[hands]` **16.10** Do: in each theme (Light, Dark, Navy, Rose, Sun), look at the Ask box, the search field in Conversations, the search field in Memory, and a Forget button.
+  See: each has an outline you can see clearly. Lists and cards keep the soft line. (#146, #161)
+- [ ] `[hands]` **16.11** Do: open Settings, "How Stephen talks". Look at the selected choice in each theme.
+  See: the selected choice is easy to tell from the others, in every theme. (#146, #161)
+- [ ] `[hands]` **16.12** Do: in the Sun theme, open Memory and select a filter chip.
+  See: the text of the selected chip is easy to read (the accent is darker than before). (#146, #161)
+- [ ] `[hands]` **16.13** Do: turn on Increase Contrast (System Settings, Accessibility, Display). Look at the Stephen window in Navy and Dark. Turn it off after.
+  See: all borders get stronger. The text in your own message bubble ("You") stays easy to read. (#146, #161) (The switches in Settings are not changed yet: the PR says that part is a follow-up. Skip them.)
+
+### 16.5 Voice "remember" needs a fact shape (PR #162, issue #137)
+Voice only. Typed text works as before.
+- [ ] `[hands]` **16.14** Do: hold F5 and say "Remember the milk". Then run `node dist/cli.js memory list`.
+  See: Stephen answers it like a normal request. Nothing new is in the list. (#137, #162)
+- [ ] `[hands]` **16.15** Do: hold F5 and say "Remember my gym is Goodlife". Then run `node dist/cli.js memory list`.
+  See: it saves. The gym line is in the list. (#137, #162)
+- [ ] `[hands]` **16.16** Do: hold F5 and say "Remember my daughter Lily" (a name with no verb). Then type "remember my daughter Lily" in the Ask box. Then run `node dist/cli.js memory list`.
+  See: the cost of this change: by voice it saves nothing, because there is no verb. Typed, it saves. By voice, say "my daughter is Lily" instead. (#137, #162; the PR names this as a known cost)
+
+### 16.6 The web page (PR #158, issue #151)
+- [ ] `[hands]` **16.17** Do: open `docs/site/index.html` and `docs/site/plain.html` in Safari (double-click, or File, Open File). On each page click the Light and Dark button. Then turn on Reduce Motion (System Settings, Accessibility, Display) and reload `index.html`. Turn it off after.
+  See: both pages work in light and dark, with no sideways scroll. With Reduce Motion on, `index.html` has no motion and every step shows. `index.html` starts dark and does not follow the Mac setting. `plain.html` follows the Mac setting. Each page links to the other. (#151, #158)
+
+Send back: any box you could not tick, with its id.
