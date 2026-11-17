@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { helperLogPath } from '../helper/paths.js';
 import { COMMAND_ID_RE } from '../lib/command-id.js';
-import { LATENCY_OUTCOMES, LATENCY_RETENTION_DAYS, LATENCY_ROUTES, LATENCY_STAGES, LATENCY_TRIGGERS, latencyDir } from '../telemetry/latency.js';
+import { LATENCY_OUTCOMES, LATENCY_RETENTION_DAYS, LATENCY_ROUTES, LATENCY_TRIGGERS, latencyDir, parseLatencyRecord } from '../telemetry/latency.js';
 
 export type CheckStatus = 'pass' | 'fail' | 'skip';
 export interface CheckResult {
@@ -38,7 +38,9 @@ const MAX_READ = 32 * 1024 * 1024;
 const DAY_MS = 86_400_000;
 const FILE_RE = /^latency-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-const KEYS = new Set(['v', 'id', 'ts', 'trigger', 'route', 'tier', 'outcome', 'followUp', 'turns', 'stages', 'loopP99Ms', 'modelMs', 'toolMs', 'firstTokenMs']);
+/** JSON with sorted keys, so two records compare equal whatever order their fields were written in. */
+const canon = (v: unknown): string =>
+  JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
 const pass = (id: string, title: string, detail = ''): CheckResult => ({ id, title, status: 'pass', detail });
 const fail = (id: string, title: string, detail: string): CheckResult => ({ id, title, status: 'fail', detail });
 const skip = (id: string, title: string, detail: string): CheckResult => ({ id, title, status: 'skip', detail });
@@ -207,16 +209,10 @@ export const CHECKS: Check[] = [
     const t = 'latency lines hold only numbers and fixed words (nothing you said)';
     const rows = latencyLines(e);
     if (!rows.length) return skip(ID.words, t, 'no latency lines yet: give a command first');
-    let bad = 0;
-    for (const { row } of rows) {
-      const stages = row?.stages;
-      const stageOk =
-        stages === undefined ||
-        (!!stages && typeof stages === 'object' && Object.entries(stages).every(([k, v]) => (LATENCY_STAGES as readonly string[]).includes(k) && typeof v === 'number'));
-      const word = (k: string) => ['id', 'ts', 'trigger', 'route', 'outcome'].includes(k);
-      const keysOk = !!row && Object.entries(row).every(([k, v]) => KEYS.has(k) && (k === 'stages' ? typeof v === 'object' : typeof v === 'string' ? word(k) : v === null || typeof v === 'number' || typeof v === 'boolean'));
-      if (!keysOk || !stageOk) bad++;
-    }
+    // A line is clean when the monitor's own parser gives back exactly the same record: the parser rebuilds a record
+    // field by field from numbers and closed code lists, so any extra key, free text or unknown word shows as a difference.
+    // Reusing it means a field added to the monitor never needs a second list here.
+    const bad = rows.filter(({ row }) => !row || canon(parseLatencyRecord(row)) !== canon(row)).length;
     return bad ? fail(ID.words, t, `${bad} of ${rows.length} line(s) hold a field that is not a number or a fixed word`) : pass(ID.words, t, `${rows.length} line(s)`);
   },
   (e) => {

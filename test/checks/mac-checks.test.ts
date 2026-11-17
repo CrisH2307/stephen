@@ -108,6 +108,14 @@ describe('mac-checks', () => {
     expect(t.status()).toMatchObject({ '13.1c': 'pass', '13.1d': 'fail' });
     t.put('telemetry/latency-2026-11-10.jsonl', `${row({ stages: { speechEnd: 'open youtube' } })}\n`);
     expect(t.status()['13.1d']).toBe('fail');
+    // The fields the monitor gained in #117 are code words and numbers: they pass. An unknown word in one of them fails.
+    const extra = { tier: 2, reason: 'no_verb', asr: 'whisper-small.en', tts: 'elevenlabs', start: 'warm', silenceMs: 80, tools: [{ name: 'open_app', ms: 120 }] };
+    t.put('telemetry/latency-2026-11-10.jsonl', `${row(extra)}\n`);
+    expect(t.status()).toMatchObject({ '13.1c': 'pass', '13.1d': 'pass' });
+    t.put('telemetry/latency-2026-11-10.jsonl', `${row({ ...extra, tools: [{ name: 'https://example.test/x', ms: 1 }] })}\n`);
+    expect(t.status()['13.1d']).toBe('fail');
+    t.put('telemetry/latency-2026-11-10.jsonl', `${row({ ...extra, reason: 'open youtube' })}\n`);
+    expect(t.status()['13.1d']).toBe('fail');
     t.put('telemetry/latency-2026-11-10.jsonl', `${row({ route: 'open youtube' })}\n`);
     expect(t.status()['13.1c']).toBe('fail');
   });
