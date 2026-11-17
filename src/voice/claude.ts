@@ -513,14 +513,14 @@ export function claudeVersionStatus(output: string): { version: string | null; s
   return { version: v.join('.'), status };
 }
 
-/** The doctor line for `claude --version` output (null output = could not run). Outside the tested range is a warning, never blocking. */
+/** The doctor line for `claude --version` output (null output = could not run). Outside the tested range is a warning, never blocking. Newer is only a note (ok: true, same text): the CLI updates itself. */
 export function claudeVersionCheck(output: string | null): { ok: boolean; label: string; detail: string; fix?: string } {
   const label = 'Claude Code version';
   const r = claudeVersionStatus(output ?? '');
   const range = `tested ${TESTED_CLAUDE_MIN} to ${TESTED_CLAUDE_MAX}`;
   if (r.status === 'ok') return { ok: true, label, detail: `${r.version} (${range})` };
   if (r.status === 'unknown') return { ok: false, label, detail: `could not read the version (${range})`, fix: 'Check that `claude --version` works (voice.claudePath in config.json).' };
-  return { ok: false, label, detail: `${r.version} is ${r.status === 'below' ? 'older' : 'newer'} than Stephen was ${range}`, fix: r.status === 'below' ? 'Update Claude Code (`claude update`).' : 'It may still work; if voice commands fail, tell the Stephen maintainer.' };
+  return { ok: r.status === 'above', label, detail: `${r.version} is ${r.status === 'below' ? 'older' : 'newer'} than Stephen was ${range}`, fix: r.status === 'below' ? 'Update Claude Code (`claude update`).' : 'It may still work; if voice commands fail, tell the Stephen maintainer.' };
 }
 
 /** Parse `--output-format json` stdout (the last JSON object with type "result"). */
