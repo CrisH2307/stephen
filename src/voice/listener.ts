@@ -300,9 +300,12 @@ export class Listener {
   cancel(reason: string): boolean {
     this.d.assistant.endConversation();
     if (this.state === 'capturing' || this.state === 'recording') {
+      const pressed = this.state === 'recording';
       this.d.status(`Cancelled (${reason}).`);
       this.traceEnd('cancelled');
       this.toListening();
+      // A push-to-talk press may still be down in the helper (#106): end it. A wake capture holds no press.
+      if (pressed) this.d.helper?.pressOver();
       return true;
     }
     if (this.state !== 'busy') return false;

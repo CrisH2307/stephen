@@ -47,6 +47,10 @@ export class PttModel {
     return this.isDown ? this.release(now, true) : [];
   }
 
+  pressOver(now: number): Out[] {
+    return this.isDown ? this.release(now, !this.byF5) : [];
+  }
+
   key(code: number, isRepeat: boolean, now: number): Out[] {
     if (isRepeat) return [];
     if (code === 96) {
@@ -78,6 +82,7 @@ export type Step =
   | { key: number; repeat?: boolean }
   | { keyup: number }
   | { interrupt: true }
+  | { pressOver: true }
   /** Let time pass (the model ticks; the Swift harness really waits — keep these short there). */
   | { wait: number };
 
@@ -118,6 +123,12 @@ export const SCENARIOS: Scenario[] = [
     steps: [{ flags: { fn: true, opt: true } }, { interrupt: true }, { flags: { fn: true, opt: true, shift: true } }, { flags: {} }],
     expect: ['ptt_down', 'ptt_up'],
   },
+  {
+    name: '#106: window press, listener cancels (press over), then F5 records on the first press',
+    steps: [{ key: 96 }, { pressOver: true }, { key: 96 }, { keyup: 96 }],
+    expect: ['ptt_down', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
+  { name: '#106: press over while idle does nothing', steps: [{ pressOver: true }], expect: [] },
   { name: 'interrupt while idle does nothing', steps: [{ interrupt: true }], expect: [] },
   { name: 'Esc (53) is reported, auto-repeat and other keys are not', steps: [{ key: 53 }, { key: 53, repeat: true }, { key: 0 }, { key: 36 }], expect: ['esc'] },
   { name: 'Esc during a press', steps: [{ flags: { fn: true, opt: true } }, { key: 53 }, { flags: {} }], expect: ['ptt_down', 'esc', 'ptt_up'] },
@@ -159,6 +170,7 @@ export function runModel(s: Scenario, maxHoldMs = SCENARIO_MAX_HOLD_MS): Out[] {
     else if ('key' in step) out.push(...m.key(step.key, !!step.repeat, now));
     else if ('keyup' in step) out.push(...m.keyUp(step.keyup, now));
     else if ('interrupt' in step) out.push(...m.interrupt(now));
+    else if ('pressOver' in step) out.push(...m.pressOver(now));
     else {
       const end = now + step.wait;
       while (now < end) {
@@ -179,5 +191,6 @@ export function harnessLine(step: Exclude<Step, { wait: number }>): string {
   }
   if ('key' in step) return `key ${step.key}${step.repeat ? ' repeat' : ''}`;
   if ('keyup' in step) return `keyup ${step.keyup}`;
+  if ('pressOver' in step) return 'press_over';
   return 'interrupt';
 }

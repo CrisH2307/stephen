@@ -105,6 +105,11 @@ export class HelperBridge {
     return true;
   }
 
+  /** Tell the helper the listener dropped the recording, so it ends its press. Only ends a press; never a command. */
+  pressOver(): void {
+    if (this.connected) this.link.send({ type: 'press_over' });
+  }
+
   /**
    * Is the Mac playing sound right now? Sends `query_audio` and waits up to `waitMs` for the answer, else uses the
    * last known value. Without a connected helper: false (callers then behave as before the helper existed).

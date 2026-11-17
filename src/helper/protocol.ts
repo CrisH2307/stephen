@@ -40,6 +40,12 @@ export type HelperCommand =
    * listener. Helpers built before 1.9 log it as an unknown type and ignore it.
    */
   | { type: 'open_window' }
+  /**
+   * End a press the helper still holds (additive in 1.9, protocol version unchanged): sent when the listener cancels a
+   * recording, so the next F5 is not swallowed. The helper answers with `ptt_up` if a press is down, else nothing.
+   * Never a command: it only ends a press. Older helpers log it as an unknown type and ignore it.
+   */
+  | { type: 'press_over' }
   | { type: 'quit' };
 
 export const HELPER_PROTOCOL_VERSION = '1';

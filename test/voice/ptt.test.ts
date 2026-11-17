@@ -309,6 +309,27 @@ describe('Esc (helper)', () => {
     expect(t.runner.prompts).toEqual(['open youtube']);
   });
 
+  it('#106: a push-to-talk recording cancelled by "stephen stop" sends exactly one press_over; a wake capture sends none', async () => {
+    const ptt = setup({
+      pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(40),
+      hits: { 40: 'STOP' },
+      texts: [],
+      gates: (t) => [[5, down(t)]],
+    });
+    await ptt.listener.run();
+    expect(ptt.lines).toContain('Cancelled (stop phrase).');
+    expect(ptt.fake.sent.filter((c) => c.type === 'press_over')).toHaveLength(1);
+
+    const wake = setup({
+      pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(10),
+      hits: { 12: 'WAKE', 25: 'STOP' },
+      texts: [],
+    });
+    await wake.listener.run();
+    expect(wake.lines).toContain('Cancelled (stop phrase).');
+    expect(wake.fake.sent.filter((c) => c.type === 'press_over')).toHaveLength(0);
+  });
+
   it('does nothing when idle', async () => {
     const t = setup({ pattern: '.'.repeat(40), texts: [], gates: (t) => [[10, () => t.fake.emit({ type: 'esc', at: Date.now() })]] });
     await t.listener.run();
