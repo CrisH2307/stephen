@@ -349,8 +349,9 @@ Running (Navy theme, Stephen started in Terminal, two typed messages):
 - Home in a chat: the round back chevron and the chat title; the big composer with Send. (P12)
 - Sidebar status row: when Stephen runs in Terminal, the Start button is replaced by a small terminal icon with no word
   (the explanation is only a tooltip, `helper/MainWindow.swift:228-229`). (P5)
-- Not confirmed: the main window showed the chat title "hello" with an empty thread while the Ask box showed the
-  messages. The window was not on the visible screen, so the capture may be stale; Cris to check on screen.
+- Home and the Ask box show the same thread; spoken messages carry "Heard by wake word" under the bubble, typed ones
+  carry nothing, as coded. (An earlier capture of an off-screen window was stale; checked on screen.)
+- The chat title stays the first message ("hello") after the talk moves on; chat titles are #77.
 
 ---
 
