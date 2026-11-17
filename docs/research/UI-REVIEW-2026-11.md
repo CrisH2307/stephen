@@ -358,6 +358,11 @@ Running (Navy theme, Stephen started in Terminal, two typed messages):
   surface-on-surface-2 ratio predicts. In Navy the "on" switch track is grey, not the accent, so on and off differ
   mainly by knob position. (P9: selected segment and switch "on" state need 3:1 against their track.)
 - The preview line is "Bet, playing lofi beats." (P5)
+- **Bug, seen on screen:** making the window as small as it goes cuts text off on every page (Cris). On Memory the
+  sidebar is cut on the left, the right column on the right, the page header is not visible, and graph labels overlap
+  dots. Likely cause: the window's `minSize` is 640 x 420 (`helper/AppWindow.swift:129`) while the content asks for
+  720 x 440 (`helper/MainWindow.swift:101`), and Memory needs more than that (`helper/MemoryPage.swift:119,222`).
+  Filed as a bug, #154, not as a proposal.
 
 ---
 
