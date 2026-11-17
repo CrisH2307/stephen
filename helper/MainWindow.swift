@@ -98,7 +98,7 @@ private struct MainWindowView: View {
     }
     .stephenAnimation(Motion.bar, value: collapsed)
     .background(t.ground)
-    .frame(minWidth: 720, minHeight: 440)
+    .frame(minWidth: WindowMetrics.minContent.width, minHeight: WindowMetrics.minContent.height)
   }
 
   @ViewBuilder

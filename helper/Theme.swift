@@ -111,6 +111,12 @@ enum SidebarMetrics {
   static func column(_ collapsed: Bool) -> CGFloat { return content(collapsed) + 2 * pad }
 }
 
+/// Smallest window content (#154). Measured: Memory needs 853 x 606 with the full sidebar, Settings about 826 wide.
+/// The window and the root view both use it, so the window can never be smaller than its pages.
+enum WindowMetrics {
+  static let minContent = NSSize(width: 860, height: 640)
+}
+
 /// SF Pro only. Display design for big titles, SF Mono for numbers and ids.
 enum TypeScale {
   static let pageTitle = Font.system(size: 28, weight: .semibold, design: .default)
