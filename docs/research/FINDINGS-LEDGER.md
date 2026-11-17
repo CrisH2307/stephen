@@ -87,7 +87,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | open | dev | #86, `fix/mic-stop-f5` |
-| R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed in code, Mac check pending | dev | #106, `fix/helper-press-over` |
+| R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | open | dev | none |
 | R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | open (decide) | dev | none |
 | R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
 
