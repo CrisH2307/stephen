@@ -12,12 +12,14 @@ drawing: they wait 0.75 s, like the app.
 
 ## 1. Who it is for
 
-1. **Now: people who look at Cris's work.** Employers, classmates, reviewers who open the GitHub repo. They want to
-   understand in 30 seconds what Stephen is and why it is different. This is the real audience today, because there is
-   no download (section 7).
-2. **Later: careful Mac users** who want a voice assistant that does real work in their browser and accounts but who do
-   not trust an AI model to decide on its own what is allowed. Students first (Canvas, school mail), since that is what
-   Stephen is built around.
+**Regular Mac users first (Cris's decision, 2026-11-17).** People who want a voice assistant that does real work in
+their browser and accounts, but who do not trust an AI model to decide on its own what is allowed. Students first
+(Canvas, school mail), since that is what Stephen is built around. The copy speaks to them as future users: plain
+words, no developer terms, no "my project" framing.
+
+Because there is no download yet (section 7), the page must say so plainly and must not collect emails or run a
+waitlist (that would need a form, storage and a privacy notice). Employers and reviewers can still read it; it does not
+speak to them first.
 
 Not for: people who want a faster Siri for timers and weather. The product plan says Stephen does not win there
 (`docs/research/PRODUCT-PLAN-2026-11.md` section 6).
@@ -57,7 +59,7 @@ works, The rules, What it does, Where it is today, Questions. A light and dark s
   action goes through a gate made of fixed rules. The AI model does not decide what is allowed, and a spoken "yes"
   never approves anything."
 - Buttons: "See the rules it follows" (primary), "Where it is today" (quiet). No download button.
-- Fine print: "Stephen is one person's assistant, built in the open. There is no download yet."
+- Fine print: "Not available to download yet. Stephen is finishing its core features first."
 - Visual: the Ask box with a question waiting ("Send this email?"), drawn in HTML and CSS, not a screenshot. Allow and
   Deny wait 0.75 s and work; clicking shows what would happen. This proves the claim with the product, not with
   adjectives.
@@ -73,7 +75,7 @@ source: typed, F5, "Hey Stephen" or phone).
 **5. What Stephen may do.** The same permission table as the app's Personal page (actions by source). Must use the real
 cells from the gate's rules before publishing; the mock's cells are examples and say so.
 
-**6. What it does.** Three short lists: School and work (Canvas, mail, Calendar, Notion), Your browser (your own Zen and
+**6. What it does.** "Made for a real school and work week." Three short lists: School and work (Canvas, mail, Calendar, Notion), Your browser (your own Zen and
 Chrome, real pages, passwords always typed by you), Around the Mac (briefing, music, memory only when you say so).
 
 **7. Where it is today.** Two lists. True today: runs daily on its owner's Mac; speech to text on the Mac; gate,
@@ -147,9 +149,9 @@ banners, absolute safety promises.
 3. **Every privacy line checked against the code:** speech to text on the Mac; the request text goes to Claude; replies
    may go to ElevenLabs (or stay on the Mac with Kokoro or the macOS voice). If any of this changes, the page changes.
 4. **The injection pass rate is measured** (plan section 7, D3 #63) before any sentence says more than "we test".
-5. **A licence for the public repo**, if the page says "built in the open". The repo is public today but has no
-   licence file, so others may read the code but not reuse it. Cris decides which licence, or the page drops "in the
-   open".
+5. **A licence for the public repo**, if the page ever links to the code or says it is open. The repo is public today but has no
+   licence file, so others may read the code but not reuse it. Cris decides which licence, or the page does not mention
+   the code.
 6. **No personal data on the page.** The demo uses `school.example` and an invented professor; keep it that way.
 7. **The name.** "Stephen" is a common first name; check that the chosen domain and page title do not clash with an
    existing product of the same name.
@@ -157,6 +159,5 @@ banners, absolute safety promises.
 
 ## 8. Questions for Cris
 
-1. Who should the first public version speak to: employers looking at your work, or other Mac users who might use it
-   later? The mock speaks to both but leans to the first.
-2. Do you want the GitHub repo linked from the page?
+1. Do you want the GitHub repo linked from the page?
+2. When the app can be downloaded, should the page offer it for free, or is pricing still open?
