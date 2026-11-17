@@ -299,6 +299,39 @@ describe('the listener: source and trust', () => {
     });
   });
 
+  describe.each([
+    ['F5', true],
+    ['wake word', false],
+  ])('#137 a thing without a fact by %s', (_n, ptt) => {
+    it.each([
+      'Remember the milk.',
+      'Remember my keys.',
+      'Can you remember that song from Titanic.',
+      'Could you remember that guy from the party.',
+      'Remember that movie with Tom Hanks.',
+      'Can you remember that for me.',
+      'Remember the Titans, now streaming on Disney Plus.',
+    ])('#137: %j saves nothing and shows no dialog', async (said) => {
+      const t = setup({ texts: [ptt ? said : `Hey Stephen, ${said}`], ptt });
+      await t.listener.run();
+      await waitFor(() => t.runner.prompts.length === 1, 5000, 'claude');
+      expect(await t.store.list()).toEqual([]);
+      expect(t.confirmer.prompts).toHaveLength(0);
+    });
+  });
+
+  it.each([
+    ['Remember my gym is Goodlife.', 'my gym is Goodlife'],
+    ['Remember that I moved to Toronto.', 'I moved to Toronto'],
+    ["Remember that we're out of milk.", "we're out of milk"],
+    ['Remember my flight leaves at nine.', 'my flight leaves at nine'],
+  ])('#137: a fact %j still saves by F5', async (said, saved) => {
+    const t = setup({ texts: [said], ptt: true });
+    await t.listener.run();
+    await waitFor(() => t.speaker.said.length === 1, 5000, 'reply');
+    expect((await t.store.list()).map((i) => i.text)).toEqual([saved]);
+  });
+
   it('R10b-1 phrasings accepted by #114 still save by F5', async () => {
     const t = setup({ texts: ['Can you remember that my sister is called Ann.'], ptt: true });
     await t.listener.run();

@@ -97,7 +97,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 |---|---|---|---|---|---|---|
 | I-109 | tracker #10 | Low | Full test suite flaky under CPU load (fixed sleeps in the clicks eval; two suites at once) | fixed in code, 10 green full runs pending | dev | #109, #131 |
 | I-121 | Linux run for #112 | Low | Linux: `ps` start time reads 1 s early; a job's first-second process may be left running | fixed in code (Docker: 5 of 5) | dev | #121, #132 |
-| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | open | dev | #137 |
+| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | fixed in code, Mac check pending. Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
 
 ## F. Requests from the dev lane (tracker #10, 2026-11-12)
 
