@@ -534,3 +534,47 @@ Give a few real commands first (see the start of section 13).
   See: the box says "F5 and Esc don't reach Stephen from other apps (needs Input Monitoring). Here: click to send, Esc to cancel." Esc sends nothing. Then do the four steps of 0.2 again to turn it back on, and run check 0.5. (#86, #108)
 
 Send back: the output of `node dist/cli.js doctor` (the Claude Code line), `node dist/cli.js latency --days 1`, and any box you could not tick.
+
+## 15. Fixes of 2026-11-16 and 17 (PRs #128 to #132, #134, #135, #152)
+Do this section after the PRs below are merged into qa. Build first (section 0). Then start Stephen (`node dist/cli.js listen`) and open the Stephen window.
+The ids in brackets are the findings and pull requests. If a check fails, put that id in the issue title.
+At the end, remove your memory test items: `node dist/cli.js memory list`, then `node dist/cli.js memory forget <id>` for each one you added.
+
+### 15.1 Questions do not save memory (PR #128, issue #122)
+- [ ] `[hands]` **15.1** Do: hold F5 and say "Can you remember my sister's name". Then hold F5 and say "Don't forget my keys". Then run `node dist/cli.js memory list`.
+  See: Stephen answers both like normal questions. Nothing new is in the list. (R10b-1, R10b-3, #122, #128)
+- [ ] `[hands]` **15.2** Do: say "Hey Stephen, remember that my gym is Goodlife" with the wake word. Then say "Hey Stephen, keep in mind that my bike is blue".
+  See: the first one asks first, and the question says `You said "remember that …"`. Click Deny. The second one asks nothing and saves nothing. (R10b-4, #122, #128)
+
+### 15.2 Click outside the Ask box (PR #129, issue #107)
+- [ ] `[hands]` **15.3** Do: open the Ask box, click the mic button, say "what time is it", then click on the desktop.
+  See: the box closes and nothing is sent. No reply comes. (#107, #129)
+- [ ] `[hands]` **15.4** Do: open the Ask box, click the mic button, say "what time is it", then click the mic button again.
+  See: it sends and the reply shows. (#107, #129)
+
+### 15.3 Doctor and a newer Claude Code (PR #130, issue #123)
+- [ ] `[hands]` **15.5** Do: run `node dist/cli.js doctor`.
+  See: the "Claude Code version" line has a check mark. If it says "newer than Stephen was tested", it still has a check mark and is not counted in the problems at the end. (R10b-5, #123, #130)
+
+### 15.4 One test suite at a time (PR #131, issue #109)
+- [ ] `[hands]` **15.6** Do: open two Terminal windows in the Stephen folder. Run `npx vitest run` in the first. While it runs, run `npx vitest run` in the second.
+  See: the second stops at once with "Another test suite is already running on this machine" and the first one's folder. Let the first finish. (#109, #131)
+- [ ] `[scripted]` **15.7** Do: run `npx vitest run test/eval/clicks.int.test.ts` three times.
+  See: all tests pass each time. (#109, #131)
+
+### 15.5 The step list and long chats (PR #134, Review 10a)
+- [ ] `[hands]` **15.8** Do: turn Wi-Fi off. In the Ask box type "what's the weather". Turn Wi-Fi on. Look at the line under the reply (like "1 step").
+  See: it says "1 failed". Open it: the step says "Tried …, it failed", not "Used …". (R10a-3, #134)
+- [ ] `[hands]` **15.9** Do: only if your thread is very long (300 messages or more): send "what time is it".
+  See: the new reply scrolls into view. Skip if your thread is shorter. (R10a-8, #134)
+
+### 15.6 Helper rebuild keeps the permission (PR #135)
+- [ ] `[hands]` **15.10** Do: run `node dist/cli.js install-helper`. If macOS asks, do the Input Monitoring steps of 0.2. Then run `node dist/cli.js install-helper` again.
+  See: the second run prints "Nothing changed, so the build was skipped". Hold F5 and say "what time is it": it records and sends, with no visit to System Settings. (DL-4, #135)
+
+### 15.7 Stop, then F5 (PR #152, issue #106)
+
+- [ ] `[hands]` **15.11** Do: open the Ask box, click the mic button, say "Stephen, stop". Then hold F5 once and say "what time is it".
+  See: the first F5 hold records and sends. You do not need to press F5 twice. (#106, #152)
+
+Send back: any box you could not tick, with its id.
