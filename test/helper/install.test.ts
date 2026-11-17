@@ -3,9 +3,9 @@
  * compiler lookup and the actionable "xcode-select --install" error, the argv arrays, the app bundle layout,
  * refusing to replace an app Stephen did not make, --dry-run, and the doctor checks.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { helperDoctorChecks, type HelperDoctorDeps } from '../../src/helper/doctor.js';
 import {
@@ -49,6 +49,7 @@ function fakeRun(respond: Responder): { run: RunFn; calls: { cmd: string; args: 
 const happy: Responder = (cmd, args) => {
   if (cmd === '/usr/bin/xcrun' && args[0] === '--find') return ok('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc\n');
   if (cmd === '/usr/bin/xcrun' && args.includes('--show-sdk-path')) return ok('/SDKs/MacOSX.sdk\n');
+  if (cmd.endsWith('swiftc') && args[0] === '--version') return ok('Swift version 6.0\n');
   if (cmd.endsWith('swiftc')) {
     const out = args[args.indexOf('-o') + 1]!;
     writeFileSync(out, '#!/bin/sh\n');
@@ -132,7 +133,7 @@ describe('install-helper', () => {
     const p = plan();
     expect(await installHelper(p, {}, d.deps)).toBe(0);
 
-    const swiftc = f.calls.find((c) => c.cmd.endsWith('swiftc'))!;
+    const swiftc = f.calls.find((c) => c.cmd.endsWith('swiftc') && c.args[0] !== '--version')!;
     expect(swiftc.args.slice(0, 5)).toEqual(['-O', '-swift-version', '5', '-sdk', '/SDKs/MacOSX.sdk']);
     expect(swiftc.args).toContain(join(p.sourceDir, 'main.swift'));
     const sign = f.calls.find((c) => c.cmd === '/usr/bin/codesign')!;
@@ -194,6 +195,87 @@ describe('install-helper', () => {
     const d = deps(fakeRun(happy).run);
     expect(await installHelper(p, {}, d.deps)).toBe(1);
     expect(d.out.join('\n')).toContain('too long');
+  });
+});
+
+describe('install-helper skip unchanged', () => {
+  /** A private copy of the Swift sources so a test can edit one. */
+  function ownPlan() {
+    const sourceDir = join(dir, 'helper');
+    cpSync(helperSourceDir(), sourceDir, { recursive: true });
+    return { ...plan(), sourceDir };
+  }
+  const count = (calls: { cmd: string; args: string[] }[], pick: (c: { cmd: string; args: string[] }) => boolean) => calls.filter(pick).length;
+  const compiles = (c: { cmd: string; args: string[] }) => c.cmd.endsWith('swiftc') && c.args[0] !== '--version';
+  const signs = (c: { cmd: string; args: string[] }) => c.cmd === '/usr/bin/codesign' && c.args[0] === '--force';
+  const stampOf = (p: { appPath: string }) => join(dirname(p.appPath), `.${basename(p.appPath)}.stamp`);
+
+  it('skip unchanged: a second run builds, signs and copies nothing', async () => {
+    const p = ownPlan();
+    expect(await installHelper(p, {}, deps(fakeRun(happy).run).deps)).toBe(0);
+    const exe = join(p.appPath, 'Contents', 'MacOS', 'Stephen Helper');
+    const before = statSync(exe).ino;
+    const f = fakeRun(happy);
+    const d = deps(f.run);
+    expect(await installHelper(p, {}, d.deps)).toBe(0);
+    expect(count(f.calls, compiles)).toBe(0);
+    expect(count(f.calls, signs)).toBe(0);
+    expect(f.calls.some((c) => c.cmd === '/usr/bin/open')).toBe(false);
+    expect(statSync(exe).ino).toBe(before);
+    expect(d.out.join('\n')).toContain('Nothing changed, so the build was skipped');
+  });
+
+  async function installThenChange(change: (p: ReturnType<typeof ownPlan>) => void, respond: Responder = happy) {
+    const p = ownPlan();
+    expect(await installHelper(p, {}, deps(fakeRun(happy).run).deps)).toBe(0);
+    change(p);
+    const f = fakeRun(respond);
+    expect(await installHelper(p, {}, deps(f.run).deps)).toBe(0);
+    return f;
+  }
+
+  it('skip unchanged: a changed Swift source rebuilds', async () => {
+    const f = await installThenChange((p) => writeFileSync(join(p.sourceDir, 'Core.swift'), '// edited\n', { flag: 'a' }));
+    expect(count(f.calls, compiles)).toBe(1);
+  });
+
+  it('skip unchanged: a changed compiler version rebuilds', async () => {
+    const f = await installThenChange(() => undefined, (cmd, args) => (cmd.endsWith('swiftc') && args[0] === '--version' ? ok('Swift version 6.1\n') : happy(cmd, args)));
+    expect(count(f.calls, compiles)).toBe(1);
+  });
+
+  it('skip unchanged: a missing installed app rebuilds', async () => {
+    const f = await installThenChange((p) => rmSync(p.appPath, { recursive: true }));
+    expect(count(f.calls, compiles)).toBe(1);
+  });
+
+  it('skip unchanged: a failed signature check rebuilds', async () => {
+    const f = await installThenChange(() => undefined, (cmd, args) => (cmd === '/usr/bin/codesign' && args[0] === '--verify' ? fail('invalid signature') : happy(cmd, args)));
+    expect(count(f.calls, compiles)).toBe(1);
+    expect(count(f.calls, signs)).toBe(1);
+  });
+
+  it('skip unchanged: a missing stamp rebuilds', async () => {
+    const f = await installThenChange((p) => rmSync(stampOf(p)));
+    expect(count(f.calls, compiles)).toBe(1);
+  });
+
+  it('skip unchanged: --force rebuilds', async () => {
+    const p = ownPlan();
+    expect(await installHelper(p, {}, deps(fakeRun(happy).run).deps)).toBe(0);
+    const f = fakeRun(happy);
+    expect(await installHelper(p, { force: true }, deps(f.run).deps)).toBe(0);
+    expect(count(f.calls, compiles)).toBe(1);
+  });
+
+  it('skip unchanged: a failed build writes no stamp', async () => {
+    const p = ownPlan();
+    const bad = (cmd: string, args: string[]) => (compiles({ cmd, args }) ? fail('error: boom') : happy(cmd, args));
+    expect(await installHelper(p, {}, deps(fakeRun(bad).run).deps)).toBe(1);
+    expect(existsSync(stampOf(p))).toBe(false);
+    const badSign = (cmd: string, args: string[]) => (cmd === '/usr/bin/codesign' ? fail('no') : happy(cmd, args));
+    expect(await installHelper(p, {}, deps(fakeRun(badSign).run).deps)).toBe(1);
+    expect(existsSync(stampOf(p))).toBe(false);
   });
 });
 
