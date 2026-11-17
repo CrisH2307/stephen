@@ -82,6 +82,18 @@ not promised); Trick pages and emails (tested, the pass rate will be published o
 
 **6. Footer.** One line. Later: a link to the GitHub repo and a changelog, if Cris wants (section 8).
 
+### Three looks to choose from (same content)
+
+Cris asked (2026-11-17) to see other looks before deciding. Each file has an "Option A · B · C" switch at the top.
+- **Option A, calm product** (`marketing-mock/index.html`): the app's own light and dark tokens, the Ask box beside
+  the headline, one navy band for the proof.
+- **Option B, editorial** (`marketing-mock/option-b.html`): one narrow column like a well-set letter, serif headings
+  from the Mac's own New York font (no download), the Ask box as a captioned figure. Quietest of the three.
+- **Option C, native Mac** (`marketing-mock/option-c.html`): dark navy first, a drawn menu bar with the Ask box open
+  under Stephen's icon, and the proof shown as Stephen's own record (time, step, result). Closest to the real app.
+All three keep the same honest copy and pass the same checks (no outside requests, phone width, light and dark).
+Pick one; the other two get deleted before anything is published.
+
 ## 4. Visuals each section needs
 
 | Section | Visual | How |

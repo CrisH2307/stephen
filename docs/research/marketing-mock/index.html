@@ -63,6 +63,8 @@ p { margin: 0; text-wrap: pretty; }
 .wrap { width: min(1040px, 100% - 40px); margin-inline: auto; }
 
 .notice { background: var(--surface-2); color: var(--ink-2); border-bottom: 1px solid var(--line); font-size: 13px; text-align: center; padding: 8px 20px; }
+.notice a { color: var(--ink-2); }
+.notice a[aria-current] { color: var(--ink); font-weight: 600; text-decoration: none; }
 
 header { padding: 20px 0; }
 header .wrap { display: flex; align-items: center; justify-content: space-between; }
@@ -148,7 +150,7 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--i
 </style>
 </head>
 <body>
-<div class="notice" role="note">Mock for discussion. Not a live site.</div>
+<div class="notice" role="note">Mock for discussion, not a live site. Compare: <a href="index.html" aria-current="page">Option A</a> · <a href="option-b.html">Option B</a> · <a href="option-c.html">Option C</a></div>
 
 <header>
   <div class="wrap">
