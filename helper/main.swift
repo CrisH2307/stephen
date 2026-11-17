@@ -272,6 +272,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let clickAction: @MainActor () -> Void
   private let control: StephenControl
   private let startStop: NSMenuItem
+  private let phoneItem: NSMenuItem
 
   init(
     checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void,
@@ -283,6 +284,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     self.control = control
     quitAction = quit
     startStop = NSMenuItem(title: "Start Stephen", action: nil, keyEquivalent: "")
+    phoneItem = NSMenuItem(title: "Phone link", action: nil, keyEquivalent: "")
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     header = NSMenuItem(title: "Stephen Helper", action: nil, keyEquivalent: "")
     permission = NSMenuItem(title: "Input Monitoring", action: nil, keyEquivalent: "")
@@ -303,8 +305,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     startStop.target = self
     startStop.action = #selector(startStopClicked(_:))
     menu.addItem(startStop)
+    // One item with a check mark, not two commands that read like states (#143).
+    phoneItem.target = self
+    phoneItem.action = #selector(phoneClicked(_:))
+    menu.addItem(phoneItem)
     for (title, action) in [
-      ("Phone link on", #selector(phoneOnClicked(_:))), ("Phone link off", #selector(phoneOffClicked(_:))),
       ("Open Zen for Stephen", #selector(zenClicked(_:))), ("Run doctor…", #selector(doctorClicked(_:))),
     ] {
       let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -350,6 +355,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     case .running(let fromApp): startStop.title = fromApp ? "Stop Stephen" : "Stephen is running in Terminal"
     }
     startStop.isEnabled = control.listener != .running(fromApp: false)
+    phoneItem.state = phoneLinkOn() ? .on : .off
     render()
   }
 
@@ -379,16 +385,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     if control.listener == .stopped { control.start(report) } else { control.stop(report) }
   }
 
-  @objc func phoneOnClicked(_ sender: Any?) {
-    control.phoneOn { [weak self] m in
-      MainActor.assumeIsolated { self?.show(m.on == true ? "Phone link on" : "Phone link", phoneText(m)) }
-    }
+  /** On when the phone marker (<home>/phone/.on, src/phone/setup.ts) names a live process: true however it was turned on. */
+  private func phoneLinkOn() -> Bool {
+    guard let data = FileManager.default.contents(atPath: control.home + "/phone/.on"),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let pid = json["pid"] as? Int, pid > 0
+    else { return false }
+    return kill(pid_t(pid), 0) == 0
   }
 
-  @objc func phoneOffClicked(_ sender: Any?) {
-    control.phoneOff { [weak self] m in
-      MainActor.assumeIsolated { self?.show("Phone link", phoneText(m)) }
+  @objc func phoneClicked(_ sender: Any?) {
+    let done: (AppMessage) -> Void = { [weak self] m in
+      MainActor.assumeIsolated { self?.show(m.on == true ? "Phone link on" : "Phone link off", phoneText(m)) }
     }
+    if phoneLinkOn() { control.phoneOff(done) } else { control.phoneOn(done) }
   }
 
   @objc func zenClicked(_ sender: Any?) {
@@ -414,16 +424,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   }
 
   private func render() {
-    let status = problem ?? state.label
+    // Words first: a problem, then a missing permission, then the state.
+    let status = problem ?? (granted ? state.label : "Input Monitoring is off")
     if let button = item.button {
-      var attributes: [NSAttributedString.Key: Any] = [.font: NSFont.menuBarFont(ofSize: 0)]
-      if state == .recording { attributes[.foregroundColor] = NSColor.systemRed }
-      let glyph = problem != nil || !granted ? state.glyph + "!" : state.glyph
-      button.attributedTitle = NSAttributedString(string: glyph, attributes: attributes)
-      button.toolTip = "Stephen Helper — \(status)"
+      let image = NSImage(systemSymbolName: state.symbol, accessibilityDescription: nil)
+      image?.isTemplate = true  // the menu bar tints it for light and dark
+      button.image = image
+      button.imagePosition = .imageLeading
+      button.contentTintColor = state == .recording ? .systemRed : nil
+      button.title = problem != nil || !granted ? "!" : ""
+      button.toolTip = "Stephen: \(status)"
+      button.setAccessibilityLabel("Stephen, \(status == state.label ? status.lowercased() : status)")
     }
-    header.title = "Stephen Helper — \(status)"
-    permission.title = "Input Monitoring: \(granted ? "granted" : "not granted") — Open Settings…"
+    header.title = "Stephen: \(status)"
+    // The fix sits right under the header, and only while it is needed.
+    permission.title = "Open Input Monitoring settings…"
+    permission.isHidden = granted
   }
 }
 

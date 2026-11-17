@@ -103,14 +103,14 @@ func jsonString(_ s: String) -> String {
 enum UIState: String, CaseIterable {
   case idle, listening, recording, working, speaking
 
-  /** Menu-bar text glyph (recording is drawn red by the UI). */
-  var glyph: String {
+  /** Menu-bar SF Symbol: a different shape per state, so it reads without colour (#143). */
+  var symbol: String {
     switch self {
-    case .idle: return "○"
-    case .listening: return "●"
-    case .recording: return "●"
-    case .working: return "◐"
-    case .speaking: return "🔈"
+    case .idle: return "circle"
+    case .listening: return "ear"
+    case .recording: return "mic.fill"
+    case .working: return "hourglass"
+    case .speaking: return "speaker.wave.2.fill"
     }
   }
 
