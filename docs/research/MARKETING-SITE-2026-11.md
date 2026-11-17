@@ -47,59 +47,53 @@ What the page must NOT claim, and why:
 
 ## 3. Section order with draft copy
 
-The copy below is in the mock. Plain English, short sentences, no jargon.
+Version 2 (2026-11-17, after Cris asked to remove AI-generic filler and repetition). The first version said the same
+rules four times (hero, a "How it works" row, a rules grid, an FAQ), carried three disclaimers, header links for a
+one-page site, an uppercase label above every heading, and a three-column feature grid. All of that is gone. What
+is left, top to bottom:
 
-**0. Notice bar (mock only).** "Mock for discussion. Not a live site."
+**0. Notice (mock only).** "Mock for discussion. Not a live site."
 
-**1. Header.** Wordmark "Stephen" plus a small status dot (the app's own mark, UI-PLAN section 2). Links: How it
-works, The rules, What it does, Where it is today, Questions. A light and dark switch.
+**1. Header.** Wordmark "Stephen" with the small status dot, and the light and dark switch. No links: the page is short.
 
-**2. Hero.**
+**2. Hero: the product is the hero.** (Pattern from 21st.dev and uiverse.io: a short headline with the real product
+right under or beside it.)
 - Headline: "A voice assistant for your Mac that cannot go past your rules."
-- Line: "Say "Hey Stephen" or hold F5. Stephen works in your own browser, mail, calendar and school accounts. Every
-  action goes through a gate made of fixed rules. The AI model does not decide what is allowed, and a spoken "yes"
-  never approves anything."
-- Buttons: "See the rules it follows" (primary), "Where it is today" (quiet). No download button.
-- Fine print: "Not available to download yet. Stephen is finishing its core features first."
-- Visual: the Ask box with a question waiting ("Submit this form?", booking a library study room), drawn in HTML and CSS, not a screenshot. Allow and
-  Deny wait 0.75 s and work; clicking shows what would happen. This proves the claim with the product, not with
-  adjectives.
+- One line: "Say "Hey Stephen" or hold F5. It works in your own browser and school accounts. Anything that submits or
+  sends waits for your click."
+- "Not available to download yet." No buttons: there is nothing to download or sign up for.
+- Beside it, the Ask box drawn in HTML: "Book a study room at the library for 3 pm today", "Heard by wake word", three
+  steps, and the card "Submit this form?" with the page, why it asks, and the form values shown as plain text. Deny and
+  Allow wait 0.75 s ("Ready in a moment.") and work.
 
-**3. How it works.** "Four steps from your voice to a finished task." You speak (on the Mac) · Claude plans (only
-Stephen's own tools) · The gate checks (allowed, asks you, never) · Stephen answers (out loud and in writing, every
-step listed). A numbered row, because it is a real sequence.
+**3. Before and after: the one proof.** (Pattern from impeccable.style: before and after proves a claim better than
+adjectives.) Navy band. "What if a web page tries to give Stephen an order?" Left: an example of text hidden in a page,
+shown verbatim in a dashed box. Right, "What Stephen does": page text reaches the model marked as web data, never as
+your words; a submit still needs your click, a page cannot say yes for you; every step is on the record. Labelled as an
+example, not a real event.
 
-**4. The rules** (navy band, the app's Navy theme). "The model can ask. Only the gate can say yes." Four rules: a spoken
-"yes" never counts; private data is tracked; web pages and emails are data; everything is on the record (with the
-source: typed, F5, "Hey Stephen" or phone).
+**4. What Stephen may do.** "What Stephen may do depends on how you asked." The same permission table as the app. Must
+use the real cells from the gate's rules before publishing; the mock says its values are examples.
 
-**5. What Stephen may do.** The same permission table as the app's Personal page (actions by source). Must use the real
-cells from the gate's rules before publishing; the mock's cells are examples and say so.
+**5. Where it is today.** One list of plain facts instead of features, status and FAQ (pattern from uiverse.io and
+reactbits.dev: trust stated as facts): Works with; Your voice (text on the Mac, the request text goes to Claude);
+Approving (a click, never your voice); Passwords and codes (typed by you); Memory (only what you keep); Speed (measured,
+not promised); Trick pages and emails (tested, the pass rate will be published once measured); Download (not yet).
 
-**6. What it does.** "Made for a real school and work week." Three short lists: School and work (Canvas, mail, Calendar, Notion), Your browser (your own Zen and
-Chrome, real pages, passwords always typed by you), Around the Mac (briefing, music, memory only when you say so).
-
-**7. Where it is today.** Two lists. True today: runs daily on its owner's Mac; speech to text on the Mac; gate,
-click-only approvals and the record are built and tested. Not yet: no download; speed is a goal; the injection pass
-rate will be published when measured.
-
-**8. Questions.** Does my voice leave my Mac? What if a page tells Stephen to do something? Can I say yes to approve? Do
-I need another subscription? When can I try it? Native `<details>` elements, no script.
-
-**9. Footer.** One line, no links to social accounts. Later: a link to the GitHub repo and a changelog.
+**6. Footer.** One line. Later: a link to the GitHub repo and a changelog, if Cris wants (section 8).
 
 ## 4. Visuals each section needs
 
 | Section | Visual | How |
 |---|---|---|
-| Hero | Ask box with a waiting question | HTML and CSS using the app's tokens; working 0.75 s delay. Later, a short silent screen recording from the real app may replace it (no autoplay, with a poster image and captions) |
-| How it works | Four numbered steps | Text only |
-| The rules | Navy band | The app's Navy theme colours |
+| Hero | Ask box with a waiting question | HTML and CSS with the app's tokens; working 0.75 s delay. Later a short silent recording of the real app may replace it (no autoplay, with captions) |
+| Before and after | Two panes | Text plus three small line icons; the only strong colour on the page (Navy) |
 | What Stephen may do | Table | A real HTML table with header cells, scrolls sideways on a phone |
-| What it does | Three lists | Text only; no logos |
-| Everything else | none | |
+| Where it is today | Fact list | Text only; no logos |
 
-No stock photos, no 3D, no illustrations of robots, no gradient blobs, no glow.
+No stock photos, no 3D, no robot illustrations, no gradient blobs, no glow, no uppercase labels over headings, no
+endless motion. (Avoid list from the reference sites: marquees, shader backgrounds, cursor effects, confetti, glow,
+testimonial walls.)
 
 ## 5. Tech choice
 
