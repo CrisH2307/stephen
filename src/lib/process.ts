@@ -62,6 +62,18 @@ export function processStart(pid: number): { tty: string; startedAt: number } | 
   }
 }
 
+/**
+ * #121: on Linux, `ps -o lstart=` can read up to 1 s earlier than a `Date.now()` taken just before the spawn, so we
+ * allow 2 s of slack there. macOS has no slack.
+ */
+export const PS_START_SLACK_MS = 2000;
+
+/** True when a process that started at `startedAt` (ps, second precision) counts as started at or after `jobStart`. */
+export function startedWithinJob(startedAt: number, jobStart: number, platform: NodeJS.Platform = process.platform): boolean {
+  const slack = platform === 'linux' ? PS_START_SLACK_MS : 0;
+  return startedAt >= Math.floor(jobStart / 1000) * 1000 - slack;
+}
+
 /** Signal a whole process group (negative pid); false on "no such process" or any other error. */
 export function killGroup(pid: number, signal: NodeJS.Signals): boolean {
   if (!Number.isInteger(pid) || pid <= 1) return false;
