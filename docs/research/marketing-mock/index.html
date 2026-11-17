@@ -241,21 +241,21 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 32px; justify-content: 
 
     <div>
       <div class="askbox" role="group" aria-label="Drawing of Stephen's Ask box with a question waiting for a click">
-        <div class="strip"><b>Stephen</b><span>Reply to Professor Lee</span><span class="state">Needs your OK</span></div>
+        <div class="strip"><b>Stephen</b><span>Book a study room</span><span class="state">Needs your OK</span></div>
         <div class="thread">
-          <div class="me">Reply to Professor Lee that I will be there at 3.</div>
+          <div class="me">Book a study room at the library for 3 pm today.</div>
           <div class="src">You said this after "Hey Stephen"</div>
-          <div class="steps">3 steps so far: searched mail, opened the thread, wrote a reply</div>
+          <div class="steps">3 steps so far: opened the library page, chose a room, filled in the form</div>
           <div class="card">
-            <p class="q">Send this email?</p>
+            <p class="q">Submit this form?</p>
             <dl class="facts">
-              <dt>To</dt><dd class="mono">lee@school.example</dd>
-              <dt>From</dt><dd>Your school mail</dd>
-              <dt>Why it asks</dt><dd>Sending always needs a click</dd>
+              <dt>Page</dt><dd class="mono">library.school.example</dd>
+              <dt>In</dt><dd>Your own browser</dd>
+              <dt>Why it asks</dt><dd>Submitting always needs a click</dd>
             </dl>
-            <div class="verbatim">Hello Professor Lee,
-I will be there at 3.
-Thank you.</div>
+            <div class="verbatim">Room: Study room 2
+Date: Today, 3:00 to 4:00 pm
+Name: Alex Doe</div>
             <div class="choice">
               <button type="button" id="deny" disabled>Deny</button>
               <button type="button" id="allow" class="allow" disabled>Allow</button>
@@ -439,8 +439,8 @@ Thank you.</div>
     again.addEventListener('click', arm);
     hint.appendChild(s); hint.appendChild(again);
   }
-  allow.addEventListener('click', function () { done('Allowed by a click. In the app, the email is sent now.'); });
-  deny.addEventListener('click', function () { done('Denied. Nothing is sent, and the refusal is recorded.'); });
+  allow.addEventListener('click', function () { done('Allowed by a click. In the app, the form is submitted now.'); });
+  deny.addEventListener('click', function () { done('Denied. Nothing is submitted, and the refusal is recorded.'); });
   arm();
 })();
 </script>

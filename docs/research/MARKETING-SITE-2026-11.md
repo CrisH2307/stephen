@@ -36,6 +36,7 @@ What the page must NOT claim, and why:
 
 | Do not claim | Why |
 |---|---|
+| Sending email, or any demo of it | Stephen cannot send email today (checked on 2026-11-17: it answers that it can't send emails yet). The demo uses a web form instead |
 | "Fast", "instant", any latency number | Speed is a goal, not yet a fact (plan section 2.1 and 7.1) |
 | An injection pass rate, or "tested against attacks" as a result | No pass rate is published yet. The page may say "we test with trick emails and pages; the rate will be published here when measured" |
 | "Private", "nothing leaves your Mac" | The text of each request goes to Claude; replies may use ElevenLabs. Say exactly what stays and what leaves |
@@ -60,7 +61,7 @@ works, The rules, What it does, Where it is today, Questions. A light and dark s
   never approves anything."
 - Buttons: "See the rules it follows" (primary), "Where it is today" (quiet). No download button.
 - Fine print: "Not available to download yet. Stephen is finishing its core features first."
-- Visual: the Ask box with a question waiting ("Send this email?"), drawn in HTML and CSS, not a screenshot. Allow and
+- Visual: the Ask box with a question waiting ("Submit this form?", booking a library study room), drawn in HTML and CSS, not a screenshot. Allow and
   Deny wait 0.75 s and work; clicking shows what would happen. This proves the claim with the product, not with
   adjectives.
 
@@ -152,7 +153,8 @@ banners, absolute safety promises.
 5. **A licence for the public repo**, if the page ever links to the code or says it is open. The repo is public today but has no
    licence file, so others may read the code but not reuse it. Cris decides which licence, or the page does not mention
    the code.
-6. **No personal data on the page.** The demo uses `school.example` and an invented professor; keep it that way.
+6. **No personal data on the page.** The demo uses `library.school.example` and an invented name ("Alex Doe"); keep it
+   that way.
 7. **The name.** "Stephen" is a common first name; check that the chosen domain and page title do not clash with an
    existing product of the same name.
 8. **Hosting and domain chosen by Cris.**
