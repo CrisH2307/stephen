@@ -352,6 +352,12 @@ Running (Navy theme, Stephen started in Terminal, two typed messages):
 - Home and the Ask box show the same thread; spoken messages carry "Heard by wake word" under the bubble, typed ones
   carry nothing, as coded. (An earlier capture of an off-screen window was stale; checked on screen.)
 - The chat title stays the first message ("hello") after the talk moves on; chat titles are #77.
+- Settings > How Stephen talks: two large titles side by side ("Settings" and "How Stephen talks") after two navigation
+  columns; the two segmented controls have no visible caption (nothing says Length or Tone). (P10)
+- Settings: the selected segment ("Brief", "Casual") is only slightly darker than the track, as the 1.1 to 1.2:1
+  surface-on-surface-2 ratio predicts. In Navy the "on" switch track is grey, not the accent, so on and off differ
+  mainly by knob position. (P9: selected segment and switch "on" state need 3:1 against their track.)
+- The preview line is "Bet, playing lofi beats." (P5)
 
 ---
 
