@@ -1,7 +1,8 @@
 # CI and CD for Stephen: proposal
 
-**Status:** Proposed 2026-11-17 by the review lane, at the owner's request. **Nothing is enabled until the dev team
-accepts it** on tracker #10, step by step (section 9). This PR adds this document only. It adds no
+**Status:** Proposed 2026-11-17 by the review lane, at the owner's request. **Accepted with changes by the dev lane
+on tracker #10 the same day** (all six steps; the changes are written in below). Nothing is enabled yet: the dev
+lane writes the step 1 PR. This PR adds this document only. It adds no
 `.github/workflows/` file: in a public repository a workflow runs as soon as it is merged, so turning CI on is the dev
 team's decision. The workflow below is ready to copy; step 1 of the rollout is the PR that adds it.
 
@@ -244,7 +245,9 @@ one and a safety net, plus facts in the failure message so the agent starts from
 **(a) Fast path: the Claude app watches the PR.** The Claude desktop app can watch a PR's checks and wake the session
 that bound the PR when a check fails ("Auto-fix", through the app's PR tools `bind_pr`, `get_status`,
 `set_monitor`). **Proposed rule for both lanes:** the session that opens a PR binds it and turns Auto-fix on at once.
-When CI fails, that session wakes with the failure, investigates and pushes a fix to the same branch. It never merges.
+When CI fails, that session wakes with the failure, investigates and prepares the fix. It follows today's commit
+rule: it asks the owner before a commit, and the owner (or the app's commit button) pushes. Auto-fix never means
+auto-merge.
 It stays bound until the owner merges or closes the PR. A session that hands over (context full) names its bound PRs
 in the hand-over brief, and the new session binds them again.
 
@@ -360,7 +363,7 @@ The repository is public, so the workflow is code that strangers can read and tr
 | macOS queue time | Free plan: at most 5 macOS jobs at once. With two lanes this is enough. If queues grow, cancel-in-progress already drops old runs; next, drop the macOS job to `test/helper` and `*.int` only | Dev team |
 | Cache miss (npm or voice models) | Slower run (download again), not a failure. A failed model download makes those tests skip, which shows as a higher skipped count in the report | Reader of the report |
 | `npm ci` fails (registry down) | Red before the tests; the report says "no test result". Re-run later | PR owner |
-| A broken `qa` (red after a merge) | The `ci-failure` issue opens. **Rule:** if the cause is not found within one working session, the review lane opens a PR that reverts the merge that broke it (`git revert -m 1 <merge>`), the owner merges it, and the fix comes back as a new PR. Nobody pushes to `qa` | Review lane opens the revert, owner merges |
+| A broken `qa` (red after a merge) | The `ci-failure` issue opens. **Rule (dev lane's wording):** while `qa` is red, nothing merges into `qa` except the fix or the revert. If the cause is not found the same day the issue opens, the review lane opens a PR that reverts the merge that broke it (`git revert -m 1 <merge>`), the owner merges it, and the author of the reverted PR brings the fix back as a new PR. Nobody pushes to `qa` | Review lane opens the revert, owner merges |
 | A red `main` | Should not happen (release only from a green `qa`). If it does: the "Going back" section of `docs/RELEASE-CHECKLIST.md` | Owner |
 
 Every job has `timeout-minutes`. Nothing in the workflow merges, pushes or retries.
@@ -405,10 +408,10 @@ undone on its own.
 
 | Step | What | Accepted when | Rollback |
 |---|---|---|---|
-| 1. Linux job | `.github/workflows/ci.yml` with the `linux` job only, without the "Failure report" and upload steps and without the `report` job (failures are read in the run log) | 3 runs in a row green on PRs, the browser tests pass on Linux, skipped count written down as the baseline | Delete the workflow file (one PR) |
+| 1. Linux job | `.github/workflows/ci.yml` with the `linux` job only, without the "Failure report" and upload steps and without the `report` job (failures are read in the run log) | 3 runs in a row green on PRs, the browser tests pass on Linux, the Swift core test ran (not skipped), skipped count written down as the baseline | Delete the workflow file (one PR) |
 | 2. Failure report | `scripts/ci-report.mjs` and the `report` job; create the `ci-failure` label; the "bind and Auto-fix" rule in both lanes' instructions | A deliberately failing test on a throwaway PR produces one correct comment; a red `qa` run opens the issue; a job forced past its timeout produces a report (or we record that it does not) | Remove the `report` job |
-| 3. macOS job | Add the `macos` row to the matrix | 3 green runs; Swift full-app compile runs (not skipped); queue time under 10 minutes | Remove the row |
-| 4. Protect `qa` and `main` | Ruleset (or branch protection) on both: PR required, `linux` and `macos` required, no force-push, no deletion, no bypass. The disabled `production` ruleset already has the last two rules | The owner merges one normal PR with green checks; a direct push to `qa` is refused | Set the ruleset to disabled |
+| 3. macOS job | Add the `macos` row to the matrix | 10 green runs in a row before it becomes a required check (the #109 bar; the runner has 3 CPUs); Swift full-app compile runs (not skipped); queue time under 10 minutes | Remove the row |
+| 4. Protect `qa` and `main` | Ruleset (or branch protection) on both: PR required, `linux` and `macos` required, no force-push, no deletion, no bypass. The disabled `production` ruleset already has the last two rules | The owner merges one normal PR with green checks; a direct push to `qa` is refused. Never add a `paths` filter to the workflow later (a required check that does not run blocks the PR forever); keep "merge commit" allowed for the release PR | Set the ruleset to disabled |
 | 5. Security settings | Secret scanning and push protection on; "require SHA pinning" on; "Require approval for all external contributors"; Dependabot alerts and `.github/dependabot.yml` | First Dependabot PR targets `qa`; scanning alerts reviewed | Turn each setting off |
 | 6. Release uses CI | `docs/RELEASE-CHECKLIST.md` step 4 becomes "CI green on the release commit" | First release PR shows green checks | Revert the doc line |
 
@@ -434,7 +437,12 @@ For the dev team (each on #10: accept, change or reject):
 6. The "bind the PR and turn on Auto-fix" rule for every session that opens a PR. Recommended: yes.
 7. The broken-`qa` revert rule (review lane opens the revert PR when the cause is not found within one session).
    Recommended: yes.
-8. Who owns `.github/` after adoption. Recommended: the dev team, with the review lane reviewing every change to it.
+8. Who owns `.github/` after adoption. **Answered:** the dev lane, with the review lane reviewing every change. A
+   change that adds a permission, a secret, a new trigger or an unpinned action also needs the owner's OK on the PR.
+
+Dev lane's answers (2026-11-17, #10): all six steps accepted, with the changes above; full suite on both runners;
+the revert rule with "the same day"; order: step 1 now, then 2 and 3, then 4 and 5 when macOS has 10 green runs,
+then 6 at the next release.
 
 ## 11. Sources
 
