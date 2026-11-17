@@ -5,10 +5,10 @@
 
 import SwiftUI
 
-/** One line under a reply: what Stephen did, or what it refused. */
+/** One line under a reply: what Stephen did, refused or tried and failed. */
 struct DoneLine: Equatable {
   var text: String
-  var refused: Bool
+  var status: StepStatus
 }
 
 /** Audit entry in words: `click button "Send"`. Only fields the audit already redacts. */
@@ -34,18 +34,18 @@ func conversationLines(entry: HistoryEntry, audit: [AuditEntry], parse: (String)
       auditTools.insert(a.tool)
       if a.outcome == "denied" {
         let why = !a.error.isEmpty ? a.error : (a.verdict == "confirm" ? "you did not allow it" : "Stephen's safety rules")
-        lines.append(DoneLine(text: "Refused: \(auditActionText(a)). \(why)", refused: true))
+        lines.append(DoneLine(text: "Refused: \(auditActionText(a)). \(why)", status: .refused))
       } else if a.outcome == "error" {
-        lines.append(DoneLine(text: "Tried \(auditActionText(a)), it failed", refused: false))
+        lines.append(DoneLine(text: "Tried \(auditActionText(a)), it failed", status: .failed))
       } else {
-        lines.append(DoneLine(text: auditActionText(a), refused: false))
+        lines.append(DoneLine(text: auditActionText(a), status: .ok))
       }
     }
   }
-  let others = entry.tools.filter { !auditTools.contains($0.tool) }
-  if !others.isEmpty {
-    let names = others.map { $0.isError ? "\($0.tool) (failed)" : $0.tool }
-    lines.append(DoneLine(text: "Used " + names.joined(separator: ", "), refused: false))
+  // Same words as the chat's steps (src/app/steps.ts): one line per other tool.
+  for c in entry.tools where !auditTools.contains(c.tool) {
+    lines.append(c.isError ? DoneLine(text: "Tried \(c.tool), it failed", status: .failed)
+                           : DoneLine(text: "Used \(c.tool)", status: .ok))
   }
   return lines
 }
@@ -165,9 +165,8 @@ private struct ConversationRow: View {
         }
         ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
           HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            Image(systemName: l.refused ? "hand.raised" : "arrow.turn.down.right").font(.system(size: 11))
-              .foregroundColor(l.refused ? t.bad : t.ink2).accessibilityHidden(true)
-            Text(verbatim: l.text).font(TypeScale.secondary).foregroundColor(l.refused ? t.bad : t.ink2)
+            StepMark(status: l.status)
+            Text(verbatim: l.text).font(TypeScale.secondary).foregroundColor(l.status == .ok ? t.ink2 : t.ink)
               .fixedSize(horizontal: false, vertical: true)
           }
         }
