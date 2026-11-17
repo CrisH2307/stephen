@@ -24,7 +24,8 @@ nothing about who merges.
    The owner decides whether an open Medium blocks the release.
 4. **Automated checks on `qa` at the exact commit to release**, run alone on the machine (one suite at a time,
    issue #109): `npm run build`, `npm run typecheck`, `npx vitest run`. A red run is rerun by test name once; both
-   results go into the release PR. Zero failed in the final result.
+   results go into the release PR. Zero failed in the final result. Once CI rollout step 6 is accepted
+   (`docs/CI-CD-PROPOSAL.md`, PR #156), this step becomes "CI green on the release commit"; steps 5 to 8 stay local.
 5. **Swift compiles:** `npx vitest run test/helper` passes on the Mac.
 6. **`node dist/cli.js mac-checks`** on the owner's Mac: no FAIL line.
 7. **`node dist/cli.js doctor`**: no problem that blocks voice.
@@ -39,19 +40,26 @@ nothing about who merges.
   the test results of steps 4 to 8 with the commit id, what the owner should watch for after updating, and how to go
   back (below).
 - Merged with a merge commit, by the owner.
+- **`qa` is frozen while the release PR is open.** The release PR's head is `qa` itself, so anything merged into
+  `qa` after the tests would join the release untested. No PR is merged into `qa` until the release is merged. If
+  something urgent must land, close the release PR, merge it, and start the release again from step 4.
 
 ## After the release
 
 1. Open a PR that merges `main` into `qa`, so `qa` starts the next batch equal to `main`.
 2. On the Mac: `git checkout main && git pull && npm install && npm run build && node dist/cli.js install-helper`,
-   then the Input Monitoring steps of test plan 0.2, then `node dist/cli.js mac-checks`.
+   then the Input Monitoring steps of test plan 0.2 **only if `install-helper` rebuilt the helper** (it prints
+   "Nothing changed" when it did not, #135). Then quit and restart Stephen so the new build runs, then
+   `node dist/cli.js mac-checks`.
 3. Close the issues the release fixes, and set their ledger rows to `closed` with the release PR number.
 4. One line on tracker #10: the release PR, the commit on `main`, and the date.
 
 ## Going back
 
-If the release is bad: on the Mac, check out the previous `main` commit (it is in the last tracker line) and
-rebuild. Then the fix goes through `qa` like any other change, or the owner reverts the release merge on GitHub.
+If the release is bad: on the Mac, check out the previous `main` commit (it is in the last tracker line), then
+`npm install && npm run build && node dist/cli.js install-helper`, the Input Monitoring steps of test plan 0.2 if
+`install-helper` rebuilt the helper, restart Stephen, and `node dist/cli.js mac-checks`. The old commit changes the
+Swift helper too: without these steps F5 can stop working after a rollback. Then the fix goes through `qa` like any other change, or the owner reverts the release merge on GitHub.
 No agent force-pushes `main`.
 
 ## Not part of a release
