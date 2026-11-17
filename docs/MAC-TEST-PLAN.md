@@ -516,7 +516,7 @@ Give a few real commands first (see the start of section 13).
   See: in the `ptt / model` block, rows that start with `tool ` and the tool name, each with p50 and p95. Rows `cold start` or `warm start`. A line `tier (shadow):` with counts. (S4-13, #43, #117)
 - [ ] `[hands]` **14.32** Do: run `node dist/cli.js latency --days 1` and look at the line `ptt / model  (n=..., ok ..`.
   See: slow or failed commands show as `not timed: cancelled 1` (or `error 1`) and are not inside the p50 and p95 numbers. (R10a-7, #43, #117)
-- [ ] `[hands]` **14.33** Do: run `tail -n 1 ~/.browser-hub/telemetry/latency-$(date +%F).jsonl`.
+- [ ] `[hands]` **14.33** Do: run `tail -n 1 ~/.stephen/telemetry/latency-$(date +%F).jsonl` (use `~/.browser-hub` if `doctor` says Stephen still uses the old folder).
   See: one line with an id, numbers and short code words (for example `asr`, `tts`, `start`, `tier`). No words you said, no web address. (Plan Q20, #43, #117) (The report does not print the ASR model or the TTS engine. Only this file has them.)
 
 ### 14.7 The Ask box opens from the sidebar and with ⌘K (PR #118, issue #87)
@@ -585,7 +585,7 @@ The ids in brackets are the findings and pull requests. If a check fails, put th
 At the end, remove your memory test items: `node dist/cli.js memory list`, then `node dist/cli.js memory forget <id>` for each one you added.
 
 ### 16.1 Shadow tier uses the site list (PR #157, finding R10b-6)
-- [ ] `[hands]` **16.1** Do: hold F5 and say "open YouTube". Then run `tail -n 1 ~/.browser-hub/telemetry/latency-$(date +%F).jsonl`. You can also run `node dist/cli.js latency --days 1 --json` and look at the tiers.
+- [ ] `[hands]` **16.1** Do: hold F5 and say "open YouTube". Then run `tail -n 1 ~/.stephen/telemetry/latency-$(date +%F).jsonl` (use `~/.browser-hub` if `doctor` says Stephen still uses the old folder). You can also run `node dist/cli.js latency --days 1 --json` and look at the tiers.
   See: the last line has `"tier":1` (not `"tier":2`). In `node dist/cli.js latency --days 1`, the line `tier (shadow):` shows `1` with a count (the text is like `1 1`). The label only shows the tier. What Stephen does is the same as before. (R10b-6, #157)
 
 ### 16.2 Menu bar icon by shape (PR #159, issue #143)
