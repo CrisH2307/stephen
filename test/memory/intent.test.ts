@@ -1,6 +1,6 @@
 /** src/memory/intent.ts: anchored memory commands, the 12.3 split, rawTail, matchForget. */
 import { describe, expect, it } from 'vitest';
-import { COMMAND_VERBS, matchForget, newestWithin, parseMemoryIntent, rawTail, splitRememberTail, type MemoryIntent } from '../../src/memory/intent.js';
+import { COMMAND_VERBS, matchForget, memoryWords, newestWithin, parseDetailed, parseMemoryIntent, rawTail, splitRememberTail, type MemoryIntent } from '../../src/memory/intent.js';
 
 const TABLE: Array<[string, MemoryIntent | null]> = [
   // remember
@@ -216,5 +216,54 @@ describe('newestWithin', () => {
     const later = { id: 'm5', createdAt: same };
     expect(newestWithin([earlier, later], now)).toBe(later);
     expect(newestWithin([later, earlier], now)).toBe(later);
+  });
+});
+
+describe('R10b-1 raw "?" guard and voice second layer', () => {
+  it('R10b-1 a "?" on the raw text blocks a save even when the words have none', () => {
+    const raw = "Can you remember my sister's name?";
+    expect(parseMemoryIntent(raw)).toBeNull();
+    expect(parseMemoryIntent(memoryWords(raw), { raw, source: 'voice-ptt' })).toBeNull();
+    expect(parseMemoryIntent(memoryWords(raw), { raw, source: 'voice-wake' })).toBeNull();
+  });
+  it('R10b-1 without a "?", voice "can you remember ..." saves only with "that"', () => {
+    for (const source of ['voice-ptt', 'voice-wake']) {
+      expect(parseMemoryIntent("can you remember my sister's name", { source })).toBeNull();
+      expect(parseMemoryIntent('will you remember my birthday', { source })).toBeNull();
+      expect(parseMemoryIntent('could you please remember my bike is blue', { source })).toBeNull();
+      expect(parseMemoryIntent('can you remember that my sister is called ann', { source })?.kind).toBe('remember');
+    }
+    // typed text keeps the #114 behaviour
+    expect(parseMemoryIntent('could you please remember my bike is blue')?.kind).toBe('remember');
+  });
+});
+
+describe('R10b-3 personal word needs a verb', () => {
+  it.each(["don't forget my keys", 'note my keys', 'keep in mind my keys', 'dont forget i', 'note our house'])('R10b-3 %j saves nothing', (c) => {
+    expect(parseMemoryIntent(c)?.kind).not.toBe('remember');
+  });
+  it.each([
+    "don't forget that my sister is called ann",
+    'note that i am allergic to nuts',
+    'keep in mind my flight is at nine',
+    "keep in mind i'm allergic to nuts",
+  ])('R10b-3 %j still saves', (c) => {
+    expect(parseMemoryIntent(c)?.kind).toBe('remember');
+  });
+});
+
+describe('R10b-4 openers without "remember"', () => {
+  it.each(['keep in mind that my flight is at nine', "don't forget that my sister is called ann", 'note that i am allergic to nuts', 'make a note that my bike is blue'])(
+    'R10b-4 %j is refused from the wake word, allowed from F5, window and CLI',
+    (c) => {
+      expect(parseMemoryIntent(c, { source: 'voice-wake' })).toBeNull();
+      for (const source of ['voice-ptt', 'app', 'cli']) expect(parseMemoryIntent(c, { source })?.kind).toBe('remember');
+    },
+  );
+  it('R10b-4 a "remember" opener still works from the wake word, and the opener is reported', () => {
+    expect(parseMemoryIntent('remember my cat is tom', { source: 'voice-wake' })?.kind).toBe('remember');
+    expect(parseDetailed('hey stephen can you remember that my cat is tom', { source: 'voice-wake' })?.opener).toBe('can you remember that');
+    expect(parseDetailed("don't forget that my cat is tom", { source: 'cli' })?.opener).toBe("don't forget that");
+    expect(parseDetailed('remember my cat is tom')?.opener).toBe('remember');
   });
 });
