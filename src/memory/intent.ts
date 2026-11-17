@@ -77,6 +77,37 @@ function hasFactVerb(body: string): boolean {
   return /^(?:i'm|i've|i'll)$/.test(w[0]!) || w.slice(1).some((x) => FACT_VERBS.has(x) || /'(?:m|ve|ll|re|d)$/.test(x));
 }
 
+/**
+ * By voice every saved line needs a fact shape (#137): a verb, not just a thing. "remember the milk", "remember my
+ * keys" and "can you remember that song from titanic" are to-dos or questions, so they save nothing; "remember my
+ * gym is goodlife" and "remember that i moved to toronto" still save. Voice only, and only ever an extra refusal.
+ * ponytail: a fixed verb list plus two simple patterns (a pronoun with 'm 're 's and so on, "i moved"); a fact with a
+ * rare verb then needs "is" or similar, and typed text is the fallback (F5 users can type in the Ask box).
+ */
+const VOICE_FACT_VERBS = new Set([
+  ...FACT_VERBS,
+  ...('isn\'t aren\'t wasn\'t don\'t doesn\'t didn\'t can can\'t will won\'t should must ' +
+    'leave leaves left start starts started end ends ended turn turns turned open opens close closes cost costs ' +
+    'born moved lived worked went came come comes made makes said says know knows think thinks belong belongs ' +
+    'keep keeps parked park parks stay stays stayed got sold grew quit lands renews changed').split(' '),
+]);
+const SUBJECT_WORDS = new Set(['i', 'we', 'you', 'they', 'he', 'she', 'it']);
+function voiceFactShape(body: string): boolean {
+  // A to-do ("i need to pay the rent") or a shared memory ("that time we went to the lake") is not a fact.
+  if (/\b(?:need|needs|have|has|got) to\b/.test(body)) return false;
+  if (/^(?:the )?(?:last |one |first |good old )?(?:time|times|night|day|days|summer)\b/.test(body)) return false;
+  const w = body.split(' ');
+  // "i teach grade five", "we live downtown": a first-person statement.
+  if ((w[0] === 'i' || w[0] === 'we') && w.length >= 2) return true;
+  if (/^(?:i|we|you|they|he|she|it|there|that)'(?:m|re|ve|ll|d|s)$/.test(w[0]!)) return true;
+  return w.slice(1).some(
+    (x, i) =>
+      VOICE_FACT_VERBS.has(x) ||
+      /^(?:i|we|you|they|he|she|it|there|that)'(?:m|re|ve|ll|d|s)$/.test(x) ||
+      (SUBJECT_WORDS.has(w[i]!) && /^[a-z]{2,}ed$/.test(x)),
+  );
+}
+
 /** "forget it" and friends are everyday speech, not a memory command. */
 const FORGET_NOT_A_QUERY = new Set(['it', 'about it', 'this', 'them', 'him', 'her', 'everything else', 'that one', 'all that', 'it all']);
 const TRAILING_POLITE_RE = /(?: (?:please|thanks|thank you|for me))+$/;
@@ -153,6 +184,7 @@ export function parseDetailed(command: string, opts: ParseOpts = {}): { intent: 
     // One word ("remember that one", "remember goodlife") is too little to be a fact worth saving.
     // But a single word with a digit looks like a code: refuse it here instead of sending it to Claude (review 5, R5-4).
     if (body.split(' ').length < 2) return /\d/.test(body) ? { intent: { kind: 'remember-code' } } : null;
+    if (voice && !voiceFactShape(body)) return null;
     return { intent: rest ? { kind: 'remember', text: body, rest } : { kind: 'remember', text: body }, opener };
   }
   return null;

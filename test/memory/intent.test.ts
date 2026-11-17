@@ -267,3 +267,17 @@ describe('R10b-4 openers without "remember"', () => {
     expect(parseDetailed('remember my cat is tom')?.opener).toBe('remember');
   });
 });
+
+describe('#137 voice needs a fact shape; typed text is unchanged', () => {
+  it.each(['Remember the milk', 'Remember my keys', 'Can you remember that song from Titanic', 'Remember last summer', 'Remember that time we went to the lake', 'Remember I need to pay the rent'])(
+    '#137 %j saves nothing by voice but still saves when typed',
+    (raw) => {
+      for (const source of ['voice-ptt', 'voice-wake']) expect(parseMemoryIntent(memoryWords(raw), { raw, source })).toBeNull();
+      expect(parseMemoryIntent(raw, { raw, source: 'app' })?.kind).toBe('remember');
+    },
+  );
+  it.each(['Remember my gym is Goodlife', "Remember I'm vegan", 'Remember that I moved to Toronto', 'Remember the shed is open', 'Remember I teach grade five', 'Remember that I sold my car'])(
+    '#137 %j still saves by voice',
+    (raw) => expect(parseMemoryIntent(memoryWords(raw), { raw, source: 'voice-ptt' })?.kind).toBe('remember'),
+  );
+});
