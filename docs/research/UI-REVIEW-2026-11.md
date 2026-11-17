@@ -38,8 +38,8 @@ alone, almost everywhere. Reduce Motion is respected. The five themes pass 4.5:1
 4. **The question card shows where the command came from and leaves a record** (P2). After Cris clicks Allow or Deny,
    the chat shows nothing. The card also does not show, as its own line, whether the command was typed, spoken or from
    the phone.
-5. **A failed step reads as failed** (P3, finding R10a-3). Today a failed step differs from a good one only by a 6 pt
-   dot colour, and the folded summary counts refusals but not failures.
+5. **A failed step reads as failed** (P3, finding R10a-3). #134 shipped the words and the failed count; P3 is now the
+   shape per status and Conversations.
 
 ---
 
@@ -54,7 +54,7 @@ alone, almost everywhere. Reduce Motion is respected. The five themes pass 4.5:1
 
 | Id | Proposal | Impact | Effort | Safety surface | Waits for C5 |
 |---|---|---|---|---|---|
-| P1 | Waiting question visible on every page | high | M | yes | yes |
+| P1 | Waiting question visible on every page | high | M | yes | no |
 | P2 | Question card: source line, visible arming, decision record | high | M | yes | yes |
 | P3 | Steps and refusals read the same, with shapes, in chat and Conversations | high | S | yes | no |
 | P4 | Setup checklist: first run and missing permissions | high | M | no | yes |
@@ -373,8 +373,9 @@ Each line is what the issue will say. Files are the likely ones; the dev team de
 **P1. A waiting question is visible on every page.** When a question waits: a one-line banner at the top of every main
 window page ("Stephen is waiting for your OK · Open"), a badge on the Home row, and the menu bar icon changes shape.
 "Open" brings the Ask box forward; the card itself stays in the Ask box and on Home, so there is still one place where
-Allow is clicked. Files: `helper/MainWindow.swift`, `helper/Components/Sidebar.swift`, `helper/main.swift`,
-`helper/AppClient.swift` (state). Replaces the dead Home branch (R10a-11).
+Allow is clicked. Files: `helper/MainWindow.swift`, `helper/Components/Sidebar.swift`, `helper/main.swift`. No
+`AppClient.swift` change: the waiting questions are already `model.confirms` (`helper/AppClient.swift:924`) and "Open"
+is the existing `actions.ask()` (`helper/MainWindow.swift:56`). Replaces the dead Home branch (R10a-11).
 Safety: the banner has no Allow button and no shortcut; it only opens the card. The 0.75 s delay still runs when the
 card is shown (fix R10a-4 at the same time: start the delay when the window or box becomes visible).
 
@@ -391,7 +392,7 @@ after the click, not by the model.
 
 **P3. Steps and refusals read the same everywhere.** One small component for a step: an SF Symbol shape per status
 (check for done, hand for refused, x mark for failed) plus the word, used in the chat's action chain and in
-Conversations. The folded summary counts failures too: "4 steps · 1 refused · 1 failed · 9.8 s" (R10a-3). The "Problem"
+Conversations. (R10a-3: #134 shipped the words and the failed count; P3 is now the shape per status and Conversations.) The "Problem"
 label becomes "Didn't work" for failures and "Refused" for refusals. Files: `helper/Components/ChatThread.swift`,
 `helper/ConversationsPage.swift`.
 Safety: nothing is hidden or renamed into something softer; a refusal is still called refused; step text stays
@@ -476,8 +477,8 @@ These look like small UX wins but would weaken a safety rule. Nobody should "imp
 
 ## 6. Order and what waits for C5
 
-Can start as soon as each is accepted (no `AppClient.swift` change): P3, P6, P7, P8, P9, P10, P11, P12.
-Wait for the `AppClient.swift` split (C5, #56): P1, P2, P4, P5.
+Can start as soon as each is accepted (no `AppClient.swift` change): P1, P3, P6, P7, P8, P9, P10, P11, P12.
+Wait for the `AppClient.swift` split (C5, #56): P2, P4, P5.
 After #57 (section pages): P13. P10 and P11 should be planned with #57 so they do not edit the same lines.
 Suggested first three after acceptance: P3 (small, safety, already a finding), P9 (small, all five themes), P2 after C5.
 
