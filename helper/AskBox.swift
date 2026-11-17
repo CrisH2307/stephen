@@ -315,7 +315,8 @@ final class AskBoxController: NSObject {
   /** Stays open while a question waits: it ends with Allow, Deny (or Esc), or the gate's timeout. */
   func close() {
     guard model.confirms.isEmpty else { return }
-    if box.micHeld { micUp() }
+    // A click outside (or any close) while listening cancels like Esc; it never sends (#107).
+    if box.micHeld { box.micHeld = false; cancelTalk() }
     if let m = clickMonitor { NSEvent.removeMonitor(m) }
     clickMonitor = nil
     panel?.orderOut(nil)
