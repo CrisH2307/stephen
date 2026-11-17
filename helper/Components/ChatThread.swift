@@ -39,7 +39,7 @@ struct ChatThreadView: View {
         .padding(.vertical, Space.xs)
       }
       .onAppear { proxy.scrollTo("end", anchor: .bottom) }
-      .onChange(of: model.thread.count) { _ in toEnd(proxy) }
+      .onChange(of: model.thread.last?.id) { _ in toEnd(proxy) }
       .onChange(of: model.confirms.first?.id) { _ in toEnd(proxy) }
       .onChange(of: model.isWorking) { _ in toEnd(proxy) }
     }
@@ -133,7 +133,9 @@ struct ActionChain: View {
   var body: some View {
     let refused = steps.filter { $0.status == "refused" }.count
     var parts = [steps.count == 1 ? "1 step" : "\(steps.count) steps"]
+    let failed = steps.filter { $0.status == "failed" }.count
     if refused > 0 { parts.append(refused == 1 ? "1 refused" : "\(refused) refused") }
+    if failed > 0 { parts.append("\(failed) failed") }
     if !seconds.isEmpty { parts.append(seconds) }
     let summary = parts.joined(separator: " · ")
     return VStack(alignment: .leading, spacing: Space.xs) {

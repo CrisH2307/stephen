@@ -111,7 +111,7 @@ struct AskBoxView: View {
     .overlay(RoundedRectangle(cornerRadius: Corner.askBox).stroke(t.line, lineWidth: 1))
     .background(shortcuts)
     .onPreferenceChange(AskBoxSizeKey.self) { size in follow(size.height) }
-    .onChange(of: model.thread.count) { _ in model.refreshUsage() }  // the menu's usage lines stay current
+    .onChange(of: model.thread.last?.id) { _ in model.refreshUsage() }  // the menu's usage lines stay current
     .onExitCommand { escape(mode) }
   }
 

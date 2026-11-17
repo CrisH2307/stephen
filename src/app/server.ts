@@ -54,6 +54,8 @@ import type { UsageReport } from './usage.js';
 
 /** Audit entries read to build one command's steps (newest first; a command makes far fewer). */
 const STEPS_AUDIT_LIMIT = 100;
+/** chat.done waits at most this long for the audit read; after that it goes out without steps (R10a-9). */
+export const STEPS_AUDIT_WAIT_MS = 400;
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -199,7 +201,7 @@ export class AppServer {
   /**
    * A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run); `calls`:
    * the same calls with their error flag, for the action chain. With an audit log, chat.done waits for one audit read
-   * to add `steps`; a failed read just leaves them out.
+   * to add `steps`; a failed or slow (STEPS_AUDIT_WAIT_MS) read just leaves them out.
    */
   commandDone(r: CommandReport, tools: string[], calls: ToolCallRecord[] = []): void {
     if (this.endAfterCommand) {
@@ -216,12 +218,17 @@ export class AppServer {
     };
     const end = Date.now();
     const audit = this.o.audit;
-    const send = (entries: AuditEntry[]) => {
+    let sent = false;
+    const send = (entries: AuditEntry[] | null) => {
+      if (sent) return; // a late read, after the timeout already sent chat.done
+      sent = true;
+      if (entries === null) return this.broadcast(msg); // too slow: no steps
       const steps = commandSteps(entries, calls, end - r.ms, end, r.id);
       this.broadcast(steps.length > 0 ? { ...msg, steps } : msg);
     };
     if (!audit || r.ms <= 0) return send([]);
-    audit.recent(STEPS_AUDIT_LIMIT).then(send, () => send([]));
+    const timer = setTimeout(() => send(null), STEPS_AUDIT_WAIT_MS);
+    audit.recent(STEPS_AUDIT_LIMIT).then(send, () => send([])).finally(() => clearTimeout(timer));
   }
 
   // ───────────────────────────── connections ─────────────────────────────
