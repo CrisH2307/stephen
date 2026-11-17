@@ -87,9 +87,17 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | open | dev | #86, `fix/mic-stop-f5` |
-| R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | open | dev | none |
-| R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | open (decide) | dev | none |
+| R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed in code, Mac check pending | dev | #106, #152 |
+| R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | fixed in code (owner chose cancel, 2026-11-16), Mac check pending | dev | #107, #129 |
 | R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
+
+## E2. Issues filed 2026-11-12 to 17 with no row before (added by the handoff of 2026-11-16)
+
+| ID | Source | Severity | Title | Status | Lane | Issue or branch |
+|---|---|---|---|---|---|---|
+| I-109 | tracker #10 | Low | Full test suite flaky under CPU load (fixed sleeps in the clicks eval; two suites at once) | fixed in code, 10 green full runs pending | dev | #109, #131 |
+| I-121 | Linux run for #112 | Low | Linux: `ps` start time reads 1 s early; a job's first-second process may be left running | fixed in code (Docker: 5 of 5) | dev | #121, #132 |
+| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | open | dev | #137 |
 
 ## F. Requests from the dev lane (tracker #10, 2026-11-12)
 
