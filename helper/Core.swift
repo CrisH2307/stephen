@@ -131,6 +131,8 @@ enum HelperCommandIn: Equatable {
   case quit
   /** Show the Stephen window (additive: older helpers log it as an unknown type and ignore it). */
   case openWindow
+  /** The listener dropped the recording: end the press if one is down (additive, like openWindow). */
+  case pressOver
   /** Valid JSON object with an unknown `type` (ignored, per the protocol). */
   case unknown(type: String)
   /** Not a JSON object, no string `type`, or a known type with bad fields. */
@@ -149,6 +151,7 @@ func parseCommand(_ line: String) -> HelperCommandIn {
   case "query_audio": return .queryAudio
   case "quit": return .quit
   case "open_window": return .openWindow
+  case "press_over": return .pressOver
   default: return .unknown(type: type)
   }
 }
@@ -401,6 +404,7 @@ struct Modifiers: Equatable {
  *  - Short taps are still reported; Node drops presses under PTT_MIN_HOLD_MS.
  *  - `tick` sends `ptt_up` once the press reaches `maxHoldMs`.
  *  - `interrupt` (event tap disabled: key-ups may have been missed) sends `ptt_up` if down and latches.
+ *  - `pressOver` (the listener cancelled the recording) ends a press like Esc does, without the `esc` (#106).
  */
 final class PushToTalk {
   let maxHoldMs: Int64
@@ -442,6 +446,12 @@ final class PushToTalk {
   func interrupt(at t: Stamp) -> [HelperEventOut] {
     guard isDown else { return [] }
     return release(at: t, stillHeld: true)
+  }
+
+  /** The listener dropped this recording: end the press (a held Fn+Option must be let go first, like after Esc). */
+  func pressOver(at t: Stamp) -> [HelperEventOut] {
+    guard isDown else { return [] }
+    return release(at: t, stillHeld: !byF5)
   }
 
   /**
@@ -869,6 +879,8 @@ final class HelperCore {
     case .openWindow:
       log("open_window requested by client")
       onOpenWindow()
+    case .pressOver:
+      emit(ptt.pressOver(at: .now()))
     case let .unknown(type): log("ignored unknown command type \(jsonString(type))")
     case let .invalid(reason): log("ignored malformed command: \(reason)")
     }

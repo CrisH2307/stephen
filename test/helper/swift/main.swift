@@ -4,7 +4,7 @@
 // side on stdout, so the Node HelperClient can be tested against the actual Swift code.
 //
 // stdin (one per line):  flags [fn] [opt] [cmd] [ctrl] [shift] | key <code> [repeat] | keyup <code> | audio 0|1 | perm 0|1
-//                        | interrupt | exit
+//                        | interrupt | press_over | exit
 // stdout:                ready | ui <state> | quit | open_window | error <message>
 // args:                  --socket <path> [--max-hold-ms <n>]
 
@@ -81,6 +81,8 @@ DispatchQueue.global().async {
         core.setInputMonitoring(parts.count > 1 && parts[1] == "1")
       case "interrupt":
         core.handleTapInterrupted()
+      case "press_over":
+        core.handle(.pressOver)
       case "exit":
         core.stop()
         leave(0)
