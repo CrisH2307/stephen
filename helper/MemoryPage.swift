@@ -154,7 +154,7 @@ struct MemoryPage: View {
       }
       .padding(.horizontal, Space.m).padding(.vertical, 6).frame(width: 200)
       .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface))
-      .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.line, lineWidth: 1))
+      .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.lineStrong, lineWidth: 1))
       Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).frame(width: 0, height: 0).opacity(0)
         .accessibilityHidden(true)
       Menu {

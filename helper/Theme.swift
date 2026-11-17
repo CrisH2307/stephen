@@ -36,7 +36,10 @@ struct Theme: Equatable {
   let groundBottom: Color
   let surface: Color
   let surface2: Color
-  let line: Color
+  /// Calm borders of lists and cards (1.1 to 1.2:1). With Increase Contrast it becomes `lineHigh ?? lineStrong`.
+  var line: Color
+  /// Outlines of things you click or type in: 3:1 or more on ground (top and bottom), surface and surface-2 (#146).
+  let lineStrong: Color
   let ink: Color
   let ink2: Color
   let primary: Color
@@ -45,6 +48,8 @@ struct Theme: Equatable {
   let ok: Color
   let warn: Color
   let bad: Color
+  /// Increase Contrast `line` where `lineStrong` would leave ink under 4.5:1 on the "You" bubble (Dark, Navy).
+  var lineHigh: Color? = nil
 
   var ground: LinearGradient { return LinearGradient(colors: [groundTop, groundBottom], startPoint: .top, endPoint: .bottom) }
   var colorScheme: ColorScheme { return isDark ? .dark : .light }
@@ -56,31 +61,31 @@ struct Theme: Equatable {
     switch n {
     case .light:
       return Theme(name: n, isDark: false, groundTop: Color(hex: 0xFFFFFF), groundBottom: Color(hex: 0xECEEF2), surface: Color(hex: 0xFFFFFF),
-                   surface2: Color(hex: 0xF2F3F6), line: Color(hex: 0xE3E5EA), ink: Color(hex: 0x0E1525), ink2: Color(hex: 0x556070),
+                   surface2: Color(hex: 0xF2F3F6), line: Color(hex: 0xE3E5EA), lineStrong: Color(hex: 0x7E8793), ink: Color(hex: 0x0E1525), ink2: Color(hex: 0x556070),
                    primary: Color(hex: 0x13244A), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0x2456C9),
                    ok: okLight, warn: warnLight, bad: badLight)
     case .dark:
       return Theme(name: n, isDark: true, groundTop: Color(hex: 0x12151B), groundBottom: Color(hex: 0x12151B), surface: Color(hex: 0x171A21),
-                   surface2: Color(hex: 0x1F232C), line: Color(hex: 0x2A2F3A), ink: Color(hex: 0xEEF0F4), ink2: Color(hex: 0xA3AAB7),
+                   surface2: Color(hex: 0x1F232C), line: Color(hex: 0x2A2F3A), lineStrong: Color(hex: 0x696F7B), ink: Color(hex: 0xEEF0F4), ink2: Color(hex: 0xA3AAB7),
                    primary: Color(hex: 0xDCE6FF), primaryText: Color(hex: 0x0E1525), accent: Color(hex: 0x7FA6FF),
-                   ok: okDark, warn: warnDark, bad: badDark)
+                   ok: okDark, warn: warnDark, bad: badDark, lineHigh: Color(hex: 0x666C78))
     case .navy:
       // surface-2 is not in the plan table: derived one step lighter than surface (#16264A -> #1E3260).
       return Theme(name: n, isDark: true, groundTop: Color(hex: 0x0F1B33), groundBottom: Color(hex: 0x0F1B33), surface: Color(hex: 0x16264A),
-                   surface2: Color(hex: 0x1E3260), line: Color(hex: 0x26385F), ink: Color(hex: 0xEEF2FA), ink2: Color(hex: 0xA9B6CF),
+                   surface2: Color(hex: 0x1E3260), line: Color(hex: 0x26385F), lineStrong: Color(hex: 0x71809F), ink: Color(hex: 0xEEF2FA), ink2: Color(hex: 0xA9B6CF),
                    primary: Color(hex: 0xDCE6FF), primaryText: Color(hex: 0x0E1525), accent: Color(hex: 0x8FB0FF),
-                   ok: okDark, warn: warnDark, bad: badDark)
+                   ok: okDark, warn: warnDark, bad: badDark, lineHigh: Color(hex: 0x5E6D8E))
     case .rose:
       // surface-2 derived: a pink tint between ground and line (#FBE9EE).
       return Theme(name: n, isDark: false, groundTop: Color(hex: 0xFFF5F7), groundBottom: Color(hex: 0xFFF5F7), surface: Color(hex: 0xFFFFFF),
-                   surface2: Color(hex: 0xFBE9EE), line: Color(hex: 0xF1DCE2), ink: Color(hex: 0x2A1219), ink2: Color(hex: 0x7A5560),
+                   surface2: Color(hex: 0xFBE9EE), line: Color(hex: 0xF1DCE2), lineStrong: Color(hex: 0x9E7E87), ink: Color(hex: 0x2A1219), ink2: Color(hex: 0x7A5560),
                    primary: Color(hex: 0x7A1F3D), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0xB4235A),
                    ok: okLight, warn: warnLight, bad: badLight)
     case .sun:
-      // surface-2 derived: a cream tint between ground and line (#F7F0D4).
+      // surface-2 derived: a cream tint between ground and line (#F7F0D4). Accent #7A5E00: 5.4:1 on surface-2 (#146).
       return Theme(name: n, isDark: false, groundTop: Color(hex: 0xFFFBEA), groundBottom: Color(hex: 0xFFFBEA), surface: Color(hex: 0xFFFFFF),
-                   surface2: Color(hex: 0xF7F0D4), line: Color(hex: 0xEFE6C4), ink: Color(hex: 0x221C08), ink2: Color(hex: 0x6B5F35),
-                   primary: Color(hex: 0x3D3200), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0x8A6A00),
+                   surface2: Color(hex: 0xF7F0D4), line: Color(hex: 0xEFE6C4), lineStrong: Color(hex: 0x91865E), ink: Color(hex: 0x221C08), ink2: Color(hex: 0x6B5F35),
+                   primary: Color(hex: 0x3D3200), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0x7A5E00),
                    ok: okLight, warn: warnLight, bad: badLight)
     }
   }
@@ -150,9 +155,12 @@ private struct StephenAnimation<V: Equatable>: ViewModifier {
 
 private struct ThemeRoot: ViewModifier {
   @Environment(\.colorScheme) var scheme
+  @Environment(\.colorSchemeContrast) var contrast
   let choice: ThemeChoice
   func body(content: Content) -> some View {
-    let t = choice.resolved(scheme)
+    var t = choice.resolved(scheme)
+    // Increase Contrast (System Settings > Accessibility > Display): every border gets stronger (#146).
+    if contrast == .increased { t.line = t.lineHigh ?? t.lineStrong }
     // Fixed themes pin the color scheme so system controls (text fields, scrollbars) match; Follow the Mac does not.
     let pinned: ColorScheme? = choice.followMac ? nil : t.colorScheme
     return content.environment(\.stephenTheme, t).preferredColorScheme(pinned).tint(t.accent)
