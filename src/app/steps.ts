@@ -63,7 +63,7 @@ export function commandSteps(audit: AuditEntry[], calls: ToolCallRecord[], start
   }
   for (const c of calls) {
     if (auditTools.has(c.tool)) continue;
-    steps.push({ text: `Used ${c.tool}`, status: c.isError ? 'failed' : 'ok' });
+    steps.push(c.isError ? { text: `Tried ${c.tool}, it failed`, status: 'failed' } : { text: `Used ${c.tool}`, status: 'ok' });
   }
   return steps.slice(0, MAX_CHAT_STEPS).map((s) => ({ ...s, text: truncate(s.text, MAX_STEP_CHARS) }));
 }

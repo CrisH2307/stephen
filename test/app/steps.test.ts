@@ -24,8 +24,12 @@ describe('commandSteps (the action chain under a reply)', () => {
       { text: 'Tried click link "Hai Phan", it failed', status: 'failed' },
       { text: 'Refused: click button "Send". you did not allow it', status: 'refused' },
       { text: 'Used gmail_search', status: 'ok' },
-      { text: 'Used weather_now', status: 'failed' },
+      { text: 'Tried weather_now, it failed', status: 'failed' },
     ]);
+  });
+
+  it('R10a-3 a failed tool-log call reads "Tried X, it failed", not "Used X"', () => {
+    expect(commandSteps([], [{ tool: 'gmail_search', isError: true, ms: 5 }], T0, T1)).toEqual([{ text: 'Tried gmail_search, it failed', status: 'failed' }]);
   });
 
   it('caps the count and the length of each line', () => {

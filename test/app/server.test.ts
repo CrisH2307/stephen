@@ -688,8 +688,28 @@ describe('pushes', () => {
     const done = await h.client.waitFor((m) => m.type === 'chat.done');
     expect(done.steps).toEqual([
       { text: 'Used gmail_search', status: 'ok' },
-      { text: 'Used weather_now', status: 'failed' },
+      { text: 'Tried weather_now, it failed', status: 'failed' },
     ]);
+  });
+
+  it('R10a-9 chat.done goes out without steps when the audit read is slower than the bound, once, with no unhandled error', async () => {
+    let release!: (e: typeof AUDIT) => void;
+    const slow = new Promise<typeof AUDIT>((r) => (release = r));
+    const h = await harness({ audit: { recent: () => slow } });
+    const calls = [{ tool: 'gmail_search', isError: false, ms: 800 }];
+    h.server.commandDone({ id: 'h_slow', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search'], calls);
+    const done = await h.client.waitFor((m) => m.type === 'chat.done');
+    expect(done.steps).toBeUndefined();
+    release(AUDIT);
+    await sleep(30);
+    expect(h.client.messages.filter((m) => m.type === 'chat.done')).toHaveLength(1);
+  });
+
+  it('R10a-9 chat.done carries steps when the audit read is fast', async () => {
+    const h = await harness();
+    h.server.commandDone({ id: 'h_fast', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search'], [{ tool: 'gmail_search', isError: false, ms: 5 }]);
+    const done = await h.client.waitFor((m) => m.type === 'chat.done');
+    expect(done.steps).toEqual([{ text: 'Used gmail_search', status: 'ok' }]);
   });
 
   it('closing the server disconnects clients', async () => {
