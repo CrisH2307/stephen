@@ -1,6 +1,8 @@
 # Note: keep the Input Monitoring grant across helper rebuilds
 
-**Status:** Proposed. Paper only; no code, no change to `install-helper`, nothing run on the Mac except read-only checks.
+**Option A built (2026-11-16):** `stephen install-helper` now builds nothing when the Swift sources, Info.plist template, version, build flags and compiler (`swiftc --version`) are unchanged, the installed app exists and `codesign --verify` passes. It keeps a sha256 stamp in `.Stephen Helper.app.stamp` beside the app (not inside the signed bundle), written only after a successful build, sign and install. A missing stamp or any doubt means rebuild; `--force` always rebuilds. A package version bump still counts as a change. Option B is not built.
+
+**Status (original):** Proposed. Paper only; no code, no change to `install-helper`, nothing run on the Mac except read-only checks.
 **Date:** 2026-11-12
 **Origin:** tracker #10 request 4. The grant was lost after a rebuild and the owner's test on 2026-11-11 failed (F5 and Esc did not reach Stephen).
 

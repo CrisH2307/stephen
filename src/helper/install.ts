@@ -4,6 +4,7 @@
  * so macOS can ask for Input Monitoring. Every program runs with an argv array (no shell).
  */
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -14,7 +15,7 @@ import { type RunFn, defaultRun, shellQuote } from '../zen-launcher.js';
 import { HelperClient, openHelperArgv } from './client.js';
 import { HELPER_APP_NAME, HELPER_BUNDLE_ID, HELPER_EXECUTABLE, MAX_SOCKET_PATH_BYTES, helperAppPath, helperLogPath, helperSocketPath } from './paths.js';
 
-export const INSTALL_HELPER_USAGE = 'stephen install-helper [--dry-run]';
+export const INSTALL_HELPER_USAGE = 'stephen install-helper [--dry-run] [--force]';
 /** main.swift holds the top-level code and goes last; Theme + Components are the shared UI kit; AppClient + AppWindow are the Stephen window. */
 export const HELPER_SOURCES = [
   'Core.swift', 'Theme.swift',
@@ -94,6 +95,32 @@ export function planHelperInstall(opts: Partial<HelperInstallPlan> = {}): Helper
   };
 }
 
+/** The stamp sits beside the app, never inside it: a file inside the bundle would break the signature. */
+export const helperStampPath = (appPath: string) => join(dirname(appPath), `.${basename(appPath)}.stamp`);
+
+/**
+ * One sha256 over everything that decides the built app: each Swift source (name + content, sorted), the Info.plist
+ * template, the version, the swiftc and codesign arguments, and the compiler identity (`swiftc --version`).
+ * Returns null on any doubt (unreadable file, compiler version not readable), which means "build".
+ */
+export async function helperFingerprint(plan: HelperInstallPlan, c: SwiftCompiler, run: RunFn): Promise<string | null> {
+  try {
+    const v = await run(c.swiftc, ['--version'], 60_000);
+    if (v.code !== 0 || !v.stdout.trim()) return null;
+    const h = createHash('sha256');
+    const part = (s: string | Buffer) => h.update(`${Buffer.byteLength(s)}:`).update(s);
+    for (const f of [...HELPER_SOURCES, 'Info.plist'].sort()) {
+      part(f);
+      part(await readFile(join(plan.sourceDir, f)));
+    }
+    part(plan.version);
+    part(JSON.stringify([c.swiftc, v.stdout.trim(), swiftcArgs('<src>', '<out>', c.sdkPath).map((a) => a.replace(/^<src>\//, '')), codesignArgs('<app>')]));
+    return h.digest('hex');
+  } catch {
+    return null;
+  }
+}
+
 export interface InstallHelperDeps {
   run: RunFn;
   platform: NodeJS.Platform;
@@ -149,7 +176,7 @@ export function nextSteps(plan: HelperInstallPlan): string[] {
 }
 
 /** Build and install the app (or print the plan with dryRun). Returns the exit code. */
-export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: boolean }, deps: InstallHelperDeps): Promise<0 | 1> {
+export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: boolean; force?: boolean }, deps: InstallHelperDeps): Promise<0 | 1> {
   const { log } = deps;
   const darwin = deps.platform === 'darwin';
   const missing = HELPER_SOURCES.filter((f) => !deps.exists(join(plan.sourceDir, f)));
@@ -219,6 +246,17 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
     }
   }
 
+  // Nothing changed and the installed app is intact and signed: build nothing, so macOS keeps the permission grant.
+  const fingerprint = await helperFingerprint(plan, found.compiler, deps.run);
+  const stampFile = helperStampPath(plan.appPath);
+  if (fingerprint && !opts.force && deps.exists(plan.appPath)) {
+    const stamp = (await readFile(stampFile, 'utf8').catch(() => '')).trim();
+    if (stamp === fingerprint && (await deps.run('/usr/bin/codesign', ['--verify', '--strict', plan.appPath], 60_000)).code === 0) {
+      log(`Nothing changed, so the build was skipped. ${plan.appPath} is already installed and signed.`);
+      return 0;
+    }
+  }
+
   const tmp = await mkdtemp(join(tmpdir(), 'stephen-helper-'));
   const staging = join(dirname(plan.appPath), `.${basename(plan.appPath)}.tmp-${process.pid}`);
   try {
@@ -248,8 +286,10 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
 
     const wasRunning = await deps.quitRunning(plan.stephenHome).catch(() => false);
     if (wasRunning) log('Asked the running Stephen Helper to quit.');
+    await rm(stampFile, { force: true });
     await rm(plan.appPath, { recursive: true, force: true });
     await rename(staging, plan.appPath);
+    if (fingerprint) await writeFile(stampFile, `${fingerprint}\n`, 'utf8');
   } finally {
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
     await rm(staging, { recursive: true, force: true }).catch(() => undefined);
@@ -272,12 +312,13 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
 
 export async function runInstallHelper(argv: string[]): Promise<number> {
   const dryRun = argv.includes('--dry-run');
-  const unknown = argv.filter((a) => a !== '--dry-run');
+  const force = argv.includes('--force');
+  const unknown = argv.filter((a) => a !== '--dry-run' && a !== '--force');
   if (unknown.length) {
     console.error(`Unknown option "${unknown[0]}".\nUsage: ${INSTALL_HELPER_USAGE}`);
     return 1;
   }
-  return installHelper(planHelperInstall(), { dryRun }, defaultInstallHelperDeps());
+  return installHelper(planHelperInstall(), { dryRun, force }, defaultInstallHelperDeps());
 }
 
 export { HELPER_APP_NAME };
