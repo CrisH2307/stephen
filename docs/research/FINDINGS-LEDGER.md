@@ -12,7 +12,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| RV-1 | review 0.1 | Finding | Reliable trigger has no P0 task; F5 works about 1 in 10, mic cannot be stopped | fixed in code, Mac check pending | dev | #86, `fix/mic-stop-f5` |
+| RV-1 | review 0.1 | Finding | Reliable trigger has no P0 task; F5 works about 1 in 10, mic cannot be stopped | fixed (#108 merged), Mac check pending | dev | #86, `fix/mic-stop-f5` |
 | RV-2 | review 0.2 | Finding | Tier 1 targets need endpointing; about 2.8 s on the wake path with zero model time | open | dev | #73, `fix/wake-endpoint` |
 | RV-3 | review 0.3 | Finding | A2 mostly done on `qa`; `tier` always null, Esc and chime not recorded; only #44 on `main` | open | dev | #43, `feat/latency-gaps` |
 | RV-4 | review 0.4 | Finding | "Parakeet expected winner" contradicts `docs/VOICE.md`; 300 ms rule excludes whisper-small | open | owner | #61 |
@@ -27,13 +27,13 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed in code, Mac check pending | dev | #86, `fix/mic-stop-f5` |
+| S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed (#108 merged), Mac check pending | dev | #86, `fix/mic-stop-f5` |
 | S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | fixed in code | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | in review | review | `docs/review-10a`, PR #95 |
 | S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170 and the #169 follow-up; PR 2 switch, PR 3 mark to come | dev | #48, `feat/replay-recorder` |
 | S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
-| S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed in code, Mac check pending | dev | #90, #54, #68, `fix/remember-once` |
-| S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed in code, Mac check pending | dev | #87, `fix/ask-button` |
+| S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed (#114 merged), Mac check pending | dev | #90, #54, #68, `fix/remember-once` |
+| S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed (#118 merged), Mac check pending | dev | #87, `fix/ask-button` |
 | S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | fixed in code | dev | #65, #67, `fix/claude-cli-contract` |
 | S4-9 B1 | review 4 | P0 | Owner-only memory origin | fixed in code | dev | #53, `fix/memory-origin-you` |
 | S4-10 DOC1 | review 4 | P1 | Reconcile docs (this ledger, plan corrections, superseded banners) | in progress | review | `docs/plan-reconcile` |
@@ -64,7 +64,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | PL-10 | plan C4 | P0 | Review 10b and release | open | review | #58 |
 | PL-11 | plan C6 | P1 | helper.sock nonce (peer user check already exists, review fact 35) | open | dev | #70 |
 | PL-12 | plan B4 | P2 | Memory full: already built (review fact 33); close the issue after a check | fixed in code | dev | #79 |
-| PL-13 | issue | P2 | Ask box: multi-line input and longer limit | open | dev | #88 |
+| PL-13 | issue | P2 | Ask box: multi-line input and longer limit | fixed (#167 merged), Mac check pending | dev | #88 |
 
 ## D. Review 10a (`docs/REVIEW-10A.md` on branch `docs/review-10a`)
 
@@ -87,8 +87,8 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | fixed in code by #108, Mac check pending (checked 2026-11-17, see #10) | dev | #86, `fix/mic-stop-f5` |
-| R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed in code, Mac check pending | dev | #106, #152 |
-| R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | fixed in code (owner chose cancel, 2026-11-16), Mac check pending | dev | #107, #129 |
+| R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed (#152 merged), Mac check pending | dev | #106, #152 |
+| R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | fixed (#129 merged; owner chose cancel, 2026-11-16), Mac check pending | dev | #107, #129 |
 | R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
 
 ## E2. Issues filed 2026-11-12 to 17 with no row before (added by the handoff of 2026-11-16)
@@ -96,8 +96,8 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | I-109 | tracker #10 | Low | Full test suite flaky under CPU load (fixed sleeps in the clicks eval; two suites at once) | fixed in code, 10 green full runs pending | dev | #109, #131 |
-| I-121 | Linux run for #112 | Low | Linux: `ps` start time reads 1 s early; a job's first-second process may be left running | fixed in code (Docker: 5 of 5) | dev | #121, #132 |
-| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | fixed in code, Mac check pending. Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
+| I-121 | Linux run for #112 | Low | Linux: `ps` start time reads 1 s early; a job's first-second process may be left running | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121, #132 |
+| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | fixed (#162 merged), Mac check pending. Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
 
 ## F. Requests from the dev lane (tracker #10, 2026-11-12)
 
@@ -113,13 +113,13 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | open | dev | #122 |
+| R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | fixed (#128 merged), Mac check pending | dev | #122 |
 | R10b-2 | R10b | Medium | `mac-checks` 13.1d false FAIL on the latency fields added by #117 | fixed, in review | review | `fix/mac-checks-latency-fields` |
-| R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | open | dev | #122 |
-| R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | open | dev | #122 |
-| R10b-5 | R10b | Low | `doctor` problem mark for any Claude Code newer than 2.1.319 | open | dev | #123 |
+| R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | fixed (#128 merged), Mac check pending | dev | #122 |
+| R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | fixed (#128 merged), Mac check pending | dev | #122 |
+| R10b-5 | R10b | Low | `doctor` problem mark for any Claude Code newer than 2.1.319 | fixed (#130 merged), Mac check pending | dev | #123 |
 | R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed (#157 merged 2026-11-17) | review | #157 |
-| LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | open | dev | #121 |
+| LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121 |
 | MJ-1 | manager job 1 | P0 | Recorder plan review | done: plan accepted with 8 points (#10, 2026-11-17); PR #166 reviewed | review | #166 |
 | I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in #170. Smaller points fixed in the follow-up PR: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Still open: Desktop and Documents in iCloud (needs a check whether that iCloud option is on); Fn+Option in the PR 2 switch text | dev | #169 |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
