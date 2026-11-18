@@ -1,5 +1,22 @@
 /** Process helpers shared by the drivers, memory (lock files), the voice Claude, jobs and the self-test. */
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync, type ExecFileException } from 'node:child_process';
+
+/**
+ * Run a program with execFile (no shell). Never rejects. `code` is the exit code, 0 on success,
+ * null when the program failed without one (could not start, killed by the timeout).
+ */
+export function execNoThrow(
+  file: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<{ code: number | null; stdout: string; stderr: string; error: ExecFileException | null }> {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+      const code = err ? (typeof err.code === 'number' ? err.code : null) : 0;
+      resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), error: err });
+    });
+  });
+}
 
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but isn't ours. */
 export function isPidAlive(pid: number): boolean {

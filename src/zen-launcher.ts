@@ -13,7 +13,6 @@
  *
  * Exit codes: 0 = Zen is ready for Stephen, 2 = the user must do something, 1 = error.
  */
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -28,6 +27,7 @@ import {
   readAppBundleInfo,
 } from './drivers/macos.js';
 import { type Clock, errText, realClock } from './drivers/util.js';
+import { execNoThrow } from './lib/process.js';
 import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import type { ResolvedConfig } from './types.js';
 
@@ -41,14 +41,11 @@ export interface RunResult {
 export type RunFn = (cmd: string, args: string[], timeoutMs: number) => Promise<RunResult>;
 
 /** Run a program (no shell); a spawn failure is reported as code 127. */
-export const defaultRun: RunFn = (cmd, args, timeoutMs) =>
-  new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
-      const raw = err ? (err as NodeJS.ErrnoException & { code?: unknown }).code : 0;
-      const code = typeof raw === 'number' ? raw : err ? 127 : 0;
-      resolve({ code, stdout: String(stdout), stderr: String(stderr || (err && code === 127 ? err.message : '')) });
-    });
-  });
+export const defaultRun: RunFn = async (cmd, args, timeoutMs) => {
+  const r = await execNoThrow(cmd, args, timeoutMs);
+  const code = r.code ?? 127;
+  return { code, stdout: r.stdout, stderr: r.stderr || (r.error && code === 127 ? r.error.message : '') };
+};
 
 // ───────────────────────────── zen-launch ─────────────────────────────
 
