@@ -150,6 +150,56 @@ One more side note from the voice audit: jobs (allow-list env, src/jobs/spec.ts:
 - test/page/security.int.test.ts:131-144 takes about 19 s. It is a security test. Keep it.
 - About 200 exports in voice and about 140 in core are used only in their own file. Dropping `export` saves no lines.
 
+## Bug history: why new work keeps breaking old work
+
+Question from the owner: each new feature seems to bring new bugs, and fixing them blocks the next feature. Why?
+
+Method: all 25 fix commits on `origin/qa` since 2026-10-30. For each one, `git blame` on the lines it changed shows
+which earlier commit wrote them. The bug issues (label `bug`) say where each bug was found. Read only.
+
+### Finding H1: about 1 in 3 fixes repairs an earlier fix
+
+The first fix covered the reported case, not its siblings.
+
+| Area | Chain | What happened |
+|---|---|---|
+| Voice "remember" (memory) | #90, then #122 (`63902da` changes lines from `bf7c6f9`), then #137 (`4d0cbf9`); also #52, #53 | Five fixes in one rule set. Each fix covered the phrase in its issue; the next phrase slipped through. |
+| Ask box mic and Esc | #86 `89b25fb`, then `2be455e` (changes a line from `89b25fb`), then #94 `af011d2` (changes a line from `2be455e`) | Three fixes in two days on the same keys. |
+| Claude CLI contract | `ebefd39`, then `63dcaea` the same day, then #123 `c073eab` (changes lines from `ebefd39`) | The contract check was too strict twice. |
+| Replay | feature `35811f4`, then `5998047`, `926487c`, `6e43792` (fixes `5998047`), all on 2026-11-17 | The feature and three fixes on one day. |
+| Linux process time | #52 `7f1177a`, then #121 `a9b6fea` | Same `ps` time code, fixed twice. |
+
+### Finding H2: two areas hold most of the bugs
+
+- **Helper Ask box: 8 fixes** (helper/AskBox.swift, helper/Components/ChatThread.swift, helper/MainWindow.swift,
+  helper/AppWindow.swift). Most trace back to the UI PRs of 2026-11-08 and 2026-11-09. Example: #87 "the Ask
+  Stephen button does nothing". All 16 lines its fix (`c3f390a`) changed came from one commit, `35d3715`
+  "[UI] Smooth Ask box and Home transitions". An animation change broke a button.
+- **Voice "remember" rules: 5 fixes** (src/memory/intent.ts, src/voice/memory-router.ts). The rules guess from
+  words whether to save. #122 also shows a path split: the "?" guard of #114 worked for typed text, but voice
+  normalizes the words first and drops the "?", so the guard never ran for speech.
+
+Other fixes: a new feature broke a check in another module (`4c6e36e`: mac-checks did not know the latency fields
+added by #117), and a feature added an id that the action list did not filter (#93, `6a2cc4e` from `f799f9e`).
+
+### Finding H3: bugs are found days late
+
+#86, #87, #90 and #154 were found in the owner's Mac test (2026-11-11). #93, #94, #122, #123 came from review rounds
+R10a and R10b. CI found almost none. Reason: vitest cannot run SwiftUI, and the helper tests are mostly source
+greps (see T1). So a broken button lives for days, and more PRs are built on top of it before anyone sees it.
+
+### Proposals from the bug history (for the dev lane to decide)
+
+| Id | Proposal | Cost | Would have caught |
+|---|---|---|---|
+| H1 | Before merging a fix, list the sibling cases and test them, not only the reported one. For the memory rules: one test table of phrases (save or refuse, typed and voice) that every rule change must pass. | Small: one table in test/memory/intent.test.ts and test/voice/memory-flow.test.ts | #122 and #137 together with #90 |
+| H2 | A two-minute click check on the Mac for every PR that touches helper/ (open the Ask box, Esc, F5, the Ask button, resize the window), written down in the PR. | 2 minutes per helper PR | #86, #87, #94, #154 before merge |
+| H3 | Run the typed path and the voice path through the same guard, or test both paths with the same table. | Small | #122 |
+| H4 | Let a new feature sit one day on qa before building on it, and do not stack fixes for the same feature in one day without a review. | Time only | the replay and CLI contract chains |
+
+These are process proposals, not code changes. They work together with the refactors above: fewer duplicate paths
+(H3) and fewer source-grep tests (T1) also mean fewer places for these bugs to hide.
+
 ## Suggested order for the dev lane
 
 1. **Batch 1, no review needed:** P1 (after a listener test), the dead code that is not SEC (A6, B6, B7, B8, B9, C3,
