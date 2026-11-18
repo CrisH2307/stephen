@@ -118,7 +118,6 @@ export class AuditLog implements IAuditLog {
   private readonly commandId: (() => string | undefined) | undefined;
   private readonly readChunkBytes: number;
   private queue: Promise<void> = Promise.resolve();
-  private permsChecked = false;
 
   constructor(opts: AuditLogOptions) {
     this.path = opts.path;
@@ -176,11 +175,17 @@ export class AuditLog implements IAuditLog {
           size = await this.knownSize();
         }
       }
-      await fs.appendFile(this.path, line, { mode: 0o600 });
-      appended = true;
-      if (!this.permsChecked || size === 0) {
-        await fs.chmod(this.path, 0o600);
-        this.permsChecked = true;
+      // fstat the open file on every write: a file recreated from outside (logrotate `create 0644`) gets 0600 back
+      // before our line goes in, and the size kept in memory comes from the file we really write to.
+      const fh = await fs.open(this.path, 'a', 0o600);
+      try {
+        const st = await fh.stat();
+        if ((st.mode & 0o777) !== 0o600) await fh.chmod(0o600);
+        await fh.appendFile(line);
+        appended = true;
+        size = st.size;
+      } finally {
+        await fh.close();
       }
       this.size = size + bytes;
     } catch (e) {

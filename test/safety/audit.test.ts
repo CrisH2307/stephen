@@ -133,6 +133,23 @@ describe('A9: mkdir once, size kept in memory', () => {
     expect((await log.recent(10)).map((e) => e.tool)).toEqual(['c']);
   });
 
+  it('a file recreated from outside as 0644 (logrotate create) is 0600 again after the next append', async () => {
+    const path = join(dir, 'audit.log');
+    const log = new AuditLog({ path });
+    await log.append({ tool: 'a', outcome: 'ok' });
+    rmSync(path);
+    writeFileSync(path, `${JSON.stringify({ tool: 'old', ts: 't0' })}\n`, { mode: 0o644 });
+    chmodSync(path, 0o644);
+    expect(mode(path)).toBe(0o644);
+    await log.append({ tool: 'b', outcome: 'ok' });
+    expect(mode(path)).toBe(0o600);
+    expect((await log.recent(10)).map((e) => e.tool)).toEqual(['b', 'old']);
+    // Same when the recreated file was left non-empty and its size changed: the in-memory size is not trusted for perms.
+    chmodSync(path, 0o644);
+    await log.append({ tool: 'c', outcome: 'ok' });
+    expect(mode(path)).toBe(0o600);
+  });
+
   it('an external rotate does not make the log rotate a small file early', async () => {
     const path = join(dir, 'audit.log');
     const log = new AuditLog({ path, maxBytes: 300 });
