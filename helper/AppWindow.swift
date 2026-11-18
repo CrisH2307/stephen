@@ -120,13 +120,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
   private func makeWindow() -> NSWindow {
     let w = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 860, height: 580),
+      contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],
       backing: .buffered,
       defer: false)
     w.title = "Stephen"
     w.isReleasedWhenClosed = false
-    w.minSize = NSSize(width: 640, height: 420)
+    w.contentMinSize = WindowMetrics.minContent
     w.contentView = NSHostingView(rootView: AppRootView(model: model, nav: nav, control: control, actions: actions))
     w.delegate = self
     w.center()
