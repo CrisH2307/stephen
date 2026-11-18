@@ -24,7 +24,7 @@ export function chromiumPath(): Promise<string> {
 
 /** Flags needed to run this Chromium in the sandbox-less CI container (none for the Mac's own Chrome). */
 export function chromiumArgs(): string[] {
-  return process.platform === 'darwin' ? [] : [...chromium.args];
+  return process.platform === 'darwin' ? (process.env.EXP_ARGS ? process.env.EXP_ARGS.split(' ') : []) : [...chromium.args];
 }
 
 export async function launchTestBrowser(protocol: TestProtocol): Promise<Browser> {
