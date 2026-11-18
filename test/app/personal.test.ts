@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { AccountRow } from '../../src/app/accounts-status.js';
 import { PERMISSION_COLUMNS, PERMISSIONS, personalSummary } from '../../src/app/personal.js';
+import { mcpConfig } from '../../src/voice/claude.js';
 
 const row = (id: string, name: string, state: AccountRow['state']): AccountRow => ({ id, name, state, source: null, hint: '' });
 
@@ -41,7 +42,8 @@ describe('personalSummary (personal.summary, UI-PLAN v3.1 section 7)', () => {
     expect(cited.size).toBeGreaterThan(5);
     for (const id of cited) expect(policy, id).toMatch(new RegExp(`^ \\*   ${id} +(deny|confirm)`, 'm'));
     // The phone column's "declined" comes from the phone's serve flags.
-    expect(readFileSync('src/voice/claude.ts', 'utf8')).toContain("'--confirm', trust === 'phone' ? 'deny' : 'app'");
+    const args = mcpConfig('/n', '/c', null, null, null, 'phone').mcpServers.stephen!.args;
+    expect(args.slice(args.indexOf('--confirm'), args.indexOf('--confirm') + 2)).toEqual(['--confirm', 'deny']);
     for (const r of PERMISSIONS) for (const c of r.cells) expect(c.rule.length).toBeGreaterThan(10);
   });
 });
