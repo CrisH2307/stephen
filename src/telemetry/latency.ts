@@ -9,8 +9,10 @@
  *
  * Recording never fails a command: every error goes to `log`.
  */
-import { closeSync, constants as fsConstants, fchmodSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { appendPrivateLineCapped, readPrivateRegularFile } from '../lib/fs.js';
+import { localDate } from '../history/store.js';
 import { ASR_MODELS } from '../voice/config.js';
 import type { Reason } from '../voice/grammar/classify.js';
 import type { TtsProviderName } from '../voice/tts/types.js';
@@ -144,11 +146,6 @@ const FILE_RE = /^latency-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 
 export function latencyDir(home: string): string {
   return join(home, 'telemetry');
-}
-
-function localDate(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 const ms = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 86_400_000 ? Math.round(v) : null);
@@ -303,15 +300,7 @@ export class LatencyMonitor implements LatencyTrace {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     if (!lstatSync(this.dir).isDirectory()) throw new Error(`${this.dir} is not a real folder`);
     const line = `${JSON.stringify(rec)}\n`;
-    const fd = openSync(join(this.dir, `latency-${localDate(day)}.jsonl`), fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW, 0o600);
-    try {
-      const st = fstatSync(fd);
-      if (!st.isFile()) throw new Error('the day file is not a regular file');
-      if ((st.mode & 0o777) !== 0o600) fchmodSync(fd, 0o600);
-      if (st.size + Buffer.byteLength(line) <= MAX_LATENCY_DAY_BYTES) writeSync(fd, line);
-    } finally {
-      closeSync(fd);
-    }
+    appendPrivateLineCapped(join(this.dir, `latency-${localDate(day)}.jsonl`), line, MAX_LATENCY_DAY_BYTES);
   }
 
   /** Delete day files older than LATENCY_RETENTION_DAYS (call at listener start). Returns how many were deleted. */
@@ -338,17 +327,8 @@ export class LatencyMonitor implements LatencyTrace {
     const out: LatencyRecord[] = [];
     for (const { name, date } of this.files().sort((a, b) => a.date.localeCompare(b.date))) {
       if (date < firstDay) continue;
-      let text = '';
-      try {
-        const fd = openSync(join(this.dir, name), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-        try {
-          if (fstatSync(fd).isFile()) text = readFileSync(fd, 'utf8');
-        } finally {
-          closeSync(fd);
-        }
-      } catch {
-        continue;
-      }
+      const text = readPrivateRegularFile(join(this.dir, name), MAX_LATENCY_DAY_BYTES);
+      if (text === null) continue;
       for (const line of text.split('\n')) {
         if (!line.trim()) continue;
         try {
