@@ -104,6 +104,8 @@ struct Segmented<Value: Hashable>: View {
 }
 
 /// The ask input: text, optional mic and trailing hint ("⌘K"). The caller owns the text and what Return does.
+/// Return sends (onSubmit); Shift+Return adds a new line; the field grows to 5 lines, then scrolls (#88).
+/// Return only ever calls onSubmit: it never answers a waiting question (Allow is a click, AskBox.swift ConfirmButtons).
 struct AskField: View {
   @Environment(\.stephenTheme) var t
   var placeholder: String = "Ask Stephen"
@@ -117,9 +119,17 @@ struct AskField: View {
     self.placeholder = placeholder; self._text = text; self.hint = hint; self.onMic = onMic; self.large = large; self.onSubmit = onSubmit
   }
   var body: some View {
-    HStack(spacing: Space.s) {
-      TextField(placeholder, text: $text).textFieldStyle(.plain).font(large ? Font.system(size: 17) : TypeScale.body).foregroundColor(t.ink)
-        .onSubmit(onSubmit).accessibilityLabel(placeholder)
+    HStack(alignment: .bottom, spacing: Space.s) {
+      TextField(placeholder, text: $text, axis: .vertical).lineLimit(1...5).textFieldStyle(.plain)
+        .font(large ? Font.system(size: 17) : TypeScale.body).foregroundColor(t.ink)
+        .onSubmit(onSubmit)
+        .onKeyPress(keys: [.return], phases: .down) { press in
+          guard press.modifiers.contains(.shift) else { return .ignored }  // plain Return: onSubmit
+          // The field editor's own "new line here", at the cursor, without sending.
+          NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+          return .handled
+        }
+        .accessibilityLabel(placeholder)
       if let hint = hint, text.isEmpty { Text(verbatim: hint).font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true) }
       if let onMic = onMic {
         Button(action: onMic) { Image(systemName: "mic").font(.system(size: 16)).foregroundColor(t.ink2) }
