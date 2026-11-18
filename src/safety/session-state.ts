@@ -19,15 +19,13 @@
  */
 import { lstatSync, realpathSync, unlinkSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
-import { MAX_PRIVATE_JSON_BYTES, readPrivateJsonFile, writePrivateJsonFileSync, type ReadPrivateJsonResult } from '../lib/fs.js';
+import { readPrivateJsonFile, writePrivateJsonFileSync, type ReadPrivateJsonResult } from '../lib/fs.js';
 import type { IAuditLog, ISafetyGate, ResolvedConfig } from '../types.js';
 import { SafetyGate, type GateState } from './gate.js';
 import type { SafetyDeps } from './index.js';
 
 /** The file name the voice listener uses (in `<home>/voice/`). */
 export const SESSION_STATE_FILE = 'conversation-state.json';
-/** A state file larger than this is not read (the caps keep a real one far below it). */
-export const MAX_SESSION_STATE_BYTES = MAX_PRIVATE_JSON_BYTES;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.json$/;
 
 /** `<home>/voice` — the only folder a session-state file may live in. */

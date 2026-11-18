@@ -30,8 +30,6 @@ export interface ToolCallRecord {
 
 /** The voice listener's tool log, in `<home>/voice/`. */
 export const TOOL_LOG_FILE = 'tool-log.jsonl';
-/** The app chat's tool log (section 2), in `<home>/voice/`. */
-export const APP_TOOL_LOG_FILE = 'dashboard-tool-log.jsonl';
 /** The listener's command id file, in `<home>/voice/` (src/lib/command-id.ts). */
 export const COMMAND_FILE = 'command.json';
 /** readToolLog keeps at most this many calls (a voice command uses far fewer; maxTurns bounds them anyway). */

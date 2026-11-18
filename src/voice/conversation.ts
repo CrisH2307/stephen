@@ -26,8 +26,7 @@ import { SESSION_ID_RE, type ClaudeOutcome, type ClaudeTiming, type RunOptions }
 import type { ContextUsage, WarmProcess } from './warm-claude.js';
 
 export const CONVERSATION_FILE = 'conversation.json';
-/** Default and maximum `voice.followUpWindowSec`. */
-export const DEFAULT_FOLLOW_UP_WINDOW_SEC = 180;
+/** Maximum `voice.followUpWindowSec`. */
 export const MAX_FOLLOW_UP_WINDOW_SEC = 1800;
 
 interface Saved {
@@ -159,11 +158,7 @@ export class Conversation {
   }
 
   /** Drop a session id that will never be resumed (its transcript is deleted). Never throws. */
-  drop(id: string): void {
-    this.dropped(id);
-  }
-
-  private dropped(id: string | null | undefined): void {
+  drop(id: string | null | undefined): void {
     if (!id || !this.o.onSessionDropped) return;
     try {
       this.o.onSessionDropped(id);
@@ -178,7 +173,7 @@ export class Conversation {
     this.end();
     // A failed or cancelled run may still have written a transcript under its own id.
     const failedId = 'sessionId' in out ? out.sessionId : null;
-    if (failedId && SESSION_ID_RE.test(failedId)) this.dropped(failedId);
+    if (failedId && SESSION_ID_RE.test(failedId)) this.drop(failedId);
   }
 
   /**
@@ -195,7 +190,7 @@ export class Conversation {
       this.o.log?.(`could not save the conversation (${(e as Error).message}) — the next command starts fresh`);
       return false;
     }
-    if (before !== sessionId) this.dropped(before);
+    if (before !== sessionId) this.drop(before);
     return true;
   }
 
@@ -225,7 +220,7 @@ export class Conversation {
     const old = this.load()?.sessionId ?? null;
     removeSessionStateFile(this.filePath);
     removeSessionStateFile(this.statePath);
-    this.dropped(old);
+    this.drop(old);
   }
 }
 

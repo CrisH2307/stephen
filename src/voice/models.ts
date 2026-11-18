@@ -170,7 +170,7 @@ export async function isInstalled(root: string, m: ModelArchive): Promise<boolea
   return m.keep.every((f) => existsSync(join(dir, f)));
 }
 
-export type Downloader = (url: string, dest: string, onProgress?: (bytes: number) => void) => Promise<void>;
+export type Downloader = (url: string, dest: string) => Promise<void>;
 export type Extractor = (archive: string, intoDir: string) => Promise<void>;
 
 function execFileP(cmd: string, args: string[], timeoutMs: number): Promise<void> {

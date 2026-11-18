@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { stripForSpeech } from '../../src/voice/speech.js';
-import { cleanTypedCommand, collapseRepeats, findWakePhrase, normalizeTranscript, plainWords } from '../../src/voice/transcript.js';
+import { cleanTypedCommand, collapseRepeats, normalizeTranscript, plainWords } from '../../src/voice/transcript.js';
 
 describe('normalizeTranscript', () => {
   it.each([
@@ -61,11 +61,6 @@ describe('normalizeTranscript', () => {
     expect(normalizeTranscript('so anyway hey stephen open youtube', ALL, a).hadWake).toBe(false);
     // not anchored (a wake with a greeting): pre-roll words before the phrase are fine
     expect(normalizeTranscript('so anyway hey stephen open youtube', ALL)).toEqual({ text: 'open youtube', hadWake: true });
-  });
-
-  it('only looks for the wake phrase near the start', () => {
-    expect(findWakePhrase('one two three four five six seven eight hey stephen'.split(' '), 'hey stephen')).toBe(-1);
-    expect(findWakePhrase('hey stephen open'.split(' '), 'hey stephen')).toBe(2);
   });
 
   it('plainWords keeps inner apostrophes only', () => {

@@ -612,14 +612,3 @@ export function listenerQueue(listener: QueueListener, assistant: QueueAssistant
   };
 }
 
-/** Typed chat straight into the assistant (no listener). */
-export function assistantQueue(assistant: QueueAssistant): AppCommandQueue {
-  return {
-    busy: () => assistant.busy,
-    start: (text, o) => (assistant.busy ? null : assistant.command(text, { source: 'app', raw: o.raw, speak: o.speak, id: o.id })),
-    stop: () => {
-      assistant.cancel();
-      assistant.endConversation();
-    },
-  };
-}
