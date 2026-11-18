@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs';
+import { promises as fsp, renameSync, mkdtempSync, readFileSync, statSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUDIT_INTENT_MAX, AuditLog, redactUrlsIn, sanitizeEntry, scrubSecrets } from '../../src/safety/audit.js';
 import { redactUrl } from '../../src/safety/text.js';
 
@@ -102,6 +102,46 @@ describe('AuditLog', () => {
     expect(tools[0]).toBe('c19');
     const nums = tools.map((t) => Number(t.slice(1)));
     expect([...nums].sort((a, b) => b - a)).toEqual(nums);
+  });
+});
+
+describe('A9: mkdir once, size kept in memory', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('stats the file once for many appends', async () => {
+    const path = join(dir, 'audit.log');
+    const stat = vi.spyOn(fsp, 'stat');
+    const mkdir = vi.spyOn(fsp, 'mkdir');
+    const log = new AuditLog({ path });
+    for (let i = 0; i < 5; i++) await log.append({ tool: `t${i}`, outcome: 'ok' });
+    expect(stat).toHaveBeenCalledTimes(1);
+    expect(mkdir).toHaveBeenCalledTimes(1);
+    expect((await log.recent(10)).map((e) => e.tool)).toEqual(['t4', 't3', 't2', 't1', 't0']);
+  });
+
+  it('an external delete of the file or the dir loses no entry and keeps 0600', async () => {
+    const path = join(dir, 'sub', 'audit.log');
+    const log = new AuditLog({ path });
+    await log.append({ tool: 'a', outcome: 'ok' });
+    rmSync(path);
+    await log.append({ tool: 'b', outcome: 'ok' });
+    expect(mode(path)).toBe(0o600);
+    rmSync(join(dir, 'sub'), { recursive: true, force: true });
+    await log.append({ tool: 'c', outcome: 'ok' });
+    expect(mode(path)).toBe(0o600);
+    expect((await log.recent(10)).map((e) => e.tool)).toEqual(['c']);
+  });
+
+  it('an external rotate does not make the log rotate a small file early', async () => {
+    const path = join(dir, 'audit.log');
+    const log = new AuditLog({ path, maxBytes: 300 });
+    await log.append({ tool: 'a', outcome: 'ok', intent: 'x'.repeat(150) });
+    renameSync(path, `${path}.1`); // e.g. logrotate
+    await log.append({ tool: 'b', outcome: 'ok', intent: 'x'.repeat(150) });
+    expect(existsSync(`${path}.2`)).toBe(false);
+    expect(readFileSync(path, 'utf8').trim().split('\n')).toHaveLength(1);
+    expect(mode(path)).toBe(0o600);
+    expect((await log.recent(10)).map((e) => e.tool)).toEqual(['b', 'a']);
   });
 });
 

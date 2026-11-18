@@ -140,22 +140,48 @@ export class AuditLog implements IAuditLog {
     return run;
   }
 
-  private async write(line: string): Promise<void> {
-    await fs.mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    let size = 0;
+  /** Size of the current file as last seen; undefined = stat again (first write, after a rotate or any error). */
+  private size: number | undefined;
+
+  private async knownSize(): Promise<number> {
+    if (this.size === undefined) {
+      await fs.mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+      try {
+        this.size = (await fs.stat(this.path)).size;
+      } catch (e) {
+        if (!isEnoent(e)) throw e;
+        this.size = 0;
+      }
+    }
+    return this.size;
+  }
+
+  private async write(line: string, retry = true): Promise<void> {
+    const bytes = Buffer.byteLength(line);
+    let appended = false;
     try {
-      size = (await fs.stat(this.path)).size;
+      let size = await this.knownSize();
+      if (size > 0 && size + bytes > this.maxBytes) {
+        this.size = undefined; // the file may have been rotated or removed from outside: check before rotating
+        size = await this.knownSize();
+        if (size > 0 && size + bytes > this.maxBytes) {
+          await this.rotate();
+          this.size = undefined;
+          size = await this.knownSize();
+        }
+      }
+      await fs.appendFile(this.path, line, { mode: 0o600 });
+      appended = true;
+      if (!this.permsChecked || size === 0) {
+        await fs.chmod(this.path, 0o600);
+        this.permsChecked = true;
+      }
+      this.size = size + bytes;
     } catch (e) {
-      if (!isEnoent(e)) throw e;
-    }
-    if (size > 0 && size + Buffer.byteLength(line) > this.maxBytes) {
-      await this.rotate();
-      size = 0;
-    }
-    await fs.appendFile(this.path, line, { mode: 0o600 });
-    if (!this.permsChecked || size === 0) {
-      await fs.chmod(this.path, 0o600);
-      this.permsChecked = true;
+      this.size = undefined;
+      // A stale size or a removed dir must not lose the entry: stat again and try once more.
+      if (retry && !appended) return this.write(line, false);
+      throw e;
     }
   }
 
