@@ -1,6 +1,6 @@
 name: ci
 
-# Rollout step 1 of docs/CI-CD-PROPOSAL.md: the linux job only.
+# docs/CI-CD-PROPOSAL.md, rollout steps 1 and 3: the full suite on Linux and on macOS.
 # No secrets, no write permission, no pull_request_target, no PR text inside run:.
 
 on:
@@ -20,9 +20,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  linux:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-24.04
+            timeout: 25
+          - os: macos
+            runner: macos-15
+            timeout: 30
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,9 +43,13 @@ jobs:
           node-version: 24
           cache: npm
       - name: Linux tools the tests need
+        if: matrix.os == 'linux'
         run: |
           command -v lsof >/dev/null && command -v ps >/dev/null || \
             { sudo apt-get update && sudo apt-get install -y lsof procps; }
+      - name: Swift must exist on macOS (the Swift tests skip without it)
+        if: matrix.os == 'macos'
+        run: swiftc --version
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/stephen-voice-test
