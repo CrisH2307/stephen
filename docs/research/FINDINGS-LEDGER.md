@@ -21,7 +21,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | RV-7 | review 0.7 | Finding | Review timing: #32 to #41 and A2 unreviewed; Review 10 too late | in review | review | `docs/review-10a`, PR #95 |
 | RV-8 | review 0.8 | Finding | E1 "same gate" has no code path; needs an ADR before code | open | review | #60, `docs/adr-008-fast-path` |
 | RV-9 | review 0.9 | Finding | Prompt-size baseline stale: 39 tools, 42.4 KB, not 29 and 27 KB | in progress | review | `docs/plan-reconcile` |
-| RV-10 | review 0.10 | Finding | Accuracy baseline cannot finish in a week; start the recorder, add "that was wrong" | in progress: recorder PR 1 merged (#166), fixes #170 and the #169 follow-up; PR 2 Settings switch, PR 3 label and "that was wrong" mark to come | dev | #48, `feat/replay-recorder` |
+| RV-10 | review 0.10 | Finding | Accuracy baseline cannot finish in a week; start the recorder, add "that was wrong" | in progress: recorder PR 1 merged (#166), fixes #170 and the #169 follow-up; PR 2 Settings switch merged (#206), PR 3 label and "that was wrong" mark to come | dev | #48, `feat/replay-recorder` |
 
 ## B. Review section 4 items (two-week plan)
 
@@ -30,7 +30,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed (#108 merged), Mac check pending | dev | #86, `fix/mic-stop-f5` |
 | S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | fixed in code | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | in review | review | `docs/review-10a`, PR #95 |
-| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170 and the #169 follow-up; PR 2 (Settings switch in Privacy and safety, owner-only app.sock `replay.set`, off asks to delete, "Recording on" in the sidebar and the menu bar menu) in review on `feat/replay-switch-48`; PR 3 mark to come | dev | #48, `feat/replay-recorder`, `feat/replay-switch-48` |
+| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170 and the #169 follow-up; PR 2 (Settings switch, owner-only app.sock `replay.set`, "Recording on" sign) merged (#206); PR 3 mark to come | dev | #48, `feat/replay-recorder`, `feat/replay-switch-48` |
 | S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed (#114 merged), Mac check pending | dev | #90, #54, #68, `fix/remember-once` |
 | S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed (#118 merged), Mac check pending | dev | #87, `fix/ask-button` |
@@ -124,3 +124,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in #170. Smaller points fixed in the follow-up PR: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Still open: Desktop and Documents in iCloud (needs a check whether that iCloud option is on); Fn+Option in the PR 2 switch text | dev | #169 |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
 | MJ-6 | manager job 6 | P1 | Flaky suite research | in progress | review | #109 |
+| UI-149 | #136, UI review P12 | P2 | Home: New chat button, composer focused, shortcut hints | closed (#196 merged), Mac check pending | dev | #149 |
+| UI-147 | #136, UI review P10 | P2 | Settings: Cmd+comma on the last pane, one title, captions | closed (#200 merged), Mac check pending | dev | #147 |
+| UI-145 | #136, UI review P8 | P2 | Keyboard, VoiceOver, hit targets, text size | in progress: buttons and 24 pt targets merged (#204); VoiceOver announcements, text size, Esc to stop to do | dev | #145 |
+| PA-202 | Ponytail audit | Low | Simplify and speed up: dead code, perf, tests | in progress: DEAD, A1, A2, B1, B2, B3, T4, T5 and C6, T1 merged (#209 to #211, #217 to #227, #229 to #233); P1, C1, C2, C7, C8, T2 open | dev | #202 |
