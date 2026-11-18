@@ -48,8 +48,11 @@ func tellStephenQuery(_ text: String) -> String? {
 }
 
 /**
- * Where each node sits: kinds present get equal slices around the center, a node's slot alternates between two
- * rings so labels don't collide. Pure, so the same memory always draws the same picture.
+ * Where each node sits: kinds present get equal slices of an ellipse that fills the graph (it has the page's full
+ * width, #148), a node's slot alternates between two rings so labels don't collide. A kind's label goes on its
+ * slice, between "You" and the nodes, at the first spot that touches no node, no other label and not "You"; with no
+ * such spot it is left out (the kind is still in each node's VoiceOver label and in Selected). Pure, so the same
+ * memory always draws the same picture.
  */
 struct GroupLabel: Identifiable {
   let kind: String
@@ -57,22 +60,56 @@ struct GroupLabel: Identifiable {
   var id: String { return kind }
 }
 
+/** Room a node takes: the dot above a one-line label up to 110 pt wide. */
+let MEMORY_NODE_BOX = CGSize(width: 110, height: 34)
+/** Room "You" takes in the center. */
+let MEMORY_YOU_BOX = CGSize(width: 80, height: 34)
+
+/** Room a kind label takes (11 pt uppercase, tracked, 6 pt padding each side). ponytail: estimated per letter. */
+func memoryLabelBox(_ kind: String, at p: CGPoint) -> CGRect {
+  let w = CGFloat(memoryKindTitle(kind).count) * 8 + 12
+  return CGRect(x: p.x - w / 2, y: p.y - 8, width: w, height: 16)
+}
+
+private func box(_ s: CGSize, at p: CGPoint) -> CGRect {
+  return CGRect(x: p.x - s.width / 2, y: p.y - s.height / 2, width: s.width, height: s.height)
+}
+
 func memoryLayout(_ nodes: [GraphNode], size: CGSize) -> (points: [String: CGPoint], labels: [GroupLabel]) {
   let center = CGPoint(x: size.width / 2, y: size.height / 2)
   let kinds = MEMORY_KIND_ORDER.filter { k in nodes.contains { $0.kind == k } }
-  let radius = min(size.width, size.height) * 0.36
+  // Outer ring: a node box stays inside the frame. Inner ring: 0.75 of it.
+  let rx = max(size.width / 2 - MEMORY_NODE_BOX.width / 2 - 4, 0)
+  let ry = max(size.height / 2 - MEMORY_NODE_BOX.height / 2 - 4, 0)
+  let at = { (a: Double, f: CGFloat) in CGPoint(x: center.x + CGFloat(cos(a)) * rx * f, y: center.y + CGFloat(sin(a)) * ry * f) }
+  let slice = 2 * Double.pi / Double(max(kinds.count, 1))
   var points: [String: CGPoint] = [:]
-  var labels: [GroupLabel] = []
   for (i, kind) in kinds.enumerated() {
-    let slice = 2 * Double.pi / Double(kinds.count)
     let angle = slice * Double(i) - Double.pi / 2
     let group = nodes.filter { $0.kind == kind }
-    labels.append(GroupLabel(kind: kind, at: CGPoint(x: center.x + CGFloat(cos(angle)) * radius * 0.5, y: center.y + CGFloat(sin(angle)) * radius * 0.5)))
     let step = min(0.45, slice * 0.8 / Double(max(group.count, 1)))
     for (j, n) in group.enumerated() {
       let a = angle + (Double(j) - Double(group.count - 1) / 2) * step
-      let r = radius * (j % 2 == 0 ? 0.9 : 1.15)
-      points[n.id] = CGPoint(x: center.x + CGFloat(cos(a)) * r, y: center.y + CGFloat(sin(a)) * r)
+      points[n.id] = at(a, j % 2 == 0 ? 1.0 : 0.75)
+    }
+  }
+  var taken = points.values.map { box(MEMORY_NODE_BOX, at: $0).insetBy(dx: -4, dy: -4) } + [box(MEMORY_YOU_BOX, at: center)]
+  var labels: [GroupLabel] = []
+  for (i, kind) in kinds.enumerated() {
+    let angle = slice * Double(i) - Double.pi / 2
+    // Along the slice first, then a little to either side of it.
+    let side = CGPoint(x: -sin(angle), y: cos(angle))
+    search: for off in [CGFloat(0), 24, -24, 48, -48] {
+      for f in stride(from: CGFloat(0.6), through: 0.2, by: -0.05) {
+        let c = at(angle, f)
+        let p = CGPoint(x: c.x + CGFloat(side.x) * off, y: c.y + CGFloat(side.y) * off)
+        let b = memoryLabelBox(kind, at: p)
+        if !taken.contains(where: { $0.intersects(b) }) {
+          labels.append(GroupLabel(kind: kind, at: p))
+          taken.append(b.insetBy(dx: -4, dy: -4))
+          break search
+        }
+      }
     }
   }
   return (points, labels)
@@ -102,21 +139,26 @@ struct MemoryPage: View {
       if let n = model.memoryPageNotice ?? model.memoryNotice {
         Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2)
       }
-      HStack(alignment: .top, spacing: Space.xl) {
-        VStack(alignment: .leading, spacing: Space.m) {
-          Segmented("Show memory as", options: [(value: false, title: "Graph"), (value: true, title: "List")], selection: $asList)
-            .frame(width: 200)
-          if asList { list } else { graph }
+      // The graph gets the full width; Selected and New sit under it, side by side when there is room (#148).
+      ScrollView {
+        VStack(alignment: .leading, spacing: Space.xl) {
+          VStack(alignment: .leading, spacing: Space.m) {
+            Segmented("Show memory as", options: [(value: false, title: "Graph"), (value: true, title: "List")], selection: $asList)
+              .frame(width: 200)
+            if asList { list } else { graph }
+          }
+          ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: Space.xl) {
+              inspector.frame(idealWidth: 280, maxWidth: .infinity, alignment: .topLeading)
+              proposals.frame(idealWidth: 280, maxWidth: .infinity, alignment: .topLeading)
+            }
+            VStack(alignment: .leading, spacing: Space.xl) {
+              inspector
+              proposals
+            }
+          }
           tellBox
         }
-        .frame(maxWidth: .infinity)
-        ScrollView {
-          VStack(alignment: .leading, spacing: Space.xl) {
-            inspector
-            proposals
-          }
-        }
-        .frame(width: 300)
       }
     }
     .padding(Space.xxl)
@@ -171,11 +213,15 @@ struct MemoryPage: View {
   }
 
   private var chips: some View {
-    HStack(spacing: Space.s) {
-      ForEach(MEMORY_FILTERS) { f in
-        let count = f.id == "new" ? model.suggestions.count : 0
-        Tag(count > 0 ? "\(f.title) \(count)" : f.title, selected: filter == f.id) { filter = f.id }
+    // One line: at the smallest window the row scrolls sideways instead of breaking a chip's word (#148).
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: Space.s) {
+        ForEach(MEMORY_FILTERS) { f in
+          let count = f.id == "new" ? model.suggestions.count : 0
+          Tag(count > 0 ? "\(f.title) \(count)" : f.title, selected: filter == f.id) { filter = f.id }.fixedSize()
+        }
       }
+      .padding(1)
     }
     .accessibilityElement(children: .contain).accessibilityLabel("Filter")
   }
@@ -219,7 +265,7 @@ struct MemoryPage: View {
         }
       }
     }
-    .frame(minHeight: 340)
+    .frame(height: 400)
     .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface))
     .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.line, lineWidth: 1))
     .accessibilityElement(children: .contain)
@@ -255,33 +301,32 @@ struct MemoryPage: View {
 
   /** The same items as the graph, grouped by kind: the keyboard and VoiceOver friendly view. */
   private var list: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: Space.l) {
-        if shown.isEmpty {
-          Text(verbatim: model.graphNodes.isEmpty ? "Nothing saved yet." : "Nothing matches.")
-            .font(TypeScale.secondary).foregroundColor(t.ink2)
-        }
-        ForEach(MEMORY_KIND_ORDER, id: \.self) { kind in
-          let group = shown.filter { $0.kind == kind }
-          if !group.isEmpty {
-            GroupedList(memoryKindTitle(kind)) {
-              ForEach(Array(group.enumerated()), id: \.element.id) { i, n in
-                Button { select(n.id) } label: {
-                  GroupedRow(n.text, detail: n.new ? "New, not kept yet" : nil, first: i == 0) {
-                    if selected == n.id { Image(systemName: "checkmark").foregroundColor(t.accent).accessibilityHidden(true) }
-                  }
-                  .contentShape(Rectangle())
+    // No scroll of its own: the page scrolls.
+    VStack(alignment: .leading, spacing: Space.l) {
+      if shown.isEmpty {
+        Text(verbatim: model.graphNodes.isEmpty ? "Nothing saved yet." : "Nothing matches.")
+          .font(TypeScale.secondary).foregroundColor(t.ink2)
+      }
+      ForEach(MEMORY_KIND_ORDER, id: \.self) { kind in
+        let group = shown.filter { $0.kind == kind }
+        if !group.isEmpty {
+          GroupedList(memoryKindTitle(kind)) {
+            ForEach(Array(group.enumerated()), id: \.element.id) { i, n in
+              Button { select(n.id) } label: {
+                GroupedRow(n.text, detail: n.new ? "New, not kept yet" : nil, first: i == 0) {
+                  if selected == n.id { Image(systemName: "checkmark").foregroundColor(t.accent).accessibilityHidden(true) }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(nodeLabel(n))
-                .accessibilityAddTraits(selected == n.id ? [.isButton, .isSelected] : .isButton)
+                .contentShape(Rectangle())
               }
+              .buttonStyle(.plain)
+              .accessibilityLabel(nodeLabel(n))
+              .accessibilityAddTraits(selected == n.id ? [.isButton, .isSelected] : .isButton)
             }
           }
         }
       }
     }
-    .frame(minHeight: 340)
+    .frame(minHeight: 340, alignment: .top)
   }
 
   private var tellBox: some View {
@@ -419,6 +464,7 @@ struct MemoryPage: View {
             }
           }
           .padding(Space.l)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Suggestion: \(p.text). \(model.originLabel(p.origin))\(p.untrusted ? ", third-party text" : "")")
