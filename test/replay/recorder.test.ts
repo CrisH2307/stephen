@@ -77,8 +77,15 @@ describe('the switch', () => {
     let on = true;
     const t = rec({ on: () => on });
     expect(t.r.capture(clip(1))).toBe(true);
+    await t.r.idle();
     on = false;
     expect(t.r.capture(clip(2))).toBe(false);
+    await t.r.idle();
+    expect(clipsIn(t.dir)).toEqual([`${id(1)}.json`, `${id(1)}.wav`]);
+    // Captured while on, switched off before the disk got to it: not saved either (PR 2, "stops saving at once").
+    on = true;
+    expect(t.r.capture(clip(4))).toBe(true);
+    on = false;
     await t.r.idle();
     expect(clipsIn(t.dir)).toEqual([`${id(1)}.json`, `${id(1)}.wav`]);
     const bad = rec({ on: () => { throw new Error('config broke'); } });
@@ -333,6 +340,19 @@ describe('stephen replay delete', () => {
     expect(run(['delete', '--all'], t.home)).toMatchObject({ code: 0, out: ['Deleted 2 recordings.'] });
     expect(clipsIn(t.dir)).toEqual([]);
     expect(run(['delete', '--all'], join(tmp, 'nobody'))).toMatchObject({ code: 0, out: ['No saved recordings.'] });
+  });
+
+  it('the Settings switch\'s Delete (deleteAll) is delete --all, run after the writes already queued', async () => {
+    const t = rec();
+    for (const i of [1, 2]) t.r.capture(clip(i));
+    // Not awaited first: the two queued writes land, then the delete clears them.
+    expect(await t.r.deleteAll()).toBe(2);
+    expect(clipsIn(t.dir)).toEqual([]);
+    expect(await t.r.deleteAll()).toBe(0);
+    // The queue goes on after a delete.
+    t.r.capture(clip(3));
+    await t.r.idle();
+    expect(clipsIn(t.dir)).toEqual([`${id(3)}.json`, `${id(3)}.wav`]);
   });
 
   it('refuses anything but an id or --all', async () => {

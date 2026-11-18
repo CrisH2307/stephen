@@ -103,6 +103,11 @@ export interface AppServerOptions {
   setTalk?: (changes: Partial<TalkState>) => void;
   /** model.set (Settings > Model): validated changes in; applies from the next command. Absent = read-only. */
   setModel?: (changes: ModelChanges) => void;
+  /**
+   * replay.set / replay.delete (Settings > Privacy and safety, issue #48 PR 2): `set` writes voice.replay.enabled to
+   * config.json, `deleteAll` is `stephen replay delete --all` (behind any queued write). Absent = not available.
+   */
+  replay?: { set: (enabled: boolean) => void; deleteAll: () => Promise<number> };
   /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
   accounts?: () => Promise<AccountsStatus>;
   /** jobs.list / jobs.stop (background jobs). Absent = jobs are off. */
@@ -486,6 +491,23 @@ export class AppServer {
           return { id, type: 'settings', config: s.config, configPath: s.configPath };
         } catch {
           return { id, type: 'error', message: 'could not save the setting' };
+        }
+      case 'replay.set':
+        if (!this.o.replay) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          this.o.replay.set(req.enabled);
+          const s = this.o.settings();
+          return { id, type: 'settings', config: s.config, configPath: s.configPath };
+        } catch {
+          return { id, type: 'error', message: 'could not save the setting' };
+        }
+      case 'replay.delete':
+        if (!this.o.replay) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          await this.o.replay.deleteAll();
+          return { id, type: 'ok' };
+        } catch {
+          return { id, type: 'error', message: 'could not delete the recordings' };
         }
       case 'audit.recent': {
         if (!this.o.audit) return { id, type: 'audit', entries: [] };

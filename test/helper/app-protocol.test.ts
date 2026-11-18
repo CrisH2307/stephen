@@ -56,6 +56,9 @@ const RESPONSES: Record<string, string[]> = {
   'memory.keep': ['memory', 'error'],
   'memory.skip': ['suggestions', 'error'],
   'memory.usage': ['memory.usage', 'error'],
+  // Settings > Privacy and safety (issue #48 PR 2): the replay recorder switch and its Delete; only the owner's click.
+  'replay.set': ['settings', 'error'],
+  'replay.delete': ['ok', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */

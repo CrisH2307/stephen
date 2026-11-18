@@ -241,6 +241,17 @@ private struct StatusRow: View {
       if let p = problem, !collapsed {
         Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
       }
+      // The replay recorder is on (issue #48): in words with a waveform, not a red dot that looks like the mic.
+      if model.recordingOn {
+        HStack(spacing: Space.s) {
+          Image(systemName: "waveform").foregroundColor(t.ink2).accessibilityHidden(true)
+          if !collapsed { Text(verbatim: "Recording on").font(TypeScale.secondary).foregroundColor(t.ink2) }
+        }
+        .padding(.leading, Space.s + 6)
+        .help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")
+      }
     }
     .onAppear { control.refresh() }
     .onChange(of: model.connection) { _ in control.refresh() }

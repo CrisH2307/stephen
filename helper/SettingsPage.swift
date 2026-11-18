@@ -82,7 +82,7 @@ struct SettingsView: View {
     case .phone: PhoneSettingsPane(control: control)
     case .accounts: AccountsSettingsPane(model: model)
     case .browsers: BrowsersSettingsPane(control: control)
-    case .privacy: PrivacySettingsPane()
+    case .privacy: PrivacySettingsPane(model: model)
     case .speed: SpeedSettingsPane(control: control)
     case .about: AboutSettingsPane(model: model, control: control)
     }
@@ -331,11 +331,54 @@ private struct BrowsersSettingsPane: View {
   }
 }
 
+/**
+ * The replay recorder switch (issue #48 PR 2). Off by default; only this click turns it on (app.sock replay.set, which
+ * nothing else sends). Off stops saving at once and asks whether to delete what was saved (replay.delete).
+ */
 private struct PrivacySettingsPane: View {
+  @Environment(\.stephenTheme) var t
+  @ObservedObject var model: AppModel
+  @State private var askDelete = false
+  @State private var problem: String? = nil
+  @State private var done: String? = nil
+
+  private static let label = "Save my F5 commands to measure mistakes"
+
   var body: some View {
     VStack(alignment: .leading, spacing: Space.l) {
       PaneTitle("Privacy and safety")
       Note("What Stephen may do, and what it asks you about first, is listed under Personal. Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep. Changing these rules is not possible from the app yet.")
+      GroupedList {
+        GroupedRow(Self.label, first: true) {
+          Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))
+            .toggleStyle(StephenSwitch()).disabled(model.connection != .online)
+        }
+      }
+      Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")
+      if model.connection != .online { Note("Start Stephen to change this.") }
+      if let d = done { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ok) }
+      if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+    }
+    .alert("Delete the saved recordings too?", isPresented: $askDelete) {
+      Button("Delete", role: .destructive) { delete() }
+      Button("Keep", role: .cancel) { done = "Kept. They are deleted after 30 days." }
+    } message: {
+      Text(verbatim: "Recording is off. Keep leaves the saved recordings on this Mac until they are 30 days old.")
+    }
+  }
+
+  private func change(_ on: Bool) {
+    problem = nil
+    done = nil
+    model.saveReplay(on) { err in
+      problem = err.map { "Could not change it: \($0)" }
+      if err == nil && !on { askDelete = true }
+    }
+  }
+
+  private func delete() {
+    model.deleteRecordings { err in
+      if let e = err { problem = "Could not delete them: \(e)" } else { done = "Deleted." }
     }
   }
 }

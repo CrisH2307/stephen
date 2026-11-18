@@ -30,7 +30,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed (#108 merged), Mac check pending | dev | #86, `fix/mic-stop-f5` |
 | S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | fixed in code | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | in review | review | `docs/review-10a`, PR #95 |
-| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170 and the #169 follow-up; PR 2 switch, PR 3 mark to come | dev | #48, `feat/replay-recorder` |
+| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170 and the #169 follow-up; PR 2 (Settings switch in Privacy and safety, owner-only app.sock `replay.set`, off asks to delete, "Recording on" in the sidebar and the menu bar menu) in review on `feat/replay-switch-48`; PR 3 mark to come | dev | #48, `feat/replay-recorder`, `feat/replay-switch-48` |
 | S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed (#114 merged), Mac check pending | dev | #90, #54, #68, `fix/remember-once` |
 | S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed (#118 merged), Mac check pending | dev | #87, `fix/ask-button` |
