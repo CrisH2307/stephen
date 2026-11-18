@@ -71,6 +71,8 @@ Usage:
                          Show your recent commands (kept on this Mac only), or delete them
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
+  stephen replay delete --all | <id>
+                         Delete saved F5 recordings (saved only when voice.replay.enabled is on)
   stephen mac-checks [--json]
                          Pass or fail for the technical checks of the Mac test plan, section 13
   stephen jobs [list] | status <id> | show <id> | stop <id>
@@ -509,6 +511,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./history/cli.js')).runHistoryCli(rest);
     case 'latency':
       return (await import('./telemetry/cli.js')).runLatencyCli(rest);
+    case 'replay':
+      return (await import('./replay/recorder.js')).runReplayCli(rest, loadConfig().home);
     case 'mac-checks':
       return (await import('./checks/mac-checks.js')).runMacChecksCli(rest);
     case 'jobs':

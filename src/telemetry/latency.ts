@@ -77,6 +77,8 @@ export interface LatencyRecord {
   reason?: LatencyReason;
   /** wake_ignored only: why. */
   ignored?: (typeof LATENCY_IGNORED)[number];
+  /** 1 = the replay recorder was on for this F5 command (issue #48). Never anything about the clip itself. */
+  replay?: 0 | 1;
   /** Which Stephen tools ran and how long each took, in call order. Names only, never arguments or results. */
   tools?: { name: LatencyToolName; ms: number }[];
 }
@@ -92,6 +94,7 @@ export interface LatencyNote {
   tts?: string;
   start?: string;
   ignored?: string;
+  replay?: 0 | 1;
   silenceMs?: number;
   tools?: { name: string; ms: number }[];
 }
@@ -184,6 +187,7 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
   if (start) extra.start = start;
   const ignored = code(LATENCY_IGNORED, o.ignored);
   if (ignored) extra.ignored = ignored;
+  if (o.replay === 0 || o.replay === 1) extra.replay = o.replay;
   const reason = oneOf(LATENCY_REASONS, o.reason);
   if (reason) extra.reason = reason;
   if (Array.isArray(o.tools)) {
