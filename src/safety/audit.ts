@@ -118,7 +118,6 @@ export class AuditLog implements IAuditLog {
   private readonly commandId: (() => string | undefined) | undefined;
   private readonly readChunkBytes: number;
   private queue: Promise<void> = Promise.resolve();
-  private permsChecked = false;
 
   constructor(opts: AuditLogOptions) {
     this.path = opts.path;
@@ -146,22 +145,54 @@ export class AuditLog implements IAuditLog {
     return run;
   }
 
-  private async write(line: string): Promise<void> {
-    await fs.mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    let size = 0;
+  /** Size of the current file as last seen; undefined = stat again (first write, after a rotate or any error). */
+  private size: number | undefined;
+
+  private async knownSize(): Promise<number> {
+    if (this.size === undefined) {
+      await fs.mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+      try {
+        this.size = (await fs.stat(this.path)).size;
+      } catch (e) {
+        if (!isEnoent(e)) throw e;
+        this.size = 0;
+      }
+    }
+    return this.size;
+  }
+
+  private async write(line: string, retry = true): Promise<void> {
+    const bytes = Buffer.byteLength(line);
+    let appended = false;
     try {
-      size = (await fs.stat(this.path)).size;
+      let size = await this.knownSize();
+      if (size > 0 && size + bytes > this.maxBytes) {
+        this.size = undefined; // the file may have been rotated or removed from outside: check before rotating
+        size = await this.knownSize();
+        if (size > 0 && size + bytes > this.maxBytes) {
+          await this.rotate();
+          this.size = undefined;
+          size = await this.knownSize();
+        }
+      }
+      // fstat the open file on every write: a file recreated from outside (logrotate `create 0644`) gets 0600 back
+      // before our line goes in, and the size kept in memory comes from the file we really write to.
+      const fh = await fs.open(this.path, 'a', 0o600);
+      try {
+        const st = await fh.stat();
+        if ((st.mode & 0o777) !== 0o600) await fh.chmod(0o600);
+        await fh.appendFile(line);
+        appended = true;
+        size = st.size;
+      } finally {
+        await fh.close();
+      }
+      this.size = size + bytes;
     } catch (e) {
-      if (!isEnoent(e)) throw e;
-    }
-    if (size > 0 && size + Buffer.byteLength(line) > this.maxBytes) {
-      await this.rotate();
-      size = 0;
-    }
-    await fs.appendFile(this.path, line, { mode: 0o600 });
-    if (!this.permsChecked || size === 0) {
-      await fs.chmod(this.path, 0o600);
-      this.permsChecked = true;
+      this.size = undefined;
+      // A stale size or a removed dir must not lose the entry: stat again and try once more.
+      if (retry && !appended) return this.write(line, false);
+      throw e;
     }
   }
 
