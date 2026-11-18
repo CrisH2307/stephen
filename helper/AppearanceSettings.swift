@@ -59,7 +59,7 @@ struct AppearanceSettings: View {
       GroupedList {
         GroupedRow("Follow the Mac", detail: "Light by day, Dark at night. The window and the Ask box change together.", first: true) {
           Toggle("Follow the Mac", isOn: Binding(get: { store.choice.followMac }, set: { store.setFollowMac($0) }))
-            .labelsHidden().toggleStyle(.switch)
+            .labelsHidden().toggleStyle(StephenSwitch())
         }
       }
     }
