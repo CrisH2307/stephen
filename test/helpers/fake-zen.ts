@@ -21,6 +21,10 @@ const { readFileSync } = require('node:fs');
 const net = require('node:net');
 const { join } = require('node:path');
 
+// zen-launch finds Zen with \`pgrep -x zen\`, which matches the process name. On macOS that is the script's file name.
+// On Linux, Node renames its main thread to "MainThread", so set it back. The command line stays as it is.
+try { require('node:fs').writeFileSync('/proc/self/comm', 'zen'); } catch {}
+
 const args = process.argv.slice(2);
 let profile = null;
 const extras = [];

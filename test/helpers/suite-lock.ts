@@ -48,7 +48,7 @@ export function acquireSuiteLock(path = LOCK_PATH, me: Holder = { pid: process.p
       }
       const other = read(path);
       if (other && alive(other.pid)) {
-        throw new Error(`Another test suite is already running on this machine (pid ${other.pid}, folder ${other.dir}). Wait for it to finish, then run again.`);
+        throw new Error(`Another test suite is already running on this machine: pid ${other.pid}, folder ${other.dir}. Wait for it to finish, then run again.`);
       }
       rmSync(path, { force: true }); // stale: its suite is gone
     }
