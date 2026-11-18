@@ -23,6 +23,8 @@ final class AskBoxState: ObservableObject {
   @Published var micHeld = false
   /** The helper has no working key listener (no Input Monitoring): F5, Fn+Option and Esc never reach Stephen. */
   @Published var keysOff = false
+  /** Why the box's Start button couldn't start Stephen, or nil. */
+  @Published var startProblem: String? = nil
   /** Stay open when you click elsewhere. Remembered. */
   @Published var pinned = UserDefaults.standard.bool(forKey: "askBoxPinned") {
     didSet { UserDefaults.standard.set(pinned, forKey: "askBoxPinned") }
@@ -54,6 +56,8 @@ struct AskBoxActions {
   /** The owner let go of the drag strip: remember where the box is. */
   var dragEnded: () -> Void
   var resetPosition: () -> Void
+  /** Start `stephen listen`, the sidebar's Start: done(nil) when started, else why not (#144). */
+  var start: (@escaping (String?) -> Void) -> Void
 }
 
 // ───────────────────────────── view ─────────────────────────────
@@ -168,8 +172,12 @@ struct AskBoxView: View {
           .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
       }
     case .offline:
-      Text(verbatim: "Can't reach Stephen. Is stephen listen running?").font(TypeScale.body).foregroundColor(t.ink)
-      QuietButton("Try again") { model.retry() }
+      // The box can't tell stopped from unreachable, so it says only what is true; Start explains if it is running.
+      Text(verbatim: "Can't reach Stephen.").font(TypeScale.body).foregroundColor(t.ink)
+      if let p = box.startProblem {
+        Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+      }
+      PrimaryButton("Start") { box.startProblem = nil; actions.start { box.startProblem = $0 } }
     }
   }
 
@@ -280,6 +288,8 @@ final class AskBoxController: NSObject {
   var ptt: (Bool) -> Void = { _ in }
   /** The Esc key's path in the helper (esc, then the press ends): Esc in the box cancels, never sends. */
   var cancelTalk: () -> Void = {}
+  /** Start the listener (main.swift wires StephenControl.start). */
+  var start: (@escaping (String?) -> Void) -> Void = { $0("Stephen Helper can't start Stephen from here.") }
 
   init(model: AppModel) {
     self.model = model
@@ -377,7 +387,8 @@ final class AskBoxController: NSObject {
       reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) },
       quit: { [weak self] in self?.quit() },
       dragEnded: { [weak self] in self?.savePosition() },
-      resetPosition: { [weak self] in self?.resetPosition() })
+      resetPosition: { [weak self] in self?.resetPosition() },
+      start: { [weak self] done in self?.start(done) })
     let root = AskBoxView(model: model, box: box, actions: actions)
       .stephenThemedBySettings()
       .padding(Self.margin)

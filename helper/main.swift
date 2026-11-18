@@ -539,6 +539,7 @@ MainActor.assumeIsolated {
   box.anchor = { statusMenu?.button }
   box.openWindow = { page in showStephenWindow(page: page) }
   box.quit = { shutdownAndExit(0) }
+  box.start = { done in stephenControl.start(done) }
   box.ptt = { down in
     if down { core.handleKeyDown(keyCode: KEYCODE_F5, isRepeat: false) } else { core.handleKeyUp(keyCode: KEYCODE_F5) }
   }
