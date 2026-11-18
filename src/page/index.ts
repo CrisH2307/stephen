@@ -12,6 +12,7 @@ import type { ElementHandle, Frame, KeyInput, Page } from 'puppeteer-core';
 import { HubError, isHubError } from '../errors.js';
 import { timed } from '../lib/step-timer.js';
 import { assertRefInTab, makeRef, parseRef } from '../refs.js';
+import { isPaymentFrame } from '../safety/classify.js';
 import type {
   ElementInfo,
   FindMatch,
@@ -45,7 +46,6 @@ import {
   frameIndex,
   hostLabel,
   isNavError,
-  isPaymentFrame,
   issued,
   lookupHandle,
   noteOwner,

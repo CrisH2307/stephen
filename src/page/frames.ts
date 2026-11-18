@@ -337,26 +337,3 @@ export function hostLabel(url: string): string {
   }
 }
 
-/** Host matches a PAYMENT_FRAME_DOMAINS pattern ('d' = d and subdomains, '*.d' = subdomains only). */
-export function hostMatchesPattern(host: string, pattern: string): boolean {
-  const h = host.toLowerCase().replace(/\.$/, '');
-  const p = pattern.toLowerCase();
-  const sub = p.startsWith('*.');
-  const d = sub ? p.slice(2) : p;
-  if (!h || !d) return false;
-  if (h.endsWith(`.${d}`)) return true;
-  return !sub && h === d;
-}
-
-/** Frames hosted by payment processors (src/lib/secret-fields.ts): every value inside is redacted. */
-export function isPaymentFrame(url: string): boolean {
-  let host: string;
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    host = u.hostname;
-  } catch {
-    return false;
-  }
-  return PAYMENT_FRAME_DOMAINS.some((p) => hostMatchesPattern(host, p));
-}
