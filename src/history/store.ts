@@ -12,20 +12,13 @@
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
-  closeSync,
-  constants as fsConstants,
-  fchmodSync,
-  fstatSync,
   lstatSync,
   mkdirSync,
-  openSync,
   readdirSync,
-  readFileSync,
   unlinkSync,
-  writeSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { writePrivateFileAtomicSync } from '../lib/fs.js';
+import { appendPrivateLineCapped, readPrivateRegularFile, writePrivateFileAtomicSync } from '../lib/fs.js';
 import { truncate } from '../safety/text.js';
 import { parseToolCallRecord, type ToolCallRecord } from '../server/tool-log.js';
 
@@ -175,23 +168,12 @@ export class HistoryStore {
     });
     if (!stored) throw new HistoryError('invalid history entry');
     const line = `${JSON.stringify(stored)}\n`;
-    const bytes = Buffer.byteLength(line);
     this.ensureDir();
     const file = join(this.dir, `${localDate(now)}.jsonl`);
-    let fd: number;
     try {
-      fd = openSync(file, fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW, 0o600);
+      if (!appendPrivateLineCapped(file, line, MAX_DAY_FILE_BYTES)) return null;
     } catch (e) {
-      throw new HistoryError(`cannot open ${file}: ${(e as Error).message}`);
-    }
-    try {
-      const st = fstatSync(fd);
-      if (!st.isFile()) throw new HistoryError(`${file} is not a regular file`);
-      if ((st.mode & 0o777) !== 0o600) fchmodSync(fd, 0o600);
-      if (st.size + bytes > MAX_DAY_FILE_BYTES) return null;
-      writeSync(fd, line);
-    } finally {
-      closeSync(fd);
+      throw new HistoryError((e as Error).message);
     }
     return stored;
   }
@@ -318,19 +300,8 @@ export class HistoryStore {
 
   /** Lines of one day file; a missing, symlinked, non-regular or oversized file reads as empty. */
   private readDayFile(file: string): string[] {
-    let text: string;
-    try {
-      const fd = openSync(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      try {
-        const st = fstatSync(fd);
-        if (!st.isFile() || st.size > MAX_DAY_FILE_BYTES) return [];
-        text = readFileSync(fd, 'utf8');
-      } finally {
-        closeSync(fd);
-      }
-    } catch {
-      return [];
-    }
+    const text = readPrivateRegularFile(file, MAX_DAY_FILE_BYTES);
+    if (text === null) return [];
     return text.split('\n').filter((l) => l.trim());
   }
 }

@@ -1,5 +1,22 @@
 /** Process helpers shared by the drivers, memory (lock files), the voice Claude, jobs and the self-test. */
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, type ExecFileException } from 'node:child_process';
+
+/**
+ * Run a program with execFile (no shell). Never rejects. `code` is the exit code, 0 on success,
+ * null when the program failed without one (could not start, killed by the timeout).
+ */
+export function execNoThrow(
+  file: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<{ code: number | null; stdout: string; stderr: string; error: ExecFileException | null }> {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+      const code = err ? (typeof err.code === 'number' ? err.code : null) : 0;
+      resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), error: err });
+    });
+  });
+}
 
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but isn't ours. */
 export function isPidAlive(pid: number): boolean {
@@ -89,6 +106,16 @@ export const PS_START_SLACK_MS = 2000;
 export function startedWithinJob(startedAt: number, jobStart: number, platform: NodeJS.Platform = process.platform): boolean {
   const slack = platform === 'linux' ? PS_START_SLACK_MS : 0;
   return startedAt >= Math.floor(jobStart / 1000) * 1000 - slack;
+}
+
+/** Is any process of group `pid` still there? */
+export function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Signal a whole process group (negative pid); false on "no such process" or any other error. */

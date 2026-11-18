@@ -23,17 +23,19 @@
  * WarmConversationRunner (conversation.ts) owns when a process lives and dies; this class only drives one.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import { groupAlive } from '../lib/process.js';
 import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
 import type { Trust } from './assistant.js';
 import {
   MCP_SERVER_NAME,
   SESSION_ID_RE,
   buildWarmArgs,
+  claudeNotFound,
+  claudeSpawnOptions,
   killGroup,
   outcomeFromResult,
   personaFor,
   removePersonaFile,
-  withoutSecrets,
   writePersonaFile,
   type ClaudeOutcome,
   type ClaudeSettings,
@@ -244,13 +246,7 @@ export class WarmClaude implements WarmProcess {
     const spawnFn: SpawnFn = this.o.spawn ?? ((c, a, opts) => spawn(c, a as string[], opts));
     let child: ChildProcess;
     try {
-      child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), {
-        cwd: this.o.cwd,
-        env: withoutSecrets(this.o.env ?? process.env),
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true, // own process group: kill() takes claude AND the stephen serve it started
-        shell: false,
-      });
+      child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), claudeSpawnOptions(this.o, 'pipe'));
     } catch (e) {
       this.onClosed();
       throw new Error(`Could not start Claude Code (${(e as Error).message}).`);
@@ -262,7 +258,7 @@ export class WarmClaude implements WarmProcess {
     });
     child.stdin?.on('error', () => undefined); // EPIPE after an exit: the close handler reports it
     child.once('error', (e: NodeJS.ErrnoException) => {
-      this.stderr += e.code === 'ENOENT' ? `\nClaude Code was not found ("${this.o.claudePath}"). Install it, or set "voice": {"claudePath": "…"}.` : `\n${e.message}`;
+      this.stderr += `\n${e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : e.message}`;
       this.onClosed();
     });
     child.once('close', () => this.onClosed());
@@ -503,16 +499,6 @@ export class WarmClaude implements WarmProcess {
   killNow(): void {
     this.killing = true;
     if (this.child?.pid) killGroup(this.child.pid, 'SIGKILL');
-  }
-}
-
-/** Is any process of group `pid` still there? */
-function groupAlive(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 

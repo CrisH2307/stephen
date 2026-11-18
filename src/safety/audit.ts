@@ -104,7 +104,11 @@ export interface AuditLogOptions {
    * A throw or a bad id means the entry is written without `cmd`. An entry never brings its own `cmd`.
    */
   commandId?: () => string | undefined;
+  /** Internal: bytes per read in `recent()`. Tests set it small to hit chunk edges. */
+  readChunkBytes?: number;
 }
+
+const READ_CHUNK_BYTES = 64 * 1024;
 
 export class AuditLog implements IAuditLog {
   readonly path: string;
@@ -112,6 +116,7 @@ export class AuditLog implements IAuditLog {
   private readonly keep: number;
   private readonly now: () => Date;
   private readonly commandId: (() => string | undefined) | undefined;
+  private readonly readChunkBytes: number;
   private queue: Promise<void> = Promise.resolve();
   private permsChecked = false;
 
@@ -121,6 +126,7 @@ export class AuditLog implements IAuditLog {
     this.keep = Math.max(1, opts.keep ?? DEFAULT_KEEP);
     this.now = opts.now ?? (() => new Date());
     this.commandId = opts.commandId;
+    this.readChunkBytes = Math.max(1, opts.readChunkBytes ?? READ_CHUNK_BYTES);
   }
 
   append(entry: Omit<AuditEntry, 'ts'> & { ts?: string }): Promise<void> {
@@ -179,16 +185,9 @@ export class AuditLog implements IAuditLog {
     const out: AuditEntry[] = [];
     const files = [this.path, ...Array.from({ length: this.keep }, (_, i) => `${this.path}.${i + 1}`)];
     for (const file of files) {
-      let text: string;
-      try {
-        text = await fs.readFile(file, 'utf8');
-      } catch (e) {
-        if (isEnoent(e)) continue;
-        throw e;
-      }
-      const lines = text.split('\n');
-      for (let i = lines.length - 1; i >= 0 && out.length < n; i--) {
-        const l = lines[i]?.trim();
+      for await (const line of this.linesFromEnd(file)) {
+        if (out.length >= n) break;
+        const l = line.trim();
         if (!l) continue;
         try {
           const parsed: unknown = JSON.parse(l);
@@ -202,5 +201,42 @@ export class AuditLog implements IAuditLog {
       if (out.length >= n) break;
     }
     return out;
+  }
+
+  /**
+   * The lines of `file`, last first, read from the end in byte chunks. A line cut at a chunk edge
+   * is joined with the rest before it is decoded, so UTF-8 is decoded per whole line. Missing file = no lines.
+   */
+  private async *linesFromEnd(file: string): AsyncGenerator<string> {
+    let fh: fs.FileHandle;
+    try {
+      fh = await fs.open(file, 'r');
+    } catch (e) {
+      if (isEnoent(e)) return;
+      throw e;
+    }
+    try {
+      let pos = (await fh.stat()).size;
+      let carry = Buffer.alloc(0); // start of a line whose beginning is in an earlier chunk
+      while (pos > 0) {
+        const len = Math.min(this.readChunkBytes, pos);
+        pos -= len;
+        const chunk = Buffer.alloc(len);
+        const { bytesRead } = await fh.read(chunk, 0, len, pos);
+        // ponytail: a line longer than the chunk is joined by concat, O(line^2 / chunk); fine for audit lines.
+        const buf = carry.length ? Buffer.concat([chunk.subarray(0, bytesRead), carry]) : chunk.subarray(0, bytesRead);
+        let end = buf.length;
+        let nl = end > 0 ? buf.lastIndexOf(0x0a, end - 1) : -1;
+        while (nl !== -1) {
+          yield buf.toString('utf8', nl + 1, end);
+          end = nl;
+          nl = end > 0 ? buf.lastIndexOf(0x0a, end - 1) : -1;
+        }
+        carry = buf.subarray(0, end);
+      }
+      yield carry.toString('utf8');
+    } finally {
+      await fh.close();
+    }
   }
 }
