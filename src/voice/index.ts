@@ -66,6 +66,7 @@ import { ReplayRecorder } from '../replay/recorder.js';
 import { claudeTranscriptDir, purgeTranscripts, removeSessionTranscript } from './transcripts.js';
 import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
+import { soundControl, type SoundControl } from './media-command.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
 import { MemoryRouter } from './memory-router.js';
@@ -149,6 +150,8 @@ export interface ListenEnv {
    * there is none. Default: the real client from src/helper/client.ts, loaded lazily (missing → null).
    */
   helper?: (home: string) => Promise<HelperLink | null> | HelperLink | null;
+  /** Volume and media keys for a wake word over playing sound (tests). Default: the real ones, unless `helper` is a fake. */
+  sound?: SoundControl | null;
   /** Clock for the follow-up window (tests). */
   now?: () => number;
   /** Asks before a wake-word "remember …" and "forget everything" (default: a macOS dialog, Deny default, 120 s). */
@@ -661,6 +664,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       // The owner's Settings switch (app.sock replay.set / replay.delete, issue #48 PR 2).
       ...(rec.recorder ? { replay: { set: (on: boolean) => writeReplaySwitch(configPath, on), deleteAll: () => rec.recorder!.deleteAll() } } : {}),
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
+      mediaKey: async (action) => {
+        const r = b ? await b.media(action) : { ok: false as const, reason: "Stephen Helper isn't connected to stephen listen" };
+        return r.ok ? null : r.reason;
+      },
       control: appControl({ home, cliPath, log: err }),
       usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
       ...(latency
@@ -822,8 +829,23 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         once: args.once,
         cooldownSec: cfg.cooldownSec,
         wakeWord,
+        duckVolume: cfg.duckVolume,
       },
-      { source, ...engines, assistant, chimes, latency, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s), replay },
+      {
+        source,
+        ...engines,
+        assistant,
+        chimes,
+        latency,
+        // A wake word over playing sound (issue #205). Tests with a fake helper never touch the real volume.
+        sound: env.sound !== undefined ? env.sound : !args.dryRun && !env.helper && process.platform === 'darwin' ? soundControl(defaultDesktopDeps(), () => bridge) : null,
+        names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined,
+        status: out,
+        onTranscript: env.onTranscript,
+        helper: bridge,
+        onState: (s) => app?.setState(s),
+        replay,
+      },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge, {
         recorder: replay,

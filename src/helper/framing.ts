@@ -3,7 +3,7 @@
  * in helper/Core.swift; both sides drop over-long and malformed lines).
  */
 import { z } from 'zod';
-import type { HelperCommand, HelperEvent } from './protocol.js';
+import { MEDIA_KEYS, type HelperCommand, type HelperEvent } from './protocol.js';
 
 /** protocol.ts: "≤ 4 KiB each". A line longer than this (bytes, without its newline) is dropped. */
 export const MAX_LINE_BYTES = 4096;
@@ -58,10 +58,11 @@ const helperEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ptt_up'), at, heldMs: z.number().finite().nonnegative() }),
   z.object({ type: z.literal('esc'), at }),
   z.object({ type: z.literal('audio'), playing: z.boolean(), at }),
+  z.object({ type: z.literal('media_key_done'), key: z.enum(MEDIA_KEYS), ok: z.boolean(), message: z.string().max(300).optional() }),
   z.object({ type: z.literal('error'), message: z.string().max(MAX_LINE_BYTES) }),
 ]);
 
-export const HELPER_EVENT_TYPES: ReadonlySet<HelperEvent['type']> = new Set(['hello', 'ptt_down', 'ptt_up', 'esc', 'audio', 'error']);
+export const HELPER_EVENT_TYPES: ReadonlySet<HelperEvent['type']> = new Set(['hello', 'ptt_down', 'ptt_up', 'esc', 'audio', 'media_key_done', 'error']);
 
 export type ParsedLine =
   | { kind: 'event'; event: HelperEvent }

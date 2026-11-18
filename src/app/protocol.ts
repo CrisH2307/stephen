@@ -24,6 +24,9 @@
  *   numbers only), for Settings > Speed.
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
+ * Additive (issue #205): `{id, type:"media.key", action:"play"|"pause"|"toggle"|"next"|"previous"}` → `{id, type:"ok"}`
+ * or an error with the reason. media_control (src/desktop/media-key.ts) uses it to press a Mac media key through the
+ * listener's Stephen Helper when no browser tab or music app can be controlled. "pause" presses only while sound plays.
  * Additive (Ask box "Needs your OK", UI-PLAN v3.1 section 5; threat model in docs/SYSTEM-DESIGN-STEPHEN.md section 5):
  *  - `hello` may carry `confirms: true` (this client shows questions: the Ask box), and the hello answer carries
  *    `confirms: true` (this listener relays them).
@@ -55,6 +58,7 @@
  *  - `{id, type:"replay.delete"}` → `{id, type:"ok"}`: every saved clip, the same code as `stephen replay delete --all`.
  */
 import type { ChatStep } from './steps.js';
+import { MEDIA_KEY_ACTIONS, type MediaKeyAction } from '../helper/protocol.js';
 import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import { isProposalId, type MemoryProposal } from '../memory/proposals.js';
@@ -107,6 +111,7 @@ export type AppRequest =
   | { id: string; type: 'jobs.list' }
   | { id: string; type: 'jobs.stop'; jobId: string }
   | { id: string; type: 'window.open' }
+  | { id: string; type: 'media.key'; action: MediaKeyAction }
   | { id: string; type: 'confirm.ask'; title: string; body: string; timeoutMs: number }
   | { id: string; type: 'confirm.answer'; confirmId: string; approve: boolean }
   | { id: string; type: 'phone.on' }
@@ -146,6 +151,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'jobs.list',
   'jobs.stop',
   'window.open',
+  'media.key',
   'confirm.ask',
   'confirm.answer',
   'phone.on',
@@ -279,6 +285,7 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'jobs.list': () => ok,
   'jobs.stop': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? ok : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
   'window.open': () => ok,
+  'media.key': (o) => (typeof o.action === 'string' && (MEDIA_KEY_ACTIONS as readonly string[]).includes(o.action) ? ok : bad('action must be play, pause, toggle, next or previous')),
   'confirm.ask': (o) => {
     const t = text(o, 'title', APP_CONFIRM_TITLE_MAX, 'title');
     if (!t.ok) return t;
@@ -342,6 +349,8 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, memId: o.memId as string, text: o.text as string };
     case 'jobs.stop':
       return { id, type, jobId: o.jobId as string };
+    case 'media.key':
+      return { id, type, action: o.action as MediaKeyAction };
     case 'memory.forget':
       return { id, type, memId: o.memId as string };
     case 'history.list':

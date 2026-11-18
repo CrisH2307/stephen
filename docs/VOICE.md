@@ -120,11 +120,16 @@ install-helper`, and works as before.
   is trimmed by the VAD), then to Claude as usual. Presses shorter than 250 ms are ignored (`Ignored a … ms tap`).
   Recording stops at 30 s even if you keep holding. A press while Claude is working or Stephen is talking
   **cancels that first**, then records. "Hey Stephen" said while holding the keys is just removed from the command.
-- **Wake-word gating.** With the helper connected, "Hey Stephen" has no fixed cooldown. It is ignored only while
-  the Mac is **playing sound** (`Ignored "hey stephen" — sound is playing…`), which is when a video or page could be
-  saying it; in silence it works straight away. "Stephen stop" works at any time. The busy rules are unchanged:
-  ignored while Stephen speaks, and it cancels a running command. If the helper disconnects, the listener falls back
-  to the 20 s cooldown until it is back.
+- **Wake-word gating.** With the helper connected, "Hey Stephen" has no fixed cooldown. In silence it works
+  straight away. While the Mac is **playing sound** (when a video or page could be saying it), it works like Alexa
+  (issue #205): the volume drops to `voice.duckVolume` (default 20%), Stephen listens, and only a **media command**
+  runs: stop, pause, play / resume, next, previous, volume, mute. The grammar classifier decides, never the model,
+  and the model does not run. Anything else is not done: `Hold F5 for that.` The volume goes back on every path
+  (done, cancel, Esc, error, timeout). If the audio state is unknown (no audio event yet), the wake word is still
+  ignored. "Stephen stop" works at any time; with nothing running and sound playing, it pauses the sound (the Mac's
+  play/pause media key, through the helper). The busy rules are unchanged: ignored while Stephen speaks, and it
+  cancels a running command. If the helper disconnects, the listener falls back to the 20 s cooldown until it is
+  back.
 - **Push-to-talk only.** `"wakeWord": false` in the `voice` config (or `stephen listen --ptt-only`) turns "Hey
   Stephen" off completely. This needs the helper; without it `stephen listen` exits with a message. The stop
   phrase still works.

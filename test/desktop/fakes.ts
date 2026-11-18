@@ -2,6 +2,7 @@
  * A fake Mac for the desktop tests: in-memory /Applications etc., Info.plists, and a fake execFile that
  * answers plutil / osascript / ioreg / open and records every call. Nothing here spawns a process.
  */
+import type { MediaKeyResult } from '../../src/desktop/media-key.js';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -206,6 +207,10 @@ export class FakeMac {
     return JSON.stringify({ state: p.state ?? 'unknown' });
   }
 
+  /** media_control's media-key fallback: the actions pressed, and what the listener answers. */
+  readonly mediaKeys: string[] = [];
+  mediaKeyResult: MediaKeyResult = { ok: false, reason: 'stephen listen is not running' };
+
   deps(): DesktopDeps {
     return {
       platform: this.platform,
@@ -214,6 +219,10 @@ export class FakeMac {
       execFile: (file, args) => this.exec(file, args),
       fetch: (url, init) => this.yt.fn(url, init),
       mediaTiming: { pollMs: 5, playerWaitMs: 60, resultsWaitMs: 60 },
+      mediaKey: async (action) => {
+        this.mediaKeys.push(action);
+        return this.mediaKeyResult;
+      },
       fs: {
         list: async (dir) => [...(this.dirs.get(dir) ?? [])],
         read: async (p) => this.files.get(p) ?? null,
