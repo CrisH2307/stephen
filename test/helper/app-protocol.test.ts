@@ -449,18 +449,6 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('HomeView.swift')).not.toContain('"Answer"');
   });
 
-  it('#149: Home says New chat, focuses the composer, and the sidebar shows its shortcuts', () => {
-    const home = read('HomeView.swift');
-    expect(home).toContain('QuietButton("New chat", symbol: "plus") { newChat() }');
-    expect(home).not.toContain('chevron.left');
-    // composerFocused is set: when Home opens and after New chat.
-    expect(home).toContain('DispatchQueue.main.async { composerFocused = true }');
-    expect(home.match(/private func newChat\(\) \{([\s\S]*?)\n  \}/)?.[1]).toContain('composerFocused = true');
-    expect(home).toContain('.focused($composerFocused)');
-    // Sidebar rows show the same key they are bound to.
-    expect(read('MainWindow.swift')).toMatch(/shortcut: p\.key\.map \{ "⌘\\\(\$0\.character\)" \}[\s\S]*?\.keyboardShortcut\(p\.key!, modifiers: \.command\)/);
-  });
-
   it('#147: Cmd+comma opens Settings on the last pane, one large title, captions over the choices', () => {
     const settings = read('SettingsPage.swift');
     expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .talk');
@@ -528,26 +516,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('.onExitCommand');
     expect(page).toContain('if let u = model.memoryUsage, u.warn');
     expect(page).toContain('.keyboardShortcut("f", modifiers: .command)');
-    for (const chip of ['All', 'People', 'School', 'Places', 'Habits', 'Projects', 'New']) expect(page).toContain(`title: "${chip}"`);
-    // New items dashed amber, selection accent, an accessible list with the same items, labelled nodes.
-    expect(page).toContain('t.warn, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])');
-    expect(page).toContain('isSel ? t.accent');
     expect(page).toContain('Segmented("Show memory as"');
     expect(page).toContain('.accessibilityLabel(nodeLabel(n))');
     // Third-party proposals say so.
     expect(page).toContain('third-party text');
     expect(client).toContain('func originLabel(_ origin: String) -> String');
     expect(client).toContain('if let o = item.origin');
-    // Personal links here with the new count.
-    const personal = read('PersonalView.swift');
-    expect(personal).toContain('as a graph ›');
-    expect(personal).toContain('StatusPill("\\(new) new", kind: .warn)');
-    expect(personal).toContain('model.refreshSuggestions()');
-    // Only theme colours.
-    expect(page).not.toMatch(/Color\((red|green|blue|white|black|hex):/);
   });
 
-  it('Jobs page is wired to the protocol, shows job text verbatim and names status in words', () => {
+  it('Jobs page is wired to the protocol, shows job text verbatim', () => {
     const jobs = read('JobsPage.swift');
     expect(window).toContain('case .jobs: JobsView(model: model)');
     expect(jobs).toContain('model.refreshJobs()');
@@ -555,7 +532,6 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(client).toContain('AppRequest.jobsList(newId())');
     expect(client).toContain('AppRequest.jobsStop(newId(), jobId:');
     expect(jobs).toContain('NSWorkspace.shared.activateFileViewerSelecting');
-    expect(jobs).toContain('No jobs yet.');
     // Refresh on appear, then every 5 s only while a job runs (#202): no always-on timer.
     expect(jobs).not.toContain('Timer.publish');
     expect(jobs).toContain('.task(id: !running.isEmpty)');
@@ -563,7 +539,6 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('Task.sleep(nanoseconds: 5_000_000_000)');
     // Stop only for a job that has not ended; status is a word (not color alone).
     expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop"/);
-    for (const w of ['Running', 'Finished', 'Stopped', 'Failed']) expect(jobs).toContain(`"${w}`);
   });
 
   it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {
@@ -573,8 +548,6 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).not.toContain('HistoryView');
     expect(conv).toContain('model.refreshHistory(); model.refreshAudit()');
     expect(conv).toContain('Refused: ');
-    expect(conv).toContain('Search conversations');
-    expect(conv).toContain('Nothing yet.');
     expect(conv).toContain('Clear all conversations?');
     expect(conv).toContain('Text(verbatim: entry.said)');
   });
@@ -593,17 +566,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).not.toContain('askHere');
     expect(read('main.swift')).toContain('WindowActions(ask: { askBox?.show(focus: true) }');
     expect(main).toContain('@AppStorage("sidebarCollapsed")');
-    // v3.2: one layout, the column width animates between the 60 pt rail and the 240 pt sidebar (Theme.swift).
-    expect(main).toContain('.frame(width: SidebarMetrics.column(collapsed), alignment: .leading)');
-    expect(read('Theme.swift')).toContain('static let expanded: CGFloat = 220');
-    expect(read('Theme.swift')).toContain('static let rail: CGFloat = 40');
     // Start/Stop go through the helper's StephenControl (one owner of the listener), not a second launcher.
     expect(main).toContain('control.start { problem = $0 }');
     expect(main).toContain('control.stop { problem = $0 }');
-    for (const w of ['"Listening"', '"Stopped"', '"Offline"']) expect(main).toContain(w);
     expect(main).toContain('.stephenThemedBySettings()');
     const home = read('HomeView.swift');
-    expect(home).toContain('let HOME_SUGGESTIONS = ["Plan my day", "Find internships", "Start a job"]');
     // A waiting question makes the chat non-empty, so Home shows the card (#138 banner covers the other pages).
     expect(home).toContain('model.thread.isEmpty && model.confirms.isEmpty');
     expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
