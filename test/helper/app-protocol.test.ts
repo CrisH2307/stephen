@@ -472,6 +472,20 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(app).toContain('@objc func settingsClicked(_ sender: Any?) { show(page: .settings) }');
   });
 
+  it('#145 (now part): job and voice rows are real buttons; small controls have 24 pt targets', () => {
+    const jobs = read('JobsPage.swift'), lists = read('Components/Lists.swift');
+    // Tab (Full Keyboard Access) reaches buttons, not tap gestures.
+    for (const src of [jobs, lists]) expect(src).not.toContain('onTapGesture');
+    expect(jobs).toContain('Button(action: toggle) {');
+    expect(jobs).toMatch(/Image\(systemName: "chevron\.right"\)[\s\S]*?frame\(width: 24, height: 24\)/);
+    expect(lists).toContain('Button(action: onSelect) {');
+    expect(lists).toMatch(/"play\.circle"[\s\S]*?frame\(width: 24, height: 24\)/);
+    expect(read('Components/Controls.swift')).toMatch(/Image\(systemName: "mic"\)[^\n]*\n\s*\.frame\(width: 24, height: 24\)/);
+    expect(read('Components/ChatThread.swift')).toContain('.foregroundColor(t.ink2).frame(minHeight: 24)');
+    const memory = read('MemoryPage.swift');
+    expect(memory.match(/frame\(minHeight: 24\)|frame\(minWidth: 24, minHeight: 24\)/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
     for (const src of [window, client, read('AskBox.swift'), read('Components/ChatThread.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];

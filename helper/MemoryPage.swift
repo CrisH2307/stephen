@@ -182,6 +182,7 @@ struct MemoryPage: View {
     HStack(spacing: Space.m) {
       Button { nav.page = .personal } label: {
         Text(verbatim: "‹ Personal").font(TypeScale.body).foregroundColor(t.accent)
+          .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#145)
       }
       .buttonStyle(.plain).accessibilityLabel("Back to Personal").help("Back to Personal (Esc)")
       Text(verbatim: "Memory").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
@@ -208,7 +209,8 @@ struct MemoryPage: View {
       } label: {
         Image(systemName: "ellipsis.circle").font(.system(size: 18)).foregroundColor(t.ink2)
       }
-      .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("More")
+      .menuStyle(.borderlessButton).fixedSize().frame(minWidth: 24, minHeight: 24).contentShape(Rectangle())
+      .accessibilityLabel("More")
     }
   }
 
@@ -381,6 +383,7 @@ struct MemoryPage: View {
             ForEach(related) { r in
               Button { select(r.id) } label: {
                 Text(verbatim: r.text).font(TypeScale.secondary).foregroundColor(t.accent).multilineTextAlignment(.leading)
+                  .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#145)
               }
               .buttonStyle(.plain).accessibilityLabel("Related: \(r.text)")
             }
