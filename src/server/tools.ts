@@ -13,6 +13,7 @@ import { expandPath } from '../config.js';
 import { ZEN_ATTACH_ONLY_LABEL, isZenAttachOnly } from '../drivers/zen.js';
 import { HubError, errorMessage } from '../errors.js';
 import { timed } from '../lib/step-timer.js';
+import { isOwnerOnlyFile } from '../lib/owner-only.js';
 import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
 import type { ActionKind, ActionRequest, AuditEntry, BrowserName, ElementInfo, GateResult, TabInfo } from '../types.js';
@@ -997,6 +998,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
         const abs = expandPath(p, homedir());
         const st = await stat(abs).catch(() => null);
         if (!st?.isFile()) throw new HubError('INVALID_ARG', `File not found: ${abs}`);
+        // Stephen's own private recordings never go to a web page (issue #48).
+        if (isOwnerOnlyFile(abs, cfg.home)) throw new HubError('DENIED', `${basename(abs)} is one of Stephen's private files and is never uploaded.`);
         files.push(abs);
       }
       return hub.withTab(parseRef(target).tab, 'write', async () => {

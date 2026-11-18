@@ -86,6 +86,13 @@ export interface ListenerDeps {
   onState?: (s: MenuState) => void;
   /** Latency monitor (src/telemetry/latency.ts): the listener mints the command id at the trigger and reports stages. */
   latency?: LatencyTrace | null;
+  /**
+   * Replay recorder (src/replay/recorder.ts, issue #48): told about each command right after the hand-off, never
+   * awaited. It saves only source 'voice-ptt' (F5), and only while the owner's switch is on.
+   */
+  replay?: {
+    capture(c: { id: string; source: string; startedAt: number; audio: Float32Array; transcript: string }): boolean;
+  } | null;
 }
 
 /** A helper key time (epoch ms) is used only when it is close to our own clock; otherwise our clock. */
@@ -182,6 +189,8 @@ export class Listener {
   private bareWake = false;
   /** Command id of the capture or recording in progress (minted at the trigger); null once it is being processed. */
   private cmdId: string | null = null;
+  /** When F5 went down for the current press (epoch ms): the replay clip's start time. */
+  private pttAt = 0;
   /** When the VAD last said "speaking" in the current wake-word capture (epoch ms). */
   private lastSpeechAt = 0;
 
@@ -503,6 +512,7 @@ export class Listener {
     if (this.state === 'busy') this.cancel('push-to-talk');
     this.traceEnd('cancelled'); // an unfinished wake-word capture
     this.cmdId = newHistoryId();
+    this.pttAt = at;
     this.d.latency?.begin(this.cmdId, 'ptt', at);
     this.capture = [];
     this.speechFlags = [];
@@ -636,7 +646,7 @@ export class Listener {
     this.bareWake = false;
     // A push-to-talk press may have cancelled a command that is still winding down: run after it.
     const previous = this.task;
-    this.task = this.process(audio, token, ptt, wake, previous, prefix, id)
+    this.task = this.process(audio, token, ptt, wake, previous, prefix, id, ptt ? this.pttAt : Date.now())
       .catch((e: unknown): CommandResult => {
         this.d.status(`Problem: ${(e as Error).message}`);
         return 'error';
@@ -690,6 +700,7 @@ export class Listener {
     previous: Promise<void>,
     first: { text: string; raw: string } | null = null,
     id: string = newHistoryId(),
+    startedAt: number = Date.now(),
   ): Promise<CommandResult | null | { prefix: string; raw: string }> {
     const lat = this.d.latency;
     const prefix = first?.text ?? null;
@@ -745,6 +756,14 @@ export class Listener {
     // The source decides memory trust: Fn+Option is a key audio can't press; the wake word can come from a video.
     const fullRaw = first ? `${first.raw} ${raw}` : raw;
     lat?.mark(id, 'commandStart');
-    return this.d.assistant.handle(text, { source: ptt ? 'voice-ptt' : 'voice-wake', raw: fullRaw, id });
+    const source = ptt ? 'voice-ptt' : 'voice-wake';
+    const handed = this.d.assistant.handle(text, { source, raw: fullRaw, id });
+    // After the hand-off: the recorder queues its write and returns at once (it records 'voice-ptt' only).
+    try {
+      if (this.d.replay?.capture({ id, source, startedAt, audio, transcript: raw })) lat?.note(id, { replay: 1 });
+    } catch {
+      /* the recorder never fails a command */
+    }
+    return handed;
   }
 }

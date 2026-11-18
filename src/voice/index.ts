@@ -61,6 +61,7 @@ import {
 import { ToolLogRunner, historyRecorder } from './command-log.js';
 import { Conversation, ConversationRunner, WarmConversationRunner, memoryKey } from './conversation.js';
 import { WarmClaude, probeWarmProtocol, type WarmClaudeOptions } from './warm-claude.js';
+import { ReplayRecorder } from '../replay/recorder.js';
 import { claudeTranscriptDir, purgeTranscripts, removeSessionTranscript } from './transcripts.js';
 import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
@@ -793,6 +794,16 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       err((e as Error).message);
       return 1;
     }
+    // Replay recorder (issue #48): off unless the owner turned it on in config.json, re-read on every F5 press.
+    // start() purges clips older than 30 days even when it is off. Never awaited: it can't delay start-up.
+    const replay = args.dryRun
+      ? null
+      : new ReplayRecorder({
+          home,
+          enabled: () => parseVoiceConfig((env.loadConfig ?? loadConfig)().voice).replay.enabled,
+          log: (code) => err(`Note: ${code}`),
+        });
+    void replay?.start();
     listener = new Listener(
       {
         wakePhrase: cfg.wakePhrase,
@@ -808,7 +819,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         cooldownSec: cfg.cooldownSec,
         wakeWord,
       },
-      { source, ...engines, assistant, chimes, latency, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
+      { source, ...engines, assistant, chimes, latency, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s), replay },
     );
     if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
     phone = await startPhone(listener, assistant);
