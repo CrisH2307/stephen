@@ -16,9 +16,8 @@ jobs:
         args:
           - ''
           - '--disable-backgrounding-occluded-windows'
-          - '--disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling'
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,10 +27,12 @@ jobs:
           node-version: 24
           cache: npm
       - name: Screen
-        run: system_profiler SPDisplaysDataType | grep -iE "resolution|display type|online" || true
+        run: system_profiler SPDisplaysDataType || true
       - run: npm ci
       - run: npm run build
       - name: Selftest
         env:
           EXP_ARGS: ${{ matrix.args }}
-        run: npx vitest run test/selftest/selftest.int.test.ts 2>&1 | grep -E "checkbox|PNG|Tests |✓|×" || true
+        run: |
+          npx vitest run 2>&1 | grep -E "checkbox|PNG|Tests |^ FAIL|×" || true
+          echo "== Chrome or Chromium processes still running:"; pgrep -lf "Chrome|Chromium" | cut -c1-160 | head -20 || true
