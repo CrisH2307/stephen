@@ -13,6 +13,7 @@ import {
   REPLAY_MAX_AGE_MS,
   REPLAY_MAX_CLIPS,
   REPLAY_MAX_DAY_BYTES,
+  REPLAY_MAX_WAITING,
   ReplayRecorder,
   replayDir,
   runReplayCli,
@@ -168,6 +169,10 @@ describe('synced folders', () => {
     [['Library', 'Mobile Documents', 'com~apple~CloudDocs', 'stephen'], 'iCloud Drive'],
     [['Library', 'CloudStorage', 'GoogleDrive-me', 'stephen'], 'a cloud storage folder'],
     [['Dropbox', 'stephen'], 'Dropbox'],
+    [['Google Drive', 'stephen'], 'Google Drive'],
+    [['My Drive', 'stephen'], 'Google Drive'],
+    [['OneDrive', 'stephen'], 'OneDrive'],
+    [['OneDrive - Ontario Tech', 'stephen'], 'OneDrive'],
   ])('a home under %j is refused (%s)', async (parts, name) => {
     const home = join(user, ...parts);
     expect(syncedFolder(join(home, 'replay'), user)).toBe(name);
@@ -247,7 +252,10 @@ describe('purge and caps', () => {
 
   it(`at most ${REPLAY_MAX_CLIPS} clips: the oldest goes first`, async () => {
     const t = rec();
-    for (let i = 1; i <= REPLAY_MAX_CLIPS + 1; i++) t.r.capture(clip(i, { startedAt: NOW - 3600_000 + i, sec: 0.05 }));
+    for (let i = 1; i <= REPLAY_MAX_CLIPS + 1; i++) {
+      t.r.capture(clip(i, { startedAt: NOW - 3600_000 + i, sec: 0.05 }));
+      await t.r.idle(); // at most REPLAY_MAX_WAITING may wait at once
+    }
     await t.r.idle();
     const files = clipsIn(t.dir);
     expect(files).toHaveLength(REPLAY_MAX_CLIPS * 2);
@@ -286,6 +294,21 @@ describe('a failing writer never fails or delays a command', () => {
   it('a write that never finishes does not block capture', () => {
     const t = rec({ excludeFromBackups: () => new Promise<void>(() => {}) });
     for (let i = 1; i <= 3; i++) expect(t.r.capture(clip(i))).toBe(true);
+  });
+
+  it(`a stuck disk: at most ${REPLAY_MAX_WAITING} clips wait in memory, more are dropped; a stuck write times out and the queue moves on (#169)`, async () => {
+    let calls = 0;
+    // The first write hangs for good (a stuck disk); later ones work.
+    const t = rec({ jobTimeoutMs: 50, excludeFromBackups: () => (calls++ === 0 ? new Promise<void>(() => {}) : Promise.resolve()) });
+    for (let i = 1; i <= REPLAY_MAX_WAITING; i++) expect(t.r.capture(clip(i))).toBe(true);
+    expect(t.r.capture(clip(99))).toBe(false); // dropped, never held
+    await t.r.idle();
+    expect(t.r.failures).toBe(1); // the first write timed out; it never finishes, so the folder stays "not excluded"…
+    expect(t.logs).toEqual(['replay_write_failed']);
+    // …and the next write excludes it itself, then saves: 4 clips, the stuck one and the dropped one are not there.
+    expect(clipsIn(t.dir).filter((f) => f.endsWith('.wav'))).toEqual([2, 3, 4, 5].map((i) => `${id(i)}.wav`));
+    expect(t.r.capture(clip(6))).toBe(true); // room again
+    await t.r.idle();
   });
 });
 

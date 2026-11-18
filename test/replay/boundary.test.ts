@@ -74,11 +74,28 @@ describe('imports', () => {
     });
   }
 
+  it('nothing Claude can reach loads code by a computed name (the scan above only sees literal imports, #169)', () => {
+    const LOADERS = [/\bimport\(\s*(?!['"])/, /\brequire\s*\(/, /\bcreateRequire\b/, /\bimport\.meta\.resolve\b/];
+    const hits = listTsFiles(SRC_ROOT)
+      .map(rel)
+      .filter((f) => [...FORBIDDEN, ...CLAUDE_REACHABLE].some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p)))
+      .flatMap((f) => {
+        // Comments and regex literals that merely mention import( (src/safety/confirm.ts screens scripts for it).
+        const code = readFileSync(join(REPO_ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '').replace(/\[\/\\b(import|require)[^\]]*\]/g, '');
+        return LOADERS.filter((re) => re.test(code)).map((re) => `${f}: ${re.source}`);
+      });
+    expect(hits).toEqual([]);
+    // The rule fires.
+    expect(LOADERS.some((re) => re.test('const m = await import(name);'))).toBe(true);
+    expect(LOADERS.some((re) => re.test("const m = await import('./x.js');"))).toBe(false);
+  });
+
   it('no file in those folders names the folder; upload_file asks src/lib/owner-only.ts instead', () => {
     const named = listTsFiles(SRC_ROOT)
       .map(rel)
       .filter((f) => [...FORBIDDEN, ...CLAUDE_REACHABLE.filter((p) => p !== 'src/lib/')].some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p)))
-      .filter((f) => /\breplay\b/i.test(readFileSync(join(REPO_ROOT, f), 'utf8')));
+      // Any spelling, inside identifiers too (REPLAY_DIR_NAME, replayDir); ensurePlaying ("…rePlaying") is not it.
+      .filter((f) => /replay/i.test(readFileSync(join(REPO_ROOT, f), 'utf8').replace(/ensurePlaying/g, '')));
     expect(named).toEqual([]);
     expect(readFileSync(join(SRC_ROOT, 'server', 'tools.ts'), 'utf8')).toMatch(/isOwnerOnlyFile\(abs, cfg\.home\)/);
   });
@@ -185,6 +202,18 @@ describe('tools refuse a clip', () => {
     }
     expect(wav).toContain('replay');
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('through a link to Stephen\'s home, another spelling answers the same before and after the folder exists (review of #170)', async () => {
+    const { isOwnerOnlyFile } = await import('../../src/lib/owner-only.js');
+    const base = join(tmp, 'linked-spelling');
+    const home = join(base, 'home');
+    mkdirSync(home, { recursive: true });
+    (await import('node:fs')).symlinkSync(home, join(base, 'link'));
+    const p = join(base, 'link', 'Replay', 'h_00000000000000aa.wav');
+    expect(isOwnerOnlyFile(p, home)).toBe(true); // no folder yet
+    mkdirSync(join(home, 'replay'));
+    expect(isOwnerOnlyFile(p, home)).toBe(true);
   });
 
   it('upload_file follows a symlink to a clip', async () => {

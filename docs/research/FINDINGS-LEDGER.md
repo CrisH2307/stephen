@@ -21,7 +21,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | RV-7 | review 0.7 | Finding | Review timing: #32 to #41 and A2 unreviewed; Review 10 too late | in review | review | `docs/review-10a`, PR #95 |
 | RV-8 | review 0.8 | Finding | E1 "same gate" has no code path; needs an ADR before code | open | review | #60, `docs/adr-008-fast-path` |
 | RV-9 | review 0.9 | Finding | Prompt-size baseline stale: 39 tools, 42.4 KB, not 29 and 27 KB | in progress | review | `docs/plan-reconcile` |
-| RV-10 | review 0.10 | Finding | Accuracy baseline cannot finish in a week; start the recorder, add "that was wrong" | in progress: recorder PR 1 (Node recorder, purge, delete) in review; PR 2 Settings switch, PR 3 label and "that was wrong" mark to come | dev | #48, `feat/replay-recorder` |
+| RV-10 | review 0.10 | Finding | Accuracy baseline cannot finish in a week; start the recorder, add "that was wrong" | in progress: recorder PR 1 merged (#166), fixes #170 and the #169 follow-up; PR 2 Settings switch, PR 3 label and "that was wrong" mark to come | dev | #48, `feat/replay-recorder` |
 
 ## B. Review section 4 items (two-week plan)
 
@@ -30,7 +30,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed in code, Mac check pending | dev | #86, `fix/mic-stop-f5` |
 | S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | fixed in code | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | in review | review | `docs/review-10a`, PR #95 |
-| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) in review; PR 2 switch, PR 3 mark to come | dev | #48, `feat/replay-recorder` |
+| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170 and the #169 follow-up; PR 2 switch, PR 3 mark to come | dev | #48, `feat/replay-recorder` |
 | S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed in code, Mac check pending | dev | #90, #54, #68, `fix/remember-once` |
 | S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed in code, Mac check pending | dev | #87, `fix/ask-button` |
@@ -121,6 +121,6 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed (#157 merged 2026-11-17) | review | #157 |
 | LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | open | dev | #121 |
 | MJ-1 | manager job 1 | P0 | Recorder plan review | done: plan accepted with 8 points (#10, 2026-11-17); PR #166 reviewed | review | #166 |
-| I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in PR (not merged). Still open, smaller: Desktop and Documents in iCloud, Google Drive and OneDrive folders; the boundary scan misses non-literal imports; Fn+Option in the switch text; a stuck write holds later clips | review | #169 |
+| I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in #170. Smaller points fixed in the follow-up PR: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Still open: Desktop and Documents in iCloud (needs a check whether that iCloud option is on); Fn+Option in the PR 2 switch text | dev | #169 |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
 | MJ-6 | manager job 6 | P1 | Flaky suite research | in progress | review | #109 |
