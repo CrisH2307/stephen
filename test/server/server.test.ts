@@ -191,6 +191,16 @@ describe('reads', () => {
     expect(h.engine.screenshot).toHaveBeenCalledWith(expect.anything(), { scale: 0.5 });
     expect(textOf(res)).toContain('Screenshot of z1');
     expect(h.gate.reads).toEqual(['https://mail.example.com/inbox']);
+    expect(textOf(res)).not.toContain('captured');
+  });
+
+  it('screenshot adds the clipped note next to the image (#202 T4)', async () => {
+    const h = await setup();
+    const note = 'The page is 90000 px tall; only the top 8000 px were captured.';
+    Object.assign(h.engine, { screenshotNote: vi.fn(() => note) });
+    const res = await h.call('screenshot', { tab: 'z1', full_page: true });
+    expect(res.content[0]).toMatchObject({ type: 'image' });
+    expect(textOf(res)).toContain(`\n${note}`);
   });
 
   it('rejects a scope ref from another tab', async () => {

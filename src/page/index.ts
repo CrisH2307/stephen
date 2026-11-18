@@ -1253,6 +1253,7 @@ export const pageEngine: PageEngine = {
   scroll,
   waitFor,
   screenshot,
+  screenshotNote,
   uploadFile,
   frameUrls,
 };
