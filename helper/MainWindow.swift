@@ -52,7 +52,7 @@ final class WindowNav: ObservableObject {
 
 /** What the window asks of the rest of the helper (main.swift fills it). */
 struct WindowActions {
-  /** Open the Ask box with the keyboard in it (Home's "1 question waiting · Answer"). */
+  /** Open the Ask box with the keyboard in it (the waiting-question banner's Open, #138). */
   var ask: () -> Void = {}
   /** Open the Ask box and start push-to-talk (Home's Talk). */
   var talk: () -> Void = {}
@@ -94,11 +94,31 @@ private struct MainWindowView: View {
       SidebarView(model: model, nav: nav, control: control, actions: actions, collapsed: $collapsed)
         .frame(width: SidebarMetrics.column(collapsed), alignment: .leading).clipped()
       Rectangle().fill(t.line).frame(width: 1)
-      detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+      VStack(spacing: 0) {
+        if !model.confirms.isEmpty { questionBanner }
+        detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
     }
     .stephenAnimation(Motion.bar, value: collapsed)
     .background(t.ground)
     .frame(minWidth: WindowMetrics.minContent.width, minHeight: WindowMetrics.minContent.height)
+  }
+
+  /// On every page while a question waits (#138). Safety: it only opens the Ask box, where the card is. No Allow, no
+  /// keyboard shortcut, and not the question's text (that is shown, as data, on the card).
+  private var questionBanner: some View {
+    let n = model.confirms.count
+    return HStack(spacing: Space.s) {
+      Image(systemName: "questionmark.circle.fill").foregroundColor(t.warn).accessibilityHidden(true)
+      Text(verbatim: n == 1 ? "Stephen is waiting for your OK" : "Stephen is waiting for your OK (\(n) questions)")
+        .font(TypeScale.body.weight(.medium)).foregroundColor(t.ink)
+      Spacer(minLength: Space.s)
+      QuietButton("Open") { actions.ask() }
+    }
+    .padding(.horizontal, Space.l).padding(.vertical, Space.s)
+    .background(t.surface)
+    .overlay(Rectangle().fill(t.line).frame(height: 1), alignment: .bottom)
+    .accessibilityElement(children: .contain)
   }
 
   @ViewBuilder
@@ -193,7 +213,7 @@ private struct SidebarView: View {
 
   private func rows(_ pages: [Page]) -> some View {
     ForEach(pages) { p in
-      SidebarRow(p.title, symbol: p.symbol, selected: nav.page == p, collapsed: collapsed) { nav.page = p }
+      SidebarRow(p.title, symbol: p.symbol, selected: nav.page == p, collapsed: collapsed, badge: p == .home ? model.confirms.count : 0) { nav.page = p }
         .keyboardShortcut(p.key!, modifiers: .command)  // rows() only gets sidebar pages
     }
   }
