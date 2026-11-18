@@ -446,6 +446,18 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('HomeView.swift')).not.toContain('"Answer"');
   });
 
+  it('#149: Home says New chat, focuses the composer, and the sidebar shows its shortcuts', () => {
+    const home = read('HomeView.swift');
+    expect(home).toContain('QuietButton("New chat", symbol: "plus") { newChat() }');
+    expect(home).not.toContain('chevron.left');
+    // composerFocused is set: when Home opens and after New chat.
+    expect(home).toContain('DispatchQueue.main.async { composerFocused = true }');
+    expect(home.match(/private func newChat\(\) \{([\s\S]*?)\n  \}/)?.[1]).toContain('composerFocused = true');
+    expect(home).toContain('.focused($composerFocused)');
+    // Sidebar rows show the same key they are bound to.
+    expect(read('MainWindow.swift')).toMatch(/shortcut: p\.key\.map \{ "⌘\\\(\$0\.character\)" \}[\s\S]*?\.keyboardShortcut\(p\.key!, modifiers: \.command\)/);
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
     for (const src of [window, client, read('AskBox.swift'), read('Components/ChatThread.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];

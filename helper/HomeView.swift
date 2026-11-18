@@ -55,6 +55,8 @@ struct HomeView: View {
     .onAppear {
       model.refreshSettings()  // the name for the greeting
       model.refreshJobs()
+      // Ready to type when Home opens (#149). Next turn: the field must be in the window before it can take focus.
+      DispatchQueue.main.async { composerFocused = true }
     }
   }
 
@@ -85,17 +87,12 @@ struct HomeView: View {
     }
   }
 
-  /// Messages: the title with a back arrow, then the same thread as the Ask box.
+  /// Messages: New chat and the title, then the same thread as the Ask box.
   private var thread: some View {
     VStack(spacing: Space.m) {
       HStack(spacing: Space.m) {
-        // Back to the empty Home. The chat is not lost: it stays in Conversations.
-        Button { newChat() } label: {
-          Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold)).foregroundColor(t.ink)
-            .frame(width: 32, height: 32).background(Circle().fill(t.surface)).overlay(Circle().stroke(t.line, lineWidth: 1))
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain).help("Go back (⌘N)").accessibilityLabel("Go back")
+        // Back to the empty Home. The chat is not lost: it stays in Conversations (and can be picked up again, #55).
+        QuietButton("New chat", symbol: "plus") { newChat() }.help("New chat (⌘N)")
         Text(verbatim: model.threadTitle).font(TypeScale.section).foregroundColor(t.ink).lineLimit(1)
           .accessibilityAddTraits(.isHeader)
         Spacer(minLength: 0)
@@ -115,8 +112,11 @@ struct HomeView: View {
     return HStack(spacing: Space.s) {
       Text(verbatim: text).font(TypeScale.secondary).foregroundColor(t.ink2)
       Text(verbatim: "·").font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true)
-      Button(action: act) { Text(verbatim: word).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.accent) }
-        .buttonStyle(.plain).accessibilityLabel(word)
+      Button(action: act) {
+        Text(verbatim: word).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.accent)
+          .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#149)
+      }
+      .buttonStyle(.plain).accessibilityLabel(word)
     }
     .accessibilityElement(children: .contain)
   }
@@ -129,5 +129,6 @@ struct HomeView: View {
   private func newChat() {
     draft = ""
     model.newChat()
+    composerFocused = true
   }
 }

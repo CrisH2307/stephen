@@ -213,7 +213,8 @@ private struct SidebarView: View {
 
   private func rows(_ pages: [Page]) -> some View {
     ForEach(pages) { p in
-      SidebarRow(p.title, symbol: p.symbol, selected: nav.page == p, collapsed: collapsed, badge: p == .home ? model.confirms.count : 0) { nav.page = p }
+      SidebarRow(p.title, symbol: p.symbol, selected: nav.page == p, collapsed: collapsed, shortcut: p.key.map { "⌘\($0.character)" },
+                 badge: p == .home ? model.confirms.count : 0) { nav.page = p }
         .keyboardShortcut(p.key!, modifiers: .command)  // rows() only gets sidebar pages
     }
   }
