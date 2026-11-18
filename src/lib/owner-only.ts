@@ -4,22 +4,36 @@
  * never names the folder itself (test/replay/boundary.test.ts).
  */
 import { realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { isInside } from './fs.js';
 
 /** `<home>/replay`: the saved F5 commands (audio + transcript). */
 export const REPLAY_DIR_NAME = 'replay';
 
-const real = (p: string): string => {
+/**
+ * The real path of `p` as the disk spells it, through its nearest existing parent when `p` does not exist (yet).
+ * `realpathSync.native` also fixes letter case: APFS ignores case, so `~/.stephen/Replay` IS `~/.stephen/replay`
+ * (#169); plain `realpathSync` follows symlinks but keeps the caller's spelling.
+ */
+export function realThroughParent(p: string): string {
+  const abs = resolve(p);
   try {
-    return realpathSync(p);
+    return realpathSync.native(abs);
   } catch {
-    return resolve(p);
+    const up = dirname(abs);
+    return up === abs ? abs : join(realThroughParent(up), basename(abs));
   }
-};
+}
 
-/** True when `path` (after symlinks) lies in an owner-only folder of `home`. */
+/**
+ * True when `path` (after symlinks, in any letter case) lies in an owner-only folder of `home`. Also true for a file
+ * that does not exist there, so callers can ask before `stat` and never tell the model whether a clip exists.
+ */
 export function isOwnerOnlyFile(path: string, home: string): boolean {
   const dir = join(home, REPLAY_DIR_NAME);
-  return isInside(real(path), real(dir)) || isInside(resolve(path), resolve(dir));
+  // The spelling check ignores case and Unicode form too, so a missing folder answers the same as a present one
+  // (#169: otherwise `Replay/x.wav` would tell whether recording was ever on). Cost: on a case-sensitive disk,
+  // `<home>/REPLAY/...` is refused as well.
+  const fold = (p: string) => resolve(p).normalize('NFC').toLowerCase();
+  return isInside(realThroughParent(path), realThroughParent(dir)) || isInside(fold(path), fold(dir));
 }

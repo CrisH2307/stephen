@@ -187,6 +187,12 @@ describe('synced folders', () => {
     expect(syncedFolder(join(link, 'replay'), user)).toBe('Dropbox');
     expect(syncedFolder(join(user, '.stephen', 'replay'), user)).toBeNull();
   });
+
+  it('in any letter case: ~/dropbox is ~/Dropbox on APFS (#169)', () => {
+    mkdirSync(join(user, 'Dropbox'), { recursive: true });
+    if (!existsSync(join(user, 'dropbox'))) return; // a case-sensitive disk
+    expect(syncedFolder(join(user, 'dropbox', 'stephen', 'replay'), user)).toBe('Dropbox');
+  });
 });
 
 describe('purge and caps', () => {
@@ -203,6 +209,31 @@ describe('purge and caps', () => {
     t.r.capture(clip(3, { startedAt: now }));
     await t.r.idle();
     expect(clipsIn(t.dir)).toEqual([`${id(3)}.json`, `${id(3)}.wav`]);
+  });
+
+  it('a running listener purges on a timer, also with the switch off (#169)', async () => {
+    let now = NOW;
+    let on = true;
+    const t = rec({ now: () => now, on: () => on, purgeEveryMs: 20 });
+    t.r.capture(clip(1, { startedAt: NOW }));
+    await t.r.start();
+    expect(clipsIn(t.dir)).toHaveLength(2);
+    on = false;
+    now = NOW + REPLAY_MAX_AGE_MS + 1000;
+    await new Promise((r) => setTimeout(r, 120));
+    await t.r.idle();
+    t.r.stop();
+    expect(clipsIn(t.dir)).toEqual([]);
+  });
+
+  it('a start time more than a day in the future is dropped (#169)', async () => {
+    const t = rec();
+    t.r.capture(clip(1, { startedAt: NOW + 2 * 86_400_000 }));
+    t.r.capture(clip(2, { startedAt: NOW + 3600_000 }));
+    await t.r.idle();
+    await t.r.start();
+    t.r.stop();
+    expect(clipsIn(t.dir)).toEqual([`${id(2)}.json`, `${id(2)}.wav`]);
   });
 
   it('a WAV without a readable sidecar and leftover temp files are removed', async () => {
