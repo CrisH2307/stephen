@@ -24,6 +24,10 @@
 - `qa` only moves forward with merges; no force-push, so anyone on it can always `git pull`.
 - Nothing is released from `qa` without the full suite passing there.
 - Never push straight to `main`.
+- CI (both lanes): the session that opens a PR binds it in the Claude app (`bind_pr`) and turns Auto-fix on at once.
+  When CI fails, that session investigates and prepares the fix, but asks Cris before a commit; Cris (or the app's
+  commit button) pushes. Auto-fix never means auto-merge. The session stays bound until the PR is merged or closed. A
+  hand-over brief names the bound PRs, and the new session binds them again. (`docs/CI-CD-PROPOSAL.md` section 3.)
 
 ## History
 - Until 2026-11-10 feature PRs targeted `main` and the agent merged branches into `qa`. PR #44 was merged straight to
