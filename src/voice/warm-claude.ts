@@ -29,11 +29,12 @@ import {
   MCP_SERVER_NAME,
   SESSION_ID_RE,
   buildWarmArgs,
+  claudeNotFound,
+  claudeSpawnOptions,
   killGroup,
   outcomeFromResult,
   personaFor,
   removePersonaFile,
-  withoutSecrets,
   writePersonaFile,
   type ClaudeOutcome,
   type ClaudeSettings,
@@ -244,13 +245,7 @@ export class WarmClaude implements WarmProcess {
     const spawnFn: SpawnFn = this.o.spawn ?? ((c, a, opts) => spawn(c, a as string[], opts));
     let child: ChildProcess;
     try {
-      child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), {
-        cwd: this.o.cwd,
-        env: withoutSecrets(this.o.env ?? process.env),
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true, // own process group: kill() takes claude AND the stephen serve it started
-        shell: false,
-      });
+      child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), claudeSpawnOptions(this.o, 'pipe'));
     } catch (e) {
       this.onClosed();
       throw new Error(`Could not start Claude Code (${(e as Error).message}).`);
@@ -262,7 +257,7 @@ export class WarmClaude implements WarmProcess {
     });
     child.stdin?.on('error', () => undefined); // EPIPE after an exit: the close handler reports it
     child.once('error', (e: NodeJS.ErrnoException) => {
-      this.stderr += e.code === 'ENOENT' ? `\nClaude Code was not found ("${this.o.claudePath}"). Install it, or set "voice": {"claudePath": "…"}.` : `\n${e.message}`;
+      this.stderr += `\n${e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : e.message}`;
       this.onClosed();
     });
     child.once('close', () => this.onClosed());
