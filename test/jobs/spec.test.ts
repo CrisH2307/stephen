@@ -23,7 +23,6 @@ import {
   jobSettings,
   jobSlug,
   reposNamed,
-  untrustedJobOutput,
   wantsWeb,
   type JobSpec,
 } from '../../src/jobs/spec.js';
@@ -266,10 +265,6 @@ describe('job output is untrusted (rule 6)', () => {
     expect(c).toContain('[link: evil.example]');
     expect(c).not.toContain('</untrusted_job_output>');
     expect([...cleanJobOutput('word '.repeat(2000))].length).toBeLessThanOrEqual(2000);
-    const block = untrustedJobOutput('2026-11-05-x', raw);
-    expect(block.startsWith('<untrusted_job_output job="2026-11-05-x">')).toBe(true);
-    expect(block.match(/<\/untrusted_job_output>/g)).toHaveLength(1);
-    expect(untrustedJobOutput('../evil', 'x')).toContain('job="unknown"');
   });
 });
 

@@ -160,7 +160,7 @@ private struct TalkSettingsPane: View {
   }
 
   private func switchView(_ label: String, _ on: Binding<Bool>) -> some View {
-    return Toggle(label, isOn: on).labelsHidden().toggleStyle(.switch)
+    return Toggle(label, isOn: on).labelsHidden().toggleStyle(StephenSwitch())
   }
 
   private func save() {

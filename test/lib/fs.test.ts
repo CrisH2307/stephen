@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, s
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ensurePrivateDir, isExecutable, readPrivateJsonFile, writePrivateFileAtomicSync, writePrivateJsonFileSync } from '../../src/lib/fs.js';
+import { appendPrivateLineCapped, ensurePrivateDir, isExecutable, readPrivateJsonFile, readPrivateRegularFile, writePrivateFileAtomicSync, writePrivateJsonFileSync } from '../../src/lib/fs.js';
 import { isPidAlive } from '../../src/lib/process.js';
 
 let dir: string;
@@ -103,5 +103,36 @@ describe('isPidAlive', () => {
     dir = mkdtempSync(join(tmpdir(), 'stephen-lib-fs-'));
     expect(isPidAlive(process.pid)).toBe(true);
     for (const p of [0, -1, 1.5, Number.NaN]) expect(isPidAlive(p)).toBe(false);
+  });
+});
+
+describe('appendPrivateLineCapped and readPrivateRegularFile', () => {
+  it('appends lines, fixes the mode to 0600, and stops at the cap', () => {
+    fresh();
+    const f = join(dir, 'day.jsonl');
+    writeFileSync(f, 'a\n', { mode: 0o644 });
+    expect(appendPrivateLineCapped(f, 'b\n', 6)).toBe(true);
+    expect(appendPrivateLineCapped(f, 'ccc\n', 6)).toBe(false);
+    expect(readFileSync(f, 'utf8')).toBe('a\nb\n');
+    expect(mode(f)).toBe(0o600);
+  });
+  it('refuses a symlink and a folder when appending, and reads them as null', () => {
+    fresh();
+    const real = join(dir, 'real');
+    writeFileSync(real, 'x\n');
+    const link = join(dir, 'link');
+    symlinkSync(real, link);
+    expect(() => appendPrivateLineCapped(link, 'y\n', 100)).toThrow();
+    expect(readFileSync(real, 'utf8')).toBe('x\n');
+    expect(readPrivateRegularFile(link, 100)).toBeNull();
+    expect(readPrivateRegularFile(dir, 100)).toBeNull();
+    expect(readPrivateRegularFile(join(dir, 'nope'), 100)).toBeNull();
+  });
+  it('reads a file up to the cap and not above it', () => {
+    fresh();
+    const f = join(dir, 'f');
+    writeFileSync(f, '12345');
+    expect(readPrivateRegularFile(f, 5)).toBe('12345');
+    expect(readPrivateRegularFile(f, 4)).toBeNull();
   });
 });

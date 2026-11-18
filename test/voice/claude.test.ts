@@ -9,6 +9,8 @@ import {
   DISALLOWED_TOOLS,
   LOCKDOWN_ARGS,
   buildClaudeArgs,
+  claudeNotFound,
+  claudeSpawnOptions,
   mcpConfig,
   parseClaudeOutput,
   stephenCliPath,
@@ -347,6 +349,15 @@ describe('ClaudeRunner with a fake claude', () => {
     const r = await runner.run('x');
     expect(r).toMatchObject({ kind: 'error' });
     expect((r as { message: string }).message).toMatch(/Claude Code was not found/);
+  });
+
+  it('one helper gives the spawn options for both wrappers: scrubbed env, own group, no shell (#202 B1)', () => {
+    const env = { PATH: '/bin', ELEVENLABS_API_KEY: 'x', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' };
+    for (const stdin of ['ignore', 'pipe'] as const) {
+      const o = claudeSpawnOptions({ cwd: tmp, env }, stdin);
+      expect(o).toEqual({ cwd: tmp, env: { PATH: '/bin' }, stdio: [stdin, 'pipe', 'pipe'], detached: true, shell: false });
+    }
+    expect(claudeNotFound('/x/claude')).toBe('Claude Code was not found ("/x/claude"). Install it, or set "voice": {"claudePath": "…"}.');
   });
 
   it.each(['hang', 'hang-stubborn'])('cancel kills the whole process group (%s)', async (mode) => {

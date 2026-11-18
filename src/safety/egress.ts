@@ -63,8 +63,6 @@ import {
  * A non-empty query or fragment always counts as data, whatever its length.
  */
 export const URL_DATA_BUDGET = 30;
-/** @deprecated kept for callers of review #1; equals URL_DATA_BUDGET (the path alone can no longer exceed it). */
-export const PATH_DATA_THRESHOLD = URL_DATA_BUDGET;
 
 /** One tainted scope: an exact host, or host + document for multi-tenant document hosts. */
 export interface PrivateRead {
@@ -282,11 +280,6 @@ const COMPILED_SCOPE_RULES: ReadonlyArray<{ patterns: DomainPattern[]; key: KeyF
   patterns: compilePatterns(r.hosts),
   key: r.key,
 }));
-
-/** True when `host` uses per-document taint scopes. */
-export function hasDocumentScopes(host: string): boolean {
-  return COMPILED_SCOPE_RULES.some((r) => r.patterns.some((p) => hostMatches(host, p)));
-}
 
 /**
  * Taint scope of a URL: `host/<document key>` on the collaborative hosts in SCOPE_RULES, else the exact

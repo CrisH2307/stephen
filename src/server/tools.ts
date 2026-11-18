@@ -16,6 +16,7 @@ import { timed } from '../lib/step-timer.js';
 import { isOwnerOnlyFile } from '../lib/owner-only.js';
 import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
+import { EVALUATE_MAX_CHARS } from '../safety/policy.js';
 import type { ActionKind, ActionRequest, AuditEntry, BrowserName, ElementInfo, GateResult, TabInfo } from '../types.js';
 import { decideConnect, switchPrompt } from './connect.js';
 import { openPage, reuseModeOf, TabOpenFailed } from './tab-reuse.js';
@@ -79,8 +80,6 @@ const PREVIEW_CHARS = 1500;
 export const MAX_TYPE_CHARS = 5000;
 /** Max fields per fill_form call. */
 export const MAX_FORM_FIELDS = 20;
-/** Max characters of JavaScript for evaluate (the human must be able to read all of it). */
-export const MAX_EVALUATE_CHARS = 2000;
 
 const SECRET_NOTE =
   'Never use this for passwords, one-time codes, or payment card details — those fields are refused; ask the user to type them.';
@@ -623,12 +622,13 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
         );
         await hub.noteReads(tab, page, ticket);
         const kb = Math.round(png.length / 1024);
+        const clipNote = engine.screenshotNote?.(png); // our own text, not page text
         return {
           content: [
             { type: 'image', data: Buffer.from(png).toString('base64'), mimeType: 'image/png' },
             {
               type: 'text',
-              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''} at ${url} — ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${hub.alertNotes(tab)}`,
+              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''} at ${url}, ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${clipNote ? `\n${clipNote}` : ''}${hub.alertNotes(tab)}`,
             },
           ],
         };
@@ -1154,10 +1154,10 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
     tool(
       'evaluate',
       'Run JavaScript',
-      `Evaluates a JavaScript expression (≤ ${MAX_EVALUATE_CHARS} chars) in the page and returns its JSON-serialized result (untrusted). Bypasses the page-level safety checks, so the user must approve every call with the code shown. Prefer the other tools; use this only when they cannot do the job.`,
+      `Evaluates a JavaScript expression (≤ ${EVALUATE_MAX_CHARS} chars) in the page and returns its JSON-serialized result (untrusted). Bypasses the page-level safety checks, so the user must approve every call with the code shown. Prefer the other tools; use this only when they cannot do the job.`,
       {
         tab: tabArg,
-        expression: z.string().min(1).max(MAX_EVALUATE_CHARS).describe('A JavaScript expression (may be an async IIFE).'),
+        expression: z.string().min(1).max(EVALUATE_MAX_CHARS).describe('A JavaScript expression (may be an async IIFE).'),
         intent: intentArg,
       },
       DESTRUCTIVE,

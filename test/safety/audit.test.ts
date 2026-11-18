@@ -1,7 +1,8 @@
-import { promises as fsp, renameSync, mkdtempSync, readFileSync, statSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs';
+import { promises as fsp, renameSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync, existsSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuditEntry } from '../../src/types.js';
 import { AUDIT_INTENT_MAX, AuditLog, redactUrlsIn, sanitizeEntry, scrubSecrets } from '../../src/safety/audit.js';
 import { redactUrl } from '../../src/safety/text.js';
 
@@ -142,6 +143,82 @@ describe('A9: mkdir once, size kept in memory', () => {
     expect(readFileSync(path, 'utf8').trim().split('\n')).toHaveLength(1);
     expect(mode(path)).toBe(0o600);
     expect((await log.recent(10)).map((e) => e.tool)).toEqual(['b', 'a']);
+  });
+});
+
+// The recent() algorithm before #202 A1 (whole-file read), kept here as the reference.
+function oldRecent(path: string, keep: number, limit: number): AuditEntry[] {
+  const n = Math.max(0, Math.floor(limit));
+  if (n === 0) return [];
+  const out: AuditEntry[] = [];
+  const files = [path, ...Array.from({ length: keep }, (_, i) => `${path}.${i + 1}`)];
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    const lines = readFileSync(file, 'utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0 && out.length < n; i--) {
+      const l = lines[i]?.trim();
+      if (!l) continue;
+      try {
+        const parsed: unknown = JSON.parse(l);
+        if (parsed && typeof parsed === 'object' && typeof (parsed as AuditEntry).ts === 'string') out.push(parsed as AuditEntry);
+      } catch {
+        /* skip malformed line */
+      }
+    }
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+describe('A1: recent() reads from the end like the old whole-file read', () => {
+  // Small seeded generator so a failure can be replayed.
+  let seed = 1;
+  const rnd = (k: number): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % k;
+  };
+  const pieces = ['a', 'é', '中', '😀', '👩‍👩‍👧', ' ', '"', '\\'];
+  const text = (len: number): string => Array.from({ length: len }, () => pieces[rnd(pieces.length)]).join('');
+  const line = (i: number): string => {
+    const kind = rnd(10);
+    if (kind === 0) return '{"tool": "cut'; // truly malformed
+    if (kind === 1) return '';
+    if (kind === 2) return '{"tool":"no-ts"}';
+    if (kind === 3) return `  ${JSON.stringify({ tool: 'pad', ts: `t${i}` })}\r`;
+    return JSON.stringify({ tool: 'x', ts: `t${i}`, intent: text(rnd(kind === 9 ? 300 : 20)) });
+  };
+
+  it('gives the same result on generated logs (rotated files, emoji, chunk edges, n past the end)', async () => {
+    for (let round = 0; round < 40; round++) {
+      seed = round + 1;
+      const path = join(dir, `r${round}`, 'audit.log');
+      const keep = 1 + rnd(3);
+      rmSync(dirname(path), { recursive: true, force: true });
+      mkdirSync(dirname(path), { recursive: true });
+      let total = 0;
+      for (const file of [path, ...Array.from({ length: keep }, (_, i) => `${path}.${i + 1}`)]) {
+        if (rnd(5) === 0) continue; // a missing file in the chain
+        const count = rnd(30);
+        total += count;
+        const body = Array.from({ length: count }, (_, i) => line(i)).join('\n');
+        writeFileSync(file, rnd(2) ? `${body}\n` : body);
+      }
+      for (const chunk of [1, 2, 3, 5, 7, 16, 64, 1 << 16]) {
+        const log = new AuditLog({ path, keep, readChunkBytes: chunk });
+        for (const n of [0, 1, 2, 5, total, total + 7]) {
+          expect(await log.recent(n), `round ${round} chunk ${chunk} n ${n}`).toEqual(oldRecent(path, keep, n));
+        }
+      }
+    }
+  });
+
+  it('a line longer than the chunk and an emoji on a chunk edge come back whole', async () => {
+    const path = join(dir, 'audit.log');
+    const long = { tool: 'x', ts: 't1', intent: '😀'.repeat(500) };
+    writeFileSync(path, `${JSON.stringify(long)}\n${JSON.stringify({ tool: 'y', ts: 't2', intent: 'a😀' })}\n`);
+    for (const chunk of [1, 2, 3, 4, 5, 13]) {
+      expect(await new AuditLog({ path, readChunkBytes: chunk }).recent(5)).toEqual([{ tool: 'y', ts: 't2', intent: 'a😀' }, long]);
+    }
   });
 });
 

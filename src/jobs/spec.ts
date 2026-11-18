@@ -260,6 +260,7 @@ const mixed = (t: string) => /[a-z]/.test(t) && /[A-Z]/.test(t) && (t.match(/\d/
  * before any regex runs, control/bidi characters removed, links reduced to their host (accounts/result.ts
  * reduceLinks), key-shaped tokens replaced by "[secret]", `<untrusted_…` tags escaped, one line, capped. Dates,
  * numbers and job ids stay (unlike account data, a job reads no mail, so it has no one-time codes to mask).
+ * A summary reaches only the owner (spoken, printed, Jobs tab), no model. If it ever goes into a model prompt, frame it then.
  */
 export function cleanJobOutput(text: unknown, max = SUMMARY_MAX): string {
   const raw = typeof text === 'string' ? text.slice(0, max * 8) : '';
@@ -270,10 +271,4 @@ export function cleanJobOutput(text: unknown, max = SUMMARY_MAX): string {
     .replace(/\s+/g, ' ')
     .trim();
   return truncate(s, max);
-}
-
-/** How a finished job's summary is framed wherever it is shown or spoken (never as a voice-session prompt). */
-export function untrustedJobOutput(id: string, summary: string): string {
-  const body = cleanJobOutput(summary);
-  return `<untrusted_job_output job="${isJobId(id) ? id : 'unknown'}">\n${body || '(no summary)'}\n</untrusted_job_output>`;
 }

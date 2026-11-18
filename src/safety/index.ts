@@ -3,7 +3,7 @@ import type { ConfirmPrompt, Confirmer, IAuditLog, ISafetyGate, ResolvedConfig }
 import { AuditLog } from './audit.js';
 import { buildConfirmer, redactValue as redact } from './confirm.js';
 import { SafetyGate } from './gate.js';
-import { compileLists, type LandingVerdict, landingVerdict, type PolicyLists } from './policy.js';
+import type { LandingVerdict } from './policy.js';
 
 export type ElicitFn = (prompt: ConfirmPrompt) => Promise<'accept' | 'decline' | 'cancel'>;
 
@@ -32,27 +32,6 @@ export function createSafety(cfg: ResolvedConfig, deps?: SafetyDeps): { gate: IS
 }
 
 export type { LandingVerdict };
-
-const listCache = new WeakMap<object, PolicyLists>();
-
-/**
- * Review #2 finding 12. Call AFTER every action (and after history back/forward/reload) with the URL the tab
- * actually landed on — script navigation, redirects and history moves skip the pre-action navigation checks.
- *   'blocked'   → blocked-list site or non-web page (chrome://, file://, …): blank the tab (about:blank) and
- *                 return an error WITHOUT the page's title or URL.
- *   'sensitive' → sensitive site: apply the sensitive-site arrival confirmation now (gate.check a 'navigate'
- *                 with targetUrl = this URL); on decline go back / blank the tab.
- *   'ok'        → anything else (web pages, about:blank, browser error pages).
- * Pure; `safety` = cfg.safety (its user block/sensitive lists are honoured).
- */
-export function evaluateLanding(url: string, safety: Pick<ResolvedConfig['safety'], 'blockedDomains' | 'sensitiveDomains'>): LandingVerdict {
-  let lists = listCache.get(safety);
-  if (!lists) {
-    lists = compileLists(safety);
-    listCache.set(safety, lists);
-  }
-  return landingVerdict(url, lists);
-}
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

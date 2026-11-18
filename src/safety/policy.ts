@@ -255,7 +255,6 @@ export function elementRef(el: ElementInfo): string {
   const ref = el.ref.replace(/[^A-Za-z0-9:_-]/g, '').slice(0, 40);
   return ref ? `${role} ${ref}` : role;
 }
-const label = elementRef;
 
 /** An outbound URL an action would load, and whether it carries form fields. */
 interface OutboundCandidate {
@@ -470,7 +469,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
     if (why) {
       const what = why === 'form submit' ? 'submits a form' : `looks like it will ${why}`;
       const how = kind === 'click' ? 'Clicking' : `Pressing ${clean(req.key, 20)} on`;
-      fire('high-risk-click', 'confirm', 'high', `${how} ${label(el)} ${what}.`);
+      fire('high-risk-click', 'confirm', 'high', `${how} ${elementRef(el)} ${what}.`);
     }
   }
 
@@ -480,7 +479,7 @@ export function evaluate(req: ActionRequest, state: PolicyState): PolicyDecision
   }
   if (enterInto) {
     if (isSingleLineField(enterInto) && !isSearchField(enterInto)) {
-      fire('high-risk-key', 'confirm', 'high', `Pressing Enter in ${label(enterInto)} usually submits the form (it may send, save or delete something).`);
+      fire('high-risk-key', 'confirm', 'high', `Pressing Enter in ${elementRef(enterInto)} usually submits the form (it may send, save or delete something).`);
     } else if (isMultilineEditor(enterInto)) {
       fire('high-risk-key', 'confirm', 'high', 'Pressing Enter in a message editor usually sends the message.');
     }

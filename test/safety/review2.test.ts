@@ -8,7 +8,6 @@ import { isSecretField } from '../../src/safety/classify.js';
 import { dataBudgetUsed, taintScope, URL_DATA_BUDGET } from '../../src/safety/egress.js';
 import { parseUrl } from '../../src/safety/domains.js';
 import { SafetyGate } from '../../src/safety/gate.js';
-import { evaluateLanding } from '../../src/safety/index.js';
 import { compileLists, evaluate, landingVerdict, type PrivateRead, privateReadOf } from '../../src/safety/policy.js';
 import { textLooksSecret } from '../../src/lib/secret-fields.js';
 import type { AuditEntry, ConfirmOutcome, IAuditLog } from '../../src/types.js';
@@ -431,7 +430,7 @@ describe('#10 secret-field words and page evidence', () => {
 
 // ───────────────────────────── #12 landing check ─────────────────────────────
 
-describe('#12 evaluateLanding (after script navigation / history moves)', () => {
+describe('#12 landingVerdict (after script navigation / history moves)', () => {
   it.each<[string, 'ok' | 'blocked' | 'sensitive']>([
     ['https://vault.bitwarden.com/#/vault', 'blocked'], // p8
     ['https://my.1password.com/vaults', 'blocked'],
@@ -446,14 +445,17 @@ describe('#12 evaluateLanding (after script navigation / history moves)', () => 
     ['about:neterror?e=dnsNotFound', 'ok'],
     ['not a url', 'blocked'],
   ])('%s → %s', (url, verdict) => {
-    expect(evaluateLanding(url, safetyCfg())).toBe(verdict);
     expect(landingVerdict(url, lists)).toBe(verdict);
+    expect(gateWith().gate.landing(url)).toBe(verdict);
   });
 
   it("honours the user's lists and the gate exposes the same verdict", () => {
     const safety = safetyCfg({ blockedDomains: ['secrets.example'], sensitiveDomains: ['payroll.example.com'] });
-    expect(evaluateLanding('https://a.secrets.example/x', safety)).toBe('blocked');
-    expect(evaluateLanding('https://payroll.example.com/me', safety)).toBe('sensitive');
-    expect(gateWith('approved', safety).gate.landing('https://a.secrets.example/x')).toBe('blocked');
+    const user = compileLists(safety);
+    expect(landingVerdict('https://a.secrets.example/x', user)).toBe('blocked');
+    expect(landingVerdict('https://payroll.example.com/me', user)).toBe('sensitive');
+    const { gate } = gateWith('approved', safety);
+    expect(gate.landing('https://a.secrets.example/x')).toBe('blocked');
+    expect(gate.landing('https://payroll.example.com/me')).toBe('sensitive');
   });
 });

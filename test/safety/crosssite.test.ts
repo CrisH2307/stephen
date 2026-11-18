@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { ActionRequest } from '../../src/types.js';
-import { assessOutbound, PATH_DATA_THRESHOLD, taintScope } from '../../src/safety/egress.js';
+import { assessOutbound, URL_DATA_BUDGET, taintScope } from '../../src/safety/egress.js';
 import { compileLists, evaluate, type PrivateRead, privateReadOf } from '../../src/safety/policy.js';
 import { button, el, req, safetyCfg, state } from './fixtures.js';
 
@@ -247,8 +247,8 @@ describe('private origins arm the taint', () => {
 describe('assessOutbound', () => {
   const open = lists.openEndpoints;
   it('path threshold is exact', () => {
-    expect(assessOutbound(`https://x.example/${'a'.repeat(PATH_DATA_THRESHOLD)}`, open)!.dataReason).toBeNull();
-    expect(assessOutbound(`https://x.example/${'a'.repeat(PATH_DATA_THRESHOLD + 1)}`, open)!.dataReason).toMatch(/path/);
+    expect(assessOutbound(`https://x.example/${'a'.repeat(URL_DATA_BUDGET)}`, open)!.dataReason).toBeNull();
+    expect(assessOutbound(`https://x.example/${'a'.repeat(URL_DATA_BUDGET + 1)}`, open)!.dataReason).toMatch(/path/);
     expect(assessOutbound('https://x.example/?', open)!.dataReason).toBeNull();
     expect(assessOutbound('https://x.example/#', open)!.dataReason).toBeNull();
   });
