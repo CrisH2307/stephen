@@ -414,6 +414,22 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     }
   });
 
+  it('#144: offline view uses the theme, says it in words, and has Start in the window and the Ask box', () => {
+    const offline = read('AppWindow.swift').match(/struct OfflineView: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(offline).toContain('@Environment(\\.stephenTheme) var t');
+    expect(offline).not.toMatch(/foregroundColor\(\.secondary\)|\.title3|`|Button\("Retry"\)/);
+    expect(offline).toContain('case .stopped: return "Stephen is not running"');
+    expect(offline).toContain('PrimaryButton("Start") { problem = nil; control.start { problem = $0 } }');
+    expect(offline).toMatch(/DisclosureGroup \{[\s\S]*?model\.offlineReason|offlineReason[\s\S]*?DisclosureGroup/);
+    // Settings keeps Appearance while offline.
+    expect(window).toMatch(/if model\.connection != \.online \{\s*if nav\.page == \.settings \{[\s\S]*?AppearanceSettings\(\)/);
+    // The Ask box: the same Start, wired to StephenControl.start in main.swift.
+    const box = read('AskBox.swift');
+    expect(box).toContain('PrimaryButton("Start") { box.startProblem = nil; actions.start { box.startProblem = $0 } }');
+    expect(box).toContain('start: { [weak self] done in self?.start(done) }');
+    expect(read('main.swift')).toContain('box.start = { done in stephenControl.start(done) }');
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
     for (const src of [window, client, read('AskBox.swift'), read('Components/ChatThread.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];

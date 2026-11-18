@@ -104,7 +104,20 @@ private struct MainWindowView: View {
   @ViewBuilder
   private var detail: some View {
     if model.connection != .online {
-      OfflineView(model: model)
+      if nav.page == .settings {
+        // Appearance needs no listener, so Settings keeps it while offline (#144). The other panes do need it.
+        ScrollView {
+          VStack(alignment: .leading, spacing: Space.xl) {
+            OfflineView(model: model, control: control).frame(maxWidth: .infinity)
+            AppearanceSettings()
+          }
+          .padding(Space.xxl)
+          .frame(maxWidth: 640, alignment: .leading)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      } else {
+        OfflineView(model: model, control: control).frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
     } else {
       switch nav.page {
       case .home: HomeView(model: model, nav: nav, actions: actions)
