@@ -141,7 +141,10 @@ struct AskField: View {
         .accessibilityLabel(placeholder)
       if let hint = hint, text.isEmpty { Text(verbatim: hint).font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true) }
       if let onMic = onMic {
-        Button(action: onMic) { Image(systemName: "mic").font(.system(size: 16)).foregroundColor(t.ink2) }
+        Button(action: onMic) {
+          Image(systemName: "mic").font(.system(size: 16)).foregroundColor(t.ink2)
+            .frame(width: 24, height: 24).contentShape(Rectangle())  // a 24 pt target (#145)
+        }
           .buttonStyle(.plain).help("Talk").accessibilityLabel("Talk to Stephen")
       }
     }

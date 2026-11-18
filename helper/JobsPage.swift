@@ -89,13 +89,27 @@ private struct JobItem: View {
       if !first { Rectangle().fill(t.line).frame(height: 1) }
       VStack(alignment: .leading, spacing: Space.s) {
         HStack(alignment: .top, spacing: Space.m) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: job.task).font(TypeScale.body).foregroundColor(t.ink).lineLimit(expanded ? nil : 2)
-              .fixedSize(horizontal: false, vertical: true)
-            if !used.isEmpty { Text(verbatim: used).font(TypeScale.secondary).foregroundColor(t.ink2) }
+          // A real button (#145): Tab reaches it with Full Keyboard Access and Space opens it. Stop and the folder
+          // button stay outside it, so they are their own buttons.
+          Button(action: toggle) {
+            HStack(alignment: .top, spacing: Space.m) {
+              VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: job.task).font(TypeScale.body).foregroundColor(t.ink).lineLimit(expanded ? nil : 2)
+                  .fixedSize(horizontal: false, vertical: true)
+                if !used.isEmpty { Text(verbatim: used).font(TypeScale.secondary).foregroundColor(t.ink2) }
+              }
+              Spacer(minLength: Space.m)
+              StatusPill(s.word, kind: s.kind)
+              Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(t.ink2)
+                .rotationEffect(.degrees(expanded ? 90 : 0)).frame(width: 24, height: 24).accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
           }
-          Spacer(minLength: Space.m)
-          StatusPill(s.word, kind: s.kind)
+          .buttonStyle(.plain)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel("\(job.task). \(s.word). \(used)")
+          .accessibilityHint(expanded ? "Hides the summary" : "Shows the summary")
+          .accessibilityAddTraits(.isButton)
           if job.isRunning { QuietButton("Stop", destructive: true, action: stop).accessibilityLabel("Stop job: \(job.task)") }
         }
         if expanded {
@@ -110,14 +124,8 @@ private struct JobItem: View {
         }
       }
       .padding(.horizontal, Space.l).padding(.vertical, Space.m)
-      .contentShape(Rectangle())
-      .onTapGesture(perform: toggle)
     }
     .accessibilityElement(children: .contain)
-    .accessibilityAddTraits(.isButton)
-    .accessibilityLabel("\(job.task). \(s.word). \(used)")
-    .accessibilityHint(expanded ? "Hides the summary" : "Shows the summary")
-    .accessibilityAction(named: expanded ? "Hide summary" : "Show summary", toggle)
   }
 
   private var bodyText: String {

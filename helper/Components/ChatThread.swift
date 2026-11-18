@@ -192,7 +192,7 @@ struct ActionChain: View {
             .rotationEffect(.degrees(open ? 90 : 0))
           Text(verbatim: summary).font(TypeScale.secondary)
         }
-        .foregroundColor(t.ink2).contentShape(Rectangle())
+        .foregroundColor(t.ink2).frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#145)
       }
       .buttonStyle(.plain)
       .accessibilityLabel("What Stephen did: \(summary)")
