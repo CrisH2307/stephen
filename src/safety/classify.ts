@@ -128,10 +128,6 @@ export function highRiskReason(el: ElementInfo): string | null {
   return null;
 }
 
-export function isHighRiskControl(el: ElementInfo): boolean {
-  return highRiskReason(el) !== null;
-}
-
 /** contenteditable / textarea: Enter there usually sends (chat composers) rather than adding a line. */
 export function isMultilineEditor(el: ElementInfo): boolean {
   const tag = el.tag.toLowerCase();
