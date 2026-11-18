@@ -42,13 +42,15 @@ struct SettingsView: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
   let control: StephenControl
-  @State private var item: SettingsItem = .talk
+  /// The pane used last, so Settings (and ⌘,) opens where you left it (#147).
+  @AppStorage("settingsPane") private var item: SettingsItem = .talk
 
   var body: some View {
     HStack(spacing: 0) {
       VStack(alignment: .leading, spacing: 2) {
-        Text(verbatim: "Settings").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
-          .padding(.bottom, Space.m)
+        // Small: the pane's title is the one large title on the page (#147).
+        Text(verbatim: "Settings").sectionLabelStyle(t).accessibilityAddTraits(.isHeader)
+          .padding(.leading, Space.s).padding(.bottom, Space.s)
         ForEach(SettingsItem.allCases) { i in
           SidebarRow(i.title, symbol: i.symbol, selected: item == i, width: 190) { item = i }
         }
@@ -80,7 +82,7 @@ struct SettingsView: View {
     case .phone: PhoneSettingsPane(control: control)
     case .accounts: AccountsSettingsPane(model: model)
     case .browsers: BrowsersSettingsPane(control: control)
-    case .privacy: PrivacySettingsPane()
+    case .privacy: PrivacySettingsPane(model: model)
     case .speed: SpeedSettingsPane(control: control)
     case .about: AboutSettingsPane(model: model, control: control)
     }
@@ -112,8 +114,8 @@ private struct TalkSettingsPane: View {
         Text(verbatim: model.settingsNotice ?? "Stephen's settings are not available yet. Start Stephen and open this page again.")
           .font(TypeScale.secondary).foregroundColor(t.ink2)
       } else {
-        Segmented("Length", options: [("brief", "Brief"), ("balanced", "Balanced"), ("detailed", "Detailed")], selection: bind(\.length))
-        Segmented("Tone", options: [("casual", "Casual"), ("friendly", "Friendly"), ("formal", "Formal")], selection: bind(\.tone))
+        Segmented("Length", options: [("brief", "Brief"), ("balanced", "Balanced"), ("detailed", "Detailed")], selection: bind(\.length), caption: true)
+        Segmented("Tone", options: [("casual", "Casual"), ("friendly", "Friendly"), ("formal", "Formal")], selection: bind(\.tone), caption: true)
         GroupedList {
           GroupedRow("Speak replies out loud", first: true) { switchView("Speak replies out loud", bind(\.speak)) }
           GroupedRow("Explain steps as you go") { switchView("Explain steps as you go", bind(\.explain)) }
@@ -201,12 +203,12 @@ private struct ModelSettingsPane: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.l) {
       PaneTitle("Model and effort")
-      Segmented("Model", options: Self.aliases.map { ($0, $0.capitalized) } + [("default", "Default"), ("other", "Other")], selection: $choice.onSet { saved = false })
+      Segmented("Model", options: Self.aliases.map { ($0, $0.capitalized) } + [("default", "Default"), ("other", "Other")], selection: $choice.onSet { saved = false }, caption: true)
       if choice == "other" {
         TextField("Model name, for example claude-haiku-5-5", text: $custom).textFieldStyle(.roundedBorder).font(TypeScale.body)
           .accessibilityLabel("Model name").onChange(of: custom) { _ in saved = false }
       }
-      Segmented("Effort", options: [("default", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra"), ("max", "Max")], selection: $effort.onSet { saved = false })
+      Segmented("Effort", options: [("default", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra"), ("max", "Max")], selection: $effort.onSet { saved = false }, caption: true)
       Note("Haiku is fastest and cheapest, good for small tests. Opus with a high effort is slowest and best for hard requests. Default means Claude Code's own choice.")
       HStack(spacing: Space.m) {
         PrimaryButton("Save") { save() }
@@ -329,11 +331,54 @@ private struct BrowsersSettingsPane: View {
   }
 }
 
+/**
+ * The replay recorder switch (issue #48 PR 2). Off by default; only this click turns it on (app.sock replay.set, which
+ * nothing else sends). Off stops saving at once and asks whether to delete what was saved (replay.delete).
+ */
 private struct PrivacySettingsPane: View {
+  @Environment(\.stephenTheme) var t
+  @ObservedObject var model: AppModel
+  @State private var askDelete = false
+  @State private var problem: String? = nil
+  @State private var done: String? = nil
+
+  private static let label = "Save my F5 commands to measure mistakes"
+
   var body: some View {
     VStack(alignment: .leading, spacing: Space.l) {
       PaneTitle("Privacy and safety")
       Note("What Stephen may do, and what it asks you about first, is listed under Personal. Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep. Changing these rules is not possible from the app yet.")
+      GroupedList {
+        GroupedRow(Self.label, first: true) {
+          Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))
+            .toggleStyle(StephenSwitch()).disabled(model.connection != .online)
+        }
+      }
+      Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")
+      if model.connection != .online { Note("Start Stephen to change this.") }
+      if let d = done { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ok) }
+      if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+    }
+    .alert("Delete the saved recordings too?", isPresented: $askDelete) {
+      Button("Delete", role: .destructive) { delete() }
+      Button("Keep", role: .cancel) { done = "Kept. They are deleted after 30 days." }
+    } message: {
+      Text(verbatim: "Recording is off. Keep leaves the saved recordings on this Mac until they are 30 days old.")
+    }
+  }
+
+  private func change(_ on: Bool) {
+    problem = nil
+    done = nil
+    model.saveReplay(on) { err in
+      problem = err.map { "Could not change it: \($0)" }
+      if err == nil && !on { askDelete = true }
+    }
+  }
+
+  private func delete() {
+    model.deleteRecordings { err in
+      if let e = err { problem = "Could not delete them: \(e)" } else { done = "Deleted." }
     }
   }
 }

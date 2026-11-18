@@ -141,6 +141,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: '/Users/cris/.stephen/config.json', talk: talk.get() }),
     setTalk: (c) => void talk.set(c),
     setModel: (c) => void new ModelStore(join(home, 'config.json'), { model: 'sonnet', effort: null }).set(c),
+    replay: { set: () => {}, deleteAll: async () => 0 },
     accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
     jobs: {
       list: () => [],
@@ -516,6 +517,36 @@ describe('memory, history, settings, audit, window', () => {
     // refused without a store
     const none = await harness({ setModel: undefined }, mkdtempSync(join(tmp, 'model2-')));
     expect(await none.client.request({ id: 'm', type: 'model.set', model: 'haiku' })).toEqual({ id: 'm', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('replay.set writes only voice.replay.enabled; settings.get shows it; replay.delete runs the delete', async () => {
+    const home = mkdtempSync(join(tmp, 'replay-'));
+    const file = join(home, 'config.json');
+    writeFileSync(file, JSON.stringify({ voice: { wakeWord: false, replay: { enabled: false } }, memory: { enabled: true } }), { mode: 0o600 });
+    const { writeReplaySwitch } = await import('../../src/app/replay-switch.js');
+    let deletes = 0;
+    const on = () => parseVoiceConfig(JSON.parse(readFileSync(file, 'utf8')).voice).replay.enabled;
+    const h = await harness(
+      {
+        replay: { set: (e) => writeReplaySwitch(file, e), deleteAll: async () => ++deletes },
+        settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: file, replay: on() }),
+      },
+      home,
+    );
+    const r = await h.client.request({ id: 'r', type: 'replay.set', enabled: true });
+    expect(r).toMatchObject({ type: 'settings', config: { replay: { enabled: true } } });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ voice: { wakeWord: false, replay: { enabled: true } }, memory: { enabled: true } });
+    expect(await h.client.request({ id: 'g', type: 'settings.get' })).toMatchObject({ config: { replay: { enabled: true } } });
+    await h.client.request({ id: 'r2', type: 'replay.set', enabled: false });
+    expect(on()).toBe(false);
+    expect(await h.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'ok' });
+    expect(deletes).toBe(1);
+    // A failed delete says so; no recorder (dry run) refuses both.
+    const bad = await harness({ replay: { set: () => {}, deleteAll: async () => Promise.reject(new Error('EPERM')) } });
+    expect(await bad.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'error', message: 'could not delete the recordings' });
+    const none = await harness({ replay: undefined }, mkdtempSync(join(tmp, 'replay2-')));
+    expect(await none.client.request({ id: 'r', type: 'replay.set', enabled: true })).toEqual({ id: 'r', type: 'error', message: 'not available in this listener' });
+    expect(await none.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
   });
 
   it('settings.set refuses unknown keys and bad values and changes nothing', async () => {

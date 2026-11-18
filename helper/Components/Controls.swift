@@ -70,16 +70,25 @@ struct Tag: View {
 }
 
 /// Segmented control (Length, Tone). Track is surface-2, the chosen segment is surface with a strong outline (3:1 on
-/// the track, #146).
+/// the track, #146). `caption: true` writes the label above it (#147); VoiceOver reads the label either way.
 struct Segmented<Value: Hashable>: View {
   @Environment(\.stephenTheme) var t
   let label: String
   let options: [(value: Value, title: String)]
   @Binding var selection: Value
-  init(_ label: String, options: [(value: Value, title: String)], selection: Binding<Value>) {
-    self.label = label; self.options = options; self._selection = selection
+  var caption = false
+  init(_ label: String, options: [(value: Value, title: String)], selection: Binding<Value>, caption: Bool = false) {
+    self.label = label; self.options = options; self._selection = selection; self.caption = caption
   }
   var body: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      if caption {
+        Text(verbatim: label).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.ink2).accessibilityHidden(true)
+      }
+      control
+    }
+  }
+  private var control: some View {
     HStack(spacing: 2) {
       ForEach(options.indices, id: \.self) { i in
         let on = options[i].value == selection
@@ -132,7 +141,10 @@ struct AskField: View {
         .accessibilityLabel(placeholder)
       if let hint = hint, text.isEmpty { Text(verbatim: hint).font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true) }
       if let onMic = onMic {
-        Button(action: onMic) { Image(systemName: "mic").font(.system(size: 16)).foregroundColor(t.ink2) }
+        Button(action: onMic) {
+          Image(systemName: "mic").font(.system(size: 16)).foregroundColor(t.ink2)
+            .frame(width: 24, height: 24).contentShape(Rectangle())  // a 24 pt target (#145)
+        }
           .buttonStyle(.plain).help("Talk").accessibilityLabel("Talk to Stephen")
       }
     }

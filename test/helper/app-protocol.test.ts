@@ -56,6 +56,9 @@ const RESPONSES: Record<string, string[]> = {
   'memory.keep': ['memory', 'error'],
   'memory.skip': ['suggestions', 'error'],
   'memory.usage': ['memory.usage', 'error'],
+  // Settings > Privacy and safety (issue #48 PR 2): the replay recorder switch and its Delete; only the owner's click.
+  'replay.set': ['settings', 'error'],
+  'replay.delete': ['ok', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -456,6 +459,34 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(home).toContain('.focused($composerFocused)');
     // Sidebar rows show the same key they are bound to.
     expect(read('MainWindow.swift')).toMatch(/shortcut: p\.key\.map \{ "⌘\\\(\$0\.character\)" \}[\s\S]*?\.keyboardShortcut\(p\.key!, modifiers: \.command\)/);
+  });
+
+  it('#147: Cmd+comma opens Settings on the last pane, one large title, captions over the choices', () => {
+    const settings = read('SettingsPage.swift');
+    expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .talk');
+    expect(settings).toContain('Text(verbatim: "Settings").sectionLabelStyle(t)');
+    expect(settings).not.toMatch(/"Settings"\)\.font\(TypeScale\.pageTitle\)/);
+    for (const label of ['Length', 'Tone', 'Model', 'Effort']) {
+      expect(settings).toMatch(new RegExp(`Segmented\\("${label}",[^\\n]*caption: true\\)`));
+    }
+    expect(read('Components/Controls.swift')).toMatch(/if caption \{\s*Text\(verbatim: label\)/);
+    const app = read('AppWindow.swift');
+    expect(app).toContain('NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")');
+    expect(app).toContain('@objc func settingsClicked(_ sender: Any?) { show(page: .settings) }');
+  });
+
+  it('#145 (now part): job and voice rows are real buttons; small controls have 24 pt targets', () => {
+    const jobs = read('JobsPage.swift'), lists = read('Components/Lists.swift');
+    // Tab (Full Keyboard Access) reaches buttons, not tap gestures.
+    for (const src of [jobs, lists]) expect(src).not.toContain('onTapGesture');
+    expect(jobs).toContain('Button(action: toggle) {');
+    expect(jobs).toMatch(/Image\(systemName: "chevron\.right"\)[\s\S]*?frame\(width: 24, height: 24\)/);
+    expect(lists).toContain('Button(action: onSelect) {');
+    expect(lists).toMatch(/"play\.circle"[\s\S]*?frame\(width: 24, height: 24\)/);
+    expect(read('Components/Controls.swift')).toMatch(/Image\(systemName: "mic"\)[^\n]*\n\s*\.frame\(width: 24, height: 24\)/);
+    expect(read('Components/ChatThread.swift')).toContain('.foregroundColor(t.ink2).frame(minHeight: 24)');
+    const memory = read('MemoryPage.swift');
+    expect(memory.match(/frame\(minHeight: 24\)|frame\(minWidth: 24, minHeight: 24\)/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {

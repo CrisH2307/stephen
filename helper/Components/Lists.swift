@@ -117,19 +117,34 @@ struct VoiceRow: View {
   init(name: String, source: String, current: Bool, first: Bool = false, onPlay: @escaping () -> Void, onSelect: @escaping () -> Void) {
     self.name = name; self.source = source; self.current = current; self.first = first; self.onPlay = onPlay; self.onSelect = onSelect
   }
+  /// GroupedRow's look, with the name side as a real button (#145) so Tab reaches it; Play stays its own button.
   var body: some View {
-    GroupedRow(name, detail: source, first: first) {
+    VStack(spacing: 0) {
+      if !first { Rectangle().fill(t.line).frame(height: 1) }
       HStack(spacing: Space.m) {
-        if current { Image(systemName: "checkmark").foregroundColor(t.accent).accessibilityHidden(true) }
-        Button(action: onPlay) { Image(systemName: "play.circle").font(.system(size: 18)).foregroundColor(t.accent) }
-          .buttonStyle(.plain).help("Play a sample").accessibilityLabel("Play \(name)")
+        Button(action: onSelect) {
+          HStack(spacing: Space.m) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(verbatim: name).font(TypeScale.body).foregroundColor(t.ink)
+              Text(verbatim: source).font(TypeScale.secondary).foregroundColor(t.ink2)
+            }
+            Spacer(minLength: Space.m)
+            if current { Image(systemName: "checkmark").foregroundColor(t.accent).accessibilityHidden(true) }
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(name), \(source)\(current ? ", current voice" : "")")
+        .accessibilityHint("Use this voice")
+        .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
+        Button(action: onPlay) {
+          Image(systemName: "play.circle").font(.system(size: 18)).foregroundColor(t.accent)
+            .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help("Play a sample").accessibilityLabel("Play \(name)")
       }
+      .padding(.horizontal, Space.l).padding(.vertical, Space.m)
     }
-    .contentShape(Rectangle())
-    .onTapGesture(perform: onSelect)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(name), \(source)\(current ? ", current voice" : "")")
-    .accessibilityAddTraits(current ? .isSelected : [])
-    .accessibilityAction(named: "Use this voice", onSelect)
   }
 }

@@ -149,6 +149,8 @@ struct AppRequest: Encodable {
   /** model.set: a model alias or name ("haiku", "default") and/or an effort level ("low"..."max", "default"). */
   var model: String? = nil
   var effort: String? = nil
+  /** replay.set: the replay recorder switch (Settings > Privacy and safety, the owner's click only). */
+  var enabled: Bool? = nil
 
   static func hello(_ id: String) -> AppRequest {
     return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
@@ -183,6 +185,11 @@ struct AppRequest: Encodable {
   static func modelSet(_ id: String, model: String?, effort: String?) -> AppRequest {
     return AppRequest(id: id, type: "model.set", model: model, effort: effort)
   }
+  /** Settings > Privacy and safety (issue #48): the owner's switch and its Delete. Nothing else sends these. */
+  static func replaySet(_ id: String, enabled: Bool) -> AppRequest {
+    return AppRequest(id: id, type: "replay.set", enabled: enabled)
+  }
+  static func replayDelete(_ id: String) -> AppRequest { return AppRequest(id: id, type: "replay.delete") }
   static func auditRecent(_ id: String, limit: Int) -> AppRequest {
     return AppRequest(id: id, type: "audit.recent", limit: limit)
   }
@@ -898,6 +905,14 @@ final class AppModel: ObservableObject {
   @Published private(set) var talk: TalkSettings? = nil
   /** The raw config (voice.wakeWord and so on) for the read-only Settings rows. */
   @Published private(set) var configJSON: AppJSON? = nil
+  /**
+   * The replay recorder is saving F5 commands: the listener is connected and its config says replay.enabled (issue
+   * #48). Drives the "Recording on" sign in the sidebar and the menu bar menu.
+   */
+  var recordingOn: Bool {
+    guard connection == .online, case .object(let c)? = configJSON, case .object(let r)? = c["replay"], case .bool(let on)? = r["enabled"] else { return false }
+    return on
+  }
 
   @Published private(set) var audit: [AuditEntry] = []
   @Published private(set) var auditNotice: String? = nil
@@ -997,6 +1012,8 @@ final class AppModel: ObservableObject {
           self.offlineReason = nil
           self.connection = .online
           self.log("app.sock: connected")
+          // The "Recording on" sign needs the current switch even before Settings or Home is opened.
+          self.refreshSettings()
         } else {
           self.link.close()
           self.goOffline(msg.message ?? "unexpected answer to hello")
@@ -1370,6 +1387,24 @@ final class AppModel: ObservableObject {
         done(msg.message ?? "error")
       }
     }
+  }
+
+  /** Settings > Privacy and safety: turn the replay recorder on or off; `done(nil)` on success, else the listener's words. */
+  func saveReplay(_ on: Bool, done: @escaping (String?) -> Void) {
+    request(AppRequest.replaySet(newId(), enabled: on)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "settings" {
+        self.configJSON = msg.config
+        done(nil)
+      } else {
+        done(msg.message ?? "error")
+      }
+    }
+  }
+
+  /** The switch's "Delete": every saved recording (`stephen replay delete --all`). */
+  func deleteRecordings(done: @escaping (String?) -> Void) {
+    request(AppRequest.replayDelete(newId())) { msg in done(msg.type == "ok" ? nil : (msg.message ?? "error")) }
   }
 
   func refreshAudit() {

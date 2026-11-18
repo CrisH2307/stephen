@@ -20,3 +20,5 @@
 `HANDOFF-2026-11-12.md`: who does what (dev lane and review lane) and the two paste-ready prompts.
 `FINDINGS-LEDGER.md`: one table of every open or recently closed finding, with owner lane and issue or branch; update it in the same PR as the fix.
 `ZEN-REAL-BROWSER-2026-11.md`: why "play music" did not play in Zen (not attached, autoplay block), and the options for using the real Zen safely.
+
+**Ponytail audit (2026-11-18).** `PONYTAIL-AUDIT-2026-11.md`: where the code can be simpler, smaller or faster, with file:line, risk and the test for each finding. Proposals only; each fix needs the dev lane's OK, and SEC items need a security review.

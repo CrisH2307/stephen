@@ -1,8 +1,8 @@
 /**
  * Replay recorder (item 4, A6a, issue #48): saves F5 commands on this Mac so mistakes can be measured later.
  *
- * - Off by default (`voice.replay.enabled`, owner-only: config.json today, the Settings switch in PR 2). The listener
- *   asks `enabled()` on every capture, so turning it off stops saving at once.
+ * - Off by default (`voice.replay.enabled`, owner-only: config.json or the Settings switch, app.sock `replay.set`).
+ *   The listener asks `enabled()` on every capture and again before each write, so turning it off stops saving at once.
  * - Records source `voice-ptt` only (F5, and the Ask box mic / Talk button, which press F5 in the helper). The wake
  *   word, the Stephen app's typed commands, `listen --text` and the phone never record.
  * - Per clip, in `<home>/replay/` (0700): `<id>.wav` (16 kHz mono 16-bit, only the captured command, created once
@@ -190,7 +190,7 @@ export class ReplayRecorder {
    */
   capture(c: ReplayCapture): boolean {
     try {
-      if (c.source !== REPLAY_SOURCE || !validCommandId(c.id) || this.o.enabled() !== true) return false;
+      if (c.source !== REPLAY_SOURCE || !validCommandId(c.id) || !this.isOn()) return false;
     } catch {
       return false;
     }
@@ -220,14 +220,31 @@ export class ReplayRecorder {
     this.purgeTimer = null;
   }
 
+  /**
+   * `stephen replay delete --all` for the Settings switch's Delete (issue #48 PR 2): runs after the writes already
+   * queued, so a clip captured before the switch went off can't land after the delete. Resolves to how many clips
+   * were deleted; rejects when the folder can't be cleared.
+   */
+  deleteAll(): Promise<number> {
+    const run = this.chain.then(() => deleteReplayClips(this.o.home, { all: true }));
+    this.chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private isOn(): boolean {
+    try {
+      return this.o.enabled() === true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Purge when the recorder is on or the folder exists; never creates the folder for an owner who never used it. */
   private async purgeIfThere(): Promise<void> {
-    let on = false;
-    try {
-      on = this.o.enabled() === true;
-    } catch {
-      /* off */
-    }
+    const on = this.isOn();
     let exists = false;
     try {
       exists = lstatSync(replayDir(this.o.home)) !== null;
@@ -304,6 +321,8 @@ export class ReplayRecorder {
   }
 
   private async write(c: ReplayCapture): Promise<void> {
+    // Switched off while this clip waited: not saved (turning it off stops saving at once, PR 2).
+    if (!this.isOn()) return;
     const dir = await this.prepare();
     const clips = purgeReplayDir(dir, this.now());
     const wav = encodeWav16(c.audio);
@@ -351,7 +370,8 @@ export const REPLAY_USAGE = `Usage:
   stephen replay delete --all     Delete every saved F5 recording
   stephen replay delete <id>      Delete one recording (its id looks like h_0123456789abcdef)
 
-Recordings are saved only when "voice": {"replay": {"enabled": true}} is in config.json. Deleting works either way.`;
+Recordings are saved only while the switch in Settings, Privacy and safety is on ("voice": {"replay": {"enabled": true}}
+in config.json). Deleting works either way.`;
 
 /** `stephen replay …` (owner CLI). */
 export function runReplayCli(argv: string[], home: string, out: (l: string) => void = console.log, err: (l: string) => void = console.error): number {

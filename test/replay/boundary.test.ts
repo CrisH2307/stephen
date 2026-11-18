@@ -108,10 +108,25 @@ describe('the model cannot turn it on (must-have 2)', () => {
       .filter((f) => /\breplay\b/i.test(readFileSync(join(REPO_ROOT, f), 'utf8')))
       .sort();
     // src/voice/grammar/classify.ts only has a comment about a future test set.
-    expect(files).toEqual(['src/cli.ts', 'src/lib/owner-only.ts', 'src/replay/recorder.ts', 'src/telemetry/latency.ts', 'src/voice/config.ts', 'src/voice/grammar/classify.ts', 'src/voice/index.ts', 'src/voice/listener.ts']);
-    // The listener only reads the switch; it never writes config.json.
+    // src/app/*: the owner's Settings switch (app.sock replay.set / replay.delete, PR 2). src/app is itself out of
+    // Claude's reach (test/memory/boundary.test.ts).
+    expect(files).toEqual(['src/app/protocol.ts', 'src/app/replay-switch.ts', 'src/app/server.ts', 'src/app/settings.ts', 'src/cli.ts', 'src/lib/owner-only.ts', 'src/replay/recorder.ts', 'src/telemetry/latency.ts', 'src/voice/config.ts', 'src/voice/grammar/classify.ts', 'src/voice/index.ts', 'src/voice/listener.ts']);
+    // The listener and the recorder only read the switch; the one writer is src/app/replay-switch.ts.
     for (const f of ['src/voice/index.ts', 'src/voice/listener.ts', 'src/replay/recorder.ts']) {
       expect(readFileSync(join(REPO_ROOT, f), 'utf8'), f).not.toMatch(/updateConfigSection|config-write/);
+    }
+    // Nothing Claude can reach gets to the switch writer, through any import chain.
+    expect(transitiveViolations({ target: 'src/app/replay-switch.ts', importers: CLAUDE_REACHABLE }, scanSrc()).map((c) => c.join(' -> '))).toEqual([]);
+  });
+
+  it('only app.sock replay.set writes it: settings.set and model.set refuse it, and the helper link has no such message', () => {
+    expect(parseAppRequest(JSON.stringify({ id: '1', type: 'model.set', replay: { enabled: true } }))).toMatchObject({ kind: 'invalid' });
+    expect(parseAppRequest(JSON.stringify({ id: '1', type: 'model.set', model: 'haiku', replay: { enabled: true } }))).toEqual({ kind: 'request', req: { id: '1', type: 'model.set', model: 'haiku' } });
+    // Listener -> Stephen Helper messages (helper.sock) and the helper itself never write config.json.
+    expect(readFileSync(join(SRC_ROOT, 'helper', 'protocol.ts'), 'utf8')).not.toMatch(/replay|config/i);
+    for (const f of readdirSync(join(REPO_ROOT, 'helper'), { recursive: true }) as string[]) {
+      if (!f.endsWith('.swift')) continue;
+      expect(readFileSync(join(REPO_ROOT, 'helper', f), 'utf8'), f).not.toMatch(/config\.json"|\.write\(to:.*config|createFile\(atPath:.*config/);
     }
   });
 
