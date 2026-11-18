@@ -322,7 +322,7 @@ private struct BrowsersSettingsPane: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.l) {
       PaneTitle("Browsers")
-      Note("Stephen works in Zen (the one you have open) and Chrome. Zen needs to be opened with Stephen access.")
+      Note("Stephen works in Zen (the one you have open) and Chrome. Zen needs to be opened with the Zen for Stephen app. A normal Zen window can't connect to Stephen.")
       QuietButton("Open Zen for Stephen") { result = "Opening..."; control.openZen { result = zenProblem($0) ?? "Zen is ready for Stephen." } }
       if !result.isEmpty { Text(verbatim: result).font(TypeScale.secondary).textSelection(.enabled) }
     }
