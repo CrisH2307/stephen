@@ -39,8 +39,6 @@ import { controlPlayer, MEDIA_ACTIONS, pickPlayer, PLAYERS, playersStatus, setVo
 export { parseDesktopConfig, type DesktopConfig } from './config.js';
 export type { DesktopDeps, DesktopFs, ExecFileFn, ExecResult } from './system.js';
 
-export const DESKTOP_TOOLS = ['open_app', 'open_url', 'play_media', 'media_control', 'volume', 'desktop_status'] as const;
-
 /**
  * How openParsed opened a page: a tab in the attached browser (`how`: a new one, or an existing one reused —
  * focused or navigated, see src/server/tab-reuse.ts), or the user's normal window via `open -a`.

@@ -624,7 +624,6 @@ export interface RunnerOptions extends ClaudeSettings {
   memory?: () => readonly string[];
   /** Called after every finished (not cancelled) run with where the time went. */
   onTiming?: (t: ClaudeTiming) => void;
-  now?: () => number;
 }
 
 const MAX_STDOUT = 4 * 1024 * 1024;
@@ -657,14 +656,9 @@ export class ClaudeRunner {
     return this.child !== null;
   }
 
-  get pid(): number | null {
-    return this.child?.pid ?? null;
-  }
-
   async run(prompt: string, run: RunOptions = {}): Promise<ClaudeOutcome> {
     if (this.child) throw new Error('a command is already running');
     const memory = memoryForTrust(run.trust ?? 'wake', () => this.readMemory());
-    let args = this.nextArgs(prompt, { ...run, memory });
     // A fresh serve instance per run (docs/REVIEW-7.md R7-1): a serve Claude Code restarts mid-run refuses every call.
     let inst: ServeInstance | null = null;
     if (this.o.serveInstance) {
@@ -674,8 +668,8 @@ export class ClaudeRunner {
         return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
       }
       if (this.child) throw new Error('a command is already running');
-      args = buildClaudeArgs(prompt, { ...this.o, mcpConfigPath: inst.mcpConfigPath }, { ...run, memory });
     }
+    const args = inst ? buildClaudeArgs(prompt, { ...this.o, mcpConfigPath: inst.mcpConfigPath }, { ...run, memory }) : this.nextArgs(prompt, { ...run, memory });
     if (this.o.personaFile) {
       // File mode: write this run's persona (with the memory just read) first. If that fails, don't fall back to
       // argv (memory would show in `ps`): the command fails with a clear message instead.
@@ -688,8 +682,7 @@ export class ClaudeRunner {
     }
     this.cancelled = false;
     const spawnFn: SpawnFn = this.o.spawn ?? ((c, a, opts) => spawn(c, a as string[], opts));
-    const now = this.o.now ?? Date.now;
-    const started = now();
+    const started = Date.now();
     let child: ChildProcess;
     try {
       child = spawnFn(this.o.claudePath, args, {
@@ -737,7 +730,7 @@ export class ClaudeRunner {
     // forgotten items don't stay on disk until the next command (review 5, R5-3).
     if (this.o.personaFile) removePersonaFile(this.o.personaFile);
     if (outcome.kind === 'ok' && this.o.onTiming) {
-      this.o.onTiming({ wallMs: now() - started, durationMs: outcome.durationMs ?? null, apiMs: outcome.apiMs ?? null, turns: outcome.turns });
+      this.o.onTiming({ wallMs: Date.now() - started, durationMs: outcome.durationMs ?? null, apiMs: outcome.apiMs ?? null, turns: outcome.turns });
     }
     return outcome;
   }

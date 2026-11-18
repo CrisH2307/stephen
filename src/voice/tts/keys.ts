@@ -9,7 +9,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { keychainRead, type KeychainDeps } from '../../lib/keychain.js';
 import { expandHome, type TtsConfig } from './config.js';
-import { API_KEY_RE, redactKey } from './redact.js';
+import { API_KEY_RE } from './redact.js';
 
 export const KEYCHAIN_SERVICE = 'stephen-elevenlabs';
 export const KEY_ENV = 'ELEVENLABS_API_KEY';
