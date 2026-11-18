@@ -116,7 +116,7 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     const c = client(sock);
     const audio: HelperEvent[] = [];
     c.on('audio', (e) => audio.push(e));
-    expect(await c.start()).toEqual({ ok: true, hello: { type: 'hello', version: '1', inputMonitoring: true } });
+    expect(await c.start()).toEqual({ ok: true, hello: { type: 'hello', version: '1', inputMonitoring: true, postEvents: true } });
     await until(() => audio.length >= 1);
     expect(audio[0]).toMatchObject({ type: 'audio', playing: false });
   });
@@ -188,6 +188,30 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     c.send({ type: 'open_window' });
     await until(() => h.lines.includes('open_window'), 3000, 'open_window');
     expect(h.stderr.join('')).not.toContain('ignored unknown command type "open_window"');
+  });
+
+  it('issue #205: media_key is posted by the platform layer and answered with media_key_done; hello reports postEvents', async () => {
+    const sock = mk();
+    const h = await start(sock);
+    const c = client(sock);
+    const got: HelperEvent[] = [];
+    for (const t of ['hello', 'media_key_done'] as const) c.on(t, (e) => got.push(e));
+    await c.start();
+    await until(() => got.some((e) => e.type === 'hello'));
+    expect(got.find((e) => e.type === 'hello')).toMatchObject({ postEvents: true });
+    c.send({ type: 'media_key', key: 'next' });
+    await until(() => got.some((e) => e.type === 'media_key_done'), 3000, 'media_key_done');
+    expect(h.lines).toContain('media_key next');
+    expect(got.filter((e) => e.type === 'media_key_done')).toEqual([{ type: 'media_key_done', key: 'next', ok: true }]);
+    h.input('postkeys 0');
+    await sleep(50);
+    c.send({ type: 'media_key', key: 'play_pause' });
+    await until(() => got.filter((e) => e.type === 'media_key_done').length >= 2, 3000, 'second media_key_done');
+    expect(got.filter((e) => e.type === 'media_key_done')[1]).toEqual({ type: 'media_key_done', key: 'play_pause', ok: false, message: 'Stephen Helper needs the Accessibility permission' });
+    // A bad key is refused by the parser, never posted.
+    c.send({ type: 'media_key', key: 'eject' } as never);
+    await sleep(100);
+    expect(h.lines.filter((l) => l.startsWith('media_key '))).toEqual(['media_key next', 'media_key play_pause']);
   });
 
   it('audio is pushed on change only; a permission change re-sends hello', async () => {

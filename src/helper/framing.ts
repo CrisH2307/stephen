@@ -53,7 +53,7 @@ export class LineFramer {
 const at = z.number().finite();
 
 const helperEventSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('hello'), version: z.string().max(64), inputMonitoring: z.boolean() }),
+  z.object({ type: z.literal('hello'), version: z.string().max(64), inputMonitoring: z.boolean(), postEvents: z.boolean().optional() }),
   z.object({ type: z.literal('ptt_down'), at }),
   z.object({ type: z.literal('ptt_up'), at, heldMs: z.number().finite().nonnegative() }),
   z.object({ type: z.literal('esc'), at }),

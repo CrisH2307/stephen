@@ -310,12 +310,19 @@ describe('doctor: helper lines', () => {
       ['Xcode command line tools (Swift compiler, to build the helper)', true],
       ['Stephen Helper running', true],
       ['Input Monitoring granted to Stephen Helper', true],
+      ['Accessibility for Stephen Helper (media keys)', true],
     ]);
+  });
+
+  it('issue #205: Accessibility (media keys) from hello.postEvents: ✓, ✗ with the Settings path', async () => {
+    const hello = (postEvents: boolean) => doctorDeps({ files: [exe, sock], probe: async () => ({ running: true, hello: { type: 'hello', version: '1', inputMonitoring: true, postEvents } }) });
+    expect((await helperDoctorChecks('/h', hello(true))).at(-1)).toMatchObject({ ok: true, label: 'Accessibility granted to Stephen Helper (media keys)', detail: 'yes' });
+    expect((await helperDoctorChecks('/h', hello(false))).at(-1)).toMatchObject({ ok: false, fix: expect.stringContaining('Privacy & Security › Accessibility') });
   });
 
   it('running without Input Monitoring → ✗ with the Settings path; not running → info line', async () => {
     const denied = await helperDoctorChecks('/h', doctorDeps({ files: [exe, sock], probe: async () => ({ running: true, hello: { type: 'hello', version: '1', inputMonitoring: false } }) }));
-    expect(denied.at(-1)).toMatchObject({ ok: false, fix: expect.stringContaining('Privacy & Security › Input Monitoring') });
+    expect(denied.at(-2)).toMatchObject({ ok: false, fix: expect.stringContaining('Privacy & Security › Input Monitoring') });
     const stopped = await helperDoctorChecks('/h', doctorDeps({ files: [exe] }));
     expect(stopped.at(-1)).toMatchObject({ ok: true, info: true, label: 'Stephen Helper running' });
   });
