@@ -28,6 +28,16 @@
   When CI fails, that session investigates and prepares the fix, but asks Cris before a commit; Cris (or the app's
   commit button) pushes. Auto-fix never means auto-merge. The session stays bound until the PR is merged or closed. A
   hand-over brief names the bound PRs, and the new session binds them again. (`docs/CI-CD-PROPOSAL.md` section 3.)
+- **Sibling cases (H1, #202).** A fix covers the reported case and its siblings. Before the fix PR, list the cases
+  next to the reported one (other phrasings, the typed path and the voice path, the other browser, the other trust
+  tier) and add a test for each one that applies. Why: about 1 in 3 fixes on `qa` in November repaired an earlier fix
+  (`docs/research/PONYTAIL-AUDIT-2026-11.md`, "Bug history"). Example: the "remember" fixes #90, #122 and #137.
+- **One day on `qa` (H4, #202).** A new feature stays on `qa` for at least one day before another PR builds on it,
+  and before it goes into a release PR. Do not stack several fixes for the same feature on the day it lands without a
+  review. Why: the replay feature and three fixes landed on one day (#169), and the Claude CLI contract needed two
+  more fixes (#65, #123).
+- **Mac click check for helper PRs (H2, #202).** A PR that changes `helper/` gets the two-minute click check in
+  `docs/MAC-TEST-PLAN.md` ("Two-minute click check") before merge, and says so in the PR.
 
 ## History
 - Until 2026-11-10 feature PRs targeted `main` and the agent merged branches into `qa`. PR #44 was merged straight to
