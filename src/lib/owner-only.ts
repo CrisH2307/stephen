@@ -35,5 +35,7 @@ export function isOwnerOnlyFile(path: string, home: string): boolean {
   // (#169: otherwise `Replay/x.wav` would tell whether recording was ever on). Cost: on a case-sensitive disk,
   // `<home>/REPLAY/...` is refused as well.
   const fold = (p: string) => resolve(p).normalize('NFC').toLowerCase();
-  return isInside(realThroughParent(path), realThroughParent(dir)) || isInside(fold(path), fold(dir));
+  // Folded after following links too: through a link to <home>, `Replay/x.wav` must not answer differently before
+  // and after the folder exists (review of #170).
+  return isInside(fold(realThroughParent(path)), fold(realThroughParent(dir))) || isInside(fold(path), fold(dir));
 }

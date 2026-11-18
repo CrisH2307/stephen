@@ -204,6 +204,18 @@ describe('tools refuse a clip', () => {
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
 
+  it('through a link to Stephen\'s home, another spelling answers the same before and after the folder exists (review of #170)', async () => {
+    const { isOwnerOnlyFile } = await import('../../src/lib/owner-only.js');
+    const base = join(tmp, 'linked-spelling');
+    const home = join(base, 'home');
+    mkdirSync(home, { recursive: true });
+    (await import('node:fs')).symlinkSync(home, join(base, 'link'));
+    const p = join(base, 'link', 'Replay', 'h_00000000000000aa.wav');
+    expect(isOwnerOnlyFile(p, home)).toBe(true); // no folder yet
+    mkdirSync(join(home, 'replay'));
+    expect(isOwnerOnlyFile(p, home)).toBe(true);
+  });
+
   it('upload_file follows a symlink to a clip', async () => {
     const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
     const wav = await seedClip(h.cfg.home);
