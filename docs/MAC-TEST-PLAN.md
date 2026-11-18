@@ -31,6 +31,22 @@ Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suit
 | 13 | Latency monitor and command id | 9 | 11 |
 | 14 | Week of 2026-11-12: fixes merged into qa | 33 | 5 |
 
+## Two-minute click check (every PR that changes helper/)
+
+Why: vitest cannot run the SwiftUI helper, so a broken button is found only on the Mac. In November most helper bugs
+(#86, #87, #94, #154) were found days later, in the full test. This short check finds them before merge
+(H2 in #202). Build the PR branch, run `node dist/cli.js install-helper`, start Stephen, then:
+
+1. **Do:** click the Ask Stephen row in the sidebar. **See:** the Ask box opens.
+2. **Do:** type "hello" and press Return. **See:** a reply comes back in the thread.
+3. **Do:** click the mic in the Ask box, then press Esc. **See:** the recording stops and nothing is sent.
+4. **Do:** hold F5, say "what time is it", let go. **See:** an answer, and the F5 press ends.
+5. **Do:** click each page in the sidebar once. **See:** each page opens, nothing is cut off or empty by mistake.
+6. **Do:** make the window as small as it goes. **See:** it stops before the text is cut off.
+7. **Do:** whatever the PR changed. **See:** what the PR says it should do.
+
+Write "Mac click check: done" in the PR (or what failed). If a step fails, do not merge; comment on the PR.
+
 ## 0. Build
 - [ ] `[hands]` **0.1** Do: run `git pull`, then `npm install && npm run build`. Use the VS Code terminal, not the VM shell.
   See: both finish with no error.
