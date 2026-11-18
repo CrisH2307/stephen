@@ -8,6 +8,7 @@ import type { ActionRequest, ConfirmOutcome, ConfirmPrompt, Confirmer, PolicyDec
 import { AppConfirmer, appSocketFor } from './app-confirm.js';
 import { isPasteKey, isSecretField } from './classify.js';
 import { parseUrl } from './domains.js';
+import { elementRef } from './policy.js';
 import { charLength, clean, hasHiddenChars, stripUnsafe, truncate, visible, visibleCode } from './text.js';
 
 export type ElicitResult = 'accept' | 'decline' | 'cancel';
@@ -92,13 +93,9 @@ function displayOrigin(url: string | undefined): string {
   }
 }
 
-/** 'button z1:e4' — computed role + ref, never the page's label. */
-function elementRef(req: ActionRequest): string {
-  const el = req.element;
-  if (!el) return 'an element';
-  const role = (el.role || el.tag || 'element').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 30) || 'element';
-  const ref = el.ref.replace(/[^A-Za-z0-9:_-]/g, '').slice(0, 40);
-  return ref ? `${role} ${ref}` : role;
+/** 'button z1:e4' (computed role + ref, never the page's label), or 'an element'. */
+function targetRef(req: ActionRequest): string {
+  return req.element ? elementRef(req.element) : 'an element';
 }
 
 /** 'a button' / 'a text box' — computed role only, for titles. */
@@ -115,11 +112,11 @@ export function describeAction(req: ActionRequest): string {
   const where = displayHost(req.pageUrl);
   switch (req.kind) {
     case 'click':
-      return `click ${elementRef(req)} on ${where}`;
+      return `click ${targetRef(req)} on ${where}`;
     case 'type':
-      return `type into ${elementRef(req)} on ${where}${req.key ? ` and press ${clean(req.key, 20)}` : ''}`;
+      return `type into ${targetRef(req)} on ${where}${req.key ? ` and press ${clean(req.key, 20)}` : ''}`;
     case 'select':
-      return `choose an option in ${elementRef(req)} on ${where}`;
+      return `choose an option in ${targetRef(req)} on ${where}`;
     case 'press':
       return req.key && isPasteKey(req.key)
         ? `paste the clipboard (${clean(req.key, 30)}) into ${where}`
@@ -138,7 +135,7 @@ export function describeAction(req: ActionRequest): string {
     case 'tab_close':
       return `close a tab on ${where}`;
     case 'hover':
-      return `hover ${elementRef(req)} on ${where}`;
+      return `hover ${targetRef(req)} on ${where}`;
     case 'scroll':
       return `scroll on ${where}`;
     case 'read':
@@ -256,7 +253,7 @@ export function buildPrompt(req: ActionRequest, decision: PolicyDecision, ctx: P
   const el = req.element;
   const secret = el ? isSecretField(el) : false;
   if (el && (req.kind !== 'press' || req.focus === 'element')) {
-    if (req.kind === 'press') lines.push(`Focused element: ${elementRef(req)}`);
+    if (req.kind === 'press') lines.push(`Focused element: ${targetRef(req)}`);
     if (el.frameUrl && el.frameUrl !== req.pageUrl) lines.push(`Inside frame: ${displayOrigin(el.frameUrl)}`);
     if (el.href) lines.push(`Link goes to: ${showUrl(el.href)}`);
     if (el.isSubmit && el.formAction) lines.push(`Form is sent to: ${showUrl(el.formAction)}`);
