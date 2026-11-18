@@ -430,6 +430,22 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('main.swift')).toContain('box.start = { done in stephenControl.start(done) }');
   });
 
+  it('#138: a waiting question shows a banner on every page that only opens the card, and a badge on Home', () => {
+    const main = read('MainWindow.swift');
+    // Above the page switch, so every page (and the offline view) gets it.
+    expect(main).toMatch(/if !model\.confirms\.isEmpty \{ questionBanner \}\s*detail\.frame/);
+    const banner = main.match(/private var questionBanner: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(banner).toContain('"Stephen is waiting for your OK"');
+    // Safety: the one action opens the Ask box. No Allow, no answer, no keyboard shortcut, no third-party text.
+    expect(banner.match(/\{ [^{}]*\(\) \}/g)).toEqual(['{ actions.ask() }']);
+    expect(banner).not.toMatch(/Allow|approve|answer|denyFirstConfirm|keyboardShortcut|onSubmit|\.prompt|\.text\b|\.title\b/);
+    // Badge: Home's row counts the waiting questions; the sidebar row says it in words for VoiceOver.
+    expect(main).toContain('badge: p == .home ? model.confirms.count : 0');
+    expect(read('Components/Sidebar.swift')).toContain('"1 question waiting"');
+    // The dead Home branch is gone (a waiting question makes the chat non-empty, so the line never showed).
+    expect(read('HomeView.swift')).not.toContain('"Answer"');
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
     for (const src of [window, client, read('AskBox.swift'), read('Components/ChatThread.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];
@@ -542,7 +558,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).toContain('.stephenThemedBySettings()');
     const home = read('HomeView.swift');
     expect(home).toContain('let HOME_SUGGESTIONS = ["Plan my day", "Find internships", "Start a job"]');
-    expect(home).toContain('model.confirms.count');
+    // A waiting question makes the chat non-empty, so Home shows the card (#138 banner covers the other pages).
+    expect(home).toContain('model.thread.isEmpty && model.confirms.isEmpty');
     expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
   });
 

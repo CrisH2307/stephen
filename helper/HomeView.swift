@@ -104,12 +104,11 @@ struct HomeView: View {
     }
   }
 
-  /// "Nothing waiting · What's my day?" Waiting questions and running jobs come first when there are any.
+  /// "Nothing waiting · What's my day?" Running jobs come first when there are any. (A waiting question is never here:
+  /// it makes the chat non-empty, so Home shows the card instead, and the banner shows on every page, #138.)
   private var todayLine: some View {
-    let waiting = model.confirms.count
     let running = model.jobs.filter { $0.isRunning }.count
     let (text, word, act): (String, String, () -> Void) = {
-      if waiting > 0 { return (waiting == 1 ? "1 question waiting" : "\(waiting) questions waiting", "Answer", { actions.ask() }) }
       if running > 0 { return (running == 1 ? "1 job running" : "\(running) jobs running", "See jobs", { nav.page = .jobs }) }
       return ("Nothing waiting", "What's my day?", { model.sendChat(APP_TODAY_PROMPT) })
     }()
