@@ -9,7 +9,7 @@ if (!file || !existsSync(file)) {
 }
 const r = JSON.parse(readFileSync(file, 'utf8'));
 const clean = (s) => (s ?? '').replace(/\u001b\[[0-9;]*m/g, '').split('\n').find((l) => l.trim())?.trim().slice(0, 200).replaceAll('`', "'") ?? '';
-const name = (s) => (s ?? '').replaceAll('`', "'").slice(0, 200); // in a code span: no @mentions, no Markdown
+const name = (s) => (s ?? '').replace(/\s+/g, ' ').replaceAll('`', "'").slice(0, 200); // in a code span: no @mentions, no Markdown
 const rel = (p) => 'test/' + p.split('/test/').slice(1).join('/test/');
 const lines = [];
 for (const f of r.testResults) {
