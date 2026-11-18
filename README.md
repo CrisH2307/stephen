@@ -115,7 +115,7 @@ And what Claude sees when it tries to use Zen:
 | Situation | What Claude does |
 |---|---|
 | Zen was opened with Zen for Stephen | Uses your open Zen: your existing tabs, or a new tab in your windows. |
-| Zen is open the normal way | Tells you: *"Zen is open, but it wasn't started with Stephen access. Quit Zen (⌘Q) and reopen it with the 'Zen for Stephen' app…"*  and waits for you instead of retrying. |
+| Zen is open the normal way | Tells you Stephen needs "Zen for Stephen", and why: Stephen only connects to a Zen started with its remote-control port open, and a normal Zen window does not open it. It waits for you instead of retrying. |
 | Zen isn't open | Tells you to open Zen with the Zen for Stephen app. It does **not** open a browser itself. |
 
 `zen-launch` options: `--quit-running` (what the Reopen button runs), `--json`. Exit codes: `0` Zen is ready for Stephen, `2` you need to do something (e.g. Zen is open normally), `1` error. `stephen doctor` shows whether a Stephen-ready Zen is running, whether Zen is open normally, and whether the launcher app exists.

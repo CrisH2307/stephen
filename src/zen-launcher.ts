@@ -28,7 +28,7 @@ import {
   readAppBundleInfo,
 } from './drivers/macos.js';
 import { type Clock, errText, realClock } from './drivers/util.js';
-import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_LAUNCHER_APP_NAME, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
+import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import type { ResolvedConfig } from './types.js';
 
 export type ExitCode = 0 | 1 | 2;
@@ -86,7 +86,7 @@ export interface ZenLaunchResult {
 export const ZEN_RUNNING_NORMALLY_LEAD = 'Zen is open without Stephen access.';
 
 export const ZEN_RUNNING_NORMALLY_MESSAGE =
-  `${ZEN_RUNNING_NORMALLY_LEAD} Quit Zen (⌘Q) and run this again, or run \`stephen zen-launch --quit-running\` ` +
+  `${ZEN_RUNNING_NORMALLY_LEAD} ${ZEN_WHY_LAUNCHER} Quit Zen (⌘Q) and run this again, or run \`stephen zen-launch --quit-running\` ` +
   'to have Zen asked to quit and reopened for Stephen. Your tabs come back if Zen is set to restore your previous session.';
 
 export function defaultZenLaunchDeps(cfg: ResolvedConfig): ZenLaunchDeps {
@@ -251,7 +251,8 @@ export function findLegacyZenLauncher(
 }
 
 const DIALOG_REOPEN =
-  'Zen is open without Stephen access. Quit and reopen it for Stephen? Your tabs come back if Zen restores your previous session.';
+  'Zen is open without Stephen access. A normal Zen window does not open the remote-control port Stephen needs. ' +
+  'Quit and reopen it for Stephen? Your tabs come back if Zen restores your previous session.';
 
 /**
  * The applet's AppleScript. Paths are AppleScript string literals (quotes/backslashes escaped) and

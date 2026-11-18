@@ -27,7 +27,7 @@ import {
   readDevToolsActivePort,
   resolveZenRealProfile,
 } from './drivers/macos.js';
-import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
+import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import { errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
 import { pageEngine } from './page/index.js';
@@ -329,7 +329,7 @@ async function doctor(network = false, json = false): Promise<number> {
           ok: false,
           label: 'Stephen-ready Zen running',
           detail: 'no — Zen is open normally (without Stephen access)',
-          fix: `Quit Zen (⌘Q) and reopen it for Stephen. ${openHint} Your tabs come back if Zen restores your previous session.`,
+          fix: `${ZEN_WHY_LAUNCHER} Quit Zen (⌘Q) and reopen it for Stephen. ${openHint} Your tabs come back if Zen restores your previous session.`,
         });
       } else {
         add({ ok: true, info: true, label: 'Stephen-ready Zen running', detail: `no — Zen is not open. ${zenAttach ? openHint : 'Stephen starts it when needed (launch: auto).'}` });
