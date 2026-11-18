@@ -23,6 +23,7 @@
  * WarmConversationRunner (conversation.ts) owns when a process lives and dies; this class only drives one.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import { groupAlive } from '../lib/process.js';
 import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
 import type { Trust } from './assistant.js';
 import {
@@ -498,16 +499,6 @@ export class WarmClaude implements WarmProcess {
   killNow(): void {
     this.killing = true;
     if (this.child?.pid) killGroup(this.child.pid, 'SIGKILL');
-  }
-}
-
-/** Is any process of group `pid` still there? */
-function groupAlive(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 

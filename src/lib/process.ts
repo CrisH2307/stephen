@@ -74,6 +74,16 @@ export function startedWithinJob(startedAt: number, jobStart: number, platform: 
   return startedAt >= Math.floor(jobStart / 1000) * 1000 - slack;
 }
 
+/** Is any process of group `pid` still there? */
+export function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Signal a whole process group (negative pid); false on "no such process" or any other error. */
 export function killGroup(pid: number, signal: NodeJS.Signals): boolean {
   if (!Number.isInteger(pid) || pid <= 1) return false;
