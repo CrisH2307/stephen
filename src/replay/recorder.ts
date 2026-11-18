@@ -22,7 +22,7 @@ import { execFile } from 'node:child_process';
 import { chmodSync, constants as fsConstants, lstatSync, mkdirSync, openSync, closeSync, readdirSync, unlinkSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { validCommandId } from '../lib/command-id.js';
 import { isInside, readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
@@ -34,6 +34,10 @@ export const REPLAY_MAX_AGE_MS = 30 * 24 * 3600_000;
 export const REPLAY_PURGE_EVERY_MS = 6 * 3600_000;
 const FUTURE_SLACK_MS = 24 * 3600_000;
 export const REPLAY_MAX_CLIPS = 100;
+/** Clips that may wait in memory for the disk; more are dropped (a stuck write must not hold them all). */
+export const REPLAY_MAX_WAITING = 5;
+/** Time limit per write or purge. */
+export const REPLAY_JOB_TIMEOUT_MS = 30_000;
 export const REPLAY_MAX_DAY_BYTES = 50 * 1024 * 1024;
 /** The one source that records (F5). */
 export const REPLAY_SOURCE = 'voice-ptt';
@@ -77,9 +81,14 @@ export function syncedFolder(path: string, userHome: string = homedir()): string
     [join(u, 'Library', 'Mobile Documents'), 'iCloud Drive'],
     [join(u, 'Library', 'CloudStorage'), 'a cloud storage folder'],
     [join(u, 'Dropbox'), 'Dropbox'],
+    // Older Google Drive and OneDrive apps sync these folders in the home folder (newer ones use CloudStorage).
+    [join(u, 'Google Drive'), 'Google Drive'],
+    [join(u, 'My Drive'), 'Google Drive'],
   ];
   for (const [dir, name] of places) if (isInside(p, dir)) return name;
-  return null;
+  // "OneDrive" or "OneDrive - <organization>".
+  const top = isInside(p, u) ? relative(u, p).split(sep)[0] : undefined;
+  return top && /^OneDrive( - .+)?$/.test(top) ? 'OneDrive' : null;
 }
 
 /**
@@ -160,6 +169,8 @@ export interface ReplayRecorderOptions {
   excludeFromBackups?: (dir: string) => Promise<void>;
   /** For tests: the purge interval (default REPLAY_PURGE_EVERY_MS). */
   purgeEveryMs?: number;
+  /** For tests: the time limit per write or purge (default REPLAY_JOB_TIMEOUT_MS). */
+  jobTimeoutMs?: number;
 }
 
 export class ReplayRecorder {
@@ -168,6 +179,8 @@ export class ReplayRecorder {
   private chain: Promise<void> = Promise.resolve();
   private excludedIno: number | null = null;
   private purgeTimer: ReturnType<typeof setInterval> | null = null;
+  /** Clips queued and not yet written: each holds its audio in memory. */
+  private waiting = 0;
 
   constructor(private readonly o: ReplayRecorderOptions) {}
 
@@ -181,7 +194,10 @@ export class ReplayRecorder {
     } catch {
       return false;
     }
-    this.enqueue(() => this.write(c));
+    // A stuck disk must not pile up the owner's audio in memory (#169, review point 7): past the cap, drop it.
+    if (this.waiting >= REPLAY_MAX_WAITING) return false;
+    this.waiting++;
+    this.enqueue(() => this.write(c), () => this.waiting--);
     return true;
   }
 
@@ -231,10 +247,24 @@ export class ReplayRecorder {
     return (this.o.now ?? Date.now)();
   }
 
-  private enqueue(job: () => Promise<void>): void {
+  /**
+   * One job at a time, after the command's own synchronous work. A job that takes longer than the time limit counts
+   * as failed and the queue moves on (the stuck call itself can't be cancelled; it holds its one clip until it ends).
+   */
+  private enqueue(job: () => Promise<void>, done?: () => void): void {
+    const limitMs = this.o.jobTimeoutMs ?? REPLAY_JOB_TIMEOUT_MS;
+    const timed = (): Promise<void> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const limit = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('replay write timed out')), limitMs);
+        timer.unref();
+      });
+      return Promise.race([job(), limit]).finally(() => clearTimeout(timer));
+    };
     this.chain = this.chain
-      .then(() => new Promise<void>((r) => setImmediate(r))) // after the command's own synchronous work
-      .then(job)
+      .then(() => new Promise<void>((r) => setImmediate(r)))
+      .then(timed)
+      .finally(() => done?.())
       .catch(() => {
         this.failures++;
         try {
