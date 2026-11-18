@@ -458,6 +458,20 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('MainWindow.swift')).toMatch(/shortcut: p\.key\.map \{ "⌘\\\(\$0\.character\)" \}[\s\S]*?\.keyboardShortcut\(p\.key!, modifiers: \.command\)/);
   });
 
+  it('#147: Cmd+comma opens Settings on the last pane, one large title, captions over the choices', () => {
+    const settings = read('SettingsPage.swift');
+    expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .talk');
+    expect(settings).toContain('Text(verbatim: "Settings").sectionLabelStyle(t)');
+    expect(settings).not.toMatch(/"Settings"\)\.font\(TypeScale\.pageTitle\)/);
+    for (const label of ['Length', 'Tone', 'Model', 'Effort']) {
+      expect(settings).toMatch(new RegExp(`Segmented\\("${label}",[^\\n]*caption: true\\)`));
+    }
+    expect(read('Components/Controls.swift')).toMatch(/if caption \{\s*Text\(verbatim: label\)/);
+    const app = read('AppWindow.swift');
+    expect(app).toContain('NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")');
+    expect(app).toContain('@objc func settingsClicked(_ sender: Any?) { show(page: .settings) }');
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
     for (const src of [window, client, read('AskBox.swift'), read('Components/ChatThread.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];

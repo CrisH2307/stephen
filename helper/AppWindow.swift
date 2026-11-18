@@ -130,6 +130,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
   /// ⌘K and the Ask Stephen menu item: open the Ask box, like the sidebar row (owner's choice of 2026-11-13, #87).
   @objc func askClicked(_ sender: Any?) { actions.ask() }
 
+  /// ⌘,: the window on Settings, which opens on the pane used last (#147).
+  @objc func settingsClicked(_ sender: Any?) { show(page: .settings) }
+
   func show(page: Page? = nil) {
     if let page = page { nav.page = page }
     let w: NSWindow
@@ -180,6 +183,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     let ask = NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "k")
     ask.target = self
     appMenu.addItem(ask)
+    let settings = NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")
+    settings.target = self
+    appMenu.addItem(settings)
     appMenu.addItem(
       NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
     appItem.submenu = appMenu
