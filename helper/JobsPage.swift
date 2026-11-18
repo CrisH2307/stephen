@@ -37,7 +37,6 @@ struct JobsView: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
   @State private var openId: String? = nil
-  private let ticker = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
   var body: some View {
     let running = model.jobs.filter { $0.isRunning }
@@ -61,7 +60,17 @@ struct JobsView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .onAppear { model.refreshJobs() }
-    .onReceive(ticker) { _ in model.refreshJobs() }
+    // Poll every 5 s only while a job runs (#202): each answer reassigns model.jobs, which redraws every view
+    // watching the model. SwiftUI cancels this loop when the page goes away or the running state flips.
+    .task(id: !running.isEmpty) {
+      while !Task.isCancelled && model.jobs.contains(where: { $0.isRunning }) {
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+        if Task.isCancelled { break }
+        model.refreshJobs()
+      }
+    }
+    // A job started from the Ask box while this page is open: pick it up once the reply ends.
+    .onReceive(model.$state.dropFirst().removeDuplicates()) { s in if s == "idle" { model.refreshJobs() } }
   }
 
   private func group(_ title: String, _ jobs: [JobRow]) -> some View {
