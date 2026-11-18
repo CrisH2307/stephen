@@ -623,12 +623,13 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
         );
         await hub.noteReads(tab, page, ticket);
         const kb = Math.round(png.length / 1024);
+        const clipNote = engine.screenshotNote?.(png); // our own text, not page text
         return {
           content: [
             { type: 'image', data: Buffer.from(png).toString('base64'), mimeType: 'image/png' },
             {
               type: 'text',
-              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''} at ${url} — ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${hub.alertNotes(tab)}`,
+              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''} at ${url} — ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${clipNote ? `\n${clipNote}` : ''}${hub.alertNotes(tab)}`,
             },
           ],
         };
