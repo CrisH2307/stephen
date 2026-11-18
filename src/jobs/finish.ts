@@ -72,7 +72,7 @@ export function spokenShow(j: JobState): { say: string; print: string } {
 
 export interface FinishWatcherOptions {
   home: string;
-  list: () => JobState[];
+  list: () => JobState[] | Promise<JobState[]>;
   /** The macOS notification (title, body). */
   notify: (title: string, body: string) => void;
   /** Show and say `text` when the listener is idle (never during a recording); returns at once. */
@@ -85,6 +85,7 @@ export interface FinishWatcherOptions {
 export class FinishWatcher {
   private timer: NodeJS.Timeout | null = null;
   private seen: Set<string> | null = null;
+  private polling = false;
 
   constructor(private readonly o: FinishWatcherOptions) {}
 
@@ -94,13 +95,15 @@ export class FinishWatcher {
     return new Set(ids.filter((x): x is string => typeof x === 'string'));
   }
 
-  /** One look at the jobs: announce the newly final ones once. Never throws. */
-  poll(): void {
+  /** One look at the jobs: announce the newly final ones once. Never rejects. A poll still running skips the next. */
+  async poll(): Promise<void> {
+    if (this.polling) return;
+    this.polling = true;
     try {
+      const jobs = await this.o.list();
       this.seen ??= this.load();
       const seen = this.seen;
       const now = (this.o.now ?? Date.now)();
-      const jobs = this.o.list();
       const fresh = jobs.filter((j) => isFinal(j.status) && !seen.has(j.id));
       const toTell = fresh.filter((j) => j.endedAt !== null && now - j.endedAt < ANNOUNCE_WINDOW_MS).sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0)).slice(-ANNOUNCE_MAX_PER_POLL);
       // Remember before telling: a crash while speaking must not repeat it. Forget ids whose job is gone.
@@ -122,13 +125,15 @@ export class FinishWatcher {
       }
     } catch (e) {
       this.o.log?.(`Note: couldn't check the jobs (${(e as Error).message}).`);
+    } finally {
+      this.polling = false;
     }
   }
 
   start(): void {
     if (this.timer) return;
-    this.poll();
-    this.timer = setInterval(() => this.poll(), this.o.pollMs ?? FINISH_POLL_MS);
+    void this.poll();
+    this.timer = setInterval(() => void this.poll(), this.o.pollMs ?? FINISH_POLL_MS);
     this.timer.unref();
   }
 

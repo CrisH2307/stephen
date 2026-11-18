@@ -1,5 +1,5 @@
 /** Process helpers shared by the drivers, memory (lock files), the voice Claude, jobs and the self-test. */
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but isn't ours. */
 export function isPidAlive(pid: number): boolean {
@@ -23,6 +23,23 @@ export function commandOf(pid: number): string {
   } catch {
     return '';
   }
+}
+
+/** Longest wait for one async `ps` (commandOfAsync). */
+export const PS_TIMEOUT_MS = 2_000;
+
+/**
+ * commandOf without blocking the event loop (the listener's job watcher, #202 B2). null when ps did not answer in
+ * time: unknown, so the caller must not act on it. No cache: every call runs ps, a pid can be reused (R8-5).
+ */
+export function commandOfAsync(pid: number, timeoutMs = PS_TIMEOUT_MS): Promise<string | null> {
+  if (!isPidAlive(pid)) return Promise.resolve('');
+  return new Promise((resolve) => {
+    execFile('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: timeoutMs }, (err, stdout) => {
+      if (err?.killed) resolve(null);
+      else resolve(err ? '' : stdout.trim());
+    });
+  });
 }
 
 /**

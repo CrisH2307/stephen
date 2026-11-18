@@ -34,7 +34,7 @@ import {
   wantsWeb,
   type JobSpec,
 } from './spec.js';
-import { isFinal, jobsDir, listJobStates, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState } from './state.js';
+import { isFinal, jobsDir, listJobStates, listJobStatesAsync, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
 
 export type GitFn = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -145,12 +145,21 @@ export class JobManager {
     return expandPath(this.o.config.root, this.userHome);
   }
 
-  list(): JobState[] {
-    return listJobStates(this.o.home, {
+  private reconcileOptions(): ReconcileOptions {
+    return {
       now: () => this.now(),
       ...(this.o.alive ? { alive: this.o.alive } : {}),
       onFailed: (s) => this.auditEnd(s, s.error, 'reconcile'),
-    });
+    };
+  }
+
+  list(): JobState[] {
+    return listJobStates(this.o.home, this.reconcileOptions());
+  }
+
+  /** list() without blocking the event loop on `ps` (the listener's job watcher, #202 B2). */
+  listAsync(): Promise<JobState[]> {
+    return listJobStatesAsync(this.o.home, this.reconcileOptions());
   }
 
   get(id: string): JobState | null {
