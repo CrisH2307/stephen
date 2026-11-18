@@ -16,7 +16,6 @@ import {
   MEMORY_OFF_MESSAGE,
   PROPOSAL_GONE_MESSAGE,
   appSocketPath,
-  assistantQueue,
   type AppCommandQueue,
   type AppServerOptions,
 } from '../../src/app/server.js';
@@ -380,24 +379,6 @@ describe('chat', () => {
     expect(done).toMatchObject({ entryId: a.entryId, outcome: 'error', reply: 'Something went wrong: boom' });
   });
 
-  it('assistantQueue (no listener): busy follows the assistant; stop cancels and ends the conversation', async () => {
-    const calls: string[] = [];
-    let busy = false;
-    const q = assistantQueue({
-      get busy() {
-        return busy;
-      },
-      command: async (text, o) => (calls.push(`run ${text} ${o.source} ${o.id}`), {}) as CommandReport,
-      cancel: () => (calls.push('cancel'), true),
-      endConversation: () => void calls.push('end'),
-    });
-    expect(q.start('x', { id: 'h_1', raw: 'x', speak: false })).not.toBeNull();
-    busy = true;
-    expect(q.busy()).toBe(true);
-    expect(q.start('y', { id: 'h_2', raw: 'y', speak: false })).toBeNull();
-    q.stop();
-    expect(calls).toEqual(['run x app h_1', 'cancel', 'end']);
-  });
 });
 
 describe('memory, history, settings, audit, window', () => {

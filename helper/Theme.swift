@@ -94,7 +94,7 @@ struct Theme: Equatable {
 // MARK: scale (plan section 9)
 
 enum Corner {
-  static let window: CGFloat = 12, askBox: CGFloat = 14, list: CGFloat = 12, button: CGFloat = 10, row: CGFloat = 8
+  static let askBox: CGFloat = 14, list: CGFloat = 12, button: CGFloat = 10, row: CGFloat = 8
 }
 
 /// v3.2: roomier than v3.1 (was 4, 8, 12, 16, 24, 32). Still a 2 pt grid; page padding is xxl, section gaps xl.

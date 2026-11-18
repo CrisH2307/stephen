@@ -24,10 +24,6 @@ export function makeTabId(browser: BrowserName, n: number): TabId {
   return `${tabPrefix(browser)}${n}`;
 }
 
-export function isTabId(s: string): boolean {
-  return TAB_RE.test(s);
-}
-
 export function browserOfTab(tab: TabId): BrowserName {
   const m = TAB_RE.exec(tab);
   if (!m) throw new HubError('TAB_NOT_FOUND', `"${tab}" is not a tab id (expected c1, z2, …). Use tabs_list.`);

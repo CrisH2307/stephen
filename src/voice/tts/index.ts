@@ -25,7 +25,6 @@ export type { SpeakHandle, Speaker } from '../speech.js';
 export { parseTtsConfig, TtsConfigError, TTS_CONFIG_SHAPE, type TtsConfig } from './config.js';
 export { findApiKey } from './keys.js';
 export { ensureKokoro, isKokoroInstalled, KOKORO_MODEL } from './kokoro.js';
-export { redactKey } from './redact.js';
 
 export const TTS_CHAIN: readonly TtsProviderName[] = ['elevenlabs', 'kokoro', 'say'];
 

@@ -12,34 +12,6 @@
 import AppKit
 import SwiftUI
 
-struct NoticeView: View {
-  let text: String
-
-  var body: some View {
-    Text(verbatim: text)
-      .font(.callout)
-      .foregroundColor(.secondary)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 6)
-  }
-}
-
-/** A centred symbol and one line, for lists with nothing in them yet. */
-struct EmptyStateView: View {
-  let symbol: String
-  let text: String
-
-  var body: some View {
-    VStack(spacing: 8) {
-      Image(systemName: symbol).font(.largeTitle).foregroundColor(.secondary)
-      Text(verbatim: text).foregroundColor(.secondary).multilineTextAlignment(.center)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .padding(20)
-  }
-}
-
 /// The window when the listener can't be reached (#144): theme colours, plain words, the same Start as the sidebar, and
 /// the technical reason folded under Details. The caller places it (centred on a page, above Appearance in Settings).
 struct OfflineView: View {

@@ -142,11 +142,6 @@ export function frameByIndex(page: Page, k: number): Frame | null {
   return f && !f.detached ? f : null;
 }
 
-/** High-water element number for frame index k of page (test/diagnostic helper). */
-export function highWater(page: Page, k: number): number {
-  return regOf(page).hw.get(k) ?? 0;
-}
-
 function noteSeq(frame: Frame, seq: unknown): void {
   if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0) return;
   const page = frame.page();
