@@ -42,6 +42,23 @@ export function commandOf(pid: number): string {
   }
 }
 
+/** Longest wait for one async `ps` (commandOfAsync). */
+export const PS_TIMEOUT_MS = 2_000;
+
+/**
+ * commandOf without blocking the event loop (the listener's job watcher, #202 B2). null when ps did not answer in
+ * time: unknown, so the caller must not act on it. No cache: every call runs ps, a pid can be reused (R8-5).
+ */
+export function commandOfAsync(pid: number, timeoutMs = PS_TIMEOUT_MS): Promise<string | null> {
+  if (!isPidAlive(pid)) return Promise.resolve('');
+  return new Promise((resolve) => {
+    execFile('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: timeoutMs }, (err, stdout) => {
+      if (err?.killed) resolve(null);
+      else resolve(err ? '' : stdout.trim());
+    });
+  });
+}
+
 /**
  * Pids of this user's processes whose working directory is `dir` or inside it (macOS/Linux `lsof`), never this
  * process. One `lsof` over all cwds, filtered by path: fast however big `dir` is. [] when lsof is missing or fails.

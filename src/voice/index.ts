@@ -873,7 +873,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     if (jobManager) {
       finishWatcher = new FinishWatcher({
         home,
-        list: () => jobManager.list(),
+        list: () => jobManager.listAsync(), // async ps: the audio loop never waits on it (#202 B2)
         notify: jobNotify,
         say: (text) => {
           out(`Job: ${text}`);
