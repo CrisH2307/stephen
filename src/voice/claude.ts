@@ -685,15 +685,7 @@ export class ClaudeRunner {
     const started = Date.now();
     let child: ChildProcess;
     try {
-      child = spawnFn(this.o.claudePath, args, {
-        cwd: this.o.cwd,
-        // The ElevenLabs key (if it came from the environment) has no business in claude or the server it starts:
-        // the listener itself speaks the replies (review #4 finding 7).
-        env: withoutSecrets(this.o.env ?? process.env),
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true, // own process group → cancel can kill claude AND the MCP server it started
-        shell: false,
-      });
+      child = spawnFn(this.o.claudePath, args, claudeSpawnOptions(this.o, 'ignore'));
     } catch (e) {
       if (inst) removeServeLock(inst.lockPath);
       return { kind: 'error', message: `Could not start Claude Code (${(e as Error).message}).`, sessionId: null };
@@ -711,7 +703,7 @@ export class ClaudeRunner {
       child.once('error', (e: NodeJS.ErrnoException) => {
         resolveRun({
           kind: 'error',
-          message: e.code === 'ENOENT' ? `Claude Code was not found ("${this.o.claudePath}"). Install it, or set "voice": {"claudePath": "…"}.` : `Could not start Claude Code (${e.message}).`,
+          message: e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : `Could not start Claude Code (${e.message}).`,
           sessionId: null,
         });
       });
@@ -776,6 +768,20 @@ export const KEPT_CLAUDE_CODE_ENV: ReadonlySet<string> = new Set([
   'CLAUDE_CODE_CLIENT_KEY',
   'CLAUDE_CODE_CLIENT_KEY_PASSPHRASE',
 ]);
+
+/**
+ * Spawn options for both Claude wrappers (this one and warm-claude). The env scrub lives here only: the ElevenLabs key
+ * and account secrets have no business in claude or the server it starts (review #4 finding 7).
+ * detached: own process group, so a kill takes claude AND the stephen serve it started.
+ */
+export function claudeSpawnOptions(o: { cwd: string; env?: NodeJS.ProcessEnv }, stdin: 'ignore' | 'pipe'): SpawnOptions {
+  return { cwd: o.cwd, env: withoutSecrets(o.env ?? process.env), stdio: [stdin, 'pipe', 'pipe'], detached: true, shell: false };
+}
+
+/** What both wrappers say when the claude program is missing (spawn ENOENT). */
+export function claudeNotFound(claudePath: string): string {
+  return `Claude Code was not found ("${claudePath}"). Install it, or set "voice": {"claudePath": "…"}.`;
+}
 
 /** Child-process environment without Stephen's own secrets and without a parent Claude Code session's variables. */
 export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
