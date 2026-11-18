@@ -14,6 +14,16 @@ import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromiumArgs, chromiumPath } from '../helpers/chromium.js';
 
+function capture(tag: string): void {
+  const dir = process.env.CAPTURE_DIR;
+  if (!dir) return;
+  try {
+    execFileSync('screencapture', ['-x', `${dir}/${process.env.ITER ?? '0'}-${tag}.png`]);
+  } catch {
+    /* throwaway */
+  }
+}
+
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = join(ROOT, 'dist/cli.js');
 
@@ -174,9 +184,12 @@ describe('Stephen end-to-end over stdio (Chrome agent mode, real Chromium)', () 
     const snap = text(await call('snapshot', { tab }));
     const typed = await call('type', { target: refFor(snap, 'Your name'), text: 'Cris', intent: 'fill in my name' });
     expect(typed.isError, text(typed)).toBeFalsy();
+    capture('mcp-before-click');
     const clicked = await call('click', { target: refFor(snap, 'Show details'), intent: 'reveal details' });
     expect(clicked.isError, text(clicked)).toBeFalsy();
     const page = text(await call('read_text', { tab }));
+    if (!page.includes('Details shown')) capture('mcp-after-failed-click');
+    console.log('CLICK_RESULT mcp', JSON.stringify(text(clicked)).slice(0, 300));
     expect(page).toContain('Details shown');
     expect(text(await call('snapshot', { tab }))).toContain('value="Cris"');
   });

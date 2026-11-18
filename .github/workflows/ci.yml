@@ -1,39 +1,18 @@
 name: ci
 
-# docs/CI-CD-PROPOSAL.md, rollout steps 1 and 3: the full suite on Linux and on macOS.
-# No secrets, no write permission, no pull_request_target, no PR text inside run:.
-
+# THROWAWAY experiment (never merged): screen captures around the lost clicks on the macOS runner.
+# Only test fixture pages on 127.0.0.1 are on screen. No secrets.
 on:
   pull_request:
-    branches: [qa, main]
-  push:
     branches: [qa]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  # PRs share a group per PR (a new push cancels the old run). Each qa push gets its own group, because GitHub
-  # cancels a pending run in the same group even with cancel-in-progress false.
-  group: ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: linux
-            runner: ubuntu-24.04
-            timeout: 25
-          - os: macos
-            runner: macos-15
-            timeout: 30
-    name: ${{ matrix.os }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.timeout }}
+  capture:
+    runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,21 +21,28 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - name: Linux tools the tests need
-        if: matrix.os == 'linux'
+      - name: Screen and Chrome
         run: |
-          command -v lsof >/dev/null && command -v ps >/dev/null || \
-            { sudo apt-get update && sudo apt-get install -y lsof procps; }
-      - name: Swift must exist on macOS (the Swift tests skip without it)
-        if: matrix.os == 'macos'
-        run: swiftc --version
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/stephen-voice-test
-          key: voice-models-${{ runner.os }}-${{ hashFiles('src/voice/models.ts', 'src/voice/tts/kokoro.ts') }}
+          system_profiler SPDisplaysDataType || true
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version || true
       - run: npm ci
       - run: npm run build
-      - run: npm run typecheck
-      # The github-actions reporter writes passed, failed and skipped counts to the job summary.
-      - name: Tests
-        run: npx vitest run --reporter=default --reporter=github-actions
+      - name: Loop mcp.int and the selftest
+        run: |
+          mkdir -p caps
+          export CAPTURE_DIR="$PWD/caps"
+          for i in $(seq 1 15); do
+            export ITER=$i
+            npx vitest run test/e2e/mcp.int.test.ts test/selftest/selftest.int.test.ts > "caps/$i.log" 2>&1 && r=pass || r=FAIL
+            echo "iteration $i: $r"
+            grep -hE "CLICK_RESULT|^ FAIL|      Tests" "caps/$i.log" | cut -c1-300 || true
+            # Keep the before-click captures only for iteration 1 and for failed iterations.
+            if [ "$r" = pass ] && [ "$i" != 1 ]; then rm -f caps/$i-*.png; fi
+          done
+          ls -la caps | grep png || echo "no captures"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: captures
+          path: caps/
+          retention-days: 3

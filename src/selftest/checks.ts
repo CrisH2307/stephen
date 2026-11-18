@@ -5,7 +5,19 @@
  * drivers Claude Code uses — and verifies its effect independently where it can (server-side
  * records from the fixture server, a fresh snapshot, or the decoded PNG).
  */
+import { execFileSync } from 'node:child_process';
 import type { BrowserName } from '../types.js';
+
+function capture(tag: string): void {
+  const dir = process.env.CAPTURE_DIR;
+  if (!dir) return;
+  try {
+    execFileSync('screencapture', ['-x', `${dir}/${process.env.ITER ?? '0'}-${tag}.png`]);
+  } catch {
+    /* throwaway */
+  }
+}
+
 
 export type CheckStatus = 'pass' | 'fail' | 'skip';
 
@@ -306,8 +318,11 @@ export async function runChecks(env: CheckEnv): Promise<CheckResult[]> {
     7,
     async () => {
       const t = needForm();
-      ok(await call('click', { target: refs.extras, intent: 'Stephen selftest: tick the checkbox' }), 'click (checkbox)');
+      capture('selftest-before-click');
+      const clickOut = ok(await call('click', { target: refs.extras, intent: 'Stephen selftest: tick the checkbox' }), 'click (checkbox)');
       const line = lineFor(await snapshot(t), 'checkbox "Include extra details"');
+      if (!/\bchecked\b/.test(line)) capture('selftest-after-failed-click');
+      if (!/\bchecked\b/.test(line)) throw new CheckFailure(`CLICK_RESULT ${JSON.stringify(clickOut).slice(0, 300)}`);
       if (!/\bchecked\b/.test(line)) throw new CheckFailure(`the checkbox is not checked after the click: ${line || '(missing)'}`);
       return 'checkbox checked';
     },
