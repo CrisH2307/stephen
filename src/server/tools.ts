@@ -996,10 +996,11 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
       const files: string[] = [];
       for (const p of paths) {
         const abs = expandPath(p, homedir());
+        // Stephen's own private recordings never go to a web page (issue #48). Asked before `stat`, in any letter
+        // case, so the answer never tells the model whether a clip exists (#169).
+        if (isOwnerOnlyFile(abs, cfg.home)) throw new HubError('DENIED', `${basename(abs)} is one of Stephen's private files and is never uploaded.`);
         const st = await stat(abs).catch(() => null);
         if (!st?.isFile()) throw new HubError('INVALID_ARG', `File not found: ${abs}`);
-        // Stephen's own private recordings never go to a web page (issue #48).
-        if (isOwnerOnlyFile(abs, cfg.home)) throw new HubError('DENIED', `${basename(abs)} is one of Stephen's private files and is never uploaded.`);
         files.push(abs);
       }
       return hub.withTab(parseRef(target).tab, 'write', async () => {
@@ -1016,7 +1017,12 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
           element: el,
           files,
           auditArgs: { files: files.map((f) => basename(f)) },
-          run: () => engine.uploadFile(page, target, files),
+          // Asked again after the owner's approval: a path swapped for a link to a clip meanwhile is still refused.
+          run: () => {
+            const late = files.find((f) => isOwnerOnlyFile(f, cfg.home));
+            if (late) throw new HubError('DENIED', `${basename(late)} is one of Stephen's private files and is never uploaded.`);
+            return engine.uploadFile(page, target, files);
+          },
           done: `Attached ${files.map((f) => quote(basename(f), 60)).join(', ')} to ${target}`,
         });
       });

@@ -120,6 +120,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R10b-5 | R10b | Low | `doctor` problem mark for any Claude Code newer than 2.1.319 | open | dev | #123 |
 | R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed (#157 merged 2026-11-17) | review | #157 |
 | LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | open | dev | #121 |
-| MJ-1 | manager job 1 | P0 | Recorder plan review | waiting for the plan (checklist on tracker #10) | review | none |
+| MJ-1 | manager job 1 | P0 | Recorder plan review | done: plan accepted with 8 points (#10, 2026-11-17); PR #166 reviewed | review | #166 |
+| I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in PR (not merged). Still open, smaller: Desktop and Documents in iCloud, Google Drive and OneDrive folders; the boundary scan misses non-literal imports; Fn+Option in the switch text; a stuck write holds later clips | review | #169 |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
 | MJ-6 | manager job 6 | P1 | Flaky suite research | in progress | review | #109 |

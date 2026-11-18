@@ -4,7 +4,7 @@
  * the recorder on; upload_file, read_text / navigate on file:// and open_url refuse a clip; no tool and no app
  * message can turn the recorder on.
  */
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -169,6 +169,21 @@ describe('tools refuse a clip', () => {
     for (const p of [sidecar, sneaky]) {
       expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/never uploaded/);
     }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('upload_file: other letter case is the same folder on APFS, and a missing clip gets the same answer (#169)', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    const wav = await seedClip(h.cfg.home);
+    const upper = join(h.cfg.home, 'REPLAY', 'h_00000000000000aa.wav');
+    if (!existsSync(upper)) return; // a case-sensitive disk: other spellings are other folders
+    // With no folder at all, another spelling still gets the same answer (no hint that recording was ever on).
+    const fresh = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    expect(textOf(await fresh.call('upload_file', { target: 'z1:e8', paths: [join(fresh.cfg.home, 'Replay', 'h_00000000000000cc.wav')], intent: 'attach' }))).toMatch(/private files.*never uploaded/);
+    for (const p of [upper, join(h.cfg.home, 'Replay', 'h_00000000000000aa.json'), join(h.cfg.home, 'Replay', 'h_00000000000000bb.wav')]) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/private files.*never uploaded/);
+    }
+    expect(wav).toContain('replay');
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
 

@@ -10,8 +10,8 @@
  *   a temp file inside the folder + rename, 0600, so the label command in PR 3 can rewrite it the same way).
  * - Kept out of Time Machine (the backup-exclude attribute) and Spotlight (.metadata_never_index). Refuses to write when the
  *   folder resolves into iCloud Drive, ~/Library/CloudStorage or ~/Dropbox.
- * - Purged at listener start and on each write by the clip's own start time (30 days), at most 100 clips and 50 MB
- *   of audio per day.
+ * - Purged at listener start, every 6 hours while the listener runs, and on each write, by the clip's own start
+ *   time (30 days; a start more than a day in the future is dropped), at most 100 clips and 50 MB of audio per day.
  * - Writes run after the command was handed off, one at a time, never awaited by the listener; a failure is
  *   swallowed and counted as `replay_write_failed`.
  *
@@ -19,17 +19,20 @@
  * may (test/replay/boundary.test.ts).
  */
 import { execFile } from 'node:child_process';
-import { chmodSync, constants as fsConstants, lstatSync, mkdirSync, openSync, closeSync, readdirSync, realpathSync, unlinkSync } from 'node:fs';
+import { chmodSync, constants as fsConstants, lstatSync, mkdirSync, openSync, closeSync, readdirSync, unlinkSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { validCommandId } from '../lib/command-id.js';
 import { isInside, readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
-import { REPLAY_DIR_NAME } from '../lib/owner-only.js';
+import { REPLAY_DIR_NAME, realThroughParent } from '../lib/owner-only.js';
 import { encodeWav16 } from '../voice/wav.js';
 
 export const REPLAY_MAX_AGE_MS = 30 * 24 * 3600_000;
+/** How often a running listener purges, so clips expire on time with the switch off or no F5 for weeks (#169). */
+export const REPLAY_PURGE_EVERY_MS = 6 * 3600_000;
+const FUTURE_SLACK_MS = 24 * 3600_000;
 export const REPLAY_MAX_CLIPS = 100;
 export const REPLAY_MAX_DAY_BYTES = 50 * 1024 * 1024;
 /** The one source that records (F5). */
@@ -64,18 +67,6 @@ export interface ReplayCapture {
   startedAt: number;
   audio: Float32Array;
   transcript: string;
-}
-
-/** The real path of `p`, through its nearest existing parent when `p` itself does not exist yet. */
-function realThroughParent(p: string): string {
-  const abs = resolve(p);
-  const up = dirname(abs);
-  if (up === abs) return abs;
-  try {
-    return realpathSync(abs);
-  } catch {
-    return join(realThroughParent(up), basename(abs));
-  }
 }
 
 /** The synced folder `path` lies in (by its real path), or null. */
@@ -147,7 +138,8 @@ export function purgeReplayDir(dir: string, now: number): ClipInfo[] {
   const keep: ClipInfo[] = [];
   for (const id of ids) {
     const s = readSidecar(dir, id);
-    if (!s || !sizes.has(id) || now - s.startedAt > REPLAY_MAX_AGE_MS) removeClip(dir, id);
+    // A start time more than a day in the future (a wrong clock, a hand-edited sidecar) would never expire: drop it.
+    if (!s || !sizes.has(id) || now - s.startedAt > REPLAY_MAX_AGE_MS || s.startedAt - now > FUTURE_SLACK_MS) removeClip(dir, id);
     else keep.push({ id, startedAt: s.startedAt, bytes: sizes.get(id)! });
   }
   return keep.sort((a, b) => a.startedAt - b.startedAt);
@@ -166,6 +158,8 @@ export interface ReplayRecorderOptions {
   userHome?: string;
   /** For tests: replaces the backup-exclude attribute write. */
   excludeFromBackups?: (dir: string) => Promise<void>;
+  /** For tests: the purge interval (default REPLAY_PURGE_EVERY_MS). */
+  purgeEveryMs?: number;
 }
 
 export class ReplayRecorder {
@@ -173,6 +167,7 @@ export class ReplayRecorder {
   failures = 0;
   private chain: Promise<void> = Promise.resolve();
   private excludedIno: number | null = null;
+  private purgeTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly o: ReplayRecorderOptions) {}
 
@@ -190,25 +185,41 @@ export class ReplayRecorder {
     return true;
   }
 
-  /** Listener start: fix the folder and purge old clips, also with the switch off (old clips still expire). */
+  /**
+   * Listener start: fix the folder and purge old clips, also with the switch off (old clips still expire). Then
+   * purge again every REPLAY_PURGE_EVERY_MS while the listener runs (unref'd: it never keeps the process alive).
+   */
   start(): Promise<void> {
-    this.enqueue(async () => {
-      let on = false;
-      try {
-        on = this.o.enabled() === true;
-      } catch {
-        /* off */
-      }
-      let exists = false;
-      try {
-        exists = lstatSync(replayDir(this.o.home)) !== null;
-      } catch {
-        /* missing */
-      }
-      if (!on && !exists) return;
-      purgeReplayDir(await this.prepare(), this.now());
-    });
+    if (!this.purgeTimer) {
+      this.purgeTimer = setInterval(() => this.enqueue(() => this.purgeIfThere()), this.o.purgeEveryMs ?? REPLAY_PURGE_EVERY_MS);
+      this.purgeTimer.unref();
+    }
+    this.enqueue(() => this.purgeIfThere());
     return this.idle();
+  }
+
+  /** Stops the purge timer (listener shutdown, tests). */
+  stop(): void {
+    if (this.purgeTimer) clearInterval(this.purgeTimer);
+    this.purgeTimer = null;
+  }
+
+  /** Purge when the recorder is on or the folder exists; never creates the folder for an owner who never used it. */
+  private async purgeIfThere(): Promise<void> {
+    let on = false;
+    try {
+      on = this.o.enabled() === true;
+    } catch {
+      /* off */
+    }
+    let exists = false;
+    try {
+      exists = lstatSync(replayDir(this.o.home)) !== null;
+    } catch {
+      /* missing */
+    }
+    if (!on && !exists) return;
+    purgeReplayDir(await this.prepare(), this.now());
   }
 
   /** Resolves when every queued write is done (tests, shutdown). */
