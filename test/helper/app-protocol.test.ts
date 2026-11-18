@@ -532,8 +532,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(client).toContain('AppRequest.jobsList(newId())');
     expect(client).toContain('AppRequest.jobsStop(newId(), jobId:');
     expect(jobs).toContain('NSWorkspace.shared.activateFileViewerSelecting');
-    // Refresh every 5 s while visible.
-    expect(jobs).toContain('Timer.publish(every: 5');
+    // Refresh on appear, then every 5 s only while a job runs (#202): no always-on timer.
+    expect(jobs).not.toContain('Timer.publish');
+    expect(jobs).toContain('.task(id: !running.isEmpty)');
+    expect(jobs).toMatch(/while !Task\.isCancelled && model\.jobs\.contains\(where: \{ \$0\.isRunning \}\)/);
+    expect(jobs).toContain('Task.sleep(nanoseconds: 5_000_000_000)');
     // Stop only for a job that has not ended; status is a word (not color alone).
     expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop"/);
   });
