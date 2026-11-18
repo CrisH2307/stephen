@@ -273,10 +273,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let control: StephenControl
   private let startStop: NSMenuItem
   private let phoneItem: NSMenuItem
+  /** "Recording F5 commands": shown only while the replay recorder is on (issue #48). Not clickable. */
+  private let recordingItem: NSMenuItem
+  private let recordingOn: @MainActor () -> Bool
 
   init(
     checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void,
-    click: @escaping @MainActor () -> Void, control: StephenControl, quit: @escaping () -> Void
+    click: @escaping @MainActor () -> Void, control: StephenControl, recordingOn: @escaping @MainActor () -> Bool,
+    quit: @escaping () -> Void
   ) {
     self.checkPermission = checkPermission
     openWindowAction = openWindow
@@ -285,6 +289,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     quitAction = quit
     startStop = NSMenuItem(title: "Start Stephen", action: nil, keyEquivalent: "")
     phoneItem = NSMenuItem(title: "Phone link", action: nil, keyEquivalent: "")
+    recordingItem = NSMenuItem(title: "Recording F5 commands", action: nil, keyEquivalent: "")
+    self.recordingOn = recordingOn
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     header = NSMenuItem(title: "Stephen Helper", action: nil, keyEquivalent: "")
     permission = NSMenuItem(title: "Input Monitoring", action: nil, keyEquivalent: "")
@@ -297,6 +303,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     permission.action = #selector(openSettings(_:))
     permission.isEnabled = true
     menu.addItem(permission)
+    recordingItem.isEnabled = false
+    recordingItem.isHidden = true
+    menu.addItem(recordingItem)
     let openItem = NSMenuItem(title: "Open Stephen…", action: #selector(openWindowClicked(_:)), keyEquivalent: "")
     openItem.target = self
     openItem.isEnabled = true
@@ -356,6 +365,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
     startStop.isEnabled = control.listener != .running(fromApp: false)
     phoneItem.state = phoneLinkOn() ? .on : .off
+    recordingItem.isHidden = !recordingOn()
     render()
   }
 
@@ -532,7 +542,8 @@ MainActor.assumeIsolated {
   app.setActivationPolicy(.accessory)
   statusMenu = StatusMenu(
     checkPermission: { CGPreflightListenEventAccess() }, openWindow: { showStephenWindow() },
-    click: { askBox?.toggle() }, control: stephenControl, quit: { shutdownAndExit(0) })
+    click: { askBox?.toggle() }, control: stephenControl, recordingOn: { appModel?.recordingOn ?? false },
+    quit: { shutdownAndExit(0) })
   let model = sharedAppModel()
   model.opened("askbox")
   let box = AskBoxController(model: model)

@@ -49,6 +49,10 @@
  *    proposal's origin; `text` = the owner's edit). A refused keep leaves the proposal waiting.
  *  - `{id, type:"memory.skip", propId}` → `suggestions`.
  *  - `{id, type:"memory.usage"}` → `{id, type:"memory.usage", memory:{percent, warn, bytes, budget}}` (usage.get's memory bar).
+ * Additive (replay recorder switch, issue #48 PR 2), sent only by Settings > Privacy and safety, the owner's own clicks:
+ *  - `{id, type:"replay.set", enabled}` → `settings` (config.replay.enabled is the saved value). The only message that
+ *    writes `voice.replay.enabled`: settings.set and model.set refuse it.
+ *  - `{id, type:"replay.delete"}` → `{id, type:"ok"}`: every saved clip, the same code as `stephen replay delete --all`.
  */
 import type { ChatStep } from './steps.js';
 import type { HistoryEntry } from '../history/store.js';
@@ -117,7 +121,9 @@ export type AppRequest =
   | { id: string; type: 'memory.propose'; text: string }
   | { id: string; type: 'memory.keep'; propId: string; text?: string }
   | { id: string; type: 'memory.skip'; propId: string }
-  | { id: string; type: 'memory.usage' };
+  | { id: string; type: 'memory.usage' }
+  | { id: string; type: 'replay.set'; enabled: boolean }
+  | { id: string; type: 'replay.delete' };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -155,6 +161,8 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'memory.keep',
   'memory.skip',
   'memory.usage',
+  'replay.set',
+  'replay.delete',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -304,6 +312,8 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   },
   'memory.skip': propId,
   'memory.usage': () => ok,
+  'replay.set': (o) => (typeof o.enabled === 'boolean' ? ok : bad('enabled must be true or false')),
+  'replay.delete': () => ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
@@ -340,6 +350,8 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, ...(has('limit') ? { limit: o.limit as number } : {}) };
     case 'latency.get':
       return { id, type, ...(has('days') ? { days: o.days as number } : {}) };
+    case 'replay.set':
+      return { id, type, enabled: o.enabled as boolean };
     default:
       return { id, type } as AppRequest;
   }

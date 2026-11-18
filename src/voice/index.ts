@@ -17,6 +17,7 @@ import { AppServer, listenerQueue } from '../app/server.js';
 import { appControl } from '../app/control.js';
 import { usageReport } from '../app/usage.js';
 import { appSettings } from '../app/settings.js';
+import { writeReplaySwitch } from '../app/replay-switch.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
 import { HistoryStore } from '../history/store.js';
@@ -639,7 +640,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
   };
   /** Serve <home>/run/app.sock for the Stephen window; null (with a note) when that isn't possible. */
-  const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null): Promise<AppServer | null> => {
+  const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null, rec: { recorder: ReplayRecorder | null; on: () => boolean }): Promise<AppServer | null> => {
     const server = new AppServer({
       home,
       queue: listenerQueue(l, a),
@@ -650,13 +651,15 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       endConversation: () => a.endConversation(),
       history,
       audit,
-      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get() }),
+      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get(), replay: rec.on() }),
       accounts: allAccounts,
       personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
       speakReplies: loaded.app.speakReplies,
       setTalk: (c) => void talk.set(c),
       setModel: (c) => void modelStore.set(c),
+      // The owner's Settings switch (app.sock replay.set / replay.delete, issue #48 PR 2).
+      ...(rec.recorder ? { replay: { set: (on: boolean) => writeReplaySwitch(configPath, on), deleteAll: () => rec.recorder!.deleteAll() } } : {}),
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
       control: appControl({ home, cliPath, log: err }),
       usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
@@ -796,11 +799,12 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     }
     // Replay recorder (issue #48): off unless the owner turned it on in config.json, re-read on every F5 press.
     // start() purges clips older than 30 days even when it is off. Never awaited: it can't delay start-up.
+    const replayOn = (): boolean => parseVoiceConfig((env.loadConfig ?? loadConfig)().voice).replay.enabled;
     const replay = args.dryRun
       ? null
       : new ReplayRecorder({
           home,
-          enabled: () => parseVoiceConfig((env.loadConfig ?? loadConfig)().voice).replay.enabled,
+          enabled: replayOn,
           log: (code) => err(`Note: ${code}`),
         });
     void replay?.start();
@@ -821,7 +825,16 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       },
       { source, ...engines, assistant, chimes, latency, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s), replay },
     );
-    if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
+    if (loaded.app.enabled) app = await startApp(listener, assistant, bridge, {
+        recorder: replay,
+        on: () => {
+          try {
+            return replayOn();
+          } catch {
+            return false;
+          }
+        },
+      });
     phone = await startPhone(listener, assistant);
     // Fire timers only while listening. The notification shows at once; the spoken alert waits in ONE queue until the
     // listener is idle (not recording, no command, nobody talking) and runs through listener.submit, so it counts as
