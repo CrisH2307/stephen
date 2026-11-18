@@ -397,6 +397,23 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     for (const src of [chat, box, read('HomeView.swift')]) expect(src).not.toMatch(/approve: true|answer\(true\)[^\n]*keyboardShortcut/);
   });
 
+  it('#88: Return in the ask field sends or adds a line, never answers a waiting question', () => {
+    const controls = read('Components/Controls.swift');
+    const field = controls.match(/struct AskField: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(field).toContain('axis: .vertical).lineLimit(1...5)');
+    // Shift+Return: a new line in the field. Plain Return: falls through to onSubmit.
+    expect(field).toMatch(/onKeyPress\(keys: \[\.return\][\s\S]*?modifiers\.contains\(\.shift\) else \{ return \.ignored \}[\s\S]*?insertNewlineIgnoringFieldEditor/);
+    expect(field).toContain('.onSubmit(onSubmit)');
+    expect(field).not.toMatch(/confirm|approve|answer|Allow/i);
+    // What Return calls in the Ask box and on Home only sends the draft.
+    for (const file of ['AskBox.swift', 'HomeView.swift']) {
+      const src = read(file);
+      expect(src).toMatch(/AskField\([^\n]*onSubmit: send\)/);
+      const send = src.match(/private func send\(\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+      expect(send.trim()).toMatch(/^if model\.sendChat\((box\.)?draft\) \{ (box\.)?draft = "" \}/);
+    }
+  });
+
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
     for (const src of [window, client, read('AskBox.swift'), read('Components/ChatThread.swift')]) {
       const bad = src.match(/\bText\((?!verbatim:|")[^)]*\)/g) ?? [];
