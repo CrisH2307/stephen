@@ -19,3 +19,4 @@
 `IDEAS-RESEARCH-2026-11.md`: research behind the plan's ideas (revision 3); background, not a work order.
 `HANDOFF-2026-11-12.md`: who does what (dev lane and review lane) and the two paste-ready prompts.
 `FINDINGS-LEDGER.md`: one table of every open or recently closed finding, with owner lane and issue or branch; update it in the same PR as the fix.
+`ZEN-REAL-BROWSER-2026-11.md`: why "play music" did not play in Zen (not attached, autoplay block), and the options for using the real Zen safely.
