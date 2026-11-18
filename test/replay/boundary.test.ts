@@ -19,7 +19,7 @@ import { CLAUDE_REACHABLE, REPO_ROOT, SRC_ROOT, directViolations, listTsFiles, s
 import { harness } from '../jobs/helpers.js';
 import { setup, textOf } from '../server/fakes.js';
 import { el, req, state } from '../safety/fixtures.js';
-import { fakeClaudePath, readFakeLog } from '../voice/helpers.js';
+import { fakeClaudePath, readFakeLog, RecordingChimes, RecordingSpeaker } from '../voice/helpers.js';
 
 vi.mock('../../src/safety/index.js', () => import('../server/safety-mock.js'));
 
@@ -125,6 +125,8 @@ describe('nothing sent to the model names the folder (must-have 3), with the rec
     expect(
       await runListen(['--text', 'open youtube'], {
         loadConfig: () => ({ home, voice }),
+        speaker: new RecordingSpeaker(), // never the real voice (it spoke out loud, 2026-11-17)
+        chimes: new RecordingChimes(),
         out: () => {},
         err: () => {},
         signals: false,
