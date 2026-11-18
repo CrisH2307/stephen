@@ -12,7 +12,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writePrivateFileAtomicSync } from '../lib/fs.js';
 import { killGroup } from '../lib/process.js';
-import { stripUnsafe, truncate } from '../safety/text.js';
+import { cleanMemoryText } from '../memory/store.js';
+import { truncate } from '../safety/text.js';
 import { removeServeLock } from '../server/instance.js';
 import { commandFileServeArgs, toolLogServeArgs } from '../server/tool-log.js';
 import type { Trust } from './assistant.js';
@@ -143,13 +144,12 @@ export const MEMORY_ITEM_MAX_CHARS = 200;
 
 /**
  * One memory item made safe for the prompt. The store already cleans text, but this is the last stop before Claude,
- * so it cleans again: control / bidi / zero-width characters removed, whitespace collapsed to one line, `<` `>`
+ * so it cleans again with cleanMemoryText: control / bidi / zero-width characters removed, whitespace collapsed to one line, `<` `>`
  * turned into `‹` `›` (an item can never close or open the <user_memory> tag), at most MEMORY_ITEM_MAX_CHARS.
  */
 export function cleanMemoryItem(item: unknown): string {
   if (typeof item !== 'string') return '';
-  const flat = stripUnsafe(item).replace(/\s+/g, ' ').trim().replace(/</g, '‹').replace(/>/g, '›');
-  return truncate(flat, MEMORY_ITEM_MAX_CHARS);
+  return truncate(cleanMemoryText(item), MEMORY_ITEM_MAX_CHARS);
 }
 
 /**
