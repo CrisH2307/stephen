@@ -1,6 +1,6 @@
 # Stephen app UI v4: structure, navigation, ⌘K and glass (plan)
 
-Status: a plan from the review lane, 2026-11-18. **Nothing here is built.** The dev lane approves, changes or rejects
+Status: a plan from the review lane, 2026-11-18. Revised 2026-11-19 with the dev lane's four paper fixes (PR #236). **Nothing here is built.** The dev lane approves, changes or rejects
 it before any build starts. Builds after the `AppClient.swift` split, in 5 steps, one PR each (section 9).
 
 Builds on: `docs/research/UI-V4-DIRECTION.md` (tokens, stories S1 to S9), `docs/research/UI-REVIEW-2026-11.md`,
@@ -151,7 +151,8 @@ flowchart TB
   G2 --> SET[Settings]
   HOME --> HQ[Question card, same as Ask box]
   HOME -.Next up: job running.-> JOBS
-  CONV -.Open in chat, Edit and resend.-> HOME
+  CONV -.Open in chat: ADR-007 v2.-> HOME
+  CONV --> EDIT[Inline editor: ADR-010]
   THREAD -.Refused: see what Stephen may do.-> PERM
   THREAD -.Started a job.-> JOBS
   SET --> ABOUTYOU[About you]
@@ -204,7 +205,7 @@ flowchart TB
 | R11 | Personal page: a "How Stephen talks › Settings" row that only links away | Gone with Personal | c |
 | R12 | Settings: 10 panes in a flat list | 8 panes in 3 labelled groups (section 6.5) | c |
 | D1 | Memory has no sidebar row; reached only from Personal or the Ask box. Its "‹ Personal" link and Esc go back to a page you may not have come from | Sidebar row ⌘4, no back link, Esc does nothing on the page | a, d |
-| D2 | A Conversations row is read only: no way to open it again or reuse it | "Open in chat" (resume, owner's choice) and "Edit and resend" (fills the composer, does not send) `[DEV REVIEW]` | e |
+| D2 | A Conversations row is read only: no way to open it again or reuse it | "Open in chat" (ADR-007 v2 resume) and "Edit" (ADR-010 inline editor, source line kept) `[DEV REVIEW]` | e |
 | D3 | An account that is "Not set up" says nothing about how | An accordion "How to connect" with the Terminal command (the truth today). No fake Connect button | c |
 | L1 | A refusal in the chat does not say where the rules live | Under a refusal: link "See what Stephen may do" to Privacy and permissions `[DEV REVIEW]` | b |
 | L2 | A reply that started a job does not link to it | A step line "Started a job" with "Open in Jobs" `[DEV REVIEW]` | b |
@@ -267,7 +268,8 @@ then **Search ⌘K** on the right.
 Rule for every page: first what needs you, then what you came to do, then the record, then the rare things.
 Accordions are `DisclosureGroup`, closed by default, open state stored per page and section in `@AppStorage`
 (for example `acc.settings.voice.wake`). Accordions never hide safety content: a waiting question, a refusal, a failed
-step and the Recording on sign are never inside a closed accordion.
+step, a failed job and the Recording on sign are never inside a closed accordion. When a closed accordion holds
+records, its label counts the problems in it ("Earlier (5, 1 failed)") and each closed row keeps its status word.
 
 ### 6.1 Home (step b)
 
@@ -277,6 +279,8 @@ step and the Recording on sign are never inside a closed accordion.
 4. Composer, focused (#149). Send, Talk. `[DEV REVIEW]` only if the send path changes; this plan does not change it.
 5. Chips.
 6. Accordion **Recent chats** (3 newest, "View all" opens Conversations). Owner's option B from UI-NEXT-PLAN.
+   Each row shows its status word (Done, Refused, Failed). The closed label counts problems: "Recent chats (3, 1
+   refused)".
 
 Chat state: the toolbar has the title and New chat; the thread fills; the composer is at the bottom. No change to the
 question card on Home.
@@ -288,8 +292,15 @@ asked, verbatim), facts line (source · time · "3 steps · 1 refused"), status 
 
 - A row opens like an accordion to show the reply and every step. **A row with a refusal or a failure always shows
   those lines, even closed** `[DEV REVIEW]` (steps and refusals are a truthful record).
-- Open row actions: "Open in chat" and "Edit and resend" (D2) `[DEV REVIEW]`: both put you on Home with the text in
-  the composer. Nothing is sent until you press Send, with the normal gate.
+- Open row actions (D2) `[DEV REVIEW]`:
+  - **Open in chat** follows ADR-007 v2 (resume): a new Claude session, the old turns quoted as data,
+    `--assume-private-read`, no approvals restored. A click in the window is its only entry point.
+  - **Edit** follows ADR-010 (`docs/ADR-010-edit-and-resend.md`): an **inline editor** on Cris's own message, with
+    Send and Cancel. It does **not** fill the Home composer. The resend is built by the listener from the stored
+    turns, with the old command id and the old text's hash; the app sends only those and the new text. A voice
+    message keeps its source line above the editor ("Heard by the wake word. It may not have been you. Check the
+    words before you send."). After Send: "Actions from the old reply already happened." and a version switch.
+  - Nothing is sent until you press Send, and the gate asks again for every action.
 - Clear all moves to the toolbar ⋯ menu.
 
 ### 6.3 Memory (step d)
@@ -306,8 +317,9 @@ Removed: the "‹ Personal" back link (D1).
 
 ### 6.4 Jobs (step d)
 
-1. Intro line with the caution (R9). 2. **Running** (open, not an accordion). 3. Accordion **Earlier (N)**, closed by
-default. Rows: title, facts ("Started 2:10 PM · 3 min · $0.12 spent"), status word, Stop on running rows. An open row:
+1. Intro line with the caution (R9). 2. **Running** (open, not an accordion). 3. **Failed** in the last 7 days, open,
+not an accordion (a failed job is never hidden). 4. Accordion **Earlier (N)**, closed by default, for finished and
+stopped jobs. Rows: title, facts ("Started 2:10 PM · 3 min · $0.12 spent"), status word, Stop on running rows. An open row:
 summary (as written by the job), turns, Open output folder.
 
 ### 6.5 Settings (step c)
@@ -372,13 +384,13 @@ All are app-local, undoable or harmless, and none reaches the model or the safet
 | Refresh (Conversations, Jobs, Memory) | Reads again |
 | Open config file | Same as Settings > About > Open |
 | Run doctor | A read-only check, same as the button |
-| Start Stephen | Same as the sidebar Start; it only starts the listener |
 
 ### 7.4 Never in the palette
 
 Allow or Deny, or any answer to a question. Keep, Skip or Edit a memory proposal. Forget, Forget all. Clear all
 conversations. Stop a job, Stop Stephen. Phone link on or off. Recording on or off, delete recordings. Save any
 setting that changes how the model runs (Voice, Model and effort). Send a chat message. Start a job. Edit and resend.
+Start Stephen (it turns the microphone on, so it stays the visible sidebar button).
 Each of these stays a click on its visible button, on its own page, next to what it acts on.
 
 ### 7.5 Safety rules (for review)
@@ -388,12 +400,23 @@ Each of these stays a click on its visible button, on its own page, next to what
    "Search older" loads the next page with the existing `history.list`.
 3. Conversation text in results is data: `Text(verbatim:)`, one line, truncated, no Markdown, no links. A result can
    only navigate.
-4. Esc closes the palette and does nothing else. While the palette is open, the Home card's hidden Esc-denies
-   button is disabled; when the palette closes, it comes back. `[DEV REVIEW]` (Esc behaviour)
+4. Keys in the palette never reach the question card. While the palette is open, **every** shortcut and default
+   action of the question card is off: Allow, Deny, Esc and Return (the hidden Esc-denies button on Home included).
+   Return runs only the selected palette row; Esc only closes the palette. When the palette closes, the card's keys
+   come back as they were (no default button, Esc denies). `[DEV REVIEW]` (Esc and Return behaviour)
+   The waiting banner stays visible: the palette opens **below** the banner and never covers it.
 5. The palette lives only in the main window. The app menu item brings the main window forward first, then opens it.
    It never opens over the Ask box.
-6. A test per rule in `test/helper/app-protocol.test.ts` (source checks): no `answerConfirm`, `sendChat`, `keepProposal`,
-   `forget`, `clearHistory`, `stopJob` call in the palette file; results use `Text(verbatim:)`.
+6. Tests in `test/helper/app-protocol.test.ts` (source checks):
+   - **Allow list, not a block list.** The palette file may call only these: `nav.page =` (go to a page or a
+     Settings pane), `actions.ask` (open the Ask box), the composer prefill (Home draft only), `model.newChat`,
+     `ThemeStore.shared.pick` and `setFollowMac`, the sidebar toggle, `model.refreshHistory`, `refreshJobs`,
+     `refreshMemoryPage`, `loadOlderHistory`, open config and `control.runDoctor`. Any other `model.` or `control.`
+     call in the file fails the test, so a new call cannot slip in.
+   - Results use `Text(verbatim:)`.
+   - The question card's buttons and its hidden Esc button are disabled while `paletteOpen` is true (a check that
+     `ConfirmButtons` and the Esc button read `paletteOpen`), and no palette view sets `.keyboardShortcut(.defaultAction)`.
+   - The palette is laid out under the waiting banner (the banner is not in the palette's overlay).
 
 ---
 
@@ -455,7 +478,7 @@ The mock follows the same rules with `prefers-reduced-transparency` and `prefers
 |---|---|---|---|
 | Sidebar: 2 groups, 5 rows, Memory ⌘4, state row at the top, no Ask field | a | S6, #57 | Recording on sign moves to the top |
 | Toolbar with page title, page actions, Search ⌘K | a | new | |
-| ⌘K palette: Waiting, Ask, Go to, Actions | a | new | Rules 7.5.1, 7.5.4 |
+| ⌘K palette: Waiting, Ask, Go to, Actions | a | new | Rules 7.5.1, 7.5.4, 7.5.6 |
 | Glass on sidebar, toolbar, palette; fallbacks; tint tokens | a | new, S2 | |
 | Type roles, tokens, contrast test (glass script becomes a vitest) | a | S1, S2, S3 | |
 | Remove in-page big titles (toolbar has them) | a | new | |
@@ -468,9 +491,9 @@ The mock follows the same rules with `prefers-reduced-transparency` and `prefers
 | Settings: 8 panes in 3 groups, `Form` grouped, Personal removed | c | S7, #147 | Recording switch moves pane |
 | Connected pane (accounts, browsers, phone) | c | new | |
 | Memory: proposals first, no back link, About memory accordion | d | S4, S5, #148 | |
-| Jobs: intro caution, Earlier accordion, S5 rows | d | S4, S5, #145 | |
+| Jobs: intro caution, Failed group, Earlier accordion, S5 rows | d | S4, S5, #145 | |
 | Conversations: S5 rows, filters, refusals always visible | e | S5 | yes |
-| Open in chat, Edit and resend | e | #55 | yes (send path) |
+| Open in chat (ADR-007 v2), Edit (ADR-010 inline editor) | e | #55, #235 | yes (send path) |
 | Palette Conversations source | e | new | Rule 7.5.3 |
 
 The palette fits in **step a** (the shell). Its conversation results come in **step e**.
@@ -503,5 +526,5 @@ line under it (UI-V4-DIRECTION's "eyebrow" role moves under the title).
 4. **Group names** "Talk" and "Control". Other words you prefer?
 5. **Glass strength.** 5% to 15% see-through keeps AA on any desktop. Is that enough glass for you, or should we
    measure on your Mac and try lower?
-6. **Edit and resend** (step e) fills the Home composer and waits for Send. The dev lane should confirm this keeps the
-   send path unchanged.
+6. **Edit and resend** (step e): settled by the dev lane. It uses ADR-010's inline editor and send path, not the
+   Home composer.

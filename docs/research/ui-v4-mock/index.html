@@ -177,7 +177,7 @@ tbody th{font-size:15px;font-weight:400;color:var(--ink)}
 .q .btns{display:flex;justify-content:space-between;margin-top:14px}
 .pfield{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
 .pfield input{flex:1;min-width:0;font-size:13px;border:1px solid var(--lineStrong);border-radius:10px;padding:7px 10px;background:var(--surface2)}
-.hide{display:none!important}
+.hide,[hidden]{display:none!important}
 @media (max-width:860px){.win{grid-template-columns:1fr;height:auto}.sb{display:none}.content{padding:20px}.set{grid-template-columns:1fr}.subnav{display:none}main{padding:16px}.desk{padding:12px}.srch{min-width:0}.srch span{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style></head><body>
@@ -230,10 +230,10 @@ tbody th{font-size:15px;font-weight:400;color:var(--ink)}
 <p class="next">Next: CSCI 3310 lab at 3:00 PM, in 46 minutes · <a href="#" data-go="jobs">1 job running</a></p>
 <div class="compbox"><textarea id="composer" placeholder="Type, hold F5, or say Hey Stephen" aria-label="Ask Stephen"></textarea><button class="iconbtn" aria-label="Talk"><svg class="i" aria-hidden="true"><use href="#i-mic"/></svg></button><button class="iconbtn p" aria-label="Send"><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></button></div>
 <div class="chips"><button class="chip" data-fill="Plan my day">Plan my day</button><button class="chip" data-fill="Find internships">Find internships</button><button class="chip" data-fill="Start a job to ">Start a job</button></div>
-<details class="acc" data-acc="home.recent"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Recent chats <span class="n">3</span></summary><div class="accbody"><ul class="list">
-<li class="row"><div class="rl"><div class="title">Email Prof Rahman about the Lab 4 report</div><div class="facts">F5 · 2:14 PM · 2 steps · 1 refused</div></div></li>
-<li class="row"><div class="rl"><div class="title">Open YouTube and play lofi</div><div class="facts">Typed · 1:02 PM · 2 steps</div></div></li>
-<li class="row"><div class="rl"><div class="title">What is due this week on Canvas?</div><div class="facts">Hey Stephen · 9:40 AM · 1 step</div></div><div class="rr"><button class="btn" data-go="conv">View all</button></div></li></ul></div></details>
+<details class="acc" data-acc="home.recent"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Recent chats <span class="n">3 · 1 refused</span></summary><div class="accbody"><ul class="list">
+<li class="row"><div class="rl"><div class="title">Email Prof Rahman about the Lab 4 report</div><div class="facts">F5 · 2:14 PM · 2 steps · 1 refused</div></div><span class="st warn"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg>Refused</span></li>
+<li class="row"><div class="rl"><div class="title">Open YouTube and play lofi</div><div class="facts">Typed · 1:02 PM · 2 steps</div></div><span class="st ok"><span class="dot"></span>Done</span></li>
+<li class="row"><div class="rl"><div class="title">What is due this week on Canvas?</div><div class="facts">Hey Stephen · 9:40 AM · 1 step</div></div><span class="st ok"><span class="dot"></span>Done</span></li></ul><div class="rr" style="padding-top:12px"><button class="btn" data-go="conv">View all</button></div></div></details>
 </div></div>
 
 <div class="page" data-page="conv" hidden><div class="content">
@@ -245,22 +245,23 @@ tbody th{font-size:15px;font-weight:400;color:var(--ink)}
 <div class="refl"><span class="st warn"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg></span><span>Refused: click button "Send". You did not allow it.</span></div></div><span class="st warn"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg>Refused</span></summary>
 <p class="reply">I did not send it. The email is still a draft in Gmail.</p>
 <div class="steps"><span>open mail.google.com</span><span>type the message</span><span>Refused: click button "Send". You did not allow it.</span></div>
-<div class="rr" style="padding-bottom:14px"><button class="btn">Open in chat</button><button class="btn">Edit and resend</button></div></details>
+<div class="rr acts" style="padding-bottom:14px"><button class="btn">Open in chat</button><button class="btn" data-edit aria-label="Edit this message">Edit</button></div><div class="editor" hidden><p class="facts" style="color:var(--warn)">You said this with F5. Check the words before you send.</p><div class="field" style="margin:6px 0 8px"><input type="text" value="Email Prof Rahman that my Lab 4 report is attached" aria-label="Edit this message"></div><div class="rr" style="padding-bottom:14px"><button class="btn" data-cancel>Cancel</button><button class="btn p">Send</button></div></div></details>
 <details class="conv"><summary><div class="rl"><div class="title">Open YouTube and play lofi</div><div class="facts">Typed · 1:02 PM · 2 steps</div></div><span class="st ok"><span class="dot"></span>Done</span></summary>
 <p class="reply">YouTube is open and a lofi mix is playing.</p><div class="steps"><span>open youtube.com</span><span>click "lofi hip hop radio"</span></div>
-<div class="rr" style="padding-bottom:14px"><button class="btn">Open in chat</button><button class="btn">Edit and resend</button></div></details></div>
+<div class="rr acts" style="padding-bottom:14px"><button class="btn">Open in chat</button><button class="btn" data-edit aria-label="Edit this message">Edit</button></div><div class="editor" hidden><p class="facts" style="color:var(--warn)">You typed this. Check the words before you send.</p><div class="field" style="margin:6px 0 8px"><input type="text" value="Open YouTube and play lofi" aria-label="Edit this message"></div><div class="rr" style="padding-bottom:14px"><button class="btn" data-cancel>Cancel</button><button class="btn p">Send</button></div></div></details></div>
 <h4 class="dayh">Yesterday</h4><div class="list">
 <details class="conv"><summary><div class="rl"><div class="title">Find 5 software internships in Toronto</div><div class="facts">Hey Stephen · 4:10 PM · started a job</div></div><span class="st"><span class="dot"></span>Job</span></summary>
 <p class="reply">Started a job. It shows up in Jobs.</p><div class="rr" style="padding-bottom:14px"><button class="btn" data-go="jobs">Open in Jobs</button></div></details></div>
-<p class="cap">A row with a refusal or a failure shows those lines even when closed. Open in chat and Edit and resend only fill the Home composer: nothing is sent until Send.</p>
+<p class="cap">A row with a refusal or a failure shows those lines even when closed. Open in chat starts a new session with the old turns as quoted data and no old approvals (ADR-007 v2). Edit opens your message in place, keeps where it came from, and sends nothing until Send; the gate asks again (ADR-010).</p>
 </div></div>
 
 <div class="page" data-page="jobs" hidden><div class="content">
 <p class="intro">Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it.</p>
 <h4 class="h4">Running</h4><ul class="list"><li class="row"><div class="rl"><div class="title">Find 5 software internships in Toronto</div><div class="facts num">Started 4:10 PM · 3 min · $0.12 spent</div></div><div class="rr"><span class="st ok"><span class="dot"></span>Running</span><button class="btn bad">Stop</button></div></li></ul>
+<h4 class="h4">Failed</h4><ul class="list"><li class="row"><div class="rl"><div class="title">Compare three laptop stands under $60</div><div class="facts num">Nov 14 · 30 min</div></div><span class="st bad"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Failed, timed out</span></li></ul>
 <details class="acc" data-acc="jobs.earlier"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Earlier <span class="n">2</span></summary><div class="accbody"><ul class="list">
 <li class="row"><div class="rl"><div class="title">Summarise this week's Canvas announcements</div><div class="facts num">Nov 16 · 6 min · $0.31 spent</div></div><span class="st"><span class="dot"></span>Finished</span></li>
-<li class="row"><div class="rl"><div class="title">Compare three laptop stands under $60</div><div class="facts num">Nov 14 · 30 min</div></div><span class="st bad"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Failed, timed out</span></li></ul></div></details>
+<li class="row"><div class="rl"><div class="title">Rename the screenshots in Downloads</div><div class="facts num">Nov 15 · 1 min</div></div><span class="st"><span class="dot"></span>Stopped</span></li></ul></div></details>
 </div></div>
 
 <div class="page" data-page="mem" hidden><div class="content">
@@ -317,7 +318,7 @@ tbody th{font-size:15px;font-weight:400;color:var(--ink)}
 </div>
 <div class="pal" id="pal" hidden role="dialog" aria-label="Search and actions"><div class="pin"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="palq" placeholder="Search conversations, pages and actions" aria-label="Search" role="combobox" aria-controls="pallist" aria-expanded="true" autocomplete="off"><kbd>esc</kbd></div>
 <ul id="pallist" role="listbox" aria-label="Results"></ul>
-<div class="foot"><span>↑↓ move</span><span>↩ open</span><span>Never approves. Never sends.</span></div></div>
+<div class="foot"><span>↑↓ move</span><span>↩ open</span><span>Never approves. Never sends. Return and Esc stay in here.</span></div></div>
 </div></div></div>
 <p class="cap">Glass: the sidebar, the toolbar and the palette only (a theme tint at 88% to 95%, so text keeps 4.5:1 on any desktop). Solid: pages, lists, the composer, the waiting banner and the Recording on sign. Turn on "Reduce transparency" above to see the solid fallback.</p></section>
 
@@ -365,7 +366,9 @@ $$('.sw').forEach(function(s){s.addEventListener('click',function(){s.setAttribu
 // Accordions: closed by default, open state remembered per page and section.
 $$('details.acc').forEach(function(d){if(store('acc.'+d.dataset.acc)==='1')d.open=true;d.addEventListener('toggle',function(){store('acc.'+d.dataset.acc,d.open?'1':'0')})});
 $('#rt').addEventListener('change',function(e){document.documentElement.setAttribute('data-rt',e.target.checked?'on':'off')});
-$('#wq').addEventListener('change',function(e){$('#banner').classList.toggle('hide',!e.target.checked);$('#hbadge').classList.toggle('hide',!e.target.checked)});
+$('#wq').addEventListener('change',function(e){$('#banner').classList.toggle('hide',!e.target.checked);$('#hbadge').classList.toggle('hide',!e.target.checked);if(!$('#pal').hidden)placePal()});
+$$('[data-edit]').forEach(function(b){b.addEventListener('click',function(){var d=b.closest('details');d.querySelector('.editor').hidden=false;d.querySelector('.acts').hidden=true;d.querySelector('.editor input').focus()})});
+$$('[data-cancel]').forEach(function(b){b.addEventListener('click',function(){var d=b.closest('details');d.querySelector('.editor').hidden=true;d.querySelector('.acts').hidden=false})});
 // Palette. Results only navigate or run the safe allow list (plan section 7.3). No Allow, no send.
 var CONV=[{t:'Email Prof Rahman that my Lab 4 report is attached',f:'F5 · 2:14 PM'},{t:'Open YouTube and play lofi',f:'Typed · 1:02 PM'},{t:'Find 5 software internships in Toronto',f:'Hey Stephen · Yesterday'},{t:'What is due this week on Canvas?',f:'Hey Stephen · 9:40 AM'}];
 var ICON={home:'i-house',conv:'i-chat',jobs:'i-tray',mem:'i-note',set:'i-gear'};
@@ -389,12 +392,13 @@ function render(){var q=$('#palq').value;cur=items(q);if(sel>=cur.length)sel=0;v
  $('#palq').setAttribute('aria-activedescendant',cur.length?'pi'+sel:'')}
 function mark(){$$('#pallist .pi').forEach(function(li,i){li.setAttribute('aria-selected',i===sel)});var a=$('#pi'+sel);if(a)a.scrollIntoView({block:'nearest'});$('#palq').setAttribute('aria-activedescendant','pi'+sel)}
 var opener=null;
-function openPal(){opener=document.activeElement;$('#pal').hidden=false;$('#palq').value='';sel=0;render();$('#palq').focus()}
+function placePal(){var w=$('#win').getBoundingClientRect(),b=$('#banner'),t=$('.tb').getBoundingClientRect();var edge=b.classList.contains('hide')?t.bottom:b.getBoundingClientRect().bottom;$('#pal').style.top=(edge-w.top+12)+'px'}
+function openPal(){opener=document.activeElement;placePal();$('#pal').hidden=false;$('#palq').value='';sel=0;render();$('#palq').focus()}
 function closePal(){$('#pal').hidden=true;if(opener&&opener.focus)opener.focus()}
 function run(i){var it=cur[i];if(!it)return;closePal();it.run()}
 $('#openpal').addEventListener('click',openPal);
 $('#palq').addEventListener('input',function(){sel=0;render()});
-$('#palq').addEventListener('keydown',function(e){if(e.key==='ArrowDown'){sel=Math.min(sel+1,cur.length-1);mark();e.preventDefault()}else if(e.key==='ArrowUp'){sel=Math.max(sel-1,0);mark();e.preventDefault()}else if(e.key==='Enter'){run(sel);e.preventDefault()}else if(e.key==='Escape'){closePal();e.preventDefault()}});
+$('#palq').addEventListener('keydown',function(e){if(e.key==='ArrowDown'){sel=Math.min(sel+1,cur.length-1);mark();e.preventDefault()}else if(e.key==='ArrowUp'){sel=Math.max(sel-1,0);mark();e.preventDefault()}else if(e.key==='Enter'){run(sel);e.preventDefault();e.stopPropagation()}else if(e.key==='Escape'){closePal();e.preventDefault();e.stopPropagation()}});
 document.addEventListener('keydown',function(e){if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#pal').hidden?openPal():closePal()}
  else if((e.metaKey||e.ctrlKey)&&/^[1-5]$/.test(e.key)){e.preventDefault();go(Object.keys(PAGES)[+e.key-1])}});
 document.addEventListener('mousedown',function(e){if(!$('#pal').hidden&&!e.target.closest('#pal')&&!e.target.closest('#openpal'))closePal()});
