@@ -5,7 +5,7 @@
  * Mac: it sends every request type, handles every response and push type, shows untrusted text verbatim, and is
  * reachable from the menu, `--open-window` and the helper.sock `open_window` command.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -308,7 +308,9 @@ describe('app.sock protocol v1 fixture', () => {
 
 describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   const read = (f: string) => readFileSync(join(helperSourceDir(), f), 'utf8');
-  const client = read('AppClient.swift');
+  // The app.sock client, split into five files (no behaviour change): types, transport, model, Allow / Deny, control.
+  const CLIENT_FILES = ['AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift'];
+  const client = CLIENT_FILES.map(read).join('\n');
   // The window's sources: frame and router, Home, and the older screens.
   const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift', 'MemoryPage.swift'].map(read).join('\n');
 
@@ -476,6 +478,23 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('Components/ChatThread.swift')).toContain('.foregroundColor(t.ink2).frame(minHeight: 24)');
     const memory = read('MemoryPage.swift');
     expect(memory.match(/frame\(minHeight: 24\)|frame\(minWidth: 24, minHeight: 24\)/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('AppClient split: Allow / Deny live in AppConfirm.swift, and only the model and that file change the questions', () => {
+    const confirm = read('AppConfirm.swift');
+    expect(confirm).toContain('func answerConfirm(_ confirmId: String, approve: Bool) {');
+    expect(confirm).toContain('func denyFirstConfirm() -> Bool {');
+    // confirms is no longer private(set) (the extension needs it), so check the writers by hand: no other helper file
+    // assigns it or changes it in place, and only AppConfirm.swift sends confirm.answer.
+    const others = readdirSync(helperSourceDir(), { recursive: true }).map(String)
+      .filter((f) => f.endsWith('.swift') && f !== 'AppClient.swift' && f !== 'AppConfirm.swift');
+    expect(others.length).toBeGreaterThan(10);
+    for (const f of others) {
+      const src = read(f);
+      expect(src, f).not.toMatch(/confirms\s*(=[^=]|\.(append|remove|insert|removeAll|removeFirst|popLast)\b)/);
+      expect(src, f).not.toContain('AppRequest.confirmAnswer(');
+    }
+    expect(read('AppClient.swift')).not.toContain('AppRequest.confirmAnswer(');
   });
 
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {
