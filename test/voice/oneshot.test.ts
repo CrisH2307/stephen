@@ -80,11 +80,11 @@ describe('listener: hears the whole request', () => {
   });
 
   // #202 P1: the VAD hangover (silenceSec after the last word) must not count as speech.
-  it('a 1.5 s command after the wake phrase ends after silenceSec, not longSilenceSec', async () => {
-    const t = setup({ pattern: '.'.repeat(10) + 's'.repeat(sec(1.5)) + '.'.repeat(sec(4)), hits: { 10: 'WAKE' }, texts: ['Hey Stephen, what time is it.'], opts: NEW });
+  it('a 1.8 s command (1.8 s + 0.8 s hangover is over 2.5 s) ends after silenceSec, not longSilenceSec', async () => {
+    const t = setup({ pattern: '.'.repeat(10) + 's'.repeat(sec(1.8)) + '.'.repeat(sec(4)), hits: { 10: 'WAKE' }, texts: ['Hey Stephen, what time is it.'], opts: NEW });
     await t.listener.run();
     const last = idx(t.transcriber.heard[0]!).at(-1)!;
-    expect(last - (10 + sec(1.5) - 1)).toBeLessThanOrEqual(sec(0.8) + 1);
+    expect(last - (10 + sec(1.8) - 1)).toBeLessThanOrEqual(sec(0.8) + 1);
   });
 
   it('a 2 s command (2 s + hangover is over LONG_COMMAND_AFTER_SEC) still ends after silenceSec', async () => {
@@ -94,6 +94,7 @@ describe('listener: hears the whole request', () => {
     expect(last - (10 + sec(2) - 1)).toBeLessThanOrEqual(sec(0.8) + 1);
   });
 
+  // Guard against over-correcting (passes before and after the fix): a really long command keeps the long pause.
   it('a 4 s command still waits longSilenceSec in total', async () => {
     const t = setup({ pattern: '.'.repeat(10) + 's'.repeat(sec(4)) + '.'.repeat(sec(4)), hits: { 10: 'WAKE' }, texts: ['Hey Stephen, open Notion.'], opts: NEW });
     await t.listener.run();
