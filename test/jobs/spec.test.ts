@@ -143,7 +143,7 @@ describe('settings.json (ADR-004)', () => {
         autoAllowBashIfSandboxed: true,
         excludedCommands: [],
         allowAppleEvents: false,
-        network: { allowedDomains: [], strictAllowlist: true },
+        network: { allowedDomains: [], strictAllowlist: true, allowUnixSockets: [], allowAllUnixSockets: false },
         filesystem: { denyRead: ['/Users/cris/.stephen', '~/.ssh', '~/.aws', '~/.config', '~/Library/Keychains', '/Users/cris/code/stephen/.env'] },
       },
       permissions: {
@@ -152,6 +152,13 @@ describe('settings.json (ADR-004)', () => {
         deny: ['Bash(git push *)', 'Bash(open *)', 'Bash(osascript *)'],
       },
     });
+  });
+
+  it('#208: no Unix sockets, so a job\'s shell cannot reach app.sock (the recorder switch) or helper.sock', () => {
+    const s = jobSettings({ stephenHome: '/h', stephenRepo: '/r' }) as { sandbox: { enabled: boolean; network: Record<string, unknown> } };
+    expect(s.sandbox.enabled).toBe(true);
+    expect(s.sandbox.network.allowAllUnixSockets).toBe(false);
+    expect(s.sandbox.network.allowUnixSockets).toEqual([]);
   });
 
   it('the test switch is not a user option: only src/jobs/spec.ts and manager.ts name it, and the listener never sets it', () => {

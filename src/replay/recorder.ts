@@ -181,6 +181,8 @@ export class ReplayRecorder {
   private purgeTimer: ReturnType<typeof setInterval> | null = null;
   /** Clips queued and not yet written: each holds its audio in memory. */
   private waiting = 0;
+  /** deleteAll calls so far: a write that started before one never lands after it (#208). */
+  private deletes = 0;
 
   constructor(private readonly o: ReplayRecorderOptions) {}
 
@@ -197,7 +199,8 @@ export class ReplayRecorder {
     // A stuck disk must not pile up the owner's audio in memory (#169, review point 7): past the cap, drop it.
     if (this.waiting >= REPLAY_MAX_WAITING) return false;
     this.waiting++;
-    this.enqueue(() => this.write(c), () => this.waiting--);
+    const gen = this.deletes; // a Delete pressed after this capture drops it (#208)
+    this.enqueue(() => this.write(c, gen), () => this.waiting--);
     return true;
   }
 
@@ -222,10 +225,12 @@ export class ReplayRecorder {
 
   /**
    * `stephen replay delete --all` for the Settings switch's Delete (issue #48 PR 2): runs after the writes already
-   * queued, so a clip captured before the switch went off can't land after the delete. Resolves to how many clips
+   * queued, so a clip captured before the switch went off can't land after the delete. A write stuck past its time
+   * limit still running then sees the delete and removes its own clip (#208). Resolves to how many clips
    * were deleted; rejects when the folder can't be cleared.
    */
   deleteAll(): Promise<number> {
+    this.deletes++; // any write already started (even one past its time limit) drops its clip
     const run = this.chain.then(() => deleteReplayClips(this.o.home, { all: true }));
     this.chain = run.then(
       () => undefined,
@@ -320,10 +325,13 @@ export class ReplayRecorder {
     return dir;
   }
 
-  private async write(c: ReplayCapture): Promise<void> {
-    // Switched off while this clip waited: not saved (turning it off stops saving at once, PR 2).
-    if (!this.isOn()) return;
+  private async write(c: ReplayCapture, gen: number): Promise<void> {
+    // Switched off, or Delete pressed, while this clip waited or while it is being written: not saved. Checked after
+    // every await, so after "off" or "Delete" is answered no clip lands (PR 2, #208).
+    const wanted = (): boolean => this.deletes === gen && this.isOn();
+    if (!wanted()) return;
     const dir = await this.prepare();
+    if (!wanted()) return;
     const clips = purgeReplayDir(dir, this.now());
     const wav = encodeWav16(c.audio);
     const day = dayOf(c.startedAt);
@@ -336,6 +344,10 @@ export class ReplayRecorder {
       await fh.chmod(0o600);
     } finally {
       await fh.close();
+    }
+    if (!wanted()) {
+      removeClip(dir, c.id);
+      return;
     }
     const sidecar: ReplaySidecar = { v: 1, id: c.id, trigger: 'f5', startedAt: c.startedAt, transcript: c.transcript.slice(0, MAX_TRANSCRIPT_CHARS) };
     writePrivateJsonFileSync(join(dir, `${c.id}.json`), sidecar);
