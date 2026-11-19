@@ -148,7 +148,7 @@ export function appControl(o: AppControlOptions): AppControl {
 export const launchInfoPath = (home: string): string => join(home, 'run', 'launch.json');
 
 /**
- * Record how to start `stephen listen` for Stephen Helper (helper/AppClient.swift ListenControl): this node, this
+ * Record how to start `stephen listen` for Stephen Helper (helper/StephenControl.swift, StephenControl): this node, this
  * install's cli.js and this shell's PATH (so `claude` is found when the helper, started by launchd, runs it). 0600.
  */
 export function writeLaunchInfo(home: string, cliPath: string, env: NodeJS.ProcessEnv = process.env): void {

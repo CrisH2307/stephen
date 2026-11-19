@@ -480,6 +480,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(memory.match(/frame\(minHeight: 24\)|frame\(minWidth: 24, minHeight: 24\)/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
+  // Any write to the questions list: =, +=, subscript, or a mutating method. Any confirm.answer request, with or
+  // without the AppRequest. prefix.
+  const CONFIRMS_WRITE = /\bconfirms\s*(=[^=]|\+=|\[|\.(append|insert|remove\w*|popLast|swapAt|sort|reverse|shuffle)\b)/;
+  const CONFIRM_ANSWER = /\.confirmAnswer\(/;
+
+  it('the confirm guard catches each kind of write it is meant to catch', () => {
+    for (const bad of [
+      'model.confirms = []', 'confirms += [q]', 'confirms[0] = q', 'confirms.swapAt(0, 1)', 'confirms.append(q)',
+      'confirms.removeAll { _ in true }', 'confirms.removeFirst()',
+    ]) expect(bad, bad).toMatch(CONFIRMS_WRITE);
+    for (const ok of ['if confirms == [] {}', 'confirms.isEmpty', 'confirms.first', 'confirms.count']) expect(ok, ok).not.toMatch(CONFIRMS_WRITE);
+    for (const bad of ['request(AppRequest.confirmAnswer(id, confirmId: c, approve: true))', 'model.request(.confirmAnswer(a, confirmId: b, approve: true))'])
+      expect(bad, bad).toMatch(CONFIRM_ANSWER);
+  });
+
   it('AppClient split: Allow / Deny live in AppConfirm.swift, and only the model and that file change the questions', () => {
     const confirm = read('AppConfirm.swift');
     expect(confirm).toContain('func answerConfirm(_ confirmId: String, approve: Bool) {');
@@ -491,10 +506,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(others.length).toBeGreaterThan(10);
     for (const f of others) {
       const src = read(f);
-      expect(src, f).not.toMatch(/confirms\s*(=[^=]|\.(append|remove|insert|removeAll|removeFirst|popLast)\b)/);
-      expect(src, f).not.toContain('AppRequest.confirmAnswer(');
+      expect(src, f).not.toMatch(CONFIRMS_WRITE);
+      expect(src, f).not.toMatch(CONFIRM_ANSWER);
     }
-    expect(read('AppClient.swift')).not.toContain('AppRequest.confirmAnswer(');
+    expect(read('AppClient.swift')).not.toMatch(CONFIRM_ANSWER);
   });
 
   it('untrusted text is never rendered as Markdown: every Text(...) with a non-literal is Text(verbatim:)', () => {

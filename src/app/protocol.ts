@@ -76,7 +76,7 @@ import { checkModelChange, type ModelChanges } from './model.js';
 import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
-/** Longest line in bytes, without its newline (both directions; AppClient.swift APP_MAX_LINE_BYTES). */
+/** Longest line in bytes, without its newline (both directions; AppProtocol.swift APP_MAX_LINE_BYTES). */
 export const APP_MAX_LINE_BYTES = 256 * 1024;
 /** chat.send text limit in characters (grapheme clusters, like Swift's String.count; APP_CHAT_MAX_CHARS). */
 export const APP_CHAT_MAX_CHARS = 2000;
