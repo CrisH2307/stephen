@@ -838,6 +838,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         chimes,
         latency,
         // A wake word over playing sound (issue #205). Tests with a fake helper never touch the real volume.
+        audit,
         sound: env.sound !== undefined ? env.sound : !args.dryRun && !env.helper && process.platform === 'darwin' ? soundControl(defaultDesktopDeps(), () => bridge) : null,
         names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined,
         status: out,
