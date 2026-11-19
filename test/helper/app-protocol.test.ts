@@ -666,9 +666,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   function paletteCallProblems(src: string): string[] {
     const code = src.replace(/\/\/[^\n]*/g, '');  // comments say "model" too
     const bad: string[] = [];
-    for (const m of code.matchAll(/\b(model|control)\s*\.\s*(\w+)/g)) if (!PALETTE_MEMBERS.includes(m[2])) bad.push(`${m[1]}.${m[2]}`);
+    for (const m of code.matchAll(/\b(model|control)\s*\.\s*(\w+)/g)) if (!PALETTE_MEMBERS.includes(m[2] ?? '')) bad.push(`${m[1]}.${m[2]}`);
     for (const m of code.matchAll(/(?<![.\w@])([a-z]\w*)\s*\(/g)) {
-      const name = m[1];
+      const name = m[1] ?? '';
       const swiftOrLocal = ['if', 'for', 'switch', 'guard', 'return', 'init', 'min', 'max', 'move', 'run', 'close', 'items', 'filter', 'contains', 'lowercased', 'map', 'zip'];
       if (PALETTE_FREE_CALLS.includes(name) || swiftOrLocal.includes(name)) continue;
       if (new RegExp(`func ${name}\\b`).test(code)) continue;  // the palette's own private helpers
