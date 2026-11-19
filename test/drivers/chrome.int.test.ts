@@ -60,7 +60,8 @@ describe('ChromeDriver agent mode (real Chromium)', () => {
     await m1.connect('chrome');
     expect(spawns1.n).toBe(1);
     expect(d1.status()).toMatchObject({ connected: true, mode: 'agent', protocol: 'cdp' });
-    await new Promise((r) => setTimeout(r, 50));
+    // The version is read after connect, without waiting: poll for it (a fixed 50 ms was too short on macOS CI).
+    for (let i = 0; i < 200 && !d1.status().version; i++) await new Promise((r) => setTimeout(r, 25));
     expect(d1.status().version).toMatch(/Chrom/i);
 
     const { id, page } = await m1.openTab('chrome');
