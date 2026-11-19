@@ -1,7 +1,8 @@
 // Stephen Helper: Home (UI-PLAN v3.2 section 6), a chat layout. With no messages: "Morning, Cris." and the date, a
 // large centred composer with Talk and Send, three suggestion chips, and Today as one line ("Nothing waiting · What's
 // my day?"; only what app.sock already knows, due items and to-dos come from asking). With messages: the same thread
-// as the Ask box (ChatThreadView) and the composer at the bottom. No weather, no cards.
+// as the Ask box (ChatThreadView) and the composer at the bottom. No weather, no cards. The chat title and New chat (⌘N)
+// are in the window toolbar (UI v4, MainWindow.swift).
 //
 // Motion: one layout, not two swapped views. The composer is the same view in both states; the space under it shrinks
 // to nothing when the chat starts, so the composer glides from the centre to the bottom while the greeting and chips
@@ -24,8 +25,13 @@ struct HomeView: View {
   @ObservedObject var model: AppModel
   @ObservedObject var nav: WindowNav
   let actions: WindowActions
-  @State private var draft = ""
   @FocusState private var composerFocused: Bool
+
+  /// The composer text lives in WindowNav, so the ⌘K palette's Ask row can fill it (it never sends).
+  private var draft: String {
+    get { return nav.draft }
+    nonmutating set { nav.draft = newValue }
+  }
 
   /// No messages yet in this chat (a waiting question or a running command counts as a chat).
   private var isEmpty: Bool { return model.thread.isEmpty && model.confirms.isEmpty && !model.isWorking }
@@ -51,7 +57,9 @@ struct HomeView: View {
     .padding(.horizontal, Space.xxl).padding(.vertical, Space.xl)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .stephenAnimation(Motion.bar, value: empty)
-    .background(Button("") { newChat() }.keyboardShortcut("n").opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
+    // Ready to type again: after New chat (toolbar, ⌘N) and when the palette closes (its Ask row fills the composer).
+    .onChange(of: empty) { e in if e { composerFocused = true } }
+    .onChange(of: nav.paletteOpen) { open in if !open { composerFocused = true } }
     .onAppear {
       model.refreshSettings()  // the name for the greeting
       model.refreshJobs()
@@ -73,7 +81,7 @@ struct HomeView: View {
   /// The one composer, the same in both states (large, Talk and Send).
   private var composer: some View {
     HStack(spacing: Space.s) {
-      AskField(text: $draft, onMic: actions.talk, large: true, onSubmit: send).focused($composerFocused)
+      AskField(text: $nav.draft, onMic: actions.talk, large: true, onSubmit: send).focused($composerFocused)
       PrimaryButton("Send", action: send)
     }
   }
@@ -87,18 +95,9 @@ struct HomeView: View {
     }
   }
 
-  /// Messages: New chat and the title, then the same thread as the Ask box.
+  /// Messages: the same thread as the Ask box. The title and New chat are in the toolbar.
   private var thread: some View {
-    VStack(spacing: Space.m) {
-      HStack(spacing: Space.m) {
-        // Back to the empty Home. The chat is not lost: it stays in Conversations (and can be picked up again, #55).
-        QuietButton("New chat", symbol: "plus") { newChat() }.help("New chat (⌘N)")
-        Text(verbatim: model.threadTitle).font(TypeScale.section).foregroundColor(t.ink).lineLimit(1)
-          .accessibilityAddTraits(.isHeader)
-        Spacer(minLength: 0)
-      }
-      ChatThreadView(model: model).frame(maxHeight: .infinity)
-    }
+    ChatThreadView(model: model).frame(maxHeight: .infinity)
   }
 
   /// "Nothing waiting · What's my day?" Running jobs come first when there are any. (A waiting question is never here:
@@ -123,12 +122,5 @@ struct HomeView: View {
 
   private func send() {
     if model.sendChat(draft) { draft = "" }  // the reply shows right here in the thread
-  }
-
-  /// Cmd+N: a new chat (back to the empty layout). Older chats stay in Conversations.
-  private func newChat() {
-    draft = ""
-    model.newChat()
-    composerFocused = true
   }
 }

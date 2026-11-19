@@ -1,18 +1,20 @@
-// Stephen Helper: the main window's frame (UI-PLAN v3.1 section 4). Sidebar: wordmark and collapse (⌘\, 60 pt icon
-// rail, remembered), the "Ask Stephen ⌘K" field (opens the Ask box), STEPHEN (Home, Conversations, Jobs) and YOU
-// (Personal, Settings) with ⌘1…⌘5, and the status row (dot + word, Start/Stop through StephenControl).
-// Pages: Page (the router enum) and WindowNav (the selection, also set by the Ask box). Later UI PRs add or restyle
-// pages here.
+// Stephen Helper: the main window's frame (UI v4 shell, docs/research/UI-V4-IA-PLAN.md sections 5, 7 and 8).
+// Sidebar (glass): wordmark and collapse (⌘\, 60 pt icon rail, remembered), the state row and the solid "Recording on"
+// sign at the top, then two groups: Talk (Home, Conversations, Jobs) and Control (Memory, Settings), ⌘1…⌘5.
+// Content column: the toolbar (glass: page title, page actions, Search ⌘K), the waiting-question banner (solid), then
+// the page. The ⌘K palette (Palette.swift) opens over the page, under the banner.
 
 import AppKit
 import SwiftUI
 
-/** The window's pages. The first five are the sidebar rows (⌘1…⌘5); memory is opened from Personal and the Ask box. */
+/** The window's pages. The five sidebar rows are Page.talk + Page.control (⌘1…⌘5). */
 enum Page: String, CaseIterable, Identifiable {
-  case home, conversations, jobs, personal, settings, memory
+  /// `personal` is not a page any more (v4). Only MemoryPage's old back link still sets it, and WindowNav turns it into
+  /// Memory, so the link and Esc stay on Memory. Step d removes the link, then this case can go.
+  case home, conversations, jobs, memory, settings, personal
 
-  static let stephen: [Page] = [.home, .conversations, .jobs]
-  static let you: [Page] = [.personal, .settings]
+  static let talk: [Page] = [.home, .conversations, .jobs]
+  static let control: [Page] = [.memory, .settings]
 
   var id: String { return rawValue }
 
@@ -21,9 +23,8 @@ enum Page: String, CaseIterable, Identifiable {
     case .home: return "Home"
     case .conversations: return "Conversations"
     case .jobs: return "Jobs"
-    case .personal: return "Personal"
+    case .memory, .personal: return "Memory"
     case .settings: return "Settings"
-    case .memory: return "Memory"
     }
   }
 
@@ -32,22 +33,31 @@ enum Page: String, CaseIterable, Identifiable {
     case .home: return "house"
     case .conversations: return "bubble.left.and.bubble.right"
     case .jobs: return "tray.full"
-    case .personal: return "person.crop.circle"
+    case .memory, .personal: return "note.text"
     case .settings: return "gearshape"
-    case .memory: return "lightbulb"
     }
   }
 
   /** "1"…"5" for the sidebar pages (⌘1…⌘5). */
   var key: KeyEquivalent? {
-    guard let i = (Page.stephen + Page.you).firstIndex(of: self) else { return nil }
+    guard let i = (Page.talk + Page.control).firstIndex(of: self) else { return nil }
     return KeyEquivalent(Character(String(i + 1)))
   }
 }
 
-/** Which page the window shows. Outside the views so the Ask box can set it ("Review memory"). */
+/** The window's shared view state. Outside the views so the Ask box, the app menu and the palette can set it. */
 final class WindowNav: ObservableObject {
-  @Published var page: Page = .home
+  @Published var page: Page = .home {
+    didSet { if page == .personal { page = .memory } }
+  }
+  /// The ⌘K palette is open. While it is, the question card's keys are off (\.paletteOpen, Palette.swift).
+  @Published var paletteOpen = false
+  /// Home's composer text. The palette's Ask row fills it; only Home's Send sends it.
+  @Published var draft = ""
+  /// Conversations' "Clear all…" (toolbar ⋯ menu) asks first; the page shows the alert.
+  @Published var confirmClearAll = false
+  /// Settings > About's doctor result, so the palette's "Run doctor" shows it there.
+  @Published var doctor = ""
 }
 
 /** What the window asks of the rest of the helper (main.swift fills it). */
@@ -67,6 +77,11 @@ func listenerWord(connection: AppConnectionState, listening: Bool, listener: Lis
   case (.connecting, .running): return ("Connecting", .warn)
   case (.offline, .running): return ("Offline", .bad)
   }
+}
+
+/** Home has no messages yet (a waiting question or a running command counts as a chat). */
+func homeChatEmpty(_ model: AppModel) -> Bool {
+  return model.thread.isEmpty && model.confirms.isEmpty && !model.isWorking
 }
 
 struct AppRootView: View {
@@ -91,16 +106,27 @@ private struct MainWindowView: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      SidebarView(model: model, nav: nav, control: control, actions: actions, collapsed: $collapsed)
+      SidebarView(model: model, nav: nav, control: control, collapsed: $collapsed)
         .frame(width: SidebarMetrics.column(collapsed), alignment: .leading).clipped()
+        .frame(maxHeight: .infinity, alignment: .top)
+        .glassBackground(.sidebar)
       Rectangle().fill(t.line).frame(width: 1)
       VStack(spacing: 0) {
+        WindowToolbar(model: model, nav: nav)
         if !model.confirms.isEmpty { questionBanner }
         detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+          // Safety (plan 7.5.4): while the palette is open, the question card's buttons and its Esc are off.
+          .environment(\.paletteOpen, nav.paletteOpen)
+          // Over the page, under the banner: the palette never covers the waiting question's banner.
+          .overlay(alignment: .top) {
+            if nav.paletteOpen {
+              CommandPalette(model: model, nav: nav, control: control, actions: actions, sidebarCollapsed: $collapsed)
+            }
+          }
       }
+      .background(t.ground)
     }
     .stephenAnimation(Motion.bar, value: collapsed)
-    .background(t.ground)
     .frame(minWidth: WindowMetrics.minContent.width, minHeight: WindowMetrics.minContent.height)
   }
 
@@ -141,13 +167,90 @@ private struct MainWindowView: View {
     } else {
       switch nav.page {
       case .home: HomeView(model: model, nav: nav, actions: actions)
-      case .conversations: ConversationsPage(model: model)
+      case .conversations: ConversationsPage(model: model, nav: nav)
       case .jobs: JobsView(model: model)
-      case .personal: PersonalView(model: model, nav: nav)
-      case .settings: SettingsView(model: model, control: control)
-      case .memory: MemoryPage(model: model, nav: nav)
+      case .settings: SettingsView(model: model, nav: nav, control: control)
+      case .memory, .personal: MemoryPage(model: model, nav: nav)
       }
     }
+  }
+}
+
+/// The window header (plan 5.2): page title on the left, the page's own actions, then Search ⌘K on the right. Glass.
+private struct WindowToolbar: View {
+  @Environment(\.stephenTheme) var t
+  @ObservedObject var model: AppModel
+  @ObservedObject var nav: WindowNav
+  @AppStorage("settingsPane") private var pane: SettingsItem = .talk
+
+  var body: some View {
+    let online = model.connection == .online
+    HStack(spacing: Space.m) {
+      // A chat title is the owner's own words or a model reply: verbatim, one line.
+      Text(verbatim: title(online: online)).font(TypeScale.section).foregroundColor(t.ink).lineLimit(1)
+        .truncationMode(.tail).accessibilityAddTraits(.isHeader)
+        .accessibilityHidden(title(online: online).isEmpty)  // empty Home: no empty heading for VoiceOver
+      if online { pageActions }
+      Spacer(minLength: Space.m)
+      searchButton
+    }
+    .padding(.horizontal, Space.l)
+    .frame(height: 52)
+    .glassBackground(.toolbar)
+    .overlay(Rectangle().fill(t.line).frame(height: 1), alignment: .bottom)
+  }
+
+  private func title(online: Bool) -> String {
+    switch nav.page {
+    case .home: return online && !homeChatEmpty(model) ? model.threadTitle : ""  // empty Home: the greeting is the title
+    case .settings: return online ? pane.title : "Appearance"
+    default: return nav.page.title
+    }
+  }
+
+  @ViewBuilder
+  private var pageActions: some View {
+    switch nav.page {
+    case .home:
+      if !homeChatEmpty(model) {
+        // Back to the empty Home. The chat is not lost: it stays in Conversations.
+        QuietButton("New chat", symbol: "plus") { nav.draft = ""; model.newChat() }
+          .keyboardShortcut("n").help("New chat (⌘N)")
+      }
+    case .conversations:
+      if !model.history.isEmpty {
+        Menu {
+          Button("Clear all…", role: .destructive) { nav.confirmClearAll = true }
+        } label: {
+          Image(systemName: "ellipsis.circle").font(.system(size: 16)).foregroundColor(t.ink2)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help("More").accessibilityLabel("More")
+      }
+    default:
+      EmptyView()
+    }
+  }
+
+  /// Looks like a small field, acts as a button: it opens the palette, like ⌘K.
+  private var searchButton: some View {
+    Button { nav.paletteOpen = true } label: {
+      HStack(spacing: Space.s) {
+        Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundColor(t.ink2)
+        Text(verbatim: "Search").font(TypeScale.secondary).foregroundColor(t.ink2)
+        Spacer(minLength: Space.s)
+        Text(verbatim: "⌘K").font(TypeScale.secondary).foregroundColor(t.ink2)
+      }
+      .padding(.horizontal, 12).padding(.vertical, 8)
+      .frame(width: 200)
+      .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
+      .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Search and actions (⌘K)")
+    .accessibilityLabel("Search and actions")
+    .accessibilityHint("Shortcut Command K.")
   }
 }
 
@@ -156,12 +259,11 @@ private struct SidebarView: View {
   @ObservedObject var model: AppModel
   @ObservedObject var nav: WindowNav
   let control: StephenControl
-  let actions: WindowActions
   @Binding var collapsed: Bool
 
   var body: some View {
     // One layout for both states: only the width (animated by the window), the fades and the toggle's side change.
-    VStack(alignment: .leading, spacing: Space.xl) {
+    VStack(alignment: .leading, spacing: Space.l) {
       ZStack(alignment: .leading) {
         Text(verbatim: "Stephen").font(TypeScale.section).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
           .padding(.leading, Space.s).opacity(collapsed ? 0 : 1).fixedSize()
@@ -176,39 +278,17 @@ private struct SidebarView: View {
         .frame(width: SidebarMetrics.content(collapsed), alignment: collapsed ? .leading : .trailing)
       }
       .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+      // At the top, where the HIG wants important controls (v4, moved from the bottom).
+      StatusRow(model: model, control: control, collapsed: collapsed)
       VStack(alignment: .leading, spacing: Space.m) {
-        askField
-        SidebarSection("Stephen", collapsed: collapsed) { rows(Page.stephen) }
-        SidebarSection("You", collapsed: collapsed) { rows(Page.you) }
+        SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }
+        SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }
       }
       Spacer(minLength: 0)
-      StatusRow(model: model, control: control, collapsed: collapsed)
     }
     .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
     .padding(.horizontal, SidebarMetrics.pad)
     .padding(.vertical, Space.l)
-  }
-
-  /** Looks like a field, acts as a button: it opens the Ask box, and so does ⌘K (issue #87). */
-  private var askField: some View {
-    Button(action: actions.ask) {
-      HStack(spacing: Space.s) {
-        Image(systemName: "text.bubble").font(.system(size: 14)).foregroundColor(t.ink2).frame(width: 20)
-        Text(verbatim: "Ask Stephen").font(TypeScale.body).foregroundColor(t.ink2).lineLimit(1).fixedSize().opacity(collapsed ? 0 : 1)
-        Spacer(minLength: 0)
-        Text(verbatim: "⌘K").font(TypeScale.secondary).foregroundColor(t.ink2).opacity(collapsed ? 0 : 1)
-      }
-      .padding(.horizontal, Space.s).padding(.vertical, 9)
-      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
-      .clipShape(RoundedRectangle(cornerRadius: Corner.row))
-      .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
-      .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.line, lineWidth: 1))
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .help("Ask Stephen (⌘K)")
-    .accessibilityLabel("Ask Stephen")
-    .accessibilityHint("Opens the Ask box. Shortcut Command K.")
   }
 
   private func rows(_ pages: [Page]) -> some View {
@@ -230,7 +310,7 @@ private struct StatusRow: View {
 
   var body: some View {
     let s = listenerWord(connection: model.connection, listening: model.listening, listener: control.listener)
-    VStack(alignment: .leading, spacing: Space.xs) {
+    VStack(alignment: .leading, spacing: Space.s) {
       HStack(spacing: Space.s) {
         StatusPill(s.word, kind: s.kind, showWord: !collapsed).padding(.leading, Space.s + 6)  // the dot sits under the icons
         Spacer(minLength: 0)
@@ -242,12 +322,15 @@ private struct StatusRow: View {
         Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
       }
       // The replay recorder is on (issue #48): in words with a waveform, not a red dot that looks like the mic.
+      // Solid, even in the glass sidebar (plan 8.1): surface fill and a strong outline.
       if model.recordingOn {
         HStack(spacing: Space.s) {
           Image(systemName: "waveform").foregroundColor(t.ink2).accessibilityHidden(true)
           if !collapsed { Text(verbatim: "Recording on").font(TypeScale.secondary).foregroundColor(t.ink2) }
         }
-        .padding(.leading, Space.s + 6)
+        .padding(.horizontal, Space.s).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
+        .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))
         .help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")
