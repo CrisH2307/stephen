@@ -248,7 +248,9 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     expect(procs).toHaveLength(2); // the start-up protocol check, then the pre-warmed process
     const mcpPath = join(h.home, 'voice', 'mcp-config.json');
     expect(procs[1]!.argv).toEqual(buildWarmArgs({ claudePath: 'x', maxTurns: 25, model: 'sonnet', mcpConfigPath: mcpPath, followUps: true }));
-    expect(procs[1]!.at!).toBeLessThan(h.transcripts[0]!.at); // spawned while the user was still talking / ASR ran
+    // Spawned while the user was still talking / ASR ran: the listener's own lead (spawn to command start). The fake's
+    // start time is not used, because on a loaded machine node can take longer to boot than ASR (#109).
+    expect(Number(/spawned (\d+\.\d) s ahead/.exec(h.out.join('\n'))?.[1])).toBeGreaterThan(0);
     expect(readFakeTurns(h.log).map((t) => [t.pid, t.prompt])).toEqual([[procs[1]!.pid, 'open youtube']]);
     expect(h.speaker.said).toEqual(['Done! open youtube']);
     expect(h.out.some((l) => /^claude: \d+\.\d s \(warm, spawned \d+\.\d s ahead; start-up \+ MCP /.test(l))).toBe(true);
