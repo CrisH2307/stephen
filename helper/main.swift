@@ -500,7 +500,34 @@ func shutdownAndExit(_ code: Int32) {
   exit(code)
 }
 
+/**
+ * Post a Mac media key (issue #205), like the keyboard's play/pause, next and previous keys: an NX system-defined
+ * event, subtype 8 (NX_SUBTYPE_AUX_CONTROL_BUTTONS), key down then key up. The app that plays sound reacts (Zen,
+ * YouTube in any browser, Spotify, Apple Music). Needs the Accessibility permission. nil when posted, else why not.
+ */
+func postMediaKey(_ key: String) -> String? {
+  if !CGPreflightPostEventAccess() {
+    _ = CGRequestPostEventAccess()  // the system prompt, the first time
+    return "Stephen Helper needs the Accessibility permission (System Settings > Privacy & Security > Accessibility)"
+  }
+  // NX_KEYTYPE_PLAY 16, NX_KEYTYPE_NEXT 17, NX_KEYTYPE_PREVIOUS 18 (IOKit/hidsystem/ev_keymap.h).
+  let code = key == "next" ? 17 : key == "previous" ? 18 : 16
+  for down in [true, false] {
+    let state = down ? 0xA : 0xB
+    guard
+      let event = NSEvent.otherEvent(
+        with: .systemDefined, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state << 8)),
+        timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: (code << 16) | (state << 8), data2: -1),
+      let cg = event.cgEvent
+    else { return "could not make the media key event" }
+    cg.post(tap: .cghidEventTap)
+  }
+  return nil
+}
+
 core.readAudio = { audioWatcher.isPlaying() }
+core.readPostEvents = { CGPreflightPostEventAccess() }
+core.onMediaKey = { key in MainActor.assumeIsolated { postMediaKey(key) } }
 core.onUIState = { s in MainActor.assumeIsolated { statusMenu?.setState(s) } }
 core.onQuit = { shutdownAndExit(0) }
 core.onOpenWindow = { MainActor.assumeIsolated { showStephenWindow() } }

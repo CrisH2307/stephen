@@ -70,5 +70,19 @@ export async function helperDoctorChecks(stephenHome: string, deps: HelperDoctor
       'System Settings › Privacy & Security › Input Monitoring → turn on "Stephen Helper" (or use its menu-bar item → ' +
       `"Open Settings…"). After a rebuild, remove it (−) and add it again. Log: ${helperLogPath(stephenHome)}`,
   });
+  // Issue #205: posting the Mac media keys (pause / next by voice, media_control's fallback) needs Accessibility.
+  const post = probe.hello.postEvents;
+  checks.push(
+    post === undefined
+      ? { ok: true, info: true, label: 'Accessibility for Stephen Helper (media keys)', detail: 'unknown: this helper is older; `stephen install-helper` updates it' }
+      : {
+          ok: post,
+          label: 'Accessibility granted to Stephen Helper (media keys)',
+          detail: post ? 'yes' : 'no: "Hey Stephen, pause" and "Stephen stop" cannot press play/pause',
+          fix:
+            'System Settings › Privacy & Security › Accessibility → turn on "Stephen Helper". After a rebuild, remove it (−) and add it again. ' +
+            `Log: ${helperLogPath(stephenHome)}`,
+        },
+  );
   return checks;
 }

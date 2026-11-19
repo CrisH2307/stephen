@@ -26,6 +26,8 @@ let MAX_LINE_BYTES = 4096
 let KEYCODE_ESCAPE: Int64 = 53
 /** macOS virtual key code for F5 (kVK_F5): hold it to talk, like Fn+Option. */
 let KEYCODE_F5: Int64 = 96
+/** The media keys `media_key` may post (src/helper/protocol.ts MEDIA_KEYS). */
+let MEDIA_KEYS: Set<String> = ["play_pause", "next", "previous"]
 
 // ───────────────────────────── time ─────────────────────────────
 
@@ -50,18 +52,22 @@ struct Stamp {
 // ───────────────────────────── events out (helper → node) ─────────────────────────────
 
 enum HelperEventOut: Equatable {
-  case hello(version: String, inputMonitoring: Bool)
+  /** `postEvents`: Accessibility granted (needed to post media keys); nil = not reported. */
+  case hello(version: String, inputMonitoring: Bool, postEvents: Bool? = nil)
   case pttDown(at: Int64)
   case pttUp(at: Int64, heldMs: Int64)
   case esc(at: Int64)
   case audio(playing: Bool, at: Int64)
+  /** Answer to `media_key` (issue #205): ok, or why the key was not posted. */
+  case mediaKeyDone(key: String, ok: Bool, message: String?)
   case error(message: String)
 
   /** One JSON object followed by "\n". */
   var jsonLine: String {
     switch self {
-    case let .hello(version, inputMonitoring):
-      return "{\"type\":\"hello\",\"version\":\(jsonString(version)),\"inputMonitoring\":\(inputMonitoring)}\n"
+    case let .hello(version, inputMonitoring, postEvents):
+      let post = postEvents.map { ",\"postEvents\":\($0)" } ?? ""
+      return "{\"type\":\"hello\",\"version\":\(jsonString(version)),\"inputMonitoring\":\(inputMonitoring)\(post)}\n"
     case let .pttDown(at):
       return "{\"type\":\"ptt_down\",\"at\":\(at)}\n"
     case let .pttUp(at, heldMs):
@@ -70,6 +76,9 @@ enum HelperEventOut: Equatable {
       return "{\"type\":\"esc\",\"at\":\(at)}\n"
     case let .audio(playing, at):
       return "{\"type\":\"audio\",\"playing\":\(playing),\"at\":\(at)}\n"
+    case let .mediaKeyDone(key, ok, message):
+      let why = message.map { ",\"message\":\(jsonString($0))" } ?? ""
+      return "{\"type\":\"media_key_done\",\"key\":\(jsonString(key)),\"ok\":\(ok)\(why)}\n"
     case let .error(message):
       return "{\"type\":\"error\",\"message\":\(jsonString(message))}\n"
     }
@@ -133,6 +142,8 @@ enum HelperCommandIn: Equatable {
   case openWindow
   /** The listener dropped the recording: end the press if one is down (additive, like openWindow). */
   case pressOver
+  /** Post a Mac media key: play_pause, next or previous (issue #205; additive, like openWindow). */
+  case mediaKey(String)
   /** Valid JSON object with an unknown `type` (ignored, per the protocol). */
   case unknown(type: String)
   /** Not a JSON object, no string `type`, or a known type with bad fields. */
@@ -152,6 +163,11 @@ func parseCommand(_ line: String) -> HelperCommandIn {
   case "quit": return .quit
   case "open_window": return .openWindow
   case "press_over": return .pressOver
+  case "media_key":
+    guard case let .string(k)? = obj["key"], MEDIA_KEYS.contains(k) else {
+      return .invalid(reason: "media_key: bad \"key\" field")
+    }
+    return .mediaKey(k)
   default: return .unknown(type: type)
   }
 }
@@ -814,6 +830,10 @@ final class HelperCore {
   var onOpenWindow: () -> Void = {}
   /** A push-to-talk press ended, however it ended (F5 or keys released, Esc, max hold, tap lost). Main queue. */
   var onPressEnded: () -> Void = {}
+  /** Post a media key (main queue): nil when posted, else why not. The answer goes back as `media_key_done`. */
+  var onMediaKey: (String) -> String? = { _ in "media keys are not supported here" }
+  /** Whether posting keys is allowed (Accessibility), for `hello`; nil = not reported. Any thread. */
+  var readPostEvents: () -> Bool? = { nil }
   var log: (String) -> Void
 
   init(socketPath: String, maxHoldMs: Int64 = PTT_MAX_HOLD_MS, log: @escaping (String) -> Void) {
@@ -826,7 +846,9 @@ final class HelperCore {
     inputMonitoringFlag.set(inputMonitoring)
     server.log = log
     server.helloLine = { [unowned self] in
-      HelperEventOut.hello(version: HELPER_PROTOCOL_VERSION, inputMonitoring: inputMonitoringFlag.get()).jsonLine
+      HelperEventOut.hello(
+        version: HELPER_PROTOCOL_VERSION, inputMonitoring: inputMonitoringFlag.get(), postEvents: readPostEvents()
+      ).jsonLine
     }
     server.onCommand = { [unowned self] cmd in DispatchQueue.main.async { self.handle(cmd) } }
     server.onConnect = { [unowned self] in DispatchQueue.main.async { self.sendAudio(force: true) } }
@@ -841,7 +863,7 @@ final class HelperCore {
     if inputMonitoringFlag.get() == granted { return }
     inputMonitoringFlag.set(granted)
     log("Input Monitoring \(granted ? "granted" : "not granted")")
-    server.send(.hello(version: HELPER_PROTOCOL_VERSION, inputMonitoring: granted))
+    server.send(.hello(version: HELPER_PROTOCOL_VERSION, inputMonitoring: granted, postEvents: readPostEvents()))
   }
 
   func handleFlags(_ m: Modifiers, at t: Stamp = .now()) {
@@ -881,6 +903,10 @@ final class HelperCore {
       onOpenWindow()
     case .pressOver:
       emit(ptt.pressOver(at: .now()))
+    case let .mediaKey(k):
+      let why = onMediaKey(k)
+      log("media_key \(k): \(why ?? "posted")")
+      server.send(.mediaKeyDone(key: k, ok: why == nil, message: why))
     case let .unknown(type): log("ignored unknown command type \(jsonString(type))")
     case let .invalid(reason): log("ignored malformed command: \(reason)")
     }

@@ -14,7 +14,8 @@
 
 /** helper → node */
 export type HelperEvent =
-  | { type: 'hello'; version: string; inputMonitoring: boolean }
+  /** `postEvents`: Accessibility granted, so media keys can be posted (issue #205); absent in older helpers. */
+  | { type: 'hello'; version: string; inputMonitoring: boolean; postEvents?: boolean }
   /** Fn+Option both went down (push-to-talk pressed). */
   | { type: 'ptt_down'; at: number }
   /**
