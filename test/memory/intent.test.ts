@@ -227,7 +227,7 @@ describe('R10b-1 raw "?" guard and voice second layer', () => {
     expect(parseMemoryIntent(memoryWords(raw), { raw, source: 'voice-wake' })).toBeNull();
   });
   it('R10b-1 without a "?", voice "can you remember ..." saves only with "that"', () => {
-    for (const source of ['voice-ptt', 'voice-wake']) {
+    for (const source of ['voice-ptt', 'voice-wake'] as const) {
       expect(parseMemoryIntent("can you remember my sister's name", { source })).toBeNull();
       expect(parseMemoryIntent('will you remember my birthday', { source })).toBeNull();
       expect(parseMemoryIntent('could you please remember my bike is blue', { source })).toBeNull();
@@ -257,14 +257,14 @@ describe('R10b-4 openers without "remember"', () => {
     'R10b-4 %j is refused from the wake word, allowed from F5, window and CLI',
     (c) => {
       expect(parseMemoryIntent(c, { source: 'voice-wake' })).toBeNull();
-      for (const source of ['voice-ptt', 'app', 'cli']) expect(parseMemoryIntent(c, { source })?.kind).toBe('remember');
+      for (const source of ['voice-ptt', 'app', 'cli'] as const) expect(parseMemoryIntent(c, { source })?.kind).toBe('remember');
     },
   );
   it('R10b-4 a "remember" opener still works from the wake word, and the opener is reported', () => {
     expect(parseMemoryIntent('remember my cat is tom', { source: 'voice-wake' })?.kind).toBe('remember');
     expect(parseDetailed('hey stephen can you remember that my cat is tom', { source: 'voice-wake' })?.opener).toBe('can you remember that');
     expect(parseDetailed("don't forget that my cat is tom", { source: 'cli' })?.opener).toBe("don't forget that");
-    expect(parseDetailed('remember my cat is tom')?.opener).toBe('remember');
+    expect(parseDetailed('remember my cat is tom', { source: 'app' })?.opener).toBe('remember');
   });
 });
 
@@ -272,7 +272,7 @@ describe('#137 voice needs a fact shape; typed text is unchanged', () => {
   it.each(['Remember the milk', 'Remember my keys', 'Can you remember that song from Titanic', 'Remember last summer', 'Remember that time we went to the lake', 'Remember I need to pay the rent'])(
     '#137 %j saves nothing by voice but still saves when typed',
     (raw) => {
-      for (const source of ['voice-ptt', 'voice-wake']) expect(parseMemoryIntent(memoryWords(raw), { raw, source })).toBeNull();
+      for (const source of ['voice-ptt', 'voice-wake'] as const) expect(parseMemoryIntent(memoryWords(raw), { raw, source })).toBeNull();
       expect(parseMemoryIntent(raw, { raw, source: 'app' })?.kind).toBe('remember');
     },
   );
