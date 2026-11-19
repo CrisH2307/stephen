@@ -697,6 +697,8 @@ export class Listener {
       this.extraSilenceSec = 0;
       if (this.speechSec >= MIN_COMMAND_SPEECH_SEC) this.heardSpeech = true;
     } else if (this.heardSpeech) {
+      // The VAD said "speaking" for silenceSec after the last word (its hangover); that was not speech (#202, P1).
+      if (this.extraSilenceSec === 0) this.speechSec = Math.max(0, this.speechSec - this.o.silenceSec);
       // speech, then `silenceSec` of silence (the VAD's own hangover): end of command — or, after a long
       // request, wait up to longSilenceSec in total (a thinking pause between parts).
       const long = this.o.longSilenceSec ?? this.o.silenceSec;
