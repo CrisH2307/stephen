@@ -144,7 +144,10 @@ final class AppModel: ObservableObject {
   private var nextBubble = 1
   /** Who wants the connection ("window", "askbox"); it closes when nobody does. */
   private var users: Set<String> = []
-  private var retryScheduled = false
+  private var retryItem: DispatchWorkItem? = nil
+  /** 3 s, then 6 s, then 10 s while Stephen stays unreachable (#202 C1). */
+  private var retryDelay = APP_RETRY_SECONDS
+  private var socketSeen = false
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private let isoFractional = ISO8601DateFormatter()
@@ -176,6 +179,7 @@ final class AppModel: ObservableObject {
 
   func opened(_ who: String) {
     users.insert(who)
+    retryDelay = APP_RETRY_SECONDS
     if connection != .online { connect() }
   }
 
@@ -185,13 +189,26 @@ final class AppModel: ObservableObject {
   }
 
   func retry() {
+    retryDelay = APP_RETRY_SECONDS
     connect()
+  }
+
+  /** Start was clicked: back to the short delay; a waiting retry moves up. */
+  func resetRetry() {
+    retryDelay = APP_RETRY_SECONDS
+    if let item = retryItem {
+      item.cancel()
+      retryItem = nil
+      scheduleRetry()
+    }
   }
 
   var isWorking: Bool { return state == "working" || !awaitingReplies.isEmpty }
 
   private func connect() {
     if connection == .connecting { return }
+    retryItem?.cancel()
+    retryItem = nil
     connection = .connecting
     link.open { [weak self] reason in
       guard let self = self else { return }
@@ -209,6 +226,7 @@ final class AppModel: ObservableObject {
           self.modelName = msg.model ?? ""
           self.offlineReason = nil
           self.connection = .online
+          self.retryDelay = APP_RETRY_SECONDS
           self.log("app.sock: connected")
         } else {
           self.link.close()
@@ -235,13 +253,19 @@ final class AppModel: ObservableObject {
   }
 
   private func scheduleRetry() {
-    guard !users.isEmpty, !retryScheduled else { return }
-    retryScheduled = true
-    DispatchQueue.main.asyncAfter(deadline: .now() + APP_RETRY_SECONDS) { [weak self] in
+    guard !users.isEmpty, retryItem == nil else { return }
+    let item = DispatchWorkItem { [weak self] in
       guard let self = self else { return }
-      self.retryScheduled = false
+      self.retryItem = nil
+      // app.sock appeared since the last try: back to the short delay. A file check only, no connect.
+      let seen = FileManager.default.fileExists(atPath: self.socketPath)
+      if seen && !self.socketSeen { self.retryDelay = APP_RETRY_SECONDS }
+      self.socketSeen = seen
       if !self.users.isEmpty && self.connection == .offline { self.connect() }
     }
+    retryItem = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay, execute: item)
+    retryDelay = min(retryDelay * 2, APP_RETRY_MAX_SECONDS)
   }
 
   // MARK: requests

@@ -157,6 +157,8 @@ final class StephenControl: ObservableObject {
   private var logOffset: UInt64 = 0
   private var logPartial = ""
   private var pollsLeft = 0
+  /** Called after Start launched the listener (main.swift: the window connection retries soon again). */
+  var onStart: (() -> Void)? = nil
 
   init(home: String, log: @escaping (String) -> Void) {
     self.home = home
@@ -259,6 +261,7 @@ final class StephenControl: ObservableObject {
     log("started stephen listen, pid \(p.processIdentifier)")
     listener = .starting
     poll(seconds: 60)
+    onStart?()
     done(nil)
   }
 

@@ -119,8 +119,9 @@ again brings the same one to the front. Size and position are remembered.
 | **Audit** | The latest browser actions from the audit log. |
 
 If `stephen listen` isn't running the window says *Can't reach Stephen. Run `stephen listen`.* with **Retry**;
-while the window is open it also retries every 3 s by itself. Closing the window disconnects; the helper keeps
-running in the menu bar. All text is shown as plain text (no Markdown or links are rendered).
+it also retries by itself: after 3 s, then 6 s, then every 10 s. Start, Retry, opening the window or app.sock
+appearing brings it back to 3 s. Closing the window keeps the connection, because the Ask box in the menu bar uses
+it too; the helper keeps running in the menu bar. All text is shown as plain text (no Markdown or links are rendered).
 
 **After `stephen install-helper`, check on the Mac:**
 

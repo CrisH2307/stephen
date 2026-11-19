@@ -573,6 +573,7 @@ MainActor.assumeIsolated {
     quit: { shutdownAndExit(0) })
   let model = sharedAppModel()
   model.opened("askbox")
+  stephenControl.onStart = { [weak model] in model?.resetRetry() }
   let box = AskBoxController(model: model)
   box.anchor = { statusMenu?.button }
   box.openWindow = { page in showStephenWindow(page: page) }
