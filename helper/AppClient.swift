@@ -905,14 +905,13 @@ final class AppModel: ObservableObject {
   @Published private(set) var talk: TalkSettings? = nil
   /** The raw config (voice.wakeWord and so on) for the read-only Settings rows. */
   @Published private(set) var configJSON: AppJSON? = nil
+  /** The listener's `replay` push (issue #208): the switch as the recorder reads it, re-read every 2 s and on change. */
+  @Published private(set) var replayOn = false
   /**
-   * The replay recorder is saving F5 commands: the listener is connected and its config says replay.enabled (issue
-   * #48). Drives the "Recording on" sign in the sidebar and the menu bar menu.
+   * The replay recorder is saving F5 commands: the listener is connected and pushed replay on (issue #48, #208).
+   * Drives the "Recording on" sign in the sidebar and the menu bar menu.
    */
-  var recordingOn: Bool {
-    guard connection == .online, case .object(let c)? = configJSON, case .object(let r)? = c["replay"], case .bool(let on)? = r["enabled"] else { return false }
-    return on
-  }
+  var recordingOn: Bool { connection == .online && replayOn }
 
   @Published private(set) var audit: [AuditEntry] = []
   @Published private(set) var auditNotice: String? = nil
@@ -1086,6 +1085,8 @@ final class AppModel: ObservableObject {
       return
     }
     switch msg.type {
+    case "replay":
+      replayOn = msg.on ?? false
     case "state":
       if let s = msg.state { state = s }
       if state == "idle" { awaitingReplies = [] }

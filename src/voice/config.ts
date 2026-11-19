@@ -182,8 +182,9 @@ const VoiceConfigSchema = z
     noSpeechTimeoutSec: z.number().min(1).max(30).default(5),
     /**
      * Replay recorder (src/replay/recorder.ts, issue #48): save the audio and words of F5 commands on this Mac for
-     * 30 days, to measure mistakes. Off by default. Only the owner turns it on, in config.json (no tool and no app
-     * message writes this key). The listener re-reads it on every F5 press, so turning it off stops saving at once.
+     * 30 days, to measure mistakes. Off by default. Only the owner turns it on: the Settings switch (app.sock
+     * `replay.set`, src/app/replay-switch.ts) or config.json by hand. No tool writes this key. The listener re-reads it
+     * on every F5 press, so turning it off stops saving at once.
      */
     replay: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
     /** Voice output: `tts` (auto|elevenlabs|kokoro|say), `elevenlabs` {voiceId, modelId, apiKeyFile, timeoutSec}, `kokoro` {speaker, speed}. */

@@ -66,7 +66,8 @@ const CLI_ONLY_REQUESTS = ['window.open', 'confirm.ask'];
 /** Responses only the gate reads. */
 const GATE_ONLY_RESPONSES = ['confirm.result'];
 const RESPONSE_TYPES = [...new Set(Object.values(RESPONSES).flat())];
-const PUSH_TYPES = ['state', 'heard', 'chat.done', 'confirm', 'confirm.end'];
+// replay (#208): the "Recording on" sign follows the listener's push, not a cached settings answer.
+const PUSH_TYPES = ['state', 'heard', 'chat.done', 'confirm', 'confirm.end', 'replay'];
 const STATES = ['idle', 'listening', 'recording', 'working', 'speaking'];
 /** Where a proposal (and a kept item) came from; email, canvas and web are third-party text. */
 const ORIGINS = ['you', 'chat', 'email', 'canvas', 'web'];

@@ -140,7 +140,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: '/Users/cris/.stephen/config.json', talk: talk.get() }),
     setTalk: (c) => void talk.set(c),
     setModel: (c) => void new ModelStore(join(home, 'config.json'), { model: 'sonnet', effort: null }).set(c),
-    replay: { set: () => {}, deleteAll: async () => 0 },
+    replay: { set: () => {}, deleteAll: async () => 0, on: () => false },
     accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
     jobs: {
       list: () => [],
@@ -509,7 +509,7 @@ describe('memory, history, settings, audit, window', () => {
     const on = () => parseVoiceConfig(JSON.parse(readFileSync(file, 'utf8')).voice).replay.enabled;
     const h = await harness(
       {
-        replay: { set: (e) => writeReplaySwitch(file, e), deleteAll: async () => ++deletes },
+        replay: { set: (e) => writeReplaySwitch(file, e), deleteAll: async () => ++deletes, on },
         settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: file, replay: on() }),
       },
       home,
@@ -523,11 +523,63 @@ describe('memory, history, settings, audit, window', () => {
     expect(await h.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'ok' });
     expect(deletes).toBe(1);
     // A failed delete says so; no recorder (dry run) refuses both.
-    const bad = await harness({ replay: { set: () => {}, deleteAll: async () => Promise.reject(new Error('EPERM')) } });
+    const bad = await harness({ replay: { set: () => {}, deleteAll: async () => Promise.reject(new Error('EPERM')), on: () => false } });
     expect(await bad.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'error', message: 'could not delete the recordings' });
     const none = await harness({ replay: undefined }, mkdtempSync(join(tmp, 'replay2-')));
     expect(await none.client.request({ id: 'r', type: 'replay.set', enabled: true })).toEqual({ id: 'r', type: 'error', message: 'not available in this listener' });
     expect(await none.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('#208: replay.set writes only {enabled}, so a stray key under replay cannot make the switch snap back off', async () => {
+    const home = mkdtempSync(join(tmp, 'replay-stray-'));
+    const file = join(home, 'config.json');
+    writeFileSync(file, JSON.stringify({ voice: { wakeWord: false, replay: { enabled: false, keepDays: 400 } } }), { mode: 0o600 });
+    const { writeReplaySwitch } = await import('../../src/app/replay-switch.js');
+    writeReplaySwitch(file, true);
+    const voice = JSON.parse(readFileSync(file, 'utf8')).voice;
+    expect(voice).toEqual({ wakeWord: false, replay: { enabled: true } });
+    expect(parseVoiceConfig(voice).replay.enabled).toBe(true);
+  });
+
+  it('#208: the replay push follows config.json (a hand edit too), and recording needs a window to show the sign', async () => {
+    const home = mkdtempSync(join(tmp, 'replay-push-'));
+    const file = join(home, 'config.json');
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: false } } }), { mode: 0o600 });
+    const { writeReplaySwitch } = await import('../../src/app/replay-switch.js');
+    const on = () => parseVoiceConfig(JSON.parse(readFileSync(file, 'utf8')).voice).replay.enabled;
+    const h = await harness({ replay: { set: (e) => writeReplaySwitch(file, e), deleteAll: async () => 0, on }, replayPollMs: 20 }, home);
+    const isReplay = (want: boolean) => (m: Record<string, unknown>) => m.type === 'replay' && m.on === want;
+    // No window connected: even with the switch on, nothing may record.
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: true } } }), { mode: 0o600 });
+    expect(h.server.recordingAllowed()).toBe(false);
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: false } } }), { mode: 0o600 });
+    // The window says hello: it gets the switch at once.
+    expect((await h.client.request({ id: 'x', type: 'hello', version: '1', confirms: true })).type).toBe('hello');
+    await h.client.waitFor(isReplay(false));
+    expect(h.server.recordingAllowed()).toBe(false);
+    // A hand edit of config.json reaches the sign within the poll, with no request from the window.
+    h.client.messages.splice(0);
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: true } } }), { mode: 0o600 });
+    await h.client.waitFor(isReplay(true), 1000);
+    expect(h.server.recordingAllowed()).toBe(true);
+    // replay.set off: the push comes before the answer.
+    h.client.messages.splice(0);
+    expect((await h.client.request({ id: 'off', type: 'replay.set', enabled: false })).type).toBe('settings');
+    const i = h.client.messages.findIndex(isReplay(false));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(i).toBeLessThan(h.client.messages.findIndex((m) => m.id === 'off'));
+    expect(h.server.recordingAllowed()).toBe(false);
+    // The window leaves: the switch on no longer records.
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: true } } }), { mode: 0o600 });
+    h.client.close();
+    await sleep(50);
+    expect(h.server.recordingAllowed()).toBe(false);
+    // No recorder (dry run): no replay push, never allowed.
+    const none = await harness({ replay: undefined }, mkdtempSync(join(tmp, 'replay-none-')));
+    await none.client.request({ id: 'x', type: 'hello', version: '1', confirms: true });
+    await sleep(50);
+    expect(none.client.messages.some((m) => m.type === 'replay')).toBe(false);
+    expect(none.server.recordingAllowed()).toBe(false);
   });
 
   it('settings.set refuses unknown keys and bad values and changes nothing', async () => {

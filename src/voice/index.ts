@@ -651,7 +651,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       endConversation: () => a.endConversation(),
       history,
       audit,
-      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get(), replay: rec.on() }),
+      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get(), replay: rec.recorder ? rec.on() : false }),
       accounts: allAccounts,
       personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
       ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
@@ -659,7 +659,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       setTalk: (c) => void talk.set(c),
       setModel: (c) => void modelStore.set(c),
       // The owner's Settings switch (app.sock replay.set / replay.delete, issue #48 PR 2).
-      ...(rec.recorder ? { replay: { set: (on: boolean) => writeReplaySwitch(configPath, on), deleteAll: () => rec.recorder!.deleteAll() } } : {}),
+      ...(rec.recorder ? { replay: { set: (on: boolean) => writeReplaySwitch(configPath, on), deleteAll: () => rec.recorder!.deleteAll(), on: rec.on } } : {}),
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
       control: appControl({ home, cliPath, log: err }),
       usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
@@ -797,14 +797,15 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       err((e as Error).message);
       return 1;
     }
-    // Replay recorder (issue #48): off unless the owner turned it on in config.json, re-read on every F5 press.
+    // Replay recorder (issue #48): off unless the owner turned it on, re-read on every F5 press. Saves only while a
+    // Stephen window is connected to app.sock to show "Recording on" (issue #208): no app.sock, no recording.
     // start() purges clips older than 30 days even when it is off. Never awaited: it can't delay start-up.
     const replayOn = (): boolean => parseVoiceConfig((env.loadConfig ?? loadConfig)().voice).replay.enabled;
     const replay = args.dryRun
       ? null
       : new ReplayRecorder({
           home,
-          enabled: replayOn,
+          enabled: () => app?.recordingAllowed() === true,
           log: (code) => err(`Note: ${code}`),
         });
     void replay?.start();

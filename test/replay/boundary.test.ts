@@ -101,6 +101,19 @@ describe('imports', () => {
   });
 });
 
+describe('no clip without the "Recording on" sign (#208)', () => {
+  it('the listener saves only through app.recordingAllowed: no app.sock window, no recording; dry run has no recorder', () => {
+    const src = readFileSync(join(SRC_ROOT, 'voice', 'index.ts'), 'utf8');
+    expect(src).toMatch(/args\.dryRun\s*\?\s*null\s*:\s*new ReplayRecorder\(\{\s*home,\s*enabled: \(\) => app\?\.recordingAllowed\(\) === true,/);
+  });
+
+  it('the window shows the sign from the listener push only, never from a cached settings answer', () => {
+    const client = readFileSync(join(REPO_ROOT, 'helper', 'AppClient.swift'), 'utf8');
+    expect(client).toContain('var recordingOn: Bool { connection == .online && replayOn }');
+    expect(client).toMatch(/case "replay":\s*replayOn = msg\.on \?\? false/);
+  });
+});
+
 describe('the model cannot turn it on (must-have 2)', () => {
   it('only these files say "replay": no tool, app message or config writer touches the switch', () => {
     const files = listTsFiles(SRC_ROOT)
@@ -122,6 +135,8 @@ describe('the model cannot turn it on (must-have 2)', () => {
   it('only app.sock replay.set writes it: settings.set and model.set refuse it, and the helper link has no such message', () => {
     expect(parseAppRequest(JSON.stringify({ id: '1', type: 'model.set', replay: { enabled: true } }))).toMatchObject({ kind: 'invalid' });
     expect(parseAppRequest(JSON.stringify({ id: '1', type: 'model.set', model: 'haiku', replay: { enabled: true } }))).toEqual({ kind: 'request', req: { id: '1', type: 'model.set', model: 'haiku' } });
+    // The `replay` push (#208) is listener to window only: sent back as a request it is an unknown type, ignored.
+    expect(parseAppRequest(JSON.stringify({ id: '1', type: 'replay', on: true }))).toEqual({ kind: 'unknown', type: 'replay' });
     // Listener -> Stephen Helper messages (helper.sock) and the helper itself never write config.json.
     expect(readFileSync(join(SRC_ROOT, 'helper', 'protocol.ts'), 'utf8')).not.toMatch(/replay|config/i);
     for (const f of readdirSync(join(REPO_ROOT, 'helper'), { recursive: true }) as string[]) {

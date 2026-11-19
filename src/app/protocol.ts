@@ -53,6 +53,9 @@
  *  - `{id, type:"replay.set", enabled}` → `settings` (config.replay.enabled is the saved value). The only message that
  *    writes `voice.replay.enabled`: settings.set and model.set refuse it.
  *  - `{id, type:"replay.delete"}` → `{id, type:"ok"}`: every saved clip, the same code as `stephen replay delete --all`.
+ *  - push `{type:"replay", on}` (issue #208): whether the recorder would save an F5 command now. Sent after hello, when
+ *    it changes (config.json is re-read every 2 s and on every F5), and after replay.set. Drives the "Recording on"
+ *    sign. Read only: nothing the window sends back changes it except replay.set.
  */
 import type { ChatStep } from './steps.js';
 import type { HistoryEntry } from '../history/store.js';
@@ -195,6 +198,7 @@ export type AppMessage =
   | { type: 'confirm'; confirmId: string; title: string; body: string }
   | { type: 'confirm.end'; confirmId: string }
   | { type: 'state'; state: AppState }
+  | { type: 'replay'; on: boolean }
   | { type: 'heard'; text: string; source: string }
   /** `steps`: what Stephen did (src/app/steps.ts), only when there is at least one; an older helper ignores it. */
   | { type: 'chat.done'; entryId: string; reply: string; outcome: ChatOutcome; tools: string[]; ms: number; steps?: ChatStep[] };
