@@ -145,8 +145,11 @@ final class AppModel: ObservableObject {
   /** Who wants the connection ("window", "askbox"); it closes when nobody does. */
   private var users: Set<String> = []
   private var retryItem: DispatchWorkItem? = nil
-  /** 3 s, then 6 s, then 10 s while Stephen stays unreachable (#202 C1). */
+  /** Wait before the next connect: 3 s, then 6 s, then 10 s while Stephen stays unreachable (#202 C1). */
   private var retryDelay = APP_RETRY_SECONDS
+  /** The current wait: how long it is, and how much of it has passed (checked in steps of at most 3 s). */
+  private var retryTarget = APP_RETRY_SECONDS
+  private var retryWaited = 0.0
   private var socketSeen = false
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
@@ -199,6 +202,7 @@ final class AppModel: ObservableObject {
     if let item = retryItem {
       item.cancel()
       retryItem = nil
+      startWait()
       scheduleRetry()
     }
   }
@@ -239,7 +243,14 @@ final class AppModel: ObservableObject {
   private func goOffline(_ reason: String) {
     connection = .offline
     offlineReason = reason
+    startWait()
     scheduleRetry()
+  }
+
+  private func startWait() {
+    retryWaited = 0
+    retryTarget = retryDelay
+    retryDelay = nextRetryDelay(retryDelay)
   }
 
   private func connectionLost() {
@@ -254,18 +265,21 @@ final class AppModel: ObservableObject {
 
   private func scheduleRetry() {
     guard !users.isEmpty, retryItem == nil else { return }
+    let step = min(APP_RETRY_SECONDS, retryTarget - retryWaited)
     let item = DispatchWorkItem { [weak self] in
       guard let self = self else { return }
       self.retryItem = nil
-      // app.sock appeared since the last try: back to the short delay. A file check only, no connect.
+      guard !self.users.isEmpty, self.connection == .offline else { return }
+      self.retryWaited += step
+      // Every 3 s while offline: a file check only, no connect. app.sock newly there: connect now, short delay again.
       let seen = FileManager.default.fileExists(atPath: self.socketPath)
-      if seen && !self.socketSeen { self.retryDelay = APP_RETRY_SECONDS }
+      let appeared = seen && !self.socketSeen
       self.socketSeen = seen
-      if !self.users.isEmpty && self.connection == .offline { self.connect() }
+      if appeared { self.retryDelay = APP_RETRY_SECONDS }
+      if appeared || self.retryWaited >= self.retryTarget { self.connect() } else { self.scheduleRetry() }
     }
     retryItem = item
-    DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay, execute: item)
-    retryDelay = min(retryDelay * 2, APP_RETRY_MAX_SECONDS)
+    DispatchQueue.main.asyncAfter(deadline: .now() + step, execute: item)
   }
 
   // MARK: requests
