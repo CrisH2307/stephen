@@ -132,7 +132,7 @@ export function splitRememberTail(words: string): { text: string; rest: string }
  * Recognize a memory command in what the user said or typed. null = not a memory command (send it to Claude).
  * `text`, `rest` and `query` are normalized words; use rawTail(raw, words) to recover the original case.
  */
-export function parseMemoryIntent(command: string, opts: ParseOpts = { source: 'cli' }): MemoryIntent | null {
+export function parseMemoryIntent(command: string, opts: ParseOpts): MemoryIntent | null {
   return parseDetailed(command, opts)?.intent ?? null;
 }
 
