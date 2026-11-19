@@ -1,6 +1,6 @@
 name: ci
 
-# docs/CI-CD-PROPOSAL.md, rollout steps 1 and 2: the linux job and the failure report.
+# docs/CI-CD-PROPOSAL.md, rollout steps 1 to 3: the full suite on Linux and macOS, and the failure report.
 # No secrets, no pull_request_target, no PR text inside run:. Only the report job can write, and it runs no repo code.
 
 on:
@@ -21,9 +21,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  linux:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-24.04
+            timeout: 25
+          - os: macos
+            runner: macos-15
+            timeout: 30
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,9 +44,13 @@ jobs:
           node-version: 24
           cache: npm
       - name: Linux tools the tests need
+        if: matrix.os == 'linux'
         run: |
           command -v lsof >/dev/null && command -v ps >/dev/null || \
             { sudo apt-get update && sudo apt-get install -y lsof procps; }
+      - name: Swift must exist on macOS (the Swift tests skip without it)
+        if: matrix.os == 'macos'
+        run: swiftc --version
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/stephen-voice-test
@@ -48,17 +63,18 @@ jobs:
         run: npx vitest run --reporter=default --reporter=github-actions --reporter=json --outputFile.json=vitest.json
       - name: Failure report
         if: always()
-        run: node scripts/ci-report.mjs vitest.json > report-linux.md
+        # matrix.os is a fixed value from this file, not PR text.
+        run: '{ echo "### ${{ matrix.os }}"; node scripts/ci-report.mjs vitest.json; echo; } > report-${{ matrix.os }}.md'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: report-linux
-          path: report-linux.md
+          name: report-${{ matrix.os }}
+          path: report-${{ matrix.os }}.md
           retention-days: 7
 
-  # Runs no repository code: it only posts the report file the linux job wrote.
+  # Runs no repository code: it only posts the report files the test jobs wrote.
   report:
-    needs: linux
+    needs: test
     if: failure()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
