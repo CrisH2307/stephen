@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { type Socket } from 'node:net';
 import { join } from 'node:path';
 import { LineFramer } from '../helper/framing.js';
+import type { MediaKeyAction } from '../helper/protocol.js';
 import { listenPrivateSocket, type PrivateSocket } from '../lib/private-socket.js';
 import { MAX_REPLY_CHARS, MAX_SAID_CHARS, newHistoryId, type HistoryEntry, type HistoryStore } from '../history/store.js';
 import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/store.js';
@@ -124,6 +125,8 @@ export interface AppServerOptions {
   personal?: () => Promise<PersonalSummary>;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
   openWindow: () => string | null;
+  /** media.key (issue #205): press a Mac media key through Stephen Helper; null when done, else why not. */
+  mediaKey?: (action: MediaKeyAction) => Promise<string | null>;
   log?: (line: string) => void;
   /** History entry ids (tests). */
   newId?: () => string;
@@ -582,6 +585,10 @@ export class AppServer {
         return { id, type: 'memory.usage', memory: (await this.o.usage()).memory };
       case 'window.open': {
         const why = this.o.openWindow();
+        return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };
+      }
+      case 'media.key': {
+        const why = this.o.mediaKey ? await this.o.mediaKey(req.action) : 'not available in this listener';
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };
       }
     }

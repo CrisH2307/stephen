@@ -182,7 +182,7 @@ describe('media_control on a YouTube Music tab', () => {
     player(h2, 'paused');
     const r = await h2.call('media_control', { action: 'pause', intent });
     expect(r.isError).toBeFalsy();
-    expect(textOf(r)).toBe('Nothing done: YouTube Music is already paused (tab z1), and nothing is playing in Spotify or Music.');
+    expect(textOf(r)).toBe('Nothing done: YouTube Music is already paused (tab z1); the media key didn\'t work either (stephen listen is not running), and nothing is playing in Spotify or Music.');
   });
 
   it('goes through the shared rate limit (the press is a gated action)', async () => {
@@ -229,16 +229,34 @@ describe('media_control: which target', () => {
     const h2 = await withTabs(['https://www.google.com/']);
     const r = await h2.call('media_control', { action: 'play', intent });
     expect(r.isError).toBeFalsy();
-    expect(textOf(r)).toBe("Nothing done: No YouTube Music tab is open (and no YouTube video), and Spotify and Music aren't running. To start new music, use play_media.");
+    expect(textOf(r)).toBe("Nothing done: No YouTube Music tab is open (and no YouTube video); the media key didn't work either (stephen listen is not running), and Spotify and Music aren't running. To start new music, use play_media.");
     expect(keys(h2)).toEqual([]);
     expect(h2.mac.opens()).toEqual([]);
+  });
+
+  it('issue #205: no tab and no music app → presses the Mac media key through the listener', async () => {
+    const h = await withTabs(['https://www.google.com/']);
+    h.mac.mediaKeyResult = { ok: true };
+    const r = await h.call('media_control', { action: 'pause', intent });
+    expect(r.isError).toBeFalsy();
+    expect(textOf(r)).toBe("Pressed the Mac's play/pause media key (the app playing sound reacts: Zen, YouTube, Spotify or Music).");
+    expect(h.mac.mediaKeys).toEqual(['pause']);
+    expect(textOf(await h.call('media_control', { action: 'next', intent }))).toContain("Pressed the Mac's next media key");
+    // A running music app still comes first: no key press.
+    h.mac.players.Spotify = { running: true, state: 'playing' };
+    await h.call('media_control', { action: 'pause', intent });
+    expect(h.mac.mediaKeys).toEqual(['pause', 'next']);
+    // A named player never falls back to the key.
+    h.mac.players.Spotify = { running: false };
+    await h.call('media_control', { action: 'play', player: 'Spotify', intent });
+    expect(h.mac.mediaKeys).toEqual(['pause', 'next']);
   });
 
   it('not attached to the browser: says it cannot see the tabs, then tries Spotify/Music', async () => {
     const h = await setupDesktop();
     const r = await h.call('media_control', { action: 'pause', intent });
     expect(textOf(r)).toBe(
-      'Nothing done: No YouTube Music tab found: Stephen isn\'t connected to Zen, so it can\'t see its tabs (opening Zen with "Zen for Stephen" fixes that), and nothing is playing in Spotify or Music. To start new music, use play_media.',
+      'Nothing done: No YouTube Music tab found: Stephen isn\'t connected to Zen, so it can\'t see its tabs (opening Zen with "Zen for Stephen" fixes that); the media key didn\'t work either (stephen listen is not running), and nothing is playing in Spotify or Music. To start new music, use play_media.',
     );
     expect(osa(h)).toEqual(['status']);
   });

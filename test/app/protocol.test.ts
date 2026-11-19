@@ -42,6 +42,7 @@ describe('parseAppRequest', () => {
     ['jobs.list', { id: 'a', type: 'jobs.list', x: 1 }, { id: 'a', type: 'jobs.list' }],
     ['jobs.stop', { id: 'a', type: 'jobs.stop', jobId: '2026-11-05-write-my-report', x: 1 }, { id: 'a', type: 'jobs.stop', jobId: '2026-11-05-write-my-report' }],
     ['window.open', { id: 'a', type: 'window.open' }, { id: 'a', type: 'window.open' }],
+    ['media.key', { id: 'a', type: 'media.key', action: 'pause', x: 1 }, { id: 'a', type: 'media.key', action: 'pause' }],
     ['extra fields are dropped', { id: 'a', type: 'chat.stop', text: 'ignored', evil: true }, { id: 'a', type: 'chat.stop' }],
   ];
   it.each(valid)('accepts %s', (_name, msg, req) => {
@@ -57,6 +58,7 @@ describe('parseAppRequest', () => {
     ['numeric id', line({ id: 7, type: 'chat.stop' }), { kind: 'invalid', message: expect.stringContaining('needs an "id"') as unknown as string }],
     ['over-long id', line({ id: 'x'.repeat(65), type: 'chat.stop' }), { kind: 'invalid', message: expect.stringContaining('needs an "id"') as unknown as string }],
     ['hello without version', line({ id: 'a', type: 'hello' }), { kind: 'invalid', id: 'a', message: 'version must be a string' }],
+    ['media.key with a bad action', line({ id: 'a', type: 'media.key', action: 'launch' }), { kind: 'invalid', id: 'a', message: 'action must be play, pause, toggle, next or previous' }],
     ['chat.send without text', line({ id: 'a', type: 'chat.send' }), { kind: 'invalid', id: 'a', message: 'text must be a string' }],
     ['chat.send too long', line({ id: 'a', type: 'chat.send', text: 'x'.repeat(2001) }), { kind: 'invalid', id: 'a', message: 'text is too long (2000 characters at most)' }],
     ['history.list limit 101', line({ id: 'a', type: 'history.list', limit: 101 }), { kind: 'invalid', id: 'a', message: 'limit must be a whole number from 1 to 100' }],
@@ -91,7 +93,7 @@ describe('parseAppRequest', () => {
 
   it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'latency.get', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage', 'replay.set', 'replay.delete'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'latency.get', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage', 'replay.set', 'replay.delete', 'media.key'].sort(),
     );
   });
 

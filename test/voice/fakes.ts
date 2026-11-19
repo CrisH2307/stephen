@@ -136,6 +136,8 @@ export class FakeHelper implements HelperLink {
   playing = false;
   answerQueries = true;
   answerDelayMs = 0;
+  /** The answer to `media_key` (null = never answers, like a helper older than issue #205). */
+  mediaKeyAnswer: { ok: boolean; message?: string } | null = { ok: true };
   closed = false;
   connected = true;
   private readonly connHandlers = new Set<(c: boolean) => void>();
@@ -157,6 +159,8 @@ export class FakeHelper implements HelperLink {
       if (this.answerDelayMs > 0) setTimeout(answer, this.answerDelayMs);
       else queueMicrotask(answer);
     }
+    const media = this.mediaKeyAnswer;
+    if (cmd.type === 'media_key' && media) queueMicrotask(() => this.emit({ type: 'media_key_done', key: cmd.key, ...media }));
   }
   close(): void {
     this.closed = true;

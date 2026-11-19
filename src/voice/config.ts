@@ -178,6 +178,11 @@ const VoiceConfigSchema = z
     continueSec: z.number().min(0).max(10).default(4),
     /** Longest wake-word command (whisper hears at most 30 s). */
     maxCommandSec: z.number().min(2).max(60).default(25),
+    /**
+     * "Hey Stephen" while the Mac plays sound (issue #205): the output volume drops to this (0–100) while Stephen
+     * listens, then goes back. Only media commands run then (pause, next, volume…); hold F5 for anything else.
+     */
+    duckVolume: z.number().int().min(0).max(100).default(20),
     /** Give up if nothing is said this long after the wake word. */
     noSpeechTimeoutSec: z.number().min(1).max(30).default(5),
     /**

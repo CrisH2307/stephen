@@ -12,7 +12,12 @@
  *    open_url/open_app.
  *    With Stephen Helper connected there is no fixed cooldown: the wake word is ignored only while the Mac is
  *    playing sound (the helper's `audio.playing`), which is exactly when a page or video could be talking.
- *  - The stop phrase ("stephen stop") cancels the running command or the spoken reply, at any time.
+ *  - Wake word while sound plays, with `sound` given (issue #205, src/voice/media-command.ts): the volume is lowered
+ *    (`duckVolume`) and restored on every path; the command may only be a media command, decided by the grammar
+ *    classifier, and runs without the model. Anything else is not run ("Hold F5 for that."). Unknown audio state
+ *    (no audio event yet) still ignores the wake word.
+ *  - The stop phrase ("stephen stop") cancels the running command or the spoken reply, at any time. With nothing
+ *    running and sound playing, it pauses the sound (play/pause media key).
  *  - Follow-ups (src/voice/conversation.ts): any cancel, Esc or the stop phrase — even when idle — also ends the
  *    conversation, so the next command starts a fresh Claude session with a fresh safety gate.
  *  - Push-to-talk (helper: hold F5) needs no wake word: pressing it cancels whatever is running, records
@@ -23,8 +28,10 @@
 import { PTT_MAX_HOLD_MS, PTT_MIN_HOLD_MS } from '../helper/protocol.js';
 import { newHistoryId } from '../history/store.js';
 import type { LatencyOutcome, LatencyTrace } from '../telemetry/latency.js';
+import type { AuditEntry, IAuditLog } from '../types.js';
 import type { Assistant, CommandReport, CommandResult } from './assistant.js';
 import type { AudioSource } from './audio.js';
+import { DEFAULT_DUCK_VOLUME, HOLD_F5, mediaCommand, type SoundControl } from './media-command.js';
 import { correctNames } from './names.js';
 import type { KeywordHit, Spotter, Transcriber, Vad } from './engine.js';
 import type { HelperBridge, MenuState } from './helper-link.js';
@@ -66,6 +73,8 @@ export interface ListenerOptions {
   pttMinHoldMs?: number;
   /** Push-to-talk recordings stop (and are sent) at this length. Default PTT_MAX_HOLD_MS. */
   pttMaxHoldMs?: number;
+  /** Output volume (0–100) while Stephen listens over playing sound. Default DEFAULT_DUCK_VOLUME. */
+  duckVolume?: number;
 }
 
 export interface ListenerDeps {
@@ -93,6 +102,10 @@ export interface ListenerDeps {
   replay?: {
     capture(c: { id: string; source: string; startedAt: number; audio: Float32Array; transcript: string }): boolean;
   } | null;
+  /** Volume and media keys for the wake word over playing sound (issue #205). Absent = that wake word is ignored. */
+  sound?: SoundControl | null;
+  /** Audit log: one `voice_media` line per media command run over sound, and per refusal (verb only, never what was said). */
+  audit?: Pick<IAuditLog, 'append'> | null;
 }
 
 /** A helper key time (epoch ms) is used only when it is close to our own clock; otherwise our clock. */
@@ -118,6 +131,8 @@ const SPOTTER_PRIME_SEC = 2;
 /** Push-to-talk audio kept before the first / after the last frame the VAD calls speech (its detection lags). */
 const PTT_LEAD_SEC = 0.5;
 const PTT_TAIL_SEC = 0.25;
+/** Backstop: a ducked volume is restored after this long even if no path restored it. */
+export const DUCK_MAX_MS = 60_000;
 /** After this much speech in one command, the longer pause (`longSilenceSec`) ends it. */
 export const LONG_COMMAND_AFTER_SEC = 2.5;
 
@@ -193,6 +208,13 @@ export class Listener {
   private pttAt = 0;
   /** When the VAD last said "speaking" in the current wake-word capture (epoch ms). */
   private lastSpeechAt = 0;
+  /** The current capture started with a wake word over playing sound: media commands only. */
+  private soundWake = false;
+  /** The volume to restore (null = nothing was changed); null itself when nothing is ducked. */
+  private ducked: Promise<number | null> | null = null;
+  private duckTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Duck and restore run one at a time, in order: a restore ends before the next duck reads the volume. */
+  private soundQ: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly o: ListenerOptions,
@@ -350,6 +372,7 @@ export class Listener {
       }
     } finally {
       for (const off of this.helperOffs.splice(0)) off();
+      await this.unduck();
       this.menu('idle');
       await this.d.source.stop();
     }
@@ -363,7 +386,7 @@ export class Listener {
     const hit = this.d.spotter.accept(frame);
     switch (this.state) {
       case 'listening':
-        if (hit?.id === 'STOP') this.d.assistant.endConversation(); // "Stephen stop" when idle: forget the conversation
+        if (hit?.id === 'STOP') this.onIdleStop();
         else if (hit?.id === 'WAKE') this.onWake(hit);
         else this.maybeRecycleSpotter(frame.length);
         this.tickCooldown(frame.length);
@@ -401,6 +424,11 @@ export class Listener {
     if (this.helperUp) {
       // No fixed cooldown with the helper: ignore the wake word only while the Mac is playing sound.
       // Unknown (null: just (re)connected, no audio event yet) is treated like playing — fail closed (review #4 #2).
+      if (this.d.helper!.audioPlaying === true && this.d.sound) {
+        this.startDuck();
+        this.beginCapture(hit, true);
+        return;
+      }
       if (this.d.helper!.audioPlaying !== false) {
         this.ignoredWakes++;
         this.traceIgnoredWake(this.d.helper!.audioPlaying === null ? 'audio_unknown' : 'sound_playing');
@@ -446,15 +474,81 @@ export class Listener {
     }
   }
 
-  private beginCapture(hit: KeywordHit): void {
+  /** "Stephen stop" with nothing running: end the conversation; while sound plays, also pause it (issue #205). */
+  private onIdleStop(): void {
+    this.d.assistant.endConversation();
+    const sound = this.d.sound;
+    if (!sound || this.d.helper?.audioPlaying !== true) return;
+    this.d.status(`Heard "${this.o.stopPhrase ?? 'stop'}" — pausing the sound.`);
+    sound.media({ verb: 'pause' }).then(
+      (line) => {
+        this.d.status(line);
+        void this.auditMedia({ verb: 'pause', via: 'stop_phrase' }, 'ok');
+      },
+      (e: unknown) => {
+        this.d.status(`Couldn't pause (${(e as Error).message}).`);
+        void this.auditMedia({ verb: 'pause', via: 'stop_phrase' }, 'error', (e as Error).message);
+      },
+    );
+  }
+
+  /** One audit line for a media command over sound (issue #205). A failing audit log never fails the command. */
+  private async auditMedia(args: Record<string, unknown>, outcome: AuditEntry['outcome'], error?: string, cmd?: string): Promise<void> {
+    try {
+      await this.d.audit?.append({
+        tool: 'voice_media',
+        args,
+        outcome,
+        ...(error ? { error: error.slice(0, 200) } : {}),
+        intent: 'wake word over playing sound: media commands only',
+        ...(cmd ? { cmd } : {}),
+      });
+    } catch (e) {
+      this.d.status(`Note: couldn't write the audit line (${(e as Error).message}).`);
+    }
+  }
+
+  /** Lower the volume for a wake word over playing sound. unduck() puts it back. */
+  private startDuck(): void {
+    const sound = this.d.sound!;
+    const level = this.o.duckVolume ?? DEFAULT_DUCK_VOLUME;
+    const p = this.soundQ.then(() => sound.duck(level)).catch((e: unknown) => {
+      this.d.status(`Note: couldn't lower the volume (${(e as Error).message}).`);
+      return null;
+    });
+    this.soundQ = p;
+    this.ducked = p;
+    this.duckTimer = setTimeout(() => void this.unduck(), DUCK_MAX_MS);
+    this.duckTimer.unref?.();
+  }
+
+  /** Restore a ducked volume. Every path that ends a sound-wake capture calls it; a second call does nothing. */
+  private unduck(): Promise<void> {
+    const p = this.ducked;
+    if (!p) return Promise.resolve();
+    this.ducked = null;
+    if (this.duckTimer) clearTimeout(this.duckTimer);
+    this.duckTimer = null;
+    const sound = this.d.sound!;
+    const r = this.soundQ
+      .then(() => p)
+      .then((v) => (v === null ? undefined : sound.restore(v)))
+      .catch((e: unknown) => this.d.status(`Note: couldn't restore the volume (${(e as Error).message}).`));
+    this.soundQ = r;
+    return r;
+  }
+
+  private beginCapture(hit: KeywordHit, soundWake = false): void {
     this.wakeCount++;
     this.cmdId = newHistoryId();
     this.d.latency?.begin(this.cmdId, 'wake');
     this.bareWake = !!hit.bare;
+    this.soundWake = soundWake;
     this.d.chimes.play('wake');
     this.d.latency?.mark(this.cmdId, 'chime'); // the player was started (Node cannot see the first sample of sound)
-    this.d.assistant.prewarm('wake'); // start Claude while the user talks (phase 3; recording + ASR take ≥ 2 s)
-    this.d.status('Wake word heard — listening…');
+    // Start Claude while the user talks (phase 3; recording + ASR take ≥ 2 s). Not over sound: the model never runs then.
+    if (!soundWake) this.d.assistant.prewarm('wake');
+    this.d.status(soundWake ? 'Wake word heard over sound — say pause, next or volume…' : 'Wake word heard — listening…');
     const pre = Math.min(hit.startAgoSec + PREROLL_MARGIN_SEC + (hit.bare ? BARE_PREROLL_EXTRA_SEC : 0), MAX_PREROLL_SEC);
     // Keep the audio from just before the wake phrase: "Hey Stephen open YouTube" in one breath must not
     // lose "open". The wake phrase itself is stripped from the transcript (and re-checked there).
@@ -511,6 +605,8 @@ export class Listener {
     // A new press cancels whatever is running (Claude or the spoken reply) or an unfinished wake-word capture.
     if (this.state === 'busy') this.cancel('push-to-talk');
     this.traceEnd('cancelled'); // an unfinished wake-word capture
+    this.soundWake = false;
+    void this.unduck();
     this.cmdId = newHistoryId();
     this.pttAt = at;
     this.d.latency?.begin(this.cmdId, 'ptt', at);
@@ -642,8 +738,9 @@ export class Listener {
     // The wake phrase must open the transcript after a bare "Stephen" ("Even Stephen agreed…" is not a command)
     // and in push-to-talk (no pre-roll there: earlier words are part of the command, "play songs by Stephen…").
     // After a bare wake the name itself must be there too, not a sound-alike ("Stefan and Stella…").
-    const wake = { anchored: ptt || this.bareWake, strict: !ptt && this.bareWake };
+    const wake = { anchored: ptt || this.bareWake, strict: !ptt && this.bareWake, sound: !ptt && this.soundWake };
     this.bareWake = false;
+    this.soundWake = false;
     // A push-to-talk press may have cancelled a command that is still winding down: run after it.
     const previous = this.task;
     this.task = this.process(audio, token, ptt, wake, previous, prefix, id, ptt ? this.pttAt : Date.now())
@@ -686,6 +783,8 @@ export class Listener {
     this.traceEnd('cancelled'); // a capture nobody ended by name
     this.capture = [];
     this.prefix = null;
+    this.soundWake = false;
+    void this.unduck();
     this.state = 'listening';
     this.sinceRecycleSec = 0;
     this.d.spotter.restart(); // forget whatever was heard while busy
@@ -696,7 +795,7 @@ export class Listener {
     audio: Float32Array,
     token: Token,
     ptt: boolean,
-    wake: { anchored: boolean; strict: boolean },
+    wake: { anchored: boolean; strict: boolean; sound?: boolean },
     previous: Promise<void>,
     first: { text: string; raw: string } | null = null,
     id: string = newHistoryId(),
@@ -727,6 +826,7 @@ export class Listener {
       lat?.end(id, 'no_wake');
       return null;
     }
+    if (wake.sound) return this.soundCommand(text, token, id, previous);
     // "Stephen, stop" whose STOP the spotter missed: the bare "Stephen" started a capture of… "stop".
     const stop = this.o.stopPhrase && prefix === null ? normalizeTranscript(raw, [this.o.stopPhrase], { anchored: true }) : null;
     if (stop?.hadWake && !stop.text) {
@@ -765,5 +865,52 @@ export class Listener {
       /* the recorder never fails a command */
     }
     return handed;
+  }
+
+  /**
+   * After a wake word over playing sound (issue #205): only a media command runs, here, without the model. The grammar
+   * classifier decides; anything else is not run. The volume is restored before this returns.
+   */
+  private async soundCommand(text: string, token: Token, id: string, previous: Promise<void>): Promise<CommandResult> {
+    const lat = this.d.latency;
+    const cmd = text ? mediaCommand(text) : null;
+    if (!cmd || token.cancelled) {
+      await this.unduck();
+      if (token.cancelled) {
+        this.d.status('Cancelled.');
+        lat?.end(id, 'cancelled');
+        return 'cancelled';
+      }
+      if (!text) {
+        this.d.status("Didn't hear a command.");
+        this.d.chimes.play('done');
+        lat?.end(id, 'no_speech');
+        return 'error';
+      }
+      this.d.status(`Heard: "${text}" — over playing sound I only take pause, play, next, previous, volume or mute. ${HOLD_F5}`);
+      lat?.end(id, 'error');
+      await this.auditMedia({ verb: null }, 'denied', 'not a media command over sound (hold F5)', id);
+      await previous;
+      if (!token.cancelled) await this.d.assistant.announce(HOLD_F5);
+      return 'error';
+    }
+    await previous;
+    this.d.status(`Heard: "${text}"`);
+    // A volume command acts on the real volume, so restore first. The rest act first: no loud blip before a pause.
+    if (cmd.verb === 'volume' || cmd.verb === 'mute' || cmd.verb === 'unmute') await this.unduck();
+    let result: CommandResult = 'ok';
+    let error: string | undefined;
+    try {
+      this.d.status(await this.d.sound!.media(cmd));
+    } catch (e) {
+      result = 'error';
+      error = (e as Error).message;
+      this.d.status(`Couldn't do that (${error}).`);
+    }
+    await this.auditMedia({ ...cmd }, result === 'ok' ? 'ok' : 'error', error, id);
+    await this.unduck();
+    this.d.chimes.play('done');
+    lat?.end(id, result);
+    return result;
   }
 }

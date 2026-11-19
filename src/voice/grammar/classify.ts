@@ -2,7 +2,8 @@
  * Command-grammar classifier, SHADOW MODE (docs/research/PRODUCT-PLAN-2026-11.md 2.5 and 7.0 E6, PLAN-REVIEW 3.5).
  *
  * Pure and deterministic: no I/O, no clock, no model, no network. It only LABELS a request Tier 1 (fast path)
- * or Tier 2 (model); it never acts, and nothing in the existing code imports it yet.
+ * or Tier 2 (model); it never acts. One real use: after a wake word while sound plays, src/voice/media-command.ts
+ * lets through only a Tier 1 media verb (issue #205).
  *
  * Trust rule: OwnerLists hold owner-controlled names ONLY (installed app names, owner-written site aliases).
  * NEVER put tab titles, page text, playlists read from a page, or memory text in them: a page could name itself
@@ -19,7 +20,7 @@ import { levenshtein } from '../../lib/levenshtein.js';
 import { plainWords } from '../transcript.js';
 import { splitRememberTail } from '../../memory/intent.js';
 
-export type Verb = 'open' | 'play' | 'pause' | 'resume' | 'next' | 'volume' | 'mute' | 'unmute' | 'timer' | 'stop' | 'remember' | 'forget';
+export type Verb = 'open' | 'play' | 'pause' | 'resume' | 'next' | 'previous' | 'volume' | 'mute' | 'unmute' | 'timer' | 'stop' | 'remember' | 'forget';
 
 /** Fixed code words; never transcript text. */
 export type Reason =
@@ -76,6 +77,7 @@ const PHRASES: ReadonlyArray<readonly [Verb, RegExp, ArgFn?]> = [
   ['pause', /^pause(?: (?:the )?music| it)?$/],
   ['resume', /^(?:resume|unpause)(?: (?:the )?music| playing| it)?$/],
   ['next', /^(?:next(?: song| track)?|skip(?: this song| this track| song)?)$/],
+  ['previous', /^(?:previous(?: song| track)?|go back a (?:song|track))$/],
   ['stop', /^stop(?: (?:the )?music| playing)?$/],
   ['mute', /^mute(?: it| the sound)?$/],
   ['unmute', /^unmute(?: it| the sound)?$/],
@@ -83,7 +85,7 @@ const PHRASES: ReadonlyArray<readonly [Verb, RegExp, ArgFn?]> = [
   ['volume', /^(?:set )?(?:the )?volume (?:to )?(\d{1,3})(?: percent)?$/, (m) => ((m[1] ?? '') === '' ? null : num(m[1], 100) ?? (m[1] === '0' ? 0 : null))],
   ['timer', /^(?:set )?(?:a )?timer for (\d{1,5}) (second|minute|hour)s?$/, (m) => { const n = num(m[1], 86400); return n === null ? null : n * (UNIT_SECONDS[m[2]!] ?? 0) <= 86400 ? n * (UNIT_SECONDS[m[2]!] ?? 0) : null; }],
 ];
-const KNOWN_VERBS = new Set<string>(['open', 'play', 'pause', 'resume', 'unpause', 'next', 'skip', 'volume', 'mute', 'unmute', 'timer', 'stop', 'set', 'turn']);
+const KNOWN_VERBS = new Set<string>(['open', 'play', 'pause', 'resume', 'unpause', 'next', 'skip', 'previous', 'volume', 'mute', 'unmute', 'timer', 'stop', 'set', 'turn']);
 
 /** Resolve entity text against the owner lists: exactly one exact entry, or a Tier 2 reason. */
 function resolve(text: string, lists: OwnerLists, kinds: ReadonlyArray<'app' | 'site'>): Entity | Classification {
