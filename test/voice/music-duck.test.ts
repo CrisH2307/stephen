@@ -61,6 +61,7 @@ function setup(opts: {
   const fake = new FakeHelper();
   const bridge = new HelperBridge(fake);
   const sound = new FakeSound();
+  const audit: { tool: string; args?: Record<string, unknown>; outcome: string; error?: string; cmd?: string }[] = [];
   const assistant = new Assistant({ runner, speaker, chimes, speak: true, status, ...assistantHooks(bridge) });
   const gates = new Map<number, Gate>();
   const playing = opts.playing === undefined ? true : opts.playing;
@@ -83,9 +84,10 @@ function setup(opts: {
       status,
       helper: bridge,
       sound: opts.sound === false ? null : sound,
+      audit: { append: async (e) => void audit.push(e) },
     },
   );
-  return { listener, runner, speaker, lines, sound, fake };
+  return { listener, runner, speaker, lines, sound, fake, audit };
 }
 
 /** Wake at frame 12, speech 10–29, then silence. */
@@ -101,12 +103,15 @@ describe('wake word while sound plays (issue #205)', () => {
     expect(t.sound.log).toEqual(['duck:20', 'media:pause', 'restore:60', 'mark']);
     expect(t.sound.volume).toBe(60);
     expect(t.lines).toContain('Heard: "pause"');
+    // One audit line, verb only (never the transcript), joined to the command id.
+    expect(t.audit).toEqual([{ tool: 'voice_media', args: { verb: 'pause' }, outcome: 'ok', intent: 'wake word over playing sound: media commands only', cmd: expect.stringMatching(/^h_/) as unknown as string }]);
   });
 
   it('a volume command restores first, so it acts on the real volume (and is not undone)', async () => {
     const t = setup({ pattern: SPOKEN, hits: { 12: 'WAKE' }, texts: ['hey stephen volume 30'], o: { duckVolume: 10 } });
     await t.listener.run();
     expect(t.sound.log).toEqual(['duck:10', 'restore:60', 'media:volume:30', 'mark']);
+    expect(t.audit.map((e) => [e.args, e.outcome])).toEqual([[{ verb: 'volume', arg: 30 }, 'ok']]);
     expect(t.sound.volume).toBe(30);
   });
 
@@ -116,6 +121,9 @@ describe('wake word while sound plays (issue #205)', () => {
     expect(t.runner.prompts).toEqual([]);
     expect(t.sound.log).toEqual(['duck:20', 'restore:60', 'mark']);
     expect(t.lines.some((l) => l.endsWith(HOLD_F5) && l.startsWith('Heard: "open my email'))).toBe(true);
+    // The refusal is audited too, and the spoken words stay out of the log.
+    expect(t.audit.map((e) => [e.tool, e.args, e.outcome])).toEqual([['voice_media', { verb: null }, 'denied']]);
+    expect(JSON.stringify(t.audit)).not.toContain('email');
   });
 
   it('"play <something>" is not a media command over sound (it would open things)', async () => {
@@ -131,6 +139,7 @@ describe('wake word while sound plays (issue #205)', () => {
     await t.listener.run();
     expect(t.sound.log).toEqual(['duck:20', 'media:next', 'restore:60', 'mark']);
     expect(t.lines).toContain("Couldn't do that (no key).");
+    expect(t.audit.map((e) => [e.args, e.outcome, e.error])).toEqual([[{ verb: 'next' }, 'error', 'no key']]);
   });
 
   it('restores on Esc during the capture', async () => {
@@ -213,12 +222,14 @@ describe('"Stephen stop" with nothing running (issue #205)', () => {
     await t.listener.run();
     expect(t.sound.log).toEqual(['media:pause']);
     expect(t.runner.conversationEnds).toBeGreaterThan(0);
+    expect(t.audit.map((e) => [e.args, e.outcome])).toEqual([[{ verb: 'pause', via: 'stop_phrase' }, 'ok']]);
   });
 
   it('does nothing to the sound when none plays', async () => {
     const t = setup({ pattern: '.'.repeat(40), hits: { 12: 'STOP' }, texts: [], playing: false });
     await t.listener.run();
     expect(t.sound.log).toEqual([]);
+    expect(t.audit).toEqual([]);
   });
 });
 

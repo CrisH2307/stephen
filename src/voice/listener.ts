@@ -28,6 +28,7 @@
 import { PTT_MAX_HOLD_MS, PTT_MIN_HOLD_MS } from '../helper/protocol.js';
 import { newHistoryId } from '../history/store.js';
 import type { LatencyOutcome, LatencyTrace } from '../telemetry/latency.js';
+import type { AuditEntry, IAuditLog } from '../types.js';
 import type { Assistant, CommandReport, CommandResult } from './assistant.js';
 import type { AudioSource } from './audio.js';
 import { DEFAULT_DUCK_VOLUME, HOLD_F5, mediaCommand, type SoundControl } from './media-command.js';
@@ -103,6 +104,8 @@ export interface ListenerDeps {
   } | null;
   /** Volume and media keys for the wake word over playing sound (issue #205). Absent = that wake word is ignored. */
   sound?: SoundControl | null;
+  /** Audit log: one `voice_media` line per media command run over sound, and per refusal (verb only, never what was said). */
+  audit?: Pick<IAuditLog, 'append'> | null;
 }
 
 /** A helper key time (epoch ms) is used only when it is close to our own clock; otherwise our clock. */
@@ -478,9 +481,31 @@ export class Listener {
     if (!sound || this.d.helper?.audioPlaying !== true) return;
     this.d.status(`Heard "${this.o.stopPhrase ?? 'stop'}" — pausing the sound.`);
     sound.media({ verb: 'pause' }).then(
-      (line) => this.d.status(line),
-      (e: unknown) => this.d.status(`Couldn't pause (${(e as Error).message}).`),
+      (line) => {
+        this.d.status(line);
+        void this.auditMedia({ verb: 'pause', via: 'stop_phrase' }, 'ok');
+      },
+      (e: unknown) => {
+        this.d.status(`Couldn't pause (${(e as Error).message}).`);
+        void this.auditMedia({ verb: 'pause', via: 'stop_phrase' }, 'error', (e as Error).message);
+      },
     );
+  }
+
+  /** One audit line for a media command over sound (issue #205). A failing audit log never fails the command. */
+  private async auditMedia(args: Record<string, unknown>, outcome: AuditEntry['outcome'], error?: string, cmd?: string): Promise<void> {
+    try {
+      await this.d.audit?.append({
+        tool: 'voice_media',
+        args,
+        outcome,
+        ...(error ? { error: error.slice(0, 200) } : {}),
+        intent: 'wake word over playing sound: media commands only',
+        ...(cmd ? { cmd } : {}),
+      });
+    } catch (e) {
+      this.d.status(`Note: couldn't write the audit line (${(e as Error).message}).`);
+    }
   }
 
   /** Lower the volume for a wake word over playing sound. unduck() puts it back. */
@@ -864,6 +889,7 @@ export class Listener {
       }
       this.d.status(`Heard: "${text}" — over playing sound I only take pause, play, next, previous, volume or mute. ${HOLD_F5}`);
       lat?.end(id, 'error');
+      await this.auditMedia({ verb: null }, 'denied', 'not a media command over sound (hold F5)', id);
       await previous;
       if (!token.cancelled) await this.d.assistant.announce(HOLD_F5);
       return 'error';
@@ -873,12 +899,15 @@ export class Listener {
     // A volume command acts on the real volume, so restore first. The rest act first: no loud blip before a pause.
     if (cmd.verb === 'volume' || cmd.verb === 'mute' || cmd.verb === 'unmute') await this.unduck();
     let result: CommandResult = 'ok';
+    let error: string | undefined;
     try {
       this.d.status(await this.d.sound!.media(cmd));
     } catch (e) {
       result = 'error';
-      this.d.status(`Couldn't do that (${(e as Error).message}).`);
+      error = (e as Error).message;
+      this.d.status(`Couldn't do that (${error}).`);
     }
+    await this.auditMedia({ ...cmd }, result === 'ok' ? 'ok' : 'error', error, id);
     await this.unduck();
     this.d.chimes.play('done');
     lat?.end(id, result);
