@@ -375,7 +375,8 @@ describe('ZenDriver agent mode', () => {
 
   it('reports an early exit', async () => {
     tc = makeTestConfig();
-    const h = harness({ line: 'something else', exitCode: 1 });
+    // The exit comes after 5 ms; a long listen timeout keeps a loaded machine from timing out first (macOS CI).
+    const h = harness({ line: 'something else', exitCode: 1, listenTimeoutMs: 10_000 });
     await expectHubError(h.driver.connect('agent'), 'NOT_CONNECTED', /exited right after launch \(exit code 1\)/);
   });
 
@@ -694,7 +695,8 @@ describe('ZenDriver.inspect / launchForClaude (zen-launch)', () => {
   it('launchForClaude reports a Zen that exits at once (profile in use) as NEEDS_USER and kills nothing', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const dir = realProfile();
-    const h = harness({ resolveRealProfile: async () => dir, line: 'Zen is already running, but is not responding', exitCode: 0 });
+    // listenTimeoutMs: see 'reports an early exit' (macOS CI run 44537229890 timed out at 300 ms before the exit).
+    const h = harness({ resolveRealProfile: async () => dir, line: 'Zen is already running, but is not responding', exitCode: 0, listenTimeoutMs: 10_000 });
     await expectHubError(h.driver.launchForClaude(), 'NEEDS_USER', /another Zen is probably using profile/);
     expect(h.children).toHaveLength(1);
     expect(h.children[0]!.killed).toBe(false);
