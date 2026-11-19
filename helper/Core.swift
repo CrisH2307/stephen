@@ -28,6 +28,13 @@ let KEYCODE_ESCAPE: Int64 = 53
 let KEYCODE_F5: Int64 = 96
 /** The media keys `media_key` may post (src/helper/protocol.ts MEDIA_KEYS). */
 let MEDIA_KEYS: Set<String> = ["play_pause", "next", "previous"]
+/** The window's app.sock reconnect wait doubles up to this while Stephen stays unreachable (#202 C1). */
+let APP_RETRY_MAX_SECONDS = 10.0
+
+/** The next reconnect wait after `current` seconds: 3, 6, 10, 10, ... (AppClient.swift). */
+func nextRetryDelay(_ current: Double) -> Double {
+  return min(current * 2, APP_RETRY_MAX_SECONDS)
+}
 
 // ───────────────────────────── time ─────────────────────────────
 

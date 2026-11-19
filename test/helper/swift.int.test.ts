@@ -107,6 +107,12 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     return c;
   };
 
+  it('#202 C1: the app.sock reconnect wait goes 3, 6, 10, 10 s (nextRetryDelay, max 10 s)', () => {
+    const r = spawnSync(harnessBin, ['--retry-delays'], { encoding: 'utf8', timeout: 10_000 });
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('3 6 10 10');
+  });
+
   it('creates run/ 0700 and the socket 0600; hello first, then audio', async () => {
     const sock = mk();
     await start(sock);

@@ -6,7 +6,7 @@
 // stdin (one per line):  flags [fn] [opt] [cmd] [ctrl] [shift] | key <code> [repeat] | keyup <code> | audio 0|1 | perm 0|1
 //                        | interrupt | press_over | postkeys 0|1 | exit
 // stdout:                ready | ui <state> | quit | open_window | media_key <key> | error <message>
-// args:                  --socket <path> [--max-hold-ms <n>]
+// args:                  --socket <path> [--max-hold-ms <n>] | --retry-delays (prints nextRetryDelay from 3 s, exits)
 
 #if canImport(Darwin)
 import Darwin
@@ -21,6 +21,13 @@ var socketPath = ""
 var maxHold = PTT_MAX_HOLD_MS
 var args = CommandLine.arguments.dropFirst().makeIterator()
 while let a = args.next() {
+  if a == "--retry-delays" {  // pure check: nextRetryDelay from 3 s, four steps
+    var d = 3.0
+    var out: [String] = []
+    for _ in 0..<4 { out.append(String(Int(d))); d = nextRetryDelay(d) }
+    print(out.joined(separator: " "))
+    exit(0)
+  }
   if a == "--socket", let v = args.next() { socketPath = v }
   if a == "--max-hold-ms", let v = args.next(), let n = Int64(v) { maxHold = n }
 }

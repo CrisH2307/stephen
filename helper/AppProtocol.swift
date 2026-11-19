@@ -16,7 +16,7 @@ let APP_CHAT_MAX_CHARS = 2000
 let APP_MEMORY_MAX_ITEMS = 30
 /** Requests without a response after this long fail with "timed out". */
 let APP_REQUEST_TIMEOUT_SECONDS = 15.0
-/** While someone (window or Ask box) wants the connection and Stephen isn't reachable, try again this often. */
+/** While someone (window or Ask box) wants the connection and Stephen isn't reachable, the first retry waits this long. */
 let APP_RETRY_SECONDS = 3.0
 /** What the Today card on the Chat tab submits, exactly as if it were typed (test/helper/app-protocol.test.ts). */
 let APP_TODAY_PROMPT = "what's my day?"

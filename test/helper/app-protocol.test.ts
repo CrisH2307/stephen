@@ -631,6 +631,27 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(plist).toContain('NSAppleEventsUsageDescription');
   });
 
+  it('#202 C1: app.sock reconnect backs off to 10 s and goes back to 3 s on Start, Retry, open and app.sock', () => {
+    // The body of one Swift func: from its signature to the first line that closes it (two-space indent).
+    const body = (src: string, sig: string) => {
+      const i = src.indexOf(sig);
+      expect(i, sig).toBeGreaterThanOrEqual(0);
+      return src.slice(i, src.indexOf('\n  }\n', i));
+    };
+    const appClient = read('AppClient.swift');
+    expect(read('Core.swift')).toContain('let APP_RETRY_MAX_SECONDS = 10.0');
+    for (const sig of ['func opened(_ who: String) {', 'func retry() {', 'func resetRetry() {']) {
+      expect(body(appClient, sig), sig).toContain('retryDelay = APP_RETRY_SECONDS');
+    }
+    expect(body(read('StephenControl.swift'), 'func start(_ done: (String?) -> Void) {')).toContain('onStart?()');
+    expect(read('main.swift')).toMatch(/stephenControl\.onStart = \{[^}\n]*resetRetry\(\)[^}\n]*\}/);
+    // While offline: a file check every 3 s at most; app.sock newly there means connect now.
+    const retry = body(appClient, 'private func scheduleRetry() {');
+    expect(retry).toContain('min(APP_RETRY_SECONDS, retryTarget - retryWaited)');
+    expect(retry).toContain('FileManager.default.fileExists(atPath: self.socketPath)');
+    expect(retry).toContain('if appeared || self.retryWaited >= self.retryTarget { self.connect() }');
+  });
+
   it('the window opens from the menu, --open-window and the open_window command', () => {
     const main = read('main.swift');
     expect(main).toContain('"Open Stephen…"');

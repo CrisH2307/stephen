@@ -159,6 +159,8 @@ final class StephenControl: ObservableObject {
   private var pollsLeft = 0
   /** The poll ends early once this is true (the state settled). */
   private var pollDone: (ListenerStatus) -> Bool = { _ in false }
+  /** Called after Start launched the listener (main.swift: the window connection retries soon again). */
+  var onStart: (() -> Void)? = nil
 
   init(home: String, log: @escaping (String) -> Void) {
     self.home = home
@@ -262,6 +264,7 @@ final class StephenControl: ObservableObject {
     log("started stephen listen, pid \(p.processIdentifier)")
     listener = .starting
     poll(seconds: 60) { $0 != .starting }
+    onStart?()
     done(nil)
   }
 
