@@ -35,6 +35,9 @@ if (mode === 'badtools') {
   setInterval(() => {}, 1000);
   process.on('SIGTERM', () => process.exit(143));
 } else {
+  // stubborn ignores SIGTERM from the start: the test sends it as soon as it sees init, which can be before the
+  // next line runs on a loaded machine (macOS CI run 44429009437).
+  if (mode === 'stubborn') process.on('SIGTERM', () => {});
   init();
 }
 if (mode === 'hang') {
@@ -42,7 +45,6 @@ if (mode === 'hang') {
   process.on('SIGTERM', () => process.exit(143));
 } else if (mode === 'stubborn') {
   setInterval(() => {}, 1000);
-  process.on('SIGTERM', () => {});
 } else if (mode === 'crash') {
   process.stderr.write('boom: something broke\n');
   process.exit(3);

@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,7 +72,11 @@ export function fakeWarmProcesses(log: string): FakeRun[] {
   return readFakeLog(log).filter((r) => r.argv.includes('--input-format'));
 }
 
-/** A process is gone if signal 0 fails, or (Linux) it is a zombie nobody reaped yet. */
+/**
+ * A process is gone if signal 0 fails, or it is a zombie nobody reaped yet: Linux reads /proc, macOS asks ps. On a
+ * loaded Mac a killed child whose parent died can still take signal 0 for a moment after its group is gone, until
+ * launchd reaps it (macOS CI runs 44433506776, 44428658922).
+ */
 export function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -83,7 +88,13 @@ export function isAlive(pid: number): boolean {
     const state = stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3);
     return state !== 'Z' && state !== 'X';
   } catch {
-    return true;
+    /* no /proc (macOS) */
+  }
+  try {
+    const state = execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+    return state !== '' && !state.startsWith('Z');
+  } catch {
+    return false; // ps exits 1 when the pid is gone
   }
 }
 

@@ -23,8 +23,8 @@
 // Serve instance (docs/REVIEW-7.md R7-1): when the --mcp-config gives serve `--instance <id>`, the serve child takes
 // `<folder of the config>/../run/serve-<id>.lock` like `stephen serve` (O_EXCL, 0600, its pid), and logs
 // {pid, claim: first|restarted} to $FAKE_CLAUDE_SERVE_LOG. Like Claude Code, a dead serve child is started again when
-// the next message comes. FAKE_CLAUDE_SERVE_DIES  after-1 (SIGKILL the serve after message 1's result) | midturn-1
-// (kill it and start a new one in the middle of message 1). FAKE_CLAUDE_SERVE_LATE_TOOL=<name>: on SIGTERM the serve
+// the next message comes. FAKE_CLAUDE_SERVE_DIES=midturn-1: kill the serve and start a new one in the middle of
+// message 1. FAKE_CLAUDE_SERVE_LATE_TOOL=<name>: on SIGTERM the serve
 // waits 50 ms, appends that tool to the --tool-log, then exits (a tool of a cancelled command finishing late).
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -177,7 +177,6 @@ export async function runStream({ argv, at, mode, logTools }) {
     }
     const reply = env.FAKE_CLAUDE_REPLY ?? `**Done!** ${prompt}`;
     out({ type: 'result', subtype: 'success', is_error: false, result: reply, session_id: sessionId, num_turns: 2, duration_ms: duration, duration_api_ms: apiTotal, total_cost_usd: costTotal });
-    if (env.FAKE_CLAUDE_SERVE_DIES === `after-${messages}`) await killServe();
   }
   void argv;
   await new Promise(() => {}); // live until stdin closes (rl close → exit) or a signal

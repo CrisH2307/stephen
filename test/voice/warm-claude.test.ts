@@ -329,10 +329,11 @@ describe('WarmClaude with a serve instance (R7-1)', () => {
   });
 
   it('serve died between commands (Claude Code would restart it silently): the next command errors and is not sent', async () => {
-    const t = instanceSetup({ FAKE_CLAUDE_SERVE_DIES: 'after-1' });
+    const t = instanceSetup();
     const p = new WarmClaude(t.o, undefined);
     await p.ready();
     expect((await p.turn('read my email')).kind).toBe('ok');
+    process.kill(t.procs().child, 'SIGKILL'); // after the command, so the result is never read with the serve gone
     await waitFor(() => !pidAlive(t.procs().child), 5000, 'serve dies and is reaped');
     expect(await p.turn('now open that link')).toMatchObject({ kind: 'error', message: expect.stringMatching(/tools stopped since the last command \(its process is gone\)/) });
     expect(t.turns().map((x) => x.prompt)).toEqual(['read my email']);
