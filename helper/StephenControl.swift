@@ -157,6 +157,8 @@ final class StephenControl: ObservableObject {
   private var logOffset: UInt64 = 0
   private var logPartial = ""
   private var pollsLeft = 0
+  /** The poll ends early once this is true (the state settled). */
+  private var pollDone: (ListenerStatus) -> Bool = { _ in false }
   /** Called after Start launched the listener (main.swift: the window connection retries soon again). */
   var onStart: (() -> Void)? = nil
 
@@ -187,14 +189,15 @@ final class StephenControl: ObservableObject {
     }
   }
 
-  /** Refresh every second for a while (after start / stop). */
-  private func poll(seconds: Int) {
+  /** Refresh every second (after start / stop) until `done` says the state settled, at most `seconds` times. */
+  private func poll(seconds: Int, until done: @escaping (ListenerStatus) -> Bool) {
     let running = pollsLeft > 0
     pollsLeft = seconds
+    pollDone = done
     if running { return }
     func tick() {
       refresh()
-      pollsLeft -= 1
+      pollsLeft = pollDone(listener) ? 0 : pollsLeft - 1
       if pollsLeft > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { tick() } }
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { tick() }
@@ -260,7 +263,7 @@ final class StephenControl: ObservableObject {
     _ = fm.createFile(atPath: pidPath, contents: Data("\(p.processIdentifier)\n".utf8), attributes: [.posixPermissions: 0o600])
     log("started stephen listen, pid \(p.processIdentifier)")
     listener = .starting
-    poll(seconds: 60)
+    poll(seconds: 60) { $0 != .starting }
     onStart?()
     done(nil)
   }
@@ -290,7 +293,7 @@ final class StephenControl: ObservableObject {
         kill(pid, SIGKILL)
       }
     }
-    poll(seconds: 12)
+    poll(seconds: 12) { $0 == .stopped }
     done(nil)
   }
 
