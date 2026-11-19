@@ -285,8 +285,8 @@ final class AppModel: ObservableObject {
     case "replay":
       replayOn = msg.on ?? false
     case "state":
-      if let s = msg.state { state = s }
-      if state == "idle" { awaitingReplies = [] }
+      if let s = msg.state { assign(\.state, s) }
+      if state == "idle" { assign(\.awaitingReplies, []) }
     case "heard":
       // Typed commands are already in the chat; only voice commands are added here. The label is never empty: an
       // empty detail marks a typed bubble, the only kind Try again may re-send (R10a-2).
@@ -385,10 +385,10 @@ final class AppModel: ObservableObject {
     request(req) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "memory" {
-        self.memory = msg.items ?? []
-        self.memoryNotice = isChange ? "Saved. Stephen starts a fresh conversation with the next command." : nil
+        self.assign(\.memory, msg.items ?? [])
+        self.assign(\.memoryNotice, isChange ? "Saved. Stephen starts a fresh conversation with the next command." : nil)
       } else {
-        self.memoryNotice = msg.message ?? "error"
+        self.assign(\.memoryNotice, msg.message ?? "error")
       }
     }
   }
@@ -407,16 +407,16 @@ final class AppModel: ObservableObject {
     request(AppRequest.memoryGraph(newId())) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "graph" {
-        self.graphNodes = msg.nodes ?? []
-        self.graphLinks = msg.links ?? []
-        self.memoryPageNotice = nil
+        self.assign(\.graphNodes, msg.nodes ?? [])
+        self.assign(\.graphLinks, msg.links ?? [])
+        self.assign(\.memoryPageNotice, nil)
       } else {
-        self.memoryPageNotice = msg.message ?? "Couldn't read memory."
+        self.assign(\.memoryPageNotice, msg.message ?? "Couldn't read memory.")
       }
     }
     refreshSuggestions()
     request(AppRequest.memoryUsage(newId())) { [weak self] msg in
-      self?.memoryUsage = msg.type == "memory.usage" ? msg.memory : nil
+      self?.assign(\.memoryUsage, msg.type == "memory.usage" ? msg.memory : nil)
     }
     refreshMemory()
   }
@@ -457,9 +457,9 @@ final class AppModel: ObservableObject {
 
   private func takeSuggestions(_ msg: AppMessage) {
     if msg.type == "suggestions" {
-      suggestions = msg.suggestions ?? []
+      assign(\.suggestions, msg.suggestions ?? [])
     } else {
-      memoryPageNotice = msg.message ?? "error"
+      assign(\.memoryPageNotice, msg.message ?? "error")
     }
   }
 
@@ -482,11 +482,11 @@ final class AppModel: ObservableObject {
       guard let self = self else { return }
       if msg.type == "history" {
         let entries = msg.historyEntries ?? []
-        self.history = entries
-        self.historyMayHaveMore = entries.count >= AppModel.historyPageSize
-        self.historyNotice = nil
+        self.assign(\.history, entries)
+        self.assign(\.historyMayHaveMore, entries.count >= AppModel.historyPageSize)
+        self.assign(\.historyNotice, nil)
       } else {
-        self.historyNotice = msg.message ?? "error"
+        self.assign(\.historyNotice, msg.message ?? "error")
       }
     }
   }
@@ -546,14 +546,14 @@ final class AppModel: ObservableObject {
     request(AppRequest.settingsGet(newId())) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "settings" {
-        self.settingsText = (msg.config ?? .object([:])).renderLines().joined(separator: "\n")
-        self.ownerName = aboutMeName(msg.config)
-        self.talk = TalkSettings(msg.config)
-        self.configJSON = msg.config
-        self.configPath = msg.configPath
-        self.settingsNotice = nil
+        self.assign(\.settingsText, (msg.config ?? .object([:])).renderLines().joined(separator: "\n"))
+        self.assign(\.ownerName, aboutMeName(msg.config))
+        self.assign(\.talk, TalkSettings(msg.config))
+        self.assign(\.configJSON, msg.config)
+        self.assign(\.configPath, msg.configPath)
+        self.assign(\.settingsNotice, nil)
       } else {
-        self.settingsNotice = msg.message ?? "error"
+        self.assign(\.settingsNotice, msg.message ?? "error")
       }
     }
   }
@@ -609,10 +609,10 @@ final class AppModel: ObservableObject {
     request(AppRequest.auditRecent(newId(), limit: AppModel.auditLimit)) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "audit" {
-        self.audit = msg.auditEntries ?? []
-        self.auditNotice = nil
+        self.assign(\.audit, msg.auditEntries ?? [])
+        self.assign(\.auditNotice, nil)
       } else {
-        self.auditNotice = msg.message ?? "error"
+        self.assign(\.auditNotice, msg.message ?? "error")
       }
     }
   }
@@ -621,10 +621,10 @@ final class AppModel: ObservableObject {
     request(AppRequest.accountsStatus(newId())) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "accounts" {
-        self.accounts = msg.accounts ?? []
-        self.accountsNotice = msg.note
+        self.assign(\.accounts, msg.accounts ?? [])
+        self.assign(\.accountsNotice, msg.note)
       } else {
-        self.accountsNotice = msg.message ?? "error"
+        self.assign(\.accountsNotice, msg.message ?? "error")
       }
     }
   }
@@ -633,10 +633,10 @@ final class AppModel: ObservableObject {
     request(AppRequest.jobsList(newId())) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "jobs" {
-        self.jobs = msg.jobs ?? []
-        self.jobsNotice = nil
+        self.assign(\.jobs, msg.jobs ?? [])
+        self.assign(\.jobsNotice, nil)
       } else {
-        self.jobsNotice = msg.message ?? "error"
+        self.assign(\.jobsNotice, msg.message ?? "error")
       }
     }
   }
@@ -645,10 +645,10 @@ final class AppModel: ObservableObject {
     request(AppRequest.personalSummary(newId())) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "personal", let p = msg.personal {
-        self.personal = p
-        self.personalNotice = nil
+        self.assign(\.personal, p)
+        self.assign(\.personalNotice, nil)
       } else {
-        self.personalNotice = msg.message ?? "Couldn't read the Personal summary."
+        self.assign(\.personalNotice, msg.message ?? "Couldn't read the Personal summary.")
       }
     }
   }
@@ -656,7 +656,7 @@ final class AppModel: ObservableObject {
   func refreshUsage() {
     request(AppRequest.usageGet(newId())) { [weak self] msg in
       guard let self = self else { return }
-      self.usage = msg.type == "usage" ? AppUsage(context: msg.context, memory: msg.memory) : nil
+      self.assign(\.usage, msg.type == "usage" ? AppUsage(context: msg.context, memory: msg.memory) : nil)
     }
   }
 
@@ -672,6 +672,12 @@ final class AppModel: ObservableObject {
       }
       self.refreshJobs()
     }
+  }
+
+  /// Write a @Published field only when the value changed (C7). Every write tells every view that watches AppModel to
+  /// redraw, and most poll answers are the same as last time. A key path, not inout: inout always calls the setter.
+  private func assign<T: Equatable>(_ field: ReferenceWritableKeyPath<AppModel, T>, _ value: T) {
+    if self[keyPath: field] != value { self[keyPath: field] = value }
   }
 
   // MARK: formatting
