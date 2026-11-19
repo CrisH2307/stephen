@@ -5,8 +5,6 @@
 import { updateConfigSection } from '../config-write.js';
 
 export function writeReplaySwitch(file: string, enabled: boolean): void {
-  updateConfigSection(file, 'voice', (old) => {
-    const r = old.replay;
-    return { ...old, replay: { ...(r && typeof r === 'object' && !Array.isArray(r) ? r : {}), enabled } };
-  });
+  // Only `enabled`: a stray key under replay would make the strict parser throw and the switch read off (#208).
+  updateConfigSection(file, 'voice', (old) => ({ ...old, replay: { enabled } }));
 }

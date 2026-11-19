@@ -91,6 +91,39 @@ describe('the switch', () => {
     const bad = rec({ on: () => { throw new Error('config broke'); } });
     expect(bad.r.capture(clip(3))).toBe(false);
   });
+
+  it('#208: off after the folder prepare: the clip file is never even opened', async () => {
+    let on = true;
+    const t = rec({ on: () => on, excludeFromBackups: async () => void (on = false) });
+    // A file already at the clip's name: opening it would fail and count a failure, so a failure means it was opened.
+    mkdirSync(t.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(t.dir, `${id(1)}.wav`), 'old');
+    expect(t.r.capture(clip(1))).toBe(true);
+    await t.r.idle();
+    expect(t.r.failures).toBe(0);
+    expect(readFileSync(join(t.dir, `${id(1)}.wav`), 'utf8')).toBe('old');
+  });
+
+  it('#208: off while the WAV is being written: the WAV is removed and no transcript is saved', async () => {
+    // isOn is read at capture, at write start, after the prepare, and after the WAV: off from the 4th read on.
+    let reads = 0;
+    const t = rec({ on: () => ++reads < 4 });
+    expect(t.r.capture(clip(1))).toBe(true);
+    await t.r.idle();
+    expect(reads).toBe(4);
+    expect(t.r.failures).toBe(0);
+    expect(clipsIn(t.dir)).toEqual([]);
+  });
+
+  it('#208: switched off while the clip is being written (folder prepare): nothing lands', async () => {
+    let on = true;
+    // Off arrives while the write waits on the slow Time Machine step (the first write of a new folder).
+    const t = rec({ on: () => on, excludeFromBackups: async () => void (on = false) });
+    expect(t.r.capture(clip(1))).toBe(true);
+    await t.r.idle();
+    expect(t.r.failures).toBe(0);
+    expect(clipsIn(t.dir)).toEqual([]);
+  });
 });
 
 describe('F5 only', () => {
@@ -343,16 +376,40 @@ describe('stephen replay delete', () => {
   });
 
   it('the Settings switch\'s Delete (deleteAll) is delete --all, run after the writes already queued', async () => {
-    const t = rec();
+    const t = await withClips();
+    expect(await t.r.deleteAll()).toBe(3);
+    expect(clipsIn(t.dir)).toEqual([]);
+    // Queued but not written yet: dropped, never written then deleted (#208).
     for (const i of [1, 2]) t.r.capture(clip(i));
-    // Not awaited first: the two queued writes land, then the delete clears them.
-    expect(await t.r.deleteAll()).toBe(2);
+    expect(await t.r.deleteAll()).toBe(0);
     expect(clipsIn(t.dir)).toEqual([]);
     expect(await t.r.deleteAll()).toBe(0);
     // The queue goes on after a delete.
     t.r.capture(clip(3));
     await t.r.idle();
     expect(clipsIn(t.dir)).toEqual([`${id(3)}.json`, `${id(3)}.wav`]);
+  });
+
+  it('#208: a write stuck past its time limit that finishes after Delete leaves nothing', async () => {
+    let release: () => void = () => {};
+    const t = rec({ jobTimeoutMs: 30, excludeFromBackups: () => new Promise<void>((r) => (release = r)) });
+    expect(t.r.capture(clip(1))).toBe(true);
+    await t.r.idle(); // timed out; the write itself still waits
+    expect(t.r.failures).toBe(1);
+    expect(await t.r.deleteAll()).toBe(0);
+    release(); // the stuck disk comes back after "Deleted." was shown
+    await new Promise((r) => setTimeout(r, 50));
+    expect(clipsIn(t.dir)).toEqual([]);
+  });
+
+  it('#208: --all removes a link named like a clip, never the file it points to', async () => {
+    const t = await withClips();
+    const outside = join(tmp, `outside${n}.json`);
+    writeFileSync(outside, 'keep me');
+    symlinkSync(outside, join(t.dir, `${id(9)}.json`));
+    expect(await t.r.deleteAll()).toBe(4);
+    expect(clipsIn(t.dir)).toEqual([]);
+    expect(readFileSync(outside, 'utf8')).toBe('keep me');
   });
 
   it('refuses anything but an id or --all', async () => {

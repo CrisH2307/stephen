@@ -108,7 +108,9 @@ export interface AppServerOptions {
    * replay.set / replay.delete (Settings > Privacy and safety, issue #48 PR 2): `set` writes voice.replay.enabled to
    * config.json, `deleteAll` is `stephen replay delete --all` (behind any queued write). Absent = not available.
    */
-  replay?: { set: (enabled: boolean) => void; deleteAll: () => Promise<number> };
+  replay?: { set: (enabled: boolean) => void; deleteAll: () => Promise<number>; on: () => boolean };
+  /** How often the replay switch is re-read for the "Recording on" sign (default 2000 ms; tests use less). */
+  replayPollMs?: number;
   /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
   accounts?: () => Promise<AccountsStatus>;
   /** jobs.list / jobs.stop (background jobs). Absent = jobs are off. */
@@ -153,6 +155,9 @@ export class AppServer {
   /** Waiting questions by confirmId: who asked, with which request id. */
   private readonly confirms = new Map<string, { asker: Socket; id: string; timer: NodeJS.Timeout; push: AppMessage }>();
   private current: AppState = 'idle';
+  /** The last `replay` push: the switch as config.json says (issue #208). */
+  private replayOn = false;
+  private replayTimer: NodeJS.Timeout | null = null;
   /** A memory change happened while a command ran: end the conversation again once it is done. */
   private endAfterCommand = false;
   private readonly log: (line: string) => void;
@@ -173,12 +178,18 @@ export class AppServer {
   /** Create the socket (src/lib/private-socket.ts). Throws PrivateSocketError when it can't. */
   async start(): Promise<void> {
     this.sock = await listenPrivateSocket(this.socketPath, (sock) => this.accept(sock), this.log, 'app.sock');
+    if (this.o.replay) {
+      this.replayTimer = setInterval(() => this.recordingAllowed(), this.o.replayPollMs ?? 2000);
+      this.replayTimer.unref();
+    }
   }
 
   /** Disconnect every client, stop listening and remove the socket (if it is still ours). */
   async close(): Promise<void> {
     const sock = this.sock;
     this.sock = null;
+    if (this.replayTimer) clearInterval(this.replayTimer);
+    this.replayTimer = null;
     for (const c of this.confirms.values()) clearTimeout(c.timer);
     this.confirms.clear();
     for (const c of this.clients) c.destroy();
@@ -193,6 +204,25 @@ export class AppServer {
   }
 
   // ───────────────────────────── pushes ─────────────────────────────
+
+  /**
+   * The replay recorder's `enabled` (issue #208): true only while the switch is on AND a Stephen window is connected
+   * (hello with confirms: true), so a clip is never saved without the "Recording on" sign there to show it. Pushes
+   * `replay` to the windows whenever the switch changes. Never throws.
+   */
+  recordingAllowed(): boolean {
+    let on = false;
+    try {
+      on = this.o.replay?.on() === true;
+    } catch {
+      on = false;
+    }
+    if (on !== this.replayOn) {
+      this.replayOn = on;
+      this.broadcast({ type: 'replay', on });
+    }
+    return on && this.askBoxes.size > 0;
+  }
 
   /** Listener / assistant state (idle, listening, recording, working, speaking). Consecutive duplicates are dropped. */
   setState(state: AppState): void {
@@ -320,7 +350,13 @@ export class AppServer {
     this.answer(req).then(
       (msg) => {
         this.send(sock, msg);
-        if (req.type === 'hello' && msg.type === 'hello' && !this.gates.has(sock)) this.send(sock, { type: 'state', state: this.current });
+        if (req.type === 'hello' && msg.type === 'hello' && !this.gates.has(sock)) {
+          this.send(sock, { type: 'state', state: this.current });
+          if (this.o.replay) {
+            this.recordingAllowed();
+            this.send(sock, { type: 'replay', on: this.replayOn });
+          }
+        }
       },
       (e: unknown) => this.send(sock, { id: req.id, type: 'error', message: (e as Error).message || 'error' }),
     );
@@ -499,6 +535,7 @@ export class AppServer {
         if (!this.o.replay) return { id, type: 'error', message: 'not available in this listener' };
         try {
           this.o.replay.set(req.enabled);
+          this.recordingAllowed(); // the sign changes now, not at the next poll
           const s = this.o.settings();
           return { id, type: 'settings', config: s.config, configPath: s.configPath };
         } catch {
