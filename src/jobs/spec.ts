@@ -182,7 +182,9 @@ export function jobSettings(o: { stephenHome: string; stephenRepo: string; testO
       autoAllowBashIfSandboxed: true,
       excludedCommands: [],
       allowAppleEvents: false,
-      network: { allowedDomains: [], strictAllowlist: true },
+      // No Unix sockets (#208): a job's shell must never reach <home>/run/app.sock (the Settings switches) or
+      // helper.sock. This is Claude Code's default; written out so no later change can turn it on without a failing test.
+      network: { allowedDomains: [], strictAllowlist: true, allowUnixSockets: [], allowAllUnixSockets: false },
       filesystem: { denyRead: [o.stephenHome, '~/.ssh', '~/.aws', '~/.config', '~/Library/Keychains', join(o.stephenRepo, '.env')] },
     },
     permissions: {

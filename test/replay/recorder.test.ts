@@ -92,6 +92,29 @@ describe('the switch', () => {
     expect(bad.r.capture(clip(3))).toBe(false);
   });
 
+  it('#208: off after the folder prepare: the clip file is never even opened', async () => {
+    let on = true;
+    const t = rec({ on: () => on, excludeFromBackups: async () => void (on = false) });
+    // A file already at the clip's name: opening it would fail and count a failure, so a failure means it was opened.
+    mkdirSync(t.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(t.dir, `${id(1)}.wav`), 'old');
+    expect(t.r.capture(clip(1))).toBe(true);
+    await t.r.idle();
+    expect(t.r.failures).toBe(0);
+    expect(readFileSync(join(t.dir, `${id(1)}.wav`), 'utf8')).toBe('old');
+  });
+
+  it('#208: off while the WAV is being written: the WAV is removed and no transcript is saved', async () => {
+    // isOn is read at capture, at write start, after the prepare, and after the WAV: off from the 4th read on.
+    let reads = 0;
+    const t = rec({ on: () => ++reads < 4 });
+    expect(t.r.capture(clip(1))).toBe(true);
+    await t.r.idle();
+    expect(reads).toBe(4);
+    expect(t.r.failures).toBe(0);
+    expect(clipsIn(t.dir)).toEqual([]);
+  });
+
   it('#208: switched off while the clip is being written (folder prepare): nothing lands', async () => {
     let on = true;
     // Off arrives while the write waits on the slow Time Machine step (the first write of a new folder).

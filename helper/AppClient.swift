@@ -1011,8 +1011,6 @@ final class AppModel: ObservableObject {
           self.offlineReason = nil
           self.connection = .online
           self.log("app.sock: connected")
-          // The "Recording on" sign needs the current switch even before Settings or Home is opened.
-          self.refreshSettings()
         } else {
           self.link.close()
           self.goOffline(msg.message ?? "unexpected answer to hello")
