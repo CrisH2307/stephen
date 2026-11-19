@@ -2,6 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import { COMMAND_VERBS, matchForget, memoryWords, newestWithin, parseDetailed, parseMemoryIntent, rawTail, splitRememberTail, type MemoryIntent } from '../../src/memory/intent.js';
 
+/** Typed text from the CLI: what these tests checked before `source` was required (#202, H3). */
+const TYPED = { source: 'cli' } as const;
+
 const TABLE: Array<[string, MemoryIntent | null]> = [
   // remember
   ['remember my gym is goodlife', { kind: 'remember', text: 'my gym is goodlife' }],
@@ -128,18 +131,18 @@ const NOT_SAVES: string[] = [
 
 describe('natural remember phrasings', () => {
   it.each(SAVES)('saves %j', (cmd, text) => {
-    const i = parseMemoryIntent(cmd);
+    const i = parseMemoryIntent(cmd, TYPED);
     expect(i?.kind).toBe('remember');
     if (i?.kind === 'remember') expect(i.text).toBe(text);
   });
   it.each(NOT_SAVES)('does not save %j', (cmd) => {
-    expect(parseMemoryIntent(cmd)?.kind).not.toBe('remember');
+    expect(parseMemoryIntent(cmd, TYPED)?.kind).not.toBe('remember');
   });
 });
 
 describe('parseMemoryIntent', () => {
   it.each(TABLE)('%j', (cmd, want) => {
-    expect(parseMemoryIntent(cmd)).toEqual(want);
+    expect(parseMemoryIntent(cmd, TYPED)).toEqual(want);
   });
 
   it('the split needs a verb from the fixed list right after the joiner', () => {
@@ -163,7 +166,7 @@ describe('rawTail', () => {
 
   it('works for both halves of a split line (and keeps URLs in typed text)', () => {
     const raw = 'Remember my gym is GoodLife and open https://www.goodlifefitness.com/clubs';
-    const i = parseMemoryIntent(raw);
+    const i = parseMemoryIntent(raw, TYPED);
     expect(i).toEqual({ kind: 'remember', text: 'my gym is goodlife', rest: 'open https www goodlifefitness com clubs' });
     if (i?.kind !== 'remember') throw new Error('expected remember');
     expect(rawTail(raw, i.text)).toBe('my gym is GoodLife');
@@ -222,25 +225,25 @@ describe('newestWithin', () => {
 describe('R10b-1 raw "?" guard and voice second layer', () => {
   it('R10b-1 a "?" on the raw text blocks a save even when the words have none', () => {
     const raw = "Can you remember my sister's name?";
-    expect(parseMemoryIntent(raw)).toBeNull();
+    expect(parseMemoryIntent(raw, TYPED)).toBeNull();
     expect(parseMemoryIntent(memoryWords(raw), { raw, source: 'voice-ptt' })).toBeNull();
     expect(parseMemoryIntent(memoryWords(raw), { raw, source: 'voice-wake' })).toBeNull();
   });
   it('R10b-1 without a "?", voice "can you remember ..." saves only with "that"', () => {
-    for (const source of ['voice-ptt', 'voice-wake']) {
+    for (const source of ['voice-ptt', 'voice-wake'] as const) {
       expect(parseMemoryIntent("can you remember my sister's name", { source })).toBeNull();
       expect(parseMemoryIntent('will you remember my birthday', { source })).toBeNull();
       expect(parseMemoryIntent('could you please remember my bike is blue', { source })).toBeNull();
       expect(parseMemoryIntent('can you remember that my sister is called ann', { source })?.kind).toBe('remember');
     }
     // typed text keeps the #114 behaviour
-    expect(parseMemoryIntent('could you please remember my bike is blue')?.kind).toBe('remember');
+    expect(parseMemoryIntent('could you please remember my bike is blue', TYPED)?.kind).toBe('remember');
   });
 });
 
 describe('R10b-3 personal word needs a verb', () => {
   it.each(["don't forget my keys", 'note my keys', 'keep in mind my keys', 'dont forget i', 'note our house'])('R10b-3 %j saves nothing', (c) => {
-    expect(parseMemoryIntent(c)?.kind).not.toBe('remember');
+    expect(parseMemoryIntent(c, TYPED)?.kind).not.toBe('remember');
   });
   it.each([
     "don't forget that my sister is called ann",
@@ -248,7 +251,7 @@ describe('R10b-3 personal word needs a verb', () => {
     'keep in mind my flight is at nine',
     "keep in mind i'm allergic to nuts",
   ])('R10b-3 %j still saves', (c) => {
-    expect(parseMemoryIntent(c)?.kind).toBe('remember');
+    expect(parseMemoryIntent(c, TYPED)?.kind).toBe('remember');
   });
 });
 
@@ -257,14 +260,14 @@ describe('R10b-4 openers without "remember"', () => {
     'R10b-4 %j is refused from the wake word, allowed from F5, window and CLI',
     (c) => {
       expect(parseMemoryIntent(c, { source: 'voice-wake' })).toBeNull();
-      for (const source of ['voice-ptt', 'app', 'cli']) expect(parseMemoryIntent(c, { source })?.kind).toBe('remember');
+      for (const source of ['voice-ptt', 'app', 'cli'] as const) expect(parseMemoryIntent(c, { source })?.kind).toBe('remember');
     },
   );
   it('R10b-4 a "remember" opener still works from the wake word, and the opener is reported', () => {
     expect(parseMemoryIntent('remember my cat is tom', { source: 'voice-wake' })?.kind).toBe('remember');
     expect(parseDetailed('hey stephen can you remember that my cat is tom', { source: 'voice-wake' })?.opener).toBe('can you remember that');
     expect(parseDetailed("don't forget that my cat is tom", { source: 'cli' })?.opener).toBe("don't forget that");
-    expect(parseDetailed('remember my cat is tom')?.opener).toBe('remember');
+    expect(parseDetailed('remember my cat is tom', { source: 'app' })?.opener).toBe('remember');
   });
 });
 
@@ -272,7 +275,7 @@ describe('#137 voice needs a fact shape; typed text is unchanged', () => {
   it.each(['Remember the milk', 'Remember my keys', 'Can you remember that song from Titanic', 'Remember last summer', 'Remember that time we went to the lake', 'Remember I need to pay the rent'])(
     '#137 %j saves nothing by voice but still saves when typed',
     (raw) => {
-      for (const source of ['voice-ptt', 'voice-wake']) expect(parseMemoryIntent(memoryWords(raw), { raw, source })).toBeNull();
+      for (const source of ['voice-ptt', 'voice-wake'] as const) expect(parseMemoryIntent(memoryWords(raw), { raw, source })).toBeNull();
       expect(parseMemoryIntent(raw, { raw, source: 'app' })?.kind).toBe('remember');
     },
   );
@@ -280,4 +283,19 @@ describe('#137 voice needs a fact shape; typed text is unchanged', () => {
     '#137 %j still saves by voice',
     (raw) => expect(parseMemoryIntent(memoryWords(raw), { raw, source: 'voice-ptt' })?.kind).toBe('remember'),
   );
+});
+
+describe('#202 H3: every caller must name its source', () => {
+  it('a call without a source does not compile (no silent fallback to the typed rules)', () => {
+    // Type checks only, never run: `npm run typecheck` (in CI) fails if `source` ever becomes optional again.
+    const typeOnly = (): void => {
+      // @ts-expect-error source is required
+      parseDetailed('remember my cat is tom', {});
+      // @ts-expect-error opts with a source is required
+      parseMemoryIntent('remember my cat is tom');
+      // @ts-expect-error a misspelled source is not a MemorySource
+      parseDetailed('remember my cat is tom', { source: 'voice_wake' });
+    };
+    expect(typeof typeOnly).toBe('function');
+  });
 });

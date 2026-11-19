@@ -12,6 +12,8 @@
  * Claude. "remember i play guitar" has no joiner, so it is saved whole.
  */
 
+import type { MemorySource } from './store.js';
+
 export type MemoryIntent =
   | { kind: 'remember'; text: string; rest?: string }
   | { kind: 'forget'; query: string }
@@ -130,18 +132,32 @@ export function splitRememberTail(words: string): { text: string; rest: string }
  * Recognize a memory command in what the user said or typed. null = not a memory command (send it to Claude).
  * `text`, `rest` and `query` are normalized words; use rawTail(raw, words) to recover the original case.
  */
-export function parseMemoryIntent(command: string, opts: ParseOpts = {}): MemoryIntent | null {
+export function parseMemoryIntent(command: string, opts: ParseOpts): MemoryIntent | null {
   return parseDetailed(command, opts)?.intent ?? null;
 }
 
-/** `raw` = the transcript with its punctuation (voice); `source` = where it came from (the wake word is the least trusted). */
+/**
+ * `raw` = the original text with its punctuation (the ASR transcript, or the text as typed). `source` = where it
+ * came from; it is required so every path names itself (#202, H3).
+ */
 export interface ParseOpts {
   raw?: string;
-  source?: string;
+  source: MemorySource;
 }
 
-/** Like parseMemoryIntent, plus the opener the person said ("remember that", "don't forget") for a remember intent. */
-export function parseDetailed(command: string, opts: ParseOpts = {}): { intent: MemoryIntent; opener?: string } | null {
+/**
+ * Like parseMemoryIntent, plus the opener the person said ("remember that", "don't forget") for a remember intent.
+ *
+ * The one remember guard for typed and voice text (#202, H3): MemoryRouter.route calls it for every source. A new
+ * rule goes here, and the source decides who it applies to. Today the differences are all voice-only refusals:
+ * - voice: a "?" anywhere in the raw transcript (also full-width) is a question (R10b-1);
+ * - voice: "can you remember ..." saves only with "that" (R10b-1);
+ * - voice: the saved text needs a fact shape (#137);
+ * - wake word only: no openers without the word "remember" (R10b-4).
+ * Typed and voice share the rest, including the trailing "?" check on both the words and the raw text (#114, #122).
+ * test/memory/remember-table.test.ts runs one phrase table through every source.
+ */
+export function parseDetailed(command: string, opts: ParseOpts): { intent: MemoryIntent; opener?: string } | null {
   const voice = opts.source === 'voice-wake' || opts.source === 'voice-ptt';
   const s = memoryWords(command).replace(LEAD_RE, '');
   if (!s) return null;
