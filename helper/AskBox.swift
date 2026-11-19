@@ -69,6 +69,8 @@ struct ConfirmButtons: View {
   let question: PendingConfirm
   let waiting: Int
   let answer: (Bool) -> Void
+  /// The main window's ⌘K palette is open: both buttons are off until it closes (UI-V4-IA-PLAN 7.5.4).
+  @Environment(\.paletteOpen) var paletteOpen
   @State private var armed: String? = nil
 
   var body: some View {
@@ -80,7 +82,7 @@ struct ConfirmButtons: View {
       QuietButton("Deny") { answer(false) }
       PrimaryButton("Allow") { answer(true) }
     }
-    .disabled(!live).opacity(live ? 1 : 0.5)
+    .disabled(!live || paletteOpen).opacity(live ? 1 : 0.5)
     .task(id: question.id) {
       armed = nil
       try? await Task.sleep(nanoseconds: 750_000_000)

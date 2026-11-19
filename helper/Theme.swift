@@ -1,7 +1,9 @@
-// Stephen Helper: visual tokens (UI-PLAN v3.1 section 9). Five themes, one environment value.
+// Stephen Helper: visual tokens (UI-PLAN v3.1 section 9, UI v4 changes from docs/research/UI-V4-DIRECTION.md section 5).
+// Five themes, one environment value. Glass (UI-V4-IA-PLAN section 8) is at the end of this file.
 // Screens read `@Environment(\.stephenTheme) var t` and use t.ink, t.surface, ... never raw colors.
 // Install once at the root of a window or popover: `.stephenThemed(choice)`.
 
+import AppKit
 import SwiftUI
 
 enum ThemeName: String, CaseIterable, Identifiable {
@@ -31,9 +33,8 @@ extension Color {
 struct Theme: Equatable {
   let name: ThemeName
   let isDark: Bool
-  /// Window background, top to bottom (Light is the only wash; the others repeat one color).
-  let groundTop: Color
-  let groundBottom: Color
+  /// Window background. One flat color in every theme (v4: the Light wash is gone).
+  let ground: Color
   let surface: Color
   let surface2: Color
   /// Calm borders of lists and cards (1.1 to 1.2:1). With Increase Contrast it becomes `lineHigh ?? lineStrong`.
@@ -48,10 +49,13 @@ struct Theme: Equatable {
   let ok: Color
   let warn: Color
   let bad: Color
+  /// The sidebar's tint (v4). Under the glass, or solid with Reduce Transparency.
+  let sidebar: Color
+  /// A selected row: accent at 12% over surface, as one solid color (v4). Always with a second cue (the accent bar).
+  let selection: Color
   /// Increase Contrast `line` where `lineStrong` would leave ink under 4.5:1 on the "You" bubble (Dark, Navy).
   var lineHigh: Color? = nil
 
-  var ground: LinearGradient { return LinearGradient(colors: [groundTop, groundBottom], startPoint: .top, endPoint: .bottom) }
   var colorScheme: ColorScheme { return isDark ? .dark : .light }
 
   private static let okLight = Color(hex: 0x1E7A4F), warnLight = Color(hex: 0x8A5A00), badLight = Color(hex: 0xB42318)
@@ -60,33 +64,34 @@ struct Theme: Equatable {
   static func of(_ n: ThemeName) -> Theme {
     switch n {
     case .light:
-      return Theme(name: n, isDark: false, groundTop: Color(hex: 0xFFFFFF), groundBottom: Color(hex: 0xECEEF2), surface: Color(hex: 0xFFFFFF),
+      return Theme(name: n, isDark: false, ground: Color(hex: 0xF5F6F8), surface: Color(hex: 0xFFFFFF),
                    surface2: Color(hex: 0xF2F3F6), line: Color(hex: 0xE3E5EA), lineStrong: Color(hex: 0x7E8793), ink: Color(hex: 0x0E1525), ink2: Color(hex: 0x556070),
                    primary: Color(hex: 0x13244A), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0x2456C9),
-                   ok: okLight, warn: warnLight, bad: badLight)
+                   ok: okLight, warn: warnLight, bad: badLight, sidebar: Color(hex: 0xECEEF1), selection: Color(hex: 0xE5EBF9))
     case .dark:
-      return Theme(name: n, isDark: true, groundTop: Color(hex: 0x12151B), groundBottom: Color(hex: 0x12151B), surface: Color(hex: 0x171A21),
+      return Theme(name: n, isDark: true, ground: Color(hex: 0x12151B), surface: Color(hex: 0x171A21),
                    surface2: Color(hex: 0x1F232C), line: Color(hex: 0x2A2F3A), lineStrong: Color(hex: 0x696F7B), ink: Color(hex: 0xEEF0F4), ink2: Color(hex: 0xA3AAB7),
                    primary: Color(hex: 0xDCE6FF), primaryText: Color(hex: 0x0E1525), accent: Color(hex: 0x7FA6FF),
-                   ok: okDark, warn: warnDark, bad: badDark, lineHigh: Color(hex: 0x666C78))
+                   ok: okDark, warn: warnDark, bad: badDark, sidebar: Color(hex: 0x1B1E25), selection: Color(hex: 0x232B3C), lineHigh: Color(hex: 0x666C78))
     case .navy:
       // surface-2 is not in the plan table: derived one step lighter than surface (#16264A -> #1E3260).
-      return Theme(name: n, isDark: true, groundTop: Color(hex: 0x0F1B33), groundBottom: Color(hex: 0x0F1B33), surface: Color(hex: 0x16264A),
+      // v4: bad #FF8A80 (was #F07167, 4.3:1 on surface-2).
+      return Theme(name: n, isDark: true, ground: Color(hex: 0x0F1B33), surface: Color(hex: 0x16264A),
                    surface2: Color(hex: 0x1E3260), line: Color(hex: 0x26385F), lineStrong: Color(hex: 0x71809F), ink: Color(hex: 0xEEF2FA), ink2: Color(hex: 0xA9B6CF),
                    primary: Color(hex: 0xDCE6FF), primaryText: Color(hex: 0x0E1525), accent: Color(hex: 0x8FB0FF),
-                   ok: okDark, warn: warnDark, bad: badDark, lineHigh: Color(hex: 0x5E6D8E))
+                   ok: okDark, warn: warnDark, bad: Color(hex: 0xFF8A80), sidebar: Color(hex: 0x16264A), selection: Color(hex: 0x253760), lineHigh: Color(hex: 0x5E6D8E))
     case .rose:
       // surface-2 derived: a pink tint between ground and line (#FBE9EE).
-      return Theme(name: n, isDark: false, groundTop: Color(hex: 0xFFF5F7), groundBottom: Color(hex: 0xFFF5F7), surface: Color(hex: 0xFFFFFF),
+      return Theme(name: n, isDark: false, ground: Color(hex: 0xFFF5F7), surface: Color(hex: 0xFFFFFF),
                    surface2: Color(hex: 0xFBE9EE), line: Color(hex: 0xF1DCE2), lineStrong: Color(hex: 0x9E7E87), ink: Color(hex: 0x2A1219), ink2: Color(hex: 0x7A5560),
                    primary: Color(hex: 0x7A1F3D), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0xB4235A),
-                   ok: okLight, warn: warnLight, bad: badLight)
+                   ok: okLight, warn: warnLight, bad: badLight, sidebar: Color(hex: 0xFBEFF2), selection: Color(hex: 0xF6E5EB))
     case .sun:
       // surface-2 derived: a cream tint between ground and line (#F7F0D4). Accent #7A5E00: 5.4:1 on surface-2 (#146).
-      return Theme(name: n, isDark: false, groundTop: Color(hex: 0xFFFBEA), groundBottom: Color(hex: 0xFFFBEA), surface: Color(hex: 0xFFFFFF),
+      return Theme(name: n, isDark: false, ground: Color(hex: 0xFFFBEA), surface: Color(hex: 0xFFFFFF),
                    surface2: Color(hex: 0xF7F0D4), line: Color(hex: 0xEFE6C4), lineStrong: Color(hex: 0x91865E), ink: Color(hex: 0x221C08), ink2: Color(hex: 0x6B5F35),
                    primary: Color(hex: 0x3D3200), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0x7A5E00),
-                   ok: okLight, warn: warnLight, bad: badLight)
+                   ok: okLight, warn: warnLight, bad: badLight, sidebar: Color(hex: 0xFBF5DC), selection: Color(hex: 0xEFECE0))
     }
   }
 }
@@ -117,14 +122,14 @@ enum WindowMetrics {
   static let minContent = NSSize(width: 860, height: 640)
 }
 
-/// SF Pro only. Display design for big titles, SF Mono for numbers and ids.
+/// SF Pro only, SF Mono for numbers and ids. v4 roles: calmer titles, sentence-case section labels.
 enum TypeScale {
-  static let pageTitle = Font.system(size: 28, weight: .semibold, design: .default)
-  static let homeTitle = Font.system(size: 34, weight: .semibold, design: .default)
-  static let section = Font.system(size: 17, weight: .semibold)
+  static let pageTitle = Font.system(size: 22, weight: .semibold, design: .default)
+  static let homeTitle = Font.system(size: 26, weight: .semibold, design: .default)
+  static let section = Font.system(size: 15, weight: .semibold)
   static let body = Font.system(size: 15)
   static let secondary = Font.system(size: 13)
-  static let sectionLabel = Font.system(size: 11, weight: .medium)
+  static let sectionLabel = Font.system(size: 12, weight: .semibold)
   static let mono = Font.system(size: 13, design: .monospaced)
 }
 
@@ -134,9 +139,9 @@ enum Motion {
 }
 
 extension View {
-  /// Section label look: 11 pt, uppercase, +8% tracking, ink-2.
+  /// Section label look (v4): 12 pt semibold, sentence case as written, no tracking, ink-2.
   func sectionLabelStyle(_ t: Theme) -> some View {
-    return self.font(TypeScale.sectionLabel).tracking(0.88).textCase(.uppercase).foregroundColor(t.ink2)
+    return self.font(TypeScale.sectionLabel).foregroundColor(t.ink2)
   }
 
   /// Animate `value` changes in `seconds`, or not at all with Reduce Motion.
@@ -182,4 +187,71 @@ extension EnvironmentValues {
     get { return self[ThemeKey.self] }
     set { self[ThemeKey.self] = newValue }
   }
+}
+
+// MARK: glass (UI-V4-IA-PLAN section 8)
+
+/// The only three glass surfaces. Everything else (pages, the question card, the banner, steps, refusals, the
+/// "Recording on" sign) stays solid. Tint alphas must match docs/research/ui-v4-mock/glass-contrast.mjs (ALPHA), which
+/// checks 4.5:1 for every text color over pure black and pure white.
+enum Glass {
+  case sidebar, toolbar, palette
+
+  /// (light themes, dark themes)
+  var alpha: (light: Double, dark: Double) {
+    switch self {
+    case .sidebar: return (0.95, 0.88)
+    case .toolbar: return (0.92, 0.85)
+    case .palette: return (0.90, 0.88)
+    }
+  }
+
+  func tint(_ t: Theme) -> Color {
+    switch self {
+    case .sidebar: return t.sidebar
+    case .toolbar: return t.ground
+    case .palette: return t.surface
+    }
+  }
+}
+
+extension View {
+  /// A glass background: the system material under the theme tint. Solid tint with Reduce Transparency or Increase
+  /// Contrast (plan 8.3).
+  func glassBackground(_ kind: Glass) -> some View { return background(GlassBackground(kind: kind)) }
+}
+
+private struct GlassBackground: View {
+  @Environment(\.stephenTheme) var t
+  @Environment(\.accessibilityReduceTransparency) var reduceTransparency
+  @Environment(\.colorSchemeContrast) var contrast
+  let kind: Glass
+
+  var body: some View {
+    let tint = kind.tint(t)
+    if reduceTransparency || contrast == .increased {
+      tint
+    } else {
+      ZStack {
+        switch kind {
+        case .sidebar: SidebarMaterial()
+        case .toolbar: Rectangle().fill(.bar)
+        case .palette: Rectangle().fill(.regularMaterial)
+        }
+        tint.opacity(t.isDark ? kind.alpha.dark : kind.alpha.light)
+      }
+    }
+  }
+}
+
+/// The sidebar material macOS draws behind a window's sidebar (it shows the desktop softly).
+private struct SidebarMaterial: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSVisualEffectView {
+    let v = NSVisualEffectView()
+    v.material = .sidebar
+    v.blendingMode = .behindWindow
+    v.state = .followsWindowActiveState
+    return v
+  }
+  func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

@@ -5,6 +5,7 @@
  * Mac: it sends every request type, handles every response and push type, shows untrusted text verbatim, and is
  * reachable from the menu, `--open-window` and the helper.sock `open_window` command.
  */
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -311,8 +312,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   // The app.sock client, split into five files (no behaviour change): types, transport, model, Allow / Deny, control.
   const CLIENT_FILES = ['AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift'];
   const client = CLIENT_FILES.map(read).join('\n');
-  // The window's sources: frame and router, Home, and the older screens.
-  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift', 'MemoryPage.swift'].map(read).join('\n');
+  // The window's sources: frame and router, Home, the palette, Settings (Personal's parts since UI v4) and Memory.
+  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'Palette.swift', 'SettingsPage.swift', 'MemoryPage.swift'].map(read).join('\n');
 
   it('AppClient sends every request type and handles every response and push type', () => {
     const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
@@ -519,15 +520,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     }
   });
 
-  it('Personal (accounts, personal.summary, memory) and Home\'s Today row are wired to the protocol', () => {
-    expect(window).toContain('case .personal: PersonalView(model: model, nav: nav)');
-    expect(window).toContain('model.refreshPersonal()');
+  it('Personal is gone (UI v4): its parts (personal.summary, accounts) are read-only Settings panes; Home\'s Today row', () => {
+    expect(window).not.toContain('PersonalView');
+    const settings = read('SettingsPage.swift');
+    expect(settings).toContain('model.refreshPersonal()');
+    expect(settings).toContain('case .aboutYou: AboutYouSettingsPane(model: model)');
+    expect(settings).toContain('case .routines: RoutinesSettingsPane(model: model)');
+    expect(settings).toContain('case .accounts: AccountsSettingsPane(model: model)');
+    expect(settings).toMatch(/struct PrivacySettingsPane[\s\S]*?PermissionsSection\(model: model\)/);
     expect(client).toContain('AppRequest.personalSummary(newId())');
     expect(client).toContain('if type == "personal" { personal = try? PersonalSummary(from: decoder) }');
-    // View only: the one write on the page is Forget (owner default 3).
-    const personal = read('PersonalView.swift');
-    expect(personal.match(/model\.(add|update|clear|forget|stop|send)\w*\(/g)).toEqual(['model.forgetMemory(']);
-    expect(personal).toContain('PermissionTable(');
+    // View only: the moved parts never write.
+    const moved = settings.slice(settings.indexOf('// MARK: From Personal'));
+    expect(moved.length).toBeGreaterThan(100);
+    expect(moved).not.toMatch(/model\.(add|update|clear|forget|stop|send|save|delete)\w*\(/);
+    expect(moved).toContain('PermissionTable(');
     expect(window).toContain('model.refreshAccounts()');
     expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
     // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.
@@ -539,14 +546,16 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('Memory page (UI-PLAN v3.1 section 7a): graph, list alternative, inspector, proposals, Tell Stephen', () => {
     const page = read('MemoryPage.swift');
-    expect(window).toContain('case .memory: MemoryPage(model: model, nav: nav)');
+    expect(window).toContain('case .memory, .personal: MemoryPage(model: model, nav: nav)');
+    // MemoryPage's old "‹ Personal" link (step d removes it) lands back on Memory.
+    expect(read('MainWindow.swift')).toContain('didSet { if page == .personal { page = .memory } }');
     expect(page).toContain('model.refreshMemoryPage()');
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
-    // Header: back to Personal (also Esc), the usage chip only over 80%, search (⌘F), ⋯.
+    // Header: the old back link (also Esc; it now stays on Memory), the usage chip only over 80%, search (⌘F), ⋯.
     expect(page).toContain('nav.page = .personal');
     expect(page).toContain('.onExitCommand');
     expect(page).toContain('if let u = model.memoryUsage, u.warn');
@@ -578,7 +587,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {
     const conv = read('ConversationsPage.swift');
-    expect(window).toContain('case .conversations: ConversationsPage(model: model)');
+    expect(window).toContain('case .conversations: ConversationsPage(model: model, nav: nav)');
+    // Clear all moved to the toolbar's ⋯ menu (UI v4); it still asks first, on the page.
+    expect(conv).toContain('.alert("Clear all conversations?", isPresented: $nav.confirmClearAll)');
+    expect(read('MainWindow.swift')).toContain('Button("Clear all…", role: .destructive) { nav.confirmClearAll = true }');
     expect(window).not.toContain('AuditView');
     expect(window).not.toContain('HistoryView');
     expect(conv).toContain('model.refreshHistory(); model.refreshAudit()');
@@ -587,16 +599,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Text(verbatim: entry.said)');
   });
 
-  it('main window (UI-PLAN v3.1 sections 4 and 6): sidebar pages, shortcuts, remembered collapse, Start/Stop, Home', () => {
+  it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the top, Home', () => {
     const main = read('MainWindow.swift');
-    expect(main).toContain('static let stephen: [Page] = [.home, .conversations, .jobs]');
-    expect(main).toContain('static let you: [Page] = [.personal, .settings]');
+    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let control: [Page] = [.memory, .settings]');
+    expect(main).toContain('SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }');
+    expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');
     expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
     expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
-    // #87: the sidebar's "Ask Stephen" row opens the Ask box (WindowActions.ask), it does not just focus Home's composer.
-    expect(main).toContain('Button(action: actions.ask) {');
+    // The state row sits above the groups (v4).
+    expect(main.indexOf('StatusRow(model: model, control: control, collapsed: collapsed)'))
+      .toBeLessThan(main.indexOf('SidebarSection("Talk"'));
+    // R2: the fake "Ask Stephen" field is gone. The Ask box stays one click away: the banner, the palette, the app menu.
+    expect(main).not.toContain('askField');
     expect(main).not.toContain('Button(action: nav.askHere)');
-    // ⌘K and the menu item open the Ask box too; the old "type in Home" path is gone.
+    // The Ask Stephen menu item still opens the Ask box, without ⌘K (⌘K is the palette since UI v4).
     expect(read('AppWindow.swift')).toContain('@objc func askClicked(_ sender: Any?) { actions.ask() }');
     expect(main).not.toContain('askHere');
     expect(read('main.swift')).toContain('WindowActions(ask: { askBox?.show(focus: true) }');
@@ -640,5 +657,80 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).toContain('setFrameAutosaveName');
     expect(window).toContain('isReleasedWhenClosed = false');
     expect(read('Core.swift')).toContain('case "open_window": return .openWindow');
+  });
+
+  // UI v4 step a, docs/research/UI-V4-IA-PLAN.md section 7.5.6: the palette is an allow list, not a block list.
+  it('⌘K palette: only allow-listed calls, never an answer, no default button, rows verbatim', () => {
+    const pal = read('Palette.swift');
+    const ALLOWED = ['model.newChat', 'model.refreshHistory', 'model.refreshJobs', 'model.refreshMemoryPage', 'model.loadOlderHistory', 'control.runDoctor'];
+    const calls = [...pal.matchAll(/\b(model|control)\.(\w+)\(/g)].map((m) => `${m[1]}.${m[2]}`);
+    expect(calls.length).toBeGreaterThan(3);
+    for (const c of calls) expect(ALLOWED, c).toContain(c);
+    for (const m of pal.matchAll(/\bactions\.(\w+)/g)) expect(['ask'], m[0]).toContain(m[1]);
+    for (const m of pal.matchAll(/\bnav\.(\w+)\s*=[^=]/g)) expect(['page', 'draft', 'paletteOpen', 'doctor'], m[0]).toContain(m[1]);
+    for (const m of pal.matchAll(/ThemeStore\.shared\.(\w+)/g)) expect(['pick', 'setFollowMac'], m[0]).toContain(m[1]);
+    // No answer, no Allow (not even disabled), nothing sent to the model, no shortcut that could reach the card.
+    expect(pal).not.toMatch(/\bAllow\b|\bDeny\b|approve|answerConfirm|denyFirstConfirm|confirmAnswer|sendChat|confirms\.first|keyboardShortcut|\.defaultAction/);
+    // Results are data: every Text is Text(verbatim:).
+    expect(pal.match(/\bText\((?!verbatim:)/g)).toBeNull();
+    // Return runs only the selected row; Esc only closes the palette; a row closes the palette before it runs.
+    expect(pal).toContain('.onSubmit { run(items) }');
+    expect(pal).toContain('.onKeyPress(.escape) { close(); return .handled }');
+    expect(pal).toContain('private func close() { nav.paletteOpen = false }');
+    expect(pal).toMatch(/let item = items\[selected\]\s*close\(\)\s*item\.run\(\)/);
+    // The Ask row only fills Home's composer.
+    expect(pal).toContain('if !q.isEmpty { nav.draft = q }');
+  });
+
+  it('⌘K palette: while open, the question card buttons and its Esc are off; the banner stays above it', () => {
+    const box = read('AskBox.swift');
+    const buttons = box.match(/struct ConfirmButtons: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(buttons).toContain('@Environment(\\.paletteOpen) var paletteOpen');
+    expect(buttons).toContain('.disabled(!live || paletteOpen)');
+    expect(buttons).toContain('try? await Task.sleep(nanoseconds: 750_000_000)');  // the 0.75 s delay is unchanged
+    expect(buttons).not.toContain('keyboardShortcut');
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('@Environment(\\.paletteOpen) var paletteOpen');
+    expect(chat).toContain('Button("") { model.denyFirstConfirm() }.keyboardShortcut(.cancelAction).disabled(paletteOpen)');
+    // Off by default (the Ask box never sets it); only the main window sets it, from nav.paletteOpen.
+    expect(read('Palette.swift')).toMatch(/struct PaletteOpenKey: EnvironmentKey \{\s*static let defaultValue = false/);
+    const setters = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'))
+      .filter((f) => read(f).includes('.environment(\\.paletteOpen'));
+    expect(setters).toEqual(['MainWindow.swift']);
+    const main = read('MainWindow.swift');
+    expect(main).toContain('.environment(\\.paletteOpen, nav.paletteOpen)');
+    // Layout: toolbar, banner, then the page with the palette in its overlay. The banner is not in the overlay.
+    expect(main).toMatch(/WindowToolbar\(model: model, nav: nav\)\s*if !model\.confirms\.isEmpty \{ questionBanner \}\s*detail\.frame/);
+    const overlay = main.match(/\.overlay\(alignment: \.top\) \{([\s\S]*?)\n          \}/)?.[1] ?? '';
+    expect(overlay).toContain('CommandPalette(');
+    expect(overlay).not.toContain('questionBanner');
+    // No view in the window gives the palette a default button.
+    for (const f of ['Palette.swift', 'MainWindow.swift', 'HomeView.swift']) expect(read(f), f).not.toContain('.defaultAction');
+    // App menu (plan 5.3): ⌘K is "Search and actions…", which brings the main window forward first. Ask Stephen stays.
+    const app = read('AppWindow.swift');
+    expect(app).toContain('NSMenuItem(title: "Search and actions…", action: #selector(paletteClicked(_:)), keyEquivalent: "k")');
+    expect(app).toContain('NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "")');
+    expect(app).toMatch(/func paletteClicked\(_ sender: Any\?\) \{\s*show\(\)\s*nav\.paletteOpen = true/);
+  });
+
+  it('glass (UI v4 section 8): sidebar, toolbar and palette only; tints and alphas are the checked ones; solid fallbacks', () => {
+    const script = join(helperSourceDir(), '..', 'docs', 'research', 'ui-v4-mock', 'glass-contrast.mjs');
+    execFileSync(process.execPath, [script], { stdio: 'pipe' });  // throws if any text pair is under 4.5:1
+    const src = readFileSync(script, 'utf8');
+    const theme = read('Theme.swift');
+    const alpha = src.match(/export const ALPHA = \{([^}]*)\}/)?.[1] ?? '';
+    const pairs = [...alpha.matchAll(/(\w+): \[([\d.]+), ([\d.]+)\]/g)];
+    expect(pairs.map((m) => m[1])).toEqual(['sidebar', 'toolbar', 'palette']);
+    for (const [, k, light, dark] of pairs) expect(theme).toContain(`case .${k}: return (${light}, ${dark})`);
+    for (const [name, sidebar, ground] of [...src.matchAll(/(\w+): \{ dark: \w+, sidebar: '(\w+)', ground: '(\w+)'/g)].map((m) => [m[1], m[2], m[3]])) {
+      expect(theme, name).toMatch(new RegExp(`case \\.${name}:[\\s\\S]*?ground: Color\\(hex: 0x${ground}\\)[\\s\\S]*?sidebar: Color\\(hex: 0x${sidebar}\\)`));
+    }
+    expect(theme).toContain('if reduceTransparency || contrast == .increased {');
+    const uses = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'))
+      .flatMap((f) => [...read(f).matchAll(/\.glassBackground\(\.(\w+)\)/g)].map((m) => `${f}:${m[1]}`));
+    expect(uses.sort()).toEqual(['MainWindow.swift:sidebar', 'MainWindow.swift:toolbar', 'Palette.swift:palette']);
+    // The question card, the banner and the Recording on sign stay solid.
+    expect(read('Components/ChatThread.swift')).not.toContain('glassBackground');
+    expect(read('AskBox.swift')).not.toContain('glassBackground');
   });
 });

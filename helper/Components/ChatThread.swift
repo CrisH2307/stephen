@@ -10,6 +10,8 @@ struct ChatThreadView: View {
   @Environment(\.stephenTheme) var t
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @ObservedObject var model: AppModel
+  /// The main window's ⌘K palette is open: the hidden Esc button is off, so Esc only closes the palette (plan 7.5.4).
+  @Environment(\.paletteOpen) var paletteOpen
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -25,7 +27,7 @@ struct ChatThreadView: View {
               // Esc = Deny, in the Ask box and on Home, even while the text field has focus: a key equivalent runs
               // before the field editor. No 0.75 s delay: Esc can only deny. One card, so one question per press (R10a-5).
               .background(
-                Button("") { model.denyFirstConfirm() }.keyboardShortcut(.cancelAction)
+                Button("") { model.denyFirstConfirm() }.keyboardShortcut(.cancelAction).disabled(paletteOpen)
                   .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
               )
               .id("confirm")

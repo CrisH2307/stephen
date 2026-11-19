@@ -177,3 +177,23 @@ struct StephenSwitch: ToggleStyle {
     .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
   }
 }
+
+/// A place for rare things (UI-V4-IA-PLAN section 6): closed by default, the open state remembered per page and
+/// section under `key` (for example "acc.settings.privacy.rules"). Never put safety content in it: a waiting question,
+/// a refusal, a failed step or job, or the Recording on sign.
+struct Accordion<Content: View>: View {
+  @Environment(\.stephenTheme) var t
+  let title: String
+  @AppStorage private var open: Bool
+  let content: Content
+  init(_ title: String, key: String, @ViewBuilder content: () -> Content) {
+    self.title = title; self._open = AppStorage(wrappedValue: false, key); self.content = content()
+  }
+  var body: some View {
+    DisclosureGroup(isExpanded: $open) {
+      content.padding(.top, Space.s)
+    } label: {
+      Text(verbatim: title).font(TypeScale.secondary).foregroundColor(t.ink2)
+    }
+  }
+}
