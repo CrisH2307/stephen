@@ -138,6 +138,10 @@ struct AskField: View {
           NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
           return .handled
         }
+        // A held Return sends once, not again on each key repeat (for example after Return on the palette's Ask row).
+        .onKeyPress(keys: [.return], phases: .repeat) { press in
+          press.modifiers.contains(.shift) ? .ignored : .handled
+        }
         .accessibilityLabel(placeholder)
       if let hint = hint, text.isEmpty { Text(verbatim: hint).font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true) }
       if let onMic = onMic {

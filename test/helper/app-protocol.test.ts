@@ -659,13 +659,47 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('Core.swift')).toContain('case "open_window": return .openWindow');
   });
 
+  // The palette's allow list (plan 7.3, review of #246). Any member of model or control (any spacing, line breaks,
+  // trailing closures), any free function call, raw requests and rebinding model or control to another name.
+  const PALETTE_MEMBERS = ['newChat', 'refreshHistory', 'refreshJobs', 'refreshMemoryPage', 'loadOlderHistory', 'runDoctor', 'confirms', 'configPath'];
+  const PALETTE_FREE_CALLS = ['openConfigFile', 'doctorText'];
+  function paletteCallProblems(src: string): string[] {
+    const code = src.replace(/\/\/[^\n]*/g, '');  // comments say "model" too
+    const bad: string[] = [];
+    for (const m of code.matchAll(/\b(model|control)\s*\.\s*(\w+)/g)) if (!PALETTE_MEMBERS.includes(m[2])) bad.push(`${m[1]}.${m[2]}`);
+    for (const m of code.matchAll(/(?<![.\w@])([a-z]\w*)\s*\(/g)) {
+      const name = m[1];
+      const swiftOrLocal = ['if', 'for', 'switch', 'guard', 'return', 'init', 'min', 'max', 'move', 'run', 'close', 'items', 'filter', 'contains', 'lowercased', 'map', 'zip'];
+      if (PALETTE_FREE_CALLS.includes(name) || swiftOrLocal.includes(name)) continue;
+      if (new RegExp(`func ${name}\\b`).test(code)) continue;  // the palette's own private helpers
+      bad.push(`${name}(`);
+    }
+    for (const m of code.matchAll(/appRequestOnce|AppRequest\.|\brequest\(/g)) bad.push(m[0]);
+    for (const m of code.matchAll(/=\s*(model|control)\b(?!\s*\.)/g)) bad.push(`rebinds ${m[1]}`);
+    return bad;
+  }
+
+  it('review of #246: the two safety labels keep the old look; a held Return sends once', () => {
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('Text(verbatim: "Needs your OK").safetyLabelStyle(t)');
+    expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    expect(read('Theme.swift')).toContain('.font(Font.system(size: 11, weight: .medium)).tracking(0.88).textCase(.uppercase)');
+    const field = read('Components/Controls.swift').match(/struct AskField: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(field).toMatch(/onKeyPress\(keys: \[\.return\], phases: \.repeat\) \{ press in\s*press\.modifiers\.contains\(\.shift\) \? \.ignored : \.handled/);
+  });
+
+  it('⌘K palette allow-list test catches planted calls', () => {
+    for (const planted of [
+      'control.start { _ in }', 'control.phoneOn { _ in }', 'appRequestOnce(appSocketPath, .phoneOn("p")) { _ in }',
+      'model\n  .clearHistory()', 'let m = model; m.forgetMemory("x")', 'model . sendChat("x")', 'model.request(.confirmAnswer("a", confirmId: "b", approve: true)) { _ in }',
+    ]) expect(paletteCallProblems(`struct P { func go() { ${planted} } }`), planted).not.toEqual([]);
+    expect(paletteCallProblems('struct P { func go() { control.runDoctor { nav.doctor = doctorText($0) }; model.newChat() } }')).toEqual([]);
+  });
+
   // UI v4 step a, docs/research/UI-V4-IA-PLAN.md section 7.5.6: the palette is an allow list, not a block list.
   it('⌘K palette: only allow-listed calls, never an answer, no default button, rows verbatim', () => {
     const pal = read('Palette.swift');
-    const ALLOWED = ['model.newChat', 'model.refreshHistory', 'model.refreshJobs', 'model.refreshMemoryPage', 'model.loadOlderHistory', 'control.runDoctor'];
-    const calls = [...pal.matchAll(/\b(model|control)\.(\w+)\(/g)].map((m) => `${m[1]}.${m[2]}`);
-    expect(calls.length).toBeGreaterThan(3);
-    for (const c of calls) expect(ALLOWED, c).toContain(c);
+    expect(paletteCallProblems(pal)).toEqual([]);
     for (const m of pal.matchAll(/\bactions\.(\w+)/g)) expect(['ask'], m[0]).toContain(m[1]);
     for (const m of pal.matchAll(/\bnav\.(\w+)\s*=[^=]/g)) expect(['page', 'draft', 'paletteOpen', 'doctor'], m[0]).toContain(m[1]);
     for (const m of pal.matchAll(/ThemeStore\.shared\.(\w+)/g)) expect(['pick', 'setFollowMac'], m[0]).toContain(m[1]);

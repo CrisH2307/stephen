@@ -189,6 +189,7 @@ private struct WindowToolbar: View {
       // A chat title is the owner's own words or a model reply: verbatim, one line.
       Text(verbatim: title(online: online)).font(TypeScale.section).foregroundColor(t.ink).lineLimit(1)
         .truncationMode(.tail).accessibilityAddTraits(.isHeader)
+        .accessibilityHidden(title(online: online).isEmpty)  // empty Home: no empty heading for VoiceOver
       if online { pageActions }
       Spacer(minLength: Space.m)
       searchButton

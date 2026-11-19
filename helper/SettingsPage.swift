@@ -34,7 +34,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .appearance: return "paintpalette"
     case .wake: return "mic"
     case .phone: return "iphone"
-    case .accounts: return "person.crop.circle"
+    case .accounts: return "key"
     case .browsers: return "globe"
     case .privacy: return "lock"
     case .routines: return "repeat"

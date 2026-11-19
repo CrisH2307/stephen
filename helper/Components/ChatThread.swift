@@ -113,7 +113,7 @@ struct ChatBubbleRow: View {
       .accessibilityElement(children: .contain)
     case .problem:
       VStack(alignment: .leading, spacing: Space.s) {
-        Text(verbatim: problemLabel(bubble.steps)).sectionLabelStyle(t)
+        Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)
         if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
         Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
         if isLast, let retry = retry { QuietButton("Try again", action: retry) }
@@ -227,7 +227,7 @@ struct ConfirmMessage: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.s) {
-      Text(verbatim: "Needs your OK").sectionLabelStyle(t)
+      Text(verbatim: "Needs your OK").safetyLabelStyle(t)
       Text(verbatim: question.title).font(TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
       ScrollView {
         Text(verbatim: question.body).font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)

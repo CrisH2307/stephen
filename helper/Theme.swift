@@ -144,6 +144,12 @@ extension View {
     return self.font(TypeScale.sectionLabel).foregroundColor(t.ink2)
   }
 
+  /// The pre-v4 label look (11 pt medium, upper case, tracked). Pinned on the two safety labels, the question card's
+  /// "Needs your OK" and the refusal / failure label, until a dev-lane review changes them (review of #246).
+  func safetyLabelStyle(_ t: Theme) -> some View {
+    return self.font(Font.system(size: 11, weight: .medium)).tracking(0.88).textCase(.uppercase).foregroundColor(t.ink2)
+  }
+
   /// Animate `value` changes in `seconds`, or not at all with Reduce Motion.
   func stephenAnimation<V: Equatable>(_ seconds: Double = Motion.state, value: V) -> some View {
     return modifier(StephenAnimation(seconds: seconds, value: value))
