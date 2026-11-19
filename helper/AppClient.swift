@@ -283,7 +283,7 @@ final class AppModel: ObservableObject {
     }
     switch msg.type {
     case "replay":
-      assign(\.replayOn, msg.on ?? false)
+      replayOn = msg.on ?? false
     case "state":
       if let s = msg.state { assign(\.state, s) }
       if state == "idle" { assign(\.awaitingReplies, []) }
