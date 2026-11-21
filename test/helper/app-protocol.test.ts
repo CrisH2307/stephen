@@ -658,7 +658,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(sign).not.toMatch(/if !collapsed \{[^\n]*waveform/);
   });
 
-  it('Home Recent chats (plan 6.1): an accordion of 3, status words, refusals named and counted, verbatim, only View all acts', () => {
+  it('Home Recent (plan 6.1): an accordion of 3, status words, refusals named and counted, verbatim, only View all acts', () => {
     const home = read('HomeView.swift');
     expect(home).toContain('model.history.prefix(3)');
     expect(home).toContain('Accordion(recentChatsTitle(rows.map { $0.word.word }), key: "acc.home.recent")');

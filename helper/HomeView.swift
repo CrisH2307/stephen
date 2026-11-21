@@ -1,6 +1,6 @@
 // Stephen Helper: Home (UI-V4-IA-PLAN section 6.1), a chat layout. With no messages: "Morning, Cris.", the date and the
 // Next up line ("1 job running · See jobs", or "Nothing waiting"; only what app.sock already knows), a large centred
-// composer with Talk and Send, three suggestion chips, and the Recent chats accordion. With messages: the same thread as the Ask box (ChatThreadView)
+// composer with Talk and Send, three suggestion chips, and the Recent accordion. With messages: the same thread as the Ask box (ChatThreadView)
 // and the composer at the bottom. No weather, no cards. The chat title and New chat (⌘N) are in the window toolbar
 // (UI v4, MainWindow.swift).
 //
@@ -17,7 +17,7 @@ func homeGreeting(hour: Int, name: String) -> String {
   return first.isEmpty ? "\(part)." : "\(part), \(first)."
 }
 
-/// A past chat's status word for Home's Recent chats (plan 6.1). A refusal is named first and never called done; a
+/// A past chat's status word for Home's Recent (plan 6.1). A refusal is named first and never called done; a
 /// failed step or an error is Failed. Same words and shapes as Conversations and the chat (#140).
 func recentChatWord(_ entry: HistoryEntry, lines: [DoneLine]) -> (word: String, kind: StatusKind) {
   if lines.contains(where: { $0.status == .refused }) { return ("Refused", .warn) }
@@ -26,13 +26,13 @@ func recentChatWord(_ entry: HistoryEntry, lines: [DoneLine]) -> (word: String, 
   return ("Done", .ok)
 }
 
-/// "Recent chats (3, 1 refused)": the closed accordion still counts the problems in it (plan section 6).
+/// "Recent (3, 1 refused)": the closed accordion still counts the problems in it (plan section 6).
 func recentChatsTitle(_ words: [String]) -> String {
   var parts = ["\(words.count)"]
   let refused = words.filter { $0 == "Refused" }.count, failed = words.filter { $0 == "Failed" }.count
   if refused > 0 { parts.append("\(refused) refused") }
   if failed > 0 { parts.append("\(failed) failed") }
-  return "Recent chats (\(parts.joined(separator: ", ")))"
+  return "Recent (\(parts.joined(separator: ", ")))"
 }
 
 /** Suggestion chips: a click puts the words in the field, nothing is sent until Send. */
@@ -176,7 +176,7 @@ struct HomeView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /** Recent chats and their status words (refusals come from the audit log, as in Conversations). */
+  /** Recent and their status words (refusals come from the audit log, as in Conversations). */
   private func refreshRecent() { model.refreshHistory(); model.refreshAudit() }
 
   private func send() {
