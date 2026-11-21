@@ -570,17 +570,20 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
   });
 
-  it('Memory page (UI-PLAN v3.1 section 7a): graph, list alternative, inspector, proposals, Tell Stephen', () => {
+  it('Memory page (UI-V4-IA-PLAN 6.3): intro, graph, list alternative, inspector, proposals, Tell Stephen', () => {
     const page = read('MemoryPage.swift');
     expect(window).toContain('case .memory: MemoryPage(model: model)');
     expect(page).toContain('model.refreshMemoryPage()');
+    expect(page).toContain('Text(verbatim: "Things Stephen remembers about you. It only saves what you tell it or keep.")');
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
-    // Header: the usage chip only over 80%, search (⌘F), ⋯.
+    // Search (⌘F), the usage chip only over 80% (R10: no usage line in the ⋯ menu), ⋯ with Forget all….
     expect(page).toContain('if let u = model.memoryUsage, u.warn');
+    expect(page).not.toContain('% of 8 KB per chat")');
+    expect(page).toContain('Button("Forget all…") { confirmClear = true }');
     expect(page).toContain('.keyboardShortcut("f", modifiers: .command)');
     expect(page).toContain('Segmented("Show memory as"');
     expect(page).toContain('.accessibilityLabel(nodeLabel(n))');
@@ -588,6 +591,28 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('third-party text');
     expect(client).toContain('func originLabel(_ origin: String) -> String');
     expect(client).toContain('if let o = item.origin');
+  });
+
+  it('Memory step d [DEV REVIEW]: New from your chats comes first, verbatim, Keep/Edit/Skip only on a click', () => {
+    const page = read('MemoryPage.swift');
+    const body = page.match(/struct MemoryPage: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
+    const order = ['if !model.suggestions.isEmpty { proposals }', 'header', 'chips', 'Segmented("Show memory as"', 'graphOrList', 'tellBox'];
+    const at = order.map((s) => body.indexOf(s));
+    for (const i of at) expect(i).toBeGreaterThan(-1);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
+    // Selected beside the graph (wide) or under it (narrow, #148).
+    expect(body).toMatch(/ViewThatFits\(in: \.horizontal\) \{\s*HStack[\s\S]*?graphOrList\s*inspector[\s\S]*?VStack[\s\S]*?graphOrList\s*inspector/);
+    const block = page.slice(page.indexOf('  private var proposals: some View {'), page.indexOf('  // MARK: about'));
+    expect(block).toContain('Text(verbatim: p.text)');
+    expect(block).toContain('" · third-party text, check it"');
+    expect(block).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(p\.id\) \}/);
+    expect(block).toContain('QuietButton("Edit")');
+    expect(block).toContain('QuietButton("Skip") { model.skipProposal(p.id) }');
+    // Nothing saves on its own: no Return, appear or timer path in the block.
+    expect(block).not.toMatch(/onSubmit|onAppear|\.task|onChange|onReceive/);
+    // The old place under the graph is gone: one proposals block, no "Nothing new" row.
+    expect(page.match(/GroupedList\("New from your chats"\)/g)).toHaveLength(1);
+    expect(page).not.toContain('"Nothing new"');
   });
 
   it('Personal routes are gone (UI v4 step d, [DEV REVIEW]): no back link, no Page.personal, Esc stays on Memory', () => {
@@ -599,7 +624,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).toContain('case home, conversations, jobs, memory, settings\n');
     const page = read('MemoryPage.swift');
     expect(page).not.toContain('nav.');
-    expect(page).toContain('.onExitCommand { editing = false }');
+    expect(page).toContain('.onExitCommand { editing = false; editingProposal = nil }');
     // An old stored "personal" page can't route anywhere: the window stores no page, and any future restore must fall
     // back with `Page(rawValue:) ?? .<page>`.
     expect(all).not.toMatch(/@AppStorage\("(page|lastPage|windowPage)"\)/);
