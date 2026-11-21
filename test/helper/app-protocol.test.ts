@@ -497,7 +497,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('Components/Controls.swift')).toMatch(/Image\(systemName: "mic"\)[^\n]*\n\s*\.frame\(width: 24, height: 24\)/);
     expect(read('Components/ChatThread.swift')).toContain('.foregroundColor(t.ink2).frame(minHeight: 24)');
     const memory = read('MemoryPage.swift');
-    expect(memory.match(/frame\(minHeight: 24\)|frame\(minWidth: 24, minHeight: 24\)/g)?.length).toBeGreaterThanOrEqual(3);
+    // The ⋯ menu and the Related links (the "‹ Personal" back link, the third one, went in UI v4 step d).
+    expect(memory).toContain('.menuStyle(.borderlessButton).fixedSize().frame(minWidth: 24, minHeight: 24)');
+    expect(memory).toMatch(/Text\(verbatim: r\.text\)[^\n]*\n\s*\.frame\(minHeight: 24\)/);
   });
 
   // Any write to the questions list: =, +=, subscript, or a mutating method. Any confirm.answer request, with or
@@ -568,21 +570,20 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
   });
 
-  it('Memory page (UI-PLAN v3.1 section 7a): graph, list alternative, inspector, proposals, Tell Stephen', () => {
+  it('Memory page (UI-V4-IA-PLAN 6.3): intro, graph, list alternative, inspector, proposals, Tell Stephen', () => {
     const page = read('MemoryPage.swift');
-    expect(window).toContain('case .memory, .personal: MemoryPage(model: model, nav: nav)');
-    // MemoryPage's old "‹ Personal" link (step d removes it) lands back on Memory.
-    expect(read('MainWindow.swift')).toContain('didSet { if page == .personal { page = .memory } }');
+    expect(window).toContain('case .memory: MemoryPage(model: model)');
     expect(page).toContain('model.refreshMemoryPage()');
+    expect(page).toContain('Text(verbatim: "Things Stephen remembers about you. It only saves what you tell it or keep.")');
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
-    // Header: the old back link (also Esc; it now stays on Memory), the usage chip only over 80%, search (⌘F), ⋯.
-    expect(page).toContain('nav.page = .personal');
-    expect(page).toContain('.onExitCommand');
+    // Search (⌘F), the usage chip only over 80% (R10: no usage line in the ⋯ menu), ⋯ with Forget all….
     expect(page).toContain('if let u = model.memoryUsage, u.warn');
+    expect(page).not.toContain('% of 8 KB per chat")');
+    expect(page).toContain('Button("Forget all…") { confirmClear = true }');
     expect(page).toContain('.keyboardShortcut("f", modifiers: .command)');
     expect(page).toContain('Segmented("Show memory as"');
     expect(page).toContain('.accessibilityLabel(nodeLabel(n))');
@@ -590,6 +591,56 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('third-party text');
     expect(client).toContain('func originLabel(_ origin: String) -> String');
     expect(client).toContain('if let o = item.origin');
+  });
+
+  it('Memory step d [DEV REVIEW]: New from your chats comes first, verbatim, Keep/Edit/Skip only on a click', () => {
+    const page = read('MemoryPage.swift');
+    const body = page.match(/struct MemoryPage: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
+    const order = ['if !model.suggestions.isEmpty { proposals }', 'header', 'chips', 'Segmented("Show memory as"', 'graphOrList', 'tellBox', 'aboutMemory'];
+    const at = order.map((s) => body.indexOf(s));
+    for (const i of at) expect(i).toBeGreaterThan(-1);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
+    // Selected beside the graph (wide) or under it (narrow, #148).
+    expect(body).toMatch(/ViewThatFits\(in: \.horizontal\) \{\s*HStack[\s\S]*?graphOrList\s*inspector[\s\S]*?VStack[\s\S]*?graphOrList\s*inspector/);
+    const block = page.slice(page.indexOf('  private var proposals: some View {'), page.indexOf('  // MARK: about'));
+    expect(block).toContain('Text(verbatim: p.text)');
+    expect(block).toContain('" · third-party text, check it"');
+    expect(block).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(p\.id\) \}/);
+    expect(block).toContain('QuietButton("Edit")');
+    expect(block).toContain('QuietButton("Skip") { model.skipProposal(p.id) }');
+    // Nothing saves on its own: no Return, appear or timer path in the block.
+    expect(block).not.toMatch(/onSubmit|onAppear|\.task|onChange|onReceive/);
+    // The inspector's edit field: Return never keeps a suggestion (n.new); Keep stays a click.
+    const mem = read('MemoryPage.swift');
+    expect(mem).toContain('.onSubmit { if !n.new { saveEdit(n) } }');
+    expect(mem.match(/\.onSubmit/g)).toHaveLength(1);
+    // Keep on an empty edit says so and keeps the field open; it never closes silently.
+    const keepEdited = mem.match(/private func keepEdited\(_ p: MemoryProposal\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(keepEdited).toContain('if text.isEmpty { emptyNote = "Empty, nothing kept."; return }');
+    expect(keepEdited.indexOf('if text.isEmpty')).toBeLessThan(keepEdited.indexOf('editingProposal = nil'));
+    expect(block).toContain('if let e = emptyNote { Text(verbatim: e)');
+    // The old place under the graph is gone: one proposals block, no "Nothing new" row.
+    expect(page.match(/GroupedList\("New from your chats"\)/g)).toHaveLength(1);
+    expect(page).not.toContain('"Nothing new"');
+    // About memory: closed accordion with what counts toward the 8 KB.
+    expect(page).toContain('Accordion("About memory", key: "acc.memory.about")');
+    expect(page).toMatch(/Accordion\("About memory"[\s\S]*?up to 8 KB/);
+  });
+
+  it('Personal routes are gone (UI v4 step d, [DEV REVIEW]): no back link, no Page.personal, Esc stays on Memory', () => {
+    const all = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift')).map(read).join('\n');
+    expect(all).not.toMatch(/[\s(=,\[]\.personal\b/);  // a page value; model.personal (Settings data) stays
+    expect(all).not.toContain('‹ Personal');
+    expect(all).not.toContain('Back to Personal');
+    const main = read('MainWindow.swift');
+    expect(main).toContain('case home, conversations, jobs, memory, settings\n');
+    const page = read('MemoryPage.swift');
+    expect(page).not.toContain('nav.');
+    expect(page).toContain('.onExitCommand { editing = false; editingProposal = nil }');
+    // An old stored "personal" page can't route anywhere: the window stores no page, and any future restore must fall
+    // back with `Page(rawValue:) ?? .<page>`.
+    expect(all).not.toMatch(/@AppStorage\("(page|lastPage|windowPage)"\)/);
+    for (const m of all.matchAll(/Page\(rawValue:[^\n]*/g)) expect(m[0]).toMatch(/\?\? \.\w+/);
   });
 
   it('Jobs page is wired to the protocol, shows job text verbatim', () => {
@@ -607,6 +658,37 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('Task.sleep(nanoseconds: 5_000_000_000)');
     // Stop only for a job that has not ended; status is a word (not color alone).
     expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop"/);
+    // Facts line: "Started 2:10 PM · 3 min · $0.12 spent".
+    expect(jobs).toContain('parts.append("Started " + ');
+    expect(jobs).toContain('return parts.joined(separator: " · ")');
+  });
+
+  it('Jobs step d (plan 6.4): caution intro, Running open, Failed open [DEV REVIEW], Earlier accordion, Stop on running only', () => {
+    const jobs = read('JobsPage.swift');
+    // R9: the caution once, in the intro; the summary keeps its label.
+    expect(jobs).toContain('Each summary is written by the job: check it before you rely on it.');
+    expect(jobs).not.toContain('The summary is written by the job itself');
+    expect(jobs).toContain('Text(verbatim: "Summary, written by the job")');
+    expect(jobs).toContain('Text(verbatim: job.task)');
+    const body = jobs.match(/struct JobsView: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
+    expect(body).toContain('if !running.isEmpty { GroupedList("Running") { rows(running) } }');
+    // A failed job is never hidden: its group is open, and not inside any Accordion.
+    const failedLine = body.split('\n').find((l) => l.includes('GroupedList("Failed")')) ?? '';
+    expect(failedLine).toContain('if !failed.isEmpty { GroupedList("Failed") { rows(failed) } }');
+    expect(body.match(/Accordion\(/g)).toHaveLength(1);
+    const accordion = body.slice(body.indexOf('Accordion('));
+    expect(accordion).not.toContain('"Failed"');
+    expect(body.indexOf('GroupedList("Failed')).toBeLessThan(body.indexOf('Accordion('));
+    // Every failed job, however old, is in Failed; Earlier (a closed accordion) never holds one (#254 review).
+    expect(body).toContain('let failed = model.jobs.filter(jobFailed)');
+    expect(body).toContain('let earlier = model.jobs.filter { !$0.isRunning && !jobFailed($0) }');
+    expect(jobs).not.toContain('jobFailedRecently');
+    expect(jobs).not.toMatch(/24 \* 3600/);
+    expect(body).toContain('Accordion(jobsEarlierTitle(earlier), key: "acc.jobs.earlier") { GroupedList { rows(earlier) } }');
+    expect(jobs).toContain('func jobsEarlierTitle(_ jobs: [JobRow]) -> String { return "Earlier (\\(jobs.count))" }');
+    // Stop: exactly one, on running rows only.
+    expect(jobs.match(/QuietButton\("Stop"/g)).toHaveLength(1);
+    expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop", destructive: true, action: stop\)/);
   });
 
   it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {

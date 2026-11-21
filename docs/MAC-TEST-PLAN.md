@@ -360,10 +360,10 @@ and allow the microphone for Stephen Helper once. Quit any Terminal listener.
 - [ ] `[hands]` **11.6.2** Do: open Home. Press Send. Click a chip.
   See: "Morning/Afternoon, Cris." and the date, and the Today list. Send shows the reply in the Ask box. Chips fill the box.
 - [ ] `[hands]` **11.6.3** Do: open Settings (⌘5) and click each pane in the "You" group.
-  See: About you, Connected, Privacy and permissions (the permission table: Send or submit: Asks you / Asks you / Never), Routines. There is no Personal page.
+  See: About you, Connected, Privacy and permissions (the permission table: Send or submit: Asks you / Asks you / Never), Routines. There is no Personal page, and no "‹ Personal" link on Memory.
 - [ ] `[hands]` **11.6.4** Do: open Memory (⌘4) to see the graph. Tell Stephen "I moved to Fit4Less". Press Keep. Run `node dist/cli.js memory list`
   before and after. Switch between Graph and List (try VoiceOver).
-  See: a dashed amber node under Places and a row in "New from your chats". `memory list` does not show it yet. After Keep: a solid node, the inspector says
+  See: a dashed amber node under Places and a row in "New from your chats" at the top of the page. `memory list` does not show it yet. After Keep: a solid node, the inspector says
   "You told Stephen · you kept it", and `memory list` shows it. The Graph / List switch works with VoiceOver.
 - [ ] `[hands]` **11.6.5** Do: open Settings, Voice. Choose Detailed + Formal + Explain steps. Press Save. Then turn Speak off. Then set macOS voice.
   See: "Saved". `~/.browser-hub/config.json` has the keys under `voice`. The next reply changes. With Speak off, the next reply is silent. macOS voice uses `say`.
@@ -667,5 +667,28 @@ Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen.
   See: the offline message and the Appearance pane. The theme changes. (#144)
 - [ ] `[hands]` **17.8** Do: point at the line between the sidebar and the page, and drag it right, then left, as far as it goes. Quit and reopen the window. Then press ⌘\ twice.
   See: the cursor is the left-right resize arrow. The sidebar gets wider and narrower but stops at a minimum and a maximum. The width is the same after reopening. ⌘\ still collapses to the icon rail and back to your width; the rail cannot be dragged.
+
+Send back: any box you could not tick, with its id.
+
+## 18. UI v4 step d: Memory and Jobs (branch `feat/ui-v4-memory-jobs`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Have at least one kept memory item.
+- [ ] `[hands]` **18.1** Do: open Memory (⌘4). Read the page from the top. Press Esc.
+  See: under the toolbar title, the line "Things Stephen remembers about you. It only saves what you tell it or keep." No "‹ Personal" link and no big "Memory" title in the page. Esc does nothing: you stay on Memory.
+- [ ] `[hands]` **18.2** Do: with nothing waiting to keep, look at the top. Then type "I moved to Fit4Less" in "Tell Stephen" and press Return.
+  See: no "New from your chats" box at first. After Return it appears at the top, above the search field, with Keep, Edit and Skip. Nothing is in `node dist/cli.js memory list` yet.
+- [ ] `[hands]` **18.3** Do: on that row press Edit, change the words, press Return, then Keep. Tell Stephen something else and press Skip.
+  See: Return in the edit field does not keep it; only the Keep click does. After Keep the edited words are in `memory list`. After Skip the row goes and nothing is saved.
+- [ ] `[hands]` **18.4** Do: if you have a suggestion from an email or a page (third-party text), look at its row.
+  See: its words are shown exactly, and the line under them says "third-party text, check it" in amber.
+- [ ] `[hands]` **18.5** Do: press ⌘F, type a word. Click a node. Make the window as wide as it goes, then as narrow as it goes.
+  See: ⌘F puts the cursor in "Search memory". Wide: the Selected card sits beside the graph. Narrow: it moves under the graph. Nothing is cut off. (#148)
+- [ ] `[hands]` **18.6** Do: scroll to the bottom. Open "About memory". Open the ⋯ menu.
+  See: "About memory" is closed at first and says what counts toward the 8 KB per chat (kept items, at most 30, 200 characters each; suggestions don't count). The ⋯ menu has Refresh and "Forget all…" and no "% of 8 KB" line. The "% full" chip shows only from 80%.
+- [ ] `[hands]` **18.7** Do: say "start a job to find 5 internships". Open Jobs (⌘3) while it runs.
+  See: the intro "Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it." The job is under Running (open), with a line like "Started 2:10 PM · 3 min · $0.12 spent", the word Running and a Stop button.
+- [ ] `[hands]` **18.8** Do: press Stop. Then open the row.
+  See: the job moves into the closed "Earlier (N)" accordion; open it and the row says Stopped with no Stop button. The open row shows "Summary, written by the job" (when there is one), the turns and "Open output folder". There is no separate footer line.
+- [ ] `[hands]` **18.9** Do: start a job that fails (for example stop the network, or wait for a timeout). Open Jobs.
+  See: a "Failed" group, open, above Earlier, with the word Failed (or "Failed, timed out"). It is never inside the accordion. No Stop button on it.
 
 Send back: any box you could not tick, with its id.

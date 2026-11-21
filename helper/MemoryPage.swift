@@ -1,8 +1,8 @@
-// Stephen Helper: the Memory page (UI-PLAN v3.1 section 7a), opened from Personal ("See all") and the Ask box.
-// Header (back to Personal, title, "86% full" chip only over 80%, search, ⋯), filter chips, the graph (you in the
-// center, items grouped by kind, links between related items, the selected node accent, a New proposal dashed amber)
-// or the same items as a list, the inspector (facts, sources, Edit, Forget), New from your chats (Skip / Keep) and
-// the Tell Stephen box.
+// Stephen Helper: the Memory page (UI-V4-IA-PLAN section 6.3), the sidebar's Memory row (⌘4) and the Ask box.
+// Intro line, New from your chats (Keep, Edit, Skip; only when there are any), search (⌘F) with the "86% full" chip
+// only over 80% and ⋯, filter chips, Graph or List, the graph (you in the center, items grouped by kind, links between
+// related items, the selected node accent, a New proposal dashed amber) or the same items as a list with the
+// inspector (facts, sources, Edit, Forget) beside it or under it, the Tell Stephen box, and the About memory accordion.
 // Safety: the model never writes memory. A proposal is saved only by the owner's Keep here (memory.keep); Tell
 // Stephen only proposes. Text from the listener is shown verbatim.
 
@@ -118,7 +118,6 @@ func memoryLayout(_ nodes: [GraphNode], size: CGSize) -> (points: [String: CGPoi
 struct MemoryPage: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
-  @ObservedObject var nav: WindowNav
   @State private var filter = "all"
   @State private var search = ""
   @State private var asList = false
@@ -126,6 +125,10 @@ struct MemoryPage: View {
   @State private var tell = ""
   @State private var editing = false
   @State private var editText = ""
+  /// The proposal being edited in "New from your chats" (it shares editText with the inspector, one edit at a time).
+  @State private var editingProposal: String? = nil
+  /// Shown under a suggestion's edit field when Keep found it empty.
+  @State private var emptyNote: String? = nil
   @State private var confirmClear = false
   @FocusState private var searchFocused: Bool
 
@@ -133,38 +136,41 @@ struct MemoryPage: View {
   private var selectedNode: GraphNode? { return model.graphNodes.first { $0.id == selected } }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      header
-      chips
-      if let n = model.memoryPageNotice ?? model.memoryNotice {
-        Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2)
-      }
-      // The graph gets the full width; Selected and New sit under it, side by side when there is room (#148).
-      ScrollView {
-        VStack(alignment: .leading, spacing: Space.xl) {
-          VStack(alignment: .leading, spacing: Space.m) {
-            Segmented("Show memory as", options: [(value: false, title: "Graph"), (value: true, title: "List")], selection: $asList)
-              .frame(width: 200)
-            if asList { list } else { graph }
-          }
-          ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: Space.xl) {
-              inspector.frame(idealWidth: 280, maxWidth: .infinity, alignment: .topLeading)
-              proposals.frame(idealWidth: 280, maxWidth: .infinity, alignment: .topLeading)
-            }
-            VStack(alignment: .leading, spacing: Space.xl) {
-              inspector
-              proposals
-            }
-          }
-          tellBox
+    // Plan 6.3: what waits on you (proposals) first, then search and the graph, then Tell Stephen, then the rare things.
+    ScrollView {
+      VStack(alignment: .leading, spacing: Space.xl) {
+        Text(verbatim: "Things Stephen remembers about you. It only saves what you tell it or keep.")
+          .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+        if let n = model.memoryPageNotice ?? model.memoryNotice {
+          Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2)
         }
+        if !model.suggestions.isEmpty { proposals }
+        VStack(alignment: .leading, spacing: Space.m) {
+          header
+          chips
+          Segmented("Show memory as", options: [(value: false, title: "Graph"), (value: true, title: "List")], selection: $asList)
+            .frame(width: 200)
+        }
+        // Selected beside the graph when there is room, under it when narrow (#148).
+        ViewThatFits(in: .horizontal) {
+          HStack(alignment: .top, spacing: Space.xl) {
+            graphOrList
+            inspector.frame(width: 280, alignment: .topLeading)
+          }
+          VStack(alignment: .leading, spacing: Space.xl) {
+            graphOrList
+            inspector
+          }
+        }
+        tellBox
+        aboutMemory
       }
+      .padding(Space.xxl)
+      .frame(maxWidth: .infinity, alignment: .topLeading)
     }
-    .padding(Space.xxl)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onAppear { model.refreshMemoryPage() }
-    .onExitCommand { if editing { editing = false } else { nav.page = .personal } }
+    // Esc only ends an edit. It never leaves the page (D1: no back link).
+    .onExitCommand { editing = false; editingProposal = nil }
     .alert("Forget everything?", isPresented: $confirmClear) {
       Button("Forget all", role: .destructive) {
         model.clearMemory()
@@ -176,34 +182,33 @@ struct MemoryPage: View {
     }
   }
 
+  /// The graph needs about 420 pt; its ideal width is fixed so ViewThatFits can tell when Selected fits beside it.
+  @ViewBuilder
+  private var graphOrList: some View {
+    Group { if asList { list } else { graph } }
+      .frame(minWidth: 420, idealWidth: 420, maxWidth: .infinity, alignment: .topLeading)
+  }
+
   // MARK: header
 
   private var header: some View {
     HStack(spacing: Space.m) {
-      Button { nav.page = .personal } label: {
-        Text(verbatim: "‹ Personal").font(TypeScale.body).foregroundColor(t.accent)
-          .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#145)
-      }
-      .buttonStyle(.plain).accessibilityLabel("Back to Personal").help("Back to Personal (Esc)")
-      Text(verbatim: "Memory").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
-      if let u = model.memoryUsage, u.warn {
-        StatusPill("\(u.percent)% full", kind: .warn).help("Memory Stephen loads into each chat, of the 8 KB budget")
-      }
-      Spacer(minLength: Space.m)
       HStack(spacing: Space.s) {
         Image(systemName: "magnifyingglass").foregroundColor(t.ink2).accessibilityHidden(true)
         TextField("Search memory", text: $search).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
           .focused($searchFocused).accessibilityLabel("Search memory")
       }
-      .padding(.horizontal, Space.m).padding(.vertical, 6).frame(width: 200)
+      .padding(.horizontal, Space.m).padding(.vertical, 6).frame(width: 240)
       .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface))
       .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.lineStrong, lineWidth: 1))
       Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).frame(width: 0, height: 0).opacity(0)
         .accessibilityHidden(true)
+      Spacer(minLength: Space.m)
+      // R10: the usage shows only here, and only when it warns.
+      if let u = model.memoryUsage, u.warn {
+        StatusPill("\(u.percent)% full", kind: .warn).help("Memory Stephen loads into each chat, of the 8 KB budget")
+      }
       Menu {
-        if let u = model.memoryUsage {
-          Text(verbatim: "Memory: \(u.percent)% of 8 KB per chat")
-        }
         Button("Refresh") { model.refreshMemoryPage() }
         Button("Forget all…") { confirmClear = true }.disabled(model.memory.isEmpty)
       } label: {
@@ -334,7 +339,7 @@ struct MemoryPage: View {
   private var tellBox: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       AskField("Tell Stephen", text: $tell) { submitTell() }
-      Text(verbatim: "\"I moved to Fit4Less\" shows as New. Nothing is saved until you press Keep. Ask with a ? to search.")
+      Text(verbatim: "\"I moved to Fit4Less\" shows at the top as New. Nothing is saved until you press Keep. Ask with a ? to search.")
         .font(TypeScale.secondary).foregroundColor(t.ink2)
     }
   }
@@ -370,7 +375,8 @@ struct MemoryPage: View {
             TextField("Memory text", text: $editText).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
               .padding(Space.s)
               .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.accent, lineWidth: 1))
-              .onSubmit { saveEdit(n) }
+              // Return saves an edit to a kept item. For a suggestion it does nothing: Keep is a click (#254 review).
+              .onSubmit { if !n.new { saveEdit(n) } }
               .accessibilityLabel("Edit memory text")
           } else {
             Text(verbatim: n.text).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
@@ -432,6 +438,7 @@ struct MemoryPage: View {
 
   private func startEdit(_ n: GraphNode) {
     editText = n.text
+    editingProposal = nil
     editing = true
   }
 
@@ -449,21 +456,34 @@ struct MemoryPage: View {
 
   // MARK: proposals
 
+  /// Waiting on the owner, so first on the page (plan 6.3). Only shown when there are any. Keep, Edit and Skip are
+  /// the owner's clicks; nothing here saves on its own. Third-party text is shown verbatim and says "check it".
   private var proposals: some View {
     GroupedList("New from your chats") {
-      if model.suggestions.isEmpty {
-        GroupedRow("Nothing new", detail: "What you tell Stephen below shows here first.", first: true)
-      }
       ForEach(Array(model.suggestions.enumerated()), id: \.element.id) { i, p in
         VStack(alignment: .leading, spacing: 0) {
           if i > 0 { Rectangle().fill(t.line).frame(height: 1) }
           VStack(alignment: .leading, spacing: Space.s) {
-            Text(verbatim: p.text).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
+            if editingProposal == p.id {
+              TextField("Memory text", text: $editText).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
+                .padding(Space.s)
+                .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.accent, lineWidth: 1))
+                .accessibilityLabel("Edit suggestion text")
+              if let e = emptyNote { Text(verbatim: e).font(TypeScale.secondary).foregroundColor(t.warn) }
+            } else {
+              Text(verbatim: p.text).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
+            }
             Text(verbatim: model.originLabel(p.origin) + (p.untrusted ? " · third-party text, check it" : ""))
               .font(TypeScale.secondary).foregroundColor(p.untrusted ? t.warn : t.ink2)
             HStack(spacing: Space.s) {
-              QuietButton("Skip") { model.skipProposal(p.id) }
-              PrimaryButton("Keep") { model.keepProposal(p.id) }
+              if editingProposal == p.id {
+                PrimaryButton("Keep") { keepEdited(p) }
+                QuietButton("Cancel") { editingProposal = nil; emptyNote = nil }
+              } else {
+                PrimaryButton("Keep") { model.keepProposal(p.id) }
+                QuietButton("Edit") { editing = false; editText = p.text; editingProposal = p.id; emptyNote = nil }
+                QuietButton("Skip") { model.skipProposal(p.id) }
+              }
             }
           }
           .padding(Space.l)
@@ -472,6 +492,30 @@ struct MemoryPage: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Suggestion: \(p.text). \(model.originLabel(p.origin))\(p.untrusted ? ", third-party text" : "")")
       }
+    }
+  }
+
+  private func keepEdited(_ p: MemoryProposal) {
+    let text = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Empty: say so and stay in the field, never close silently (#254 review).
+    if text.isEmpty { emptyNote = "Empty, nothing kept."; return }
+    editingProposal = nil
+    emptyNote = nil
+    model.keepProposal(p.id, text: text == p.text ? nil : text)
+  }
+
+  // MARK: about
+
+  /// The rare things (plan 6.3): what counts toward the per-chat budget (src/app/usage.ts, src/voice/claude.ts).
+  /// Forget all stays in the ⋯ menu.
+  private var aboutMemory: some View {
+    Accordion("About memory", key: "acc.memory.about") {
+      VStack(alignment: .leading, spacing: Space.s) {
+        Text(verbatim: "Every chat on this Mac loads the items you kept, up to 8 KB: at most 30 items, 200 characters each, plus a short note that tells Claude they are facts about you, not instructions.")
+        Text(verbatim: "Suggestions you have not kept don't count and are not loaded. Chats from your phone load no memory.")
+        Text(verbatim: "To forget one item, choose it and press Forget. To forget everything, use Forget all… in the ⋯ menu.")
+      }
+      .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
     }
   }
 }
