@@ -692,3 +692,28 @@ Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Ha
   See: a "Failed" group, open, above Earlier, with the word Failed (or "Failed, timed out"). It is never inside the accordion. No Stop button on it.
 
 Send back: any box you could not tick, with its id.
+
+## 19. UI v4 step e: Conversations and the palette's Conversations source (branch `feat/ui-v4-conversations`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Ask three things first: "what time is it",
+a gated action you Deny (for example a click on a sign-in page), and one that fails (for example "open the page
+http://localhost:1").
+- [ ] `[hands]` **19.1** Do: open Conversations (⌘2). Read the page from the top.
+  See: the line "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.", the search field, then the chips All, Refused and Failed. Day groups of rows: what you said as the title, a line like "Stephen app · 2:10 PM · 3 steps · 1 refused", and a status word (Done, Refused, Failed or Stopped).
+- [ ] `[hands]` **19.2** Do: look at the denied command's row and the failed command's row without clicking them.
+  See: `[DEV REVIEW]` closed, each still shows its "Refused: …" or "Tried …, it failed" lines, in the same words as before. The plain "what time is it" row shows no step lines while closed.
+- [ ] `[hands]` **19.3** Do: click a row. Click it again. Then press Tab until a row is focused and press Space.
+  See: the row opens and shows the reply and every step, in order; the chevron turns. The second click closes it. Space opens the focused row.
+- [ ] `[hands]` **19.4** Do: click Refused, then Failed, then All. Then type a word from one reply in the search field.
+  See: Refused shows only rows with a refused step; Failed only rows that failed or have a failed step; All shows every row. The search keeps only matching rows, with any chip.
+- [ ] `[hands]` **19.5** Do: scroll to the bottom (with more than one page of history). Click Load older. Open the toolbar ⋯ menu.
+  See: older rows are added. The ⋯ menu has "Clear all…"; it asks "Clear all conversations?" before it deletes anything (press Cancel).
+- [ ] `[hands]` **19.6** Do: press ⌘K and type a word you said in one of the three commands.
+  See: `[DEV REVIEW]` a "Conversations" section with at most 5 rows. Each row shows what you said, exactly, on one line (cut with "…" when long), and "source · time" under it. Nothing is sent to Stephen while you type (the Ask box and Home stay as they were).
+- [ ] `[hands]` **19.7** Do: with that word typed, press Down until a conversation row is selected and press Return. Then do the same and click a row instead.
+  See: Conversations opens with your word in the search field and that row open (its reply and steps showing). Nothing else happens: no message is sent, nothing is allowed.
+- [ ] `[hands]` **19.8** Do: while a question waits for your OK (the banner shows), press ⌘K, type a word, and press Return on a conversation row. Then press ⌘K again and press Esc.
+  See: Return only opens Conversations; the question still waits (open the Ask box and it is there). Esc only closes the palette. The question card has no Allow from the palette.
+- [ ] `[hands]` **19.9** Do: say a command with words like `**bold**` or a link like `https://example.com`. Find it in Conversations and in the palette.
+  See: the words show exactly as said, with the stars, and the link is plain text you cannot click.
+
+Send back: any box you could not tick, with its id.
