@@ -21,6 +21,7 @@ import { writeReplaySwitch } from '../app/replay-switch.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
 import { HistoryStore } from '../history/store.js';
+import { ResumeArm, conversationEntries, resumePrompt } from '../history/resume.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
 import { buildNameList } from './names.js';
 import { MemoryStore } from '../memory/store.js';
@@ -367,6 +368,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     now: env.date,
     onPurge: (olderThanMs) => void purgeTranscripts(transcripts, olderThanMs, conversation.current()),
   });
+  // Resume (ADR-007 v2): armed only by the owner's "Open in chat" click (app.sock chat.resume); the window's next
+  // message takes it, any other command clears it.
+  const resumeArm = new ResumeArm({ onChange: (on) => app?.resumeArmed(on) });
   if (!args.dryRun) history.purge(); // drop expired history (and old Claude transcripts) at start, not only on the next command (R5-6)
   const toolLog = history.enabled ? toolLogPath(home) : null;
   // The command id file goes with the tool log (plan A2): the runner that resets the log also writes the id.
@@ -506,6 +510,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     }
   };
   const onStart = (c: { id: string; source: CommandReport['source']; said: string }) => {
+    resumeArm.commandStarted(c.source); // wake word, F5, phone, --text: never a resumed chat
     latency?.begin(c.id, c.source === 'voice-ptt' ? 'ptt' : c.source === 'voice-wake' ? 'wake' : c.source);
     latency?.mark(c.id, 'commandStart');
     shadowTier(c.id, c.said);
@@ -648,7 +653,22 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null, rec: { recorder: ReplayRecorder | null; on: () => boolean }): Promise<AppServer | null> => {
     const server = new AppServer({
       home,
-      queue: listenerQueue(l, a),
+      // The window's next message after "Open in chat" takes the armed resume (ADR-007 v2). Stored turns go in only
+      // through resumePrompt's wrapper, under the content rule for that command's trust.
+      queue: listenerQueue(l, a, () => {
+        const conv = resumeArm.take();
+        return conv ? { prompt: (m: string, trust: Trust) => resumePrompt(conversationEntries((o) => history.list(o), conv), conv, trust, m) } : null;
+      }),
+      resume: {
+        arm: (conv: string) => {
+          if (!history.enabled) return 'History is off, so there is no earlier chat to continue.';
+          if (conversationEntries((o) => history.list(o), conv).length === 0) return 'That conversation is no longer saved.';
+          resumeArm.arm(conv);
+          return null;
+        },
+        cancel: () => resumeArm.clear(),
+        armed: () => resumeArm.armed,
+      },
       listening: () => true,
       model: () => modelStore.get().model ?? 'default',
       memory: memoryStore,
