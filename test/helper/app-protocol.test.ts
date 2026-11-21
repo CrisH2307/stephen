@@ -1081,6 +1081,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const convPage = read('ConversationsPage.swift');
     expect(convPage).toContain('let spoken: String = "You said: \\(entry.said). \\(word.word). \\(facts)"');
     expect(convPage).toContain('.accessibilityLabel(spoken)');
+    // What you said stays copyable: in full, selectable, in the open row.
+    expect(convPage).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\.textSelection\(\.enabled\)/);
     expect(convPage).not.toMatch(/accessibilityLabel\("[^"]*\\\(entry\./);
     // A memory command keeps its own word (it was "Memory" before step e), not "Done".
     expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');

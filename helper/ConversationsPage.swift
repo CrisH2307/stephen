@@ -210,7 +210,7 @@ private struct ConversationItem: View {
         Button(action: toggle) {
           HStack(alignment: .top, spacing: Space.m) {
             VStack(alignment: .leading, spacing: 2) {
-              Text(verbatim: entry.said).font(TypeScale.body).foregroundColor(t.ink).lineLimit(expanded ? nil : 2)
+              Text(verbatim: entry.said).font(TypeScale.body).foregroundColor(t.ink).lineLimit(expanded ? 1 : 2)
                 .fixedSize(horizontal: false, vertical: true)
               Text(verbatim: facts).font(TypeScale.secondary).foregroundColor(t.ink2)
             }
@@ -226,6 +226,11 @@ private struct ConversationItem: View {
         .accessibilityLabel(spoken)
         .accessibilityHint(expanded ? "Hides the reply and the steps" : "Shows the reply and the steps")
         .accessibilityAddTraits(.isButton)
+        // Open: what you said in full, copyable (a Button label can't be selected).
+        if expanded {
+          Text(verbatim: entry.said).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         if expanded && !entry.reply.isEmpty {
           Text(verbatim: entry.reply).font(TypeScale.body).foregroundColor(t.ink2).textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
