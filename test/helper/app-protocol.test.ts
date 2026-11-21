@@ -676,6 +676,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(strip).toContain('StatusPill(s.word, kind: s.kind)');
     expect(strip).not.toContain('threadTitle');
     expect(box).toMatch(/Menu \{\s*\/\/[^\n]*\n\s*Text\(verbatim: model\.threadTitle\)/);
+    // R6: the menu opens the Memory page by its name.
+    expect(box).toContain('Button("Open Memory") { actions.reviewMemory() }');
+    expect(box).not.toContain('Review memory');
     // Offline never claims more than the box knows; every state is a word.
     const word = box.match(/func askBoxStateWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
     for (const w of ['Offline', 'Connecting', 'Listening', 'Working', 'Speaking', 'Ready', 'Microphone off']) expect(word).toContain(`"${w}"`);

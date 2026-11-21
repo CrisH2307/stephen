@@ -217,7 +217,7 @@ struct AskBoxView: View {
         if let m = model.usage?.context { Text(verbatim: usageLine("This chat", m.percent, m.warn, "context used")) }
         if let m = model.usage?.memory { Text(verbatim: usageLine("Memory", m.percent, m.warn, "full")) }
       }
-      Button("Review memory") { actions.reviewMemory() }
+      Button("Open Memory") { actions.reviewMemory() }
       Divider()
       Button("Quit  ⌘Q") { actions.quit() }
     } label: {
