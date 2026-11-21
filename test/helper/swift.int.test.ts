@@ -13,8 +13,9 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HelperClient } from '../../src/helper/client.js';
 import { LineFramer } from '../../src/helper/framing.js';
-import { swiftcArgs } from '../../src/helper/install.js';
+import { buildWithSdkFallback, findSwiftCompiler, listFallbackSdks, swiftcArgs } from '../../src/helper/install.js';
 import type { HelperEvent } from '../../src/helper/protocol.js';
+import { defaultRun } from '../../src/zen-launcher.js';
 import { until } from './fake-helper.js';
 import { SCENARIOS, SCENARIO_MAX_HOLD_MS, harnessLine } from './ptt-model.js';
 
@@ -320,10 +321,12 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     await until(() => h2.lines.includes('ui working'), 3000, 'state restored');
   });
 
-  it.runIf(process.platform === 'darwin')('compiles the full macOS app', () => {
+  it.runIf(process.platform === 'darwin')('compiles the full macOS app (same SDK choice as install-helper, #248)', async () => {
     const out = join(work, 'Stephen Helper');
-    const r = spawnSync(SWIFTC!, swiftcArgs(join(ROOT, 'helper'), out, null), { encoding: 'utf8', timeout: 600_000 });
-    expect(r.stderr + r.stdout).not.toMatch(/error:/);
-    expect(r.status).toBe(0);
-  }, 600_000);
+    const found = await findSwiftCompiler(defaultRun);
+    const sdk = found.ok ? found.compiler.sdkPath : null;
+    const b = await buildWithSdkFallback(sdk, (s) => defaultRun(SWIFTC!, swiftcArgs(join(ROOT, 'helper'), out, s), 600_000), () => listFallbackSdks(sdk));
+    expect(b.result.stderr + b.result.stdout).not.toMatch(/error:/);
+    expect(b.ok).toBe(true);
+  }, 1_200_000);
 });
