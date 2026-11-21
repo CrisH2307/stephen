@@ -11,8 +11,6 @@ import SwiftUI
 struct ChatLinks {
   /// Settings > Privacy and safety, where "What Stephen may do" is (L1).
   var permissions: (() -> Void)? = nil
-  /// The Jobs page, from a reply that started a job (L2).
-  var jobs: (() -> Void)? = nil
 }
 
 struct ChatThreadView: View {
@@ -30,8 +28,7 @@ struct ChatThreadView: View {
           let thread = model.thread
           let canRetry = retryableText(thread) != nil
           ForEach(thread) { b in
-            ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil, links: links,
-                          job: startedJob(b, model.jobs)).id(b.id)
+            ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil, links: links).id(b.id)
           }
           if let q = model.confirms.first {
             ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
@@ -90,8 +87,6 @@ struct ChatBubbleRow: View {
   /** nil when the last message was not typed: no Try again (R10a-2). */
   let retry: (() -> Void)?
   var links = ChatLinks()
-  /** The job this reply started, from the job list (startedJob), or nil. */
-  var job: JobRow? = nil
 
   /// A step was refused: the message says where the rules live (L1). Never hidden in the folded chain.
   private var refused: Bool { return bubble.steps.contains { StepStatus($0.status) == .refused } }
@@ -118,14 +113,6 @@ struct ChatBubbleRow: View {
       // The work first, small and folded; the answer after it, as the main text (owner, 2026-11-09).
       VStack(alignment: .leading, spacing: Space.s) {
         if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
-        // A step line of its own (L2), not folded into the chain. The job's task is not shown here: Jobs has it.
-        if job != nil {
-          HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            StepMark(status: .ok)
-            Text(verbatim: "Started a job").font(TypeScale.secondary).foregroundColor(t.ink2)
-            if let open = links.jobs { link("Open in Jobs", open) }
-          }
-        }
         Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).lineSpacing(2).textSelection(.enabled)
           .padding(.horizontal, Space.m).padding(.vertical, Space.s)
           .frame(maxWidth: .infinity, alignment: .leading)

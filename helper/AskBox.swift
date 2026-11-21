@@ -68,8 +68,6 @@ struct AskBoxActions {
   var reviewMemory: () -> Void
   /** A refusal's "See what Stephen may do": the window on Settings > Privacy and safety (L1). */
   var openPermissions: () -> Void
-  /** A reply's "Open in Jobs": the window on Jobs (L2). */
-  var openJobs: () -> Void
   var quit: () -> Void
   /** The owner let go of the drag strip: remember where the box is. */
   var dragEnded: () -> Void
@@ -179,8 +177,7 @@ struct AskBoxView: View {
       if !model.thread.isEmpty || !model.confirms.isEmpty || model.isWorking {
         // Fixed height once the chat has started (owner, 2026-11-09): the box keeps one size and a long chat scrolls,
         // instead of growing with every message.
-        ChatThreadView(model: model, links: ChatLinks(permissions: actions.openPermissions, jobs: actions.openJobs))
-          .frame(height: 340)
+        ChatThreadView(model: model, links: ChatLinks(permissions: actions.openPermissions)).frame(height: 340)
       }
       AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)
     case .listening:
@@ -414,7 +411,6 @@ final class AskBoxController: NSObject {
       openApp: { [weak self] in self?.close(); self?.openWindow(nil) },
       reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) },
       openPermissions: { [weak self] in self?.close(); selectSettingsPane(.privacy); self?.openWindow(.settings) },
-      openJobs: { [weak self] in self?.close(); self?.openWindow(.jobs) },
       quit: { [weak self] in self?.quit() },
       dragEnded: { [weak self] in self?.savePosition() },
       resetPosition: { [weak self] in self?.resetPosition() },

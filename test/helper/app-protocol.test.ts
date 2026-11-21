@@ -702,28 +702,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(chat).toMatch(/private func link\(_ title: String, _ action: @escaping \(\) -> Void\) -> some View \{\s*Button\(action: action\)/);
     expect(read('HomeView.swift')).toContain('ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings }');
     const box = read('AskBox.swift');
-    expect(box).toContain('ChatLinks(permissions: actions.openPermissions');
+    expect(box).toContain('ChatLinks(permissions: actions.openPermissions)');
     expect(box).toContain('openPermissions: { [weak self] in self?.close(); selectSettingsPane(.privacy); self?.openWindow(.settings) }');
     expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
-  });
-
-  it('L2 ([DEV REVIEW]): "Started a job" comes from the job list, not the reply words; "Open in Jobs" only navigates', () => {
-    const client = read('AppClient.swift');
-    const started = client.match(/func startedJob\(_ bubble: ChatBubble, _ jobs: \[JobRow\]\) -> JobRow\? \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    expect(started).toContain('guard bubble.kind == .reply, let ran = bubble.ran else { return nil }');
-    expect(started).toContain('return jobs.first { ran.contains($0.createdAt) }');
-    expect(started).not.toMatch(/\.text\b|\.detail\b/);  // never the reply's words
-    // The window is the command's own time (from chat.done's ms), and the job list is read again after each reply.
-    const done = client.match(/private func chatDone\(_ msg: AppMessage\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
-    expect(done).toContain('let ran = (end - max(msg.ms ?? 0, 0) - 1000)...(end + 1000)');
-    expect(done).toContain('refreshJobs()');
-    const chat = read('Components/ChatThread.swift');
-    expect(chat).toContain('job: startedJob(b, model.jobs)');
-    expect(chat).toMatch(/if job != nil \{[\s\S]*?StepMark\(status: \.ok\)\s*Text\(verbatim: "Started a job"\)[\s\S]*?if let open = links\.jobs \{ link\("Open in Jobs", open\) \}/);
-    expect(read('HomeView.swift')).toContain('jobs: { nav.page = .jobs }');
-    const box = read('AskBox.swift');
-    expect(box).toContain('ChatLinks(permissions: actions.openPermissions, jobs: actions.openJobs)');
-    expect(box).toContain('openJobs: { [weak self] in self?.close(); self?.openWindow(.jobs) }');
   });
 
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {

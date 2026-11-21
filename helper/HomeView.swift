@@ -121,8 +121,7 @@ struct HomeView: View {
 
   /// Messages: the same thread as the Ask box. The title and New chat are in the toolbar.
   private var thread: some View {
-    ChatThreadView(model: model, links: ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings },
-                                                  jobs: { nav.page = .jobs }))
+    ChatThreadView(model: model, links: ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings }))
       .frame(maxHeight: .infinity)
   }
 
