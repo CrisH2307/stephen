@@ -2,7 +2,7 @@
 // Intro line, New from your chats (Keep, Edit, Skip; only when there are any), search (⌘F) with the "86% full" chip
 // only over 80% and ⋯, filter chips, Graph or List, the graph (you in the center, items grouped by kind, links between
 // related items, the selected node accent, a New proposal dashed amber) or the same items as a list with the
-// inspector (facts, sources, Edit, Forget) beside it or under it and the Tell Stephen box.
+// inspector (facts, sources, Edit, Forget) beside it or under it, the Tell Stephen box, and the About memory accordion.
 // Safety: the model never writes memory. A proposal is saved only by the owner's Keep here (memory.keep); Tell
 // Stephen only proposes. Text from the listener is shown verbatim.
 
@@ -161,6 +161,7 @@ struct MemoryPage: View {
           }
         }
         tellBox
+        aboutMemory
       }
       .padding(Space.xxl)
       .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -495,5 +496,20 @@ struct MemoryPage: View {
     editingProposal = nil
     if text.isEmpty { return }
     model.keepProposal(p.id, text: text == p.text ? nil : text)
+  }
+
+  // MARK: about
+
+  /// The rare things (plan 6.3): what counts toward the per-chat budget (src/app/usage.ts, src/voice/claude.ts).
+  /// Forget all stays in the ⋯ menu.
+  private var aboutMemory: some View {
+    Accordion("About memory", key: "acc.memory.about") {
+      VStack(alignment: .leading, spacing: Space.s) {
+        Text(verbatim: "Every chat on this Mac loads the items you kept, up to 8 KB: at most 30 items, 200 characters each, plus a short note that tells Claude they are facts about you, not instructions.")
+        Text(verbatim: "Suggestions you have not kept don't count and are not loaded. Chats from your phone load no memory.")
+        Text(verbatim: "To forget one item, choose it and press Forget. To forget everything, use Forget all… in the ⋯ menu.")
+      }
+      .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+    }
   }
 }

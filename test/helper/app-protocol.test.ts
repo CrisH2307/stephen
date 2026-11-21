@@ -596,7 +596,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   it('Memory step d [DEV REVIEW]: New from your chats comes first, verbatim, Keep/Edit/Skip only on a click', () => {
     const page = read('MemoryPage.swift');
     const body = page.match(/struct MemoryPage: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
-    const order = ['if !model.suggestions.isEmpty { proposals }', 'header', 'chips', 'Segmented("Show memory as"', 'graphOrList', 'tellBox'];
+    const order = ['if !model.suggestions.isEmpty { proposals }', 'header', 'chips', 'Segmented("Show memory as"', 'graphOrList', 'tellBox', 'aboutMemory'];
     const at = order.map((s) => body.indexOf(s));
     for (const i of at) expect(i).toBeGreaterThan(-1);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
@@ -613,6 +613,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // The old place under the graph is gone: one proposals block, no "Nothing new" row.
     expect(page.match(/GroupedList\("New from your chats"\)/g)).toHaveLength(1);
     expect(page).not.toContain('"Nothing new"');
+    // About memory: closed accordion with what counts toward the 8 KB.
+    expect(page).toContain('Accordion("About memory", key: "acc.memory.about")');
+    expect(page).toMatch(/Accordion\("About memory"[\s\S]*?up to 8 KB/);
   });
 
   it('Personal routes are gone (UI v4 step d, [DEV REVIEW]): no back link, no Page.personal, Esc stays on Memory', () => {
