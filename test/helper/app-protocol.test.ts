@@ -649,6 +649,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('Task.sleep(nanoseconds: 5_000_000_000)');
     // Stop only for a job that has not ended; status is a word (not color alone).
     expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop"/);
+    // Facts line: "Started 2:10 PM · 3 min · $0.12 spent".
+    expect(jobs).toContain('parts.append("Started " + ');
+    expect(jobs).toContain('return parts.joined(separator: " · ")');
   });
 
   it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {

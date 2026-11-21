@@ -17,12 +17,16 @@ func jobStatusWord(_ status: String) -> (word: String, kind: StatusKind) {
   }
 }
 
-/** "3 min, $0.12": time and money used, whatever is known. */
+/** "Started 2:10 PM · 3 min · $0.12 spent": whatever is known. A start before today also names the day. */
 func jobUsedText(_ job: JobRow, now: Double) -> String {
   var parts: [String] = []
-  if let s = job.startedAt { parts.append(jobDurationText(from: s, to: job.endedAt ?? now)) }
+  if let s = job.startedAt {
+    let d = Date(timeIntervalSince1970: s / 1000.0)
+    parts.append("Started " + d.formatted(date: Calendar.current.isDateInToday(d) ? .omitted : .abbreviated, time: .shortened))
+    parts.append(jobDurationText(from: s, to: job.endedAt ?? now))
+  }
   if let c = job.costUsd { parts.append(String(format: "$%.2f spent", c)) }
-  return parts.joined(separator: ", ")
+  return parts.joined(separator: " · ")
 }
 
 /** "3 min", "1 h 05 min": whole minutes between two epoch-millisecond times. */
