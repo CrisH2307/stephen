@@ -546,7 +546,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(home).not.toContain('APP_TODAY_PROMPT');
     expect(home.match(/sendChat\(/g)).toHaveLength(1);
     expect(home).toContain('if model.sendChat(draft) { draft = "" }');
-    expect(home).toContain('Text(verbatim: "Next up:")');
+    // "Next up:" only before a running job; with nothing running Home just says "Nothing waiting".
+    expect(home).toMatch(/if running > 0 \{\s*Text\(verbatim: "Next up:"\)/);
     expect(home).toContain('Button { nav.page = .jobs }');
     expect(client).toContain('AppRequest.accountsStatus(newId())');
     // Only system colours.

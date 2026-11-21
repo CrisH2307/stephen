@@ -132,8 +132,8 @@ struct HomeView: View {
   private var nextUp: some View {
     let running = model.jobs.filter { $0.isRunning }.count
     return HStack(spacing: Space.s) {
-      Text(verbatim: "Next up:").font(TypeScale.secondary.weight(.medium)).foregroundColor(t.ink2)
       if running > 0 {
+        Text(verbatim: "Next up:").font(TypeScale.secondary.weight(.medium)).foregroundColor(t.ink2)
         Text(verbatim: running == 1 ? "1 job running" : "\(running) jobs running").font(TypeScale.secondary).foregroundColor(t.ink)
         Text(verbatim: "·").font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true)
         Button { nav.page = .jobs } label: {
