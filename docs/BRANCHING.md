@@ -24,6 +24,7 @@
 - `qa` only moves forward with merges; no force-push, so anyone on it can always `git pull`.
 - Nothing is released from `qa` without the full suite passing there.
 - Never push straight to `main`.
+- Commit small: one small change per commit (a few files, one function or one fix), many small commits rather than one big one, a clear message on each. Still one branch and one PR per task.
 - CI (both lanes): the session that opens a PR binds it in the Claude app (`bind_pr`) and turns Auto-fix on at once.
   When CI fails, that session investigates and prepares the fix, but asks Cris before a commit; Cris (or the app's
   commit button) pushes. Auto-fix never means auto-merge. The session stays bound until the PR is merged or closed. A
