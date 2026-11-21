@@ -202,7 +202,7 @@ private struct ConversationItem: View {
   var body: some View {
     let word = recentChatWord(entry, lines: lines)
     let facts = conversationFacts(entry, lines: lines, source: source, time: time)
-    // A String, not a literal: a literal picks the LocalizedStringKey overload for third-party text.
+    // A String, not a literal: a literal would treat third-party text as a localization key.
     let spoken: String = "You said: \(entry.said). \(word.word). \(facts)"
     VStack(spacing: 0) {
       if !first { Rectangle().fill(t.line).frame(height: 1) }
