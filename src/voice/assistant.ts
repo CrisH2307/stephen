@@ -85,6 +85,18 @@ export interface HandleOptions {
   speak?: boolean;
   /** History entry id for this command (the app hands it out in chat.accepted). Default: a fresh newHistoryId(). */
   id?: string;
+  /**
+   * A resumed chat (ADR-007 v2): only the window's next message after the owner's "Open in chat" click carries it
+   * (src/app/server.ts listenerQueue). The current conversation ends, a new one starts, and if Claude runs, its prompt
+   * is prompt(message, trust) (the wrapper with the old turns, then the message) and its serve gets
+   * `--assume-private-read`. Local routers and the history line see only the owner's message.
+   */
+  resume?: ResumeRequest;
+}
+
+/** What HandleOptions.resume needs: builds the first prompt from the owner's message (src/history/resume.ts). */
+export interface ResumeRequest {
+  prompt(message: string, trust: Trust): string;
 }
 
 /** What happened to one command (onDone, and the return value of command()). */
@@ -208,6 +220,8 @@ export class Assistant {
     let said = text;
     let via: CommandReport['route'] = 'model';
     let replyAt = t0;
+    // A resumed chat starts a new conversation (ADR-007 v2): the old one ends first, whatever the window says.
+    if (opts.resume) this.endConversation();
     let conv = this.conv ?? newConversationId();
     this.conv = conv;
     const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs' | 'conv'>): CommandReport => {
@@ -258,7 +272,7 @@ export class Assistant {
       }
       let followUp = false;
       try {
-        followUp = this.o.runner.followUp?.(trust) ?? false;
+        followUp = opts.resume ? false : (this.o.runner.followUp?.(trust) ?? false);
         // "Play <something>" starts a fresh conversation (docs/PLAN-WORK-SPLIT.md §13): a conversation that read
         // private data (Canvas, email…) must confirm before opening YouTube with a query, which the phone and an
         // empty room can't answer. A new conversation has read nothing private, so the normal gate lets it through.
@@ -274,7 +288,10 @@ export class Assistant {
       this.o.status(followUp ? 'Working… (follow-up)' : 'Working…');
       let out: ClaudeOutcome;
       try {
-        out = await this.o.runner.run(prompt, { trust, id });
+        // A resumed chat: the old turns go in only inside the wrapper, and the serve assumes a private read.
+        out = opts.resume
+          ? await this.o.runner.run(opts.resume.prompt(prompt, trust), { trust, id, assumePrivateRead: true })
+          : await this.o.runner.run(prompt, { trust, id });
       } catch (e) {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
