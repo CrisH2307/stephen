@@ -183,7 +183,10 @@ describe('app.sock protocol v1 fixture', () => {
           break;
         case 'history':
           for (const e of msg.entries as Record<string, unknown>[]) {
-            expect(Object.keys(e).sort()).toEqual(['followUp', 'id', 'ms', 'outcome', 'reply', 'said', 'source', 'tools', 'ts', 'turns']);
+            // conv and steps (ADR-007) are optional: an older line has neither.
+            expect(Object.keys(e).filter((k) => k !== 'conv' && k !== 'steps').sort()).toEqual(['followUp', 'id', 'ms', 'outcome', 'reply', 'said', 'source', 'tools', 'ts', 'turns']);
+            if (e.conv !== undefined) expect(e.conv).toMatch(/^c_[0-9a-f]{16}$/);
+            for (const st of (e.steps ?? []) as Record<string, unknown>[]) expect(Object.keys(st).sort()).toEqual(['status', 'text']);
             expect(['voice-ptt', 'voice-wake', 'app', 'cli']).toContain(e.source);
             for (const t of e.tools as Record<string, unknown>[]) expect(Object.keys(t).sort()).toEqual(['isError', 'ms', 'tool']);
           }
@@ -703,6 +706,22 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Refused: ');
     expect(conv).toContain('Clear all conversations?');
     expect(conv).toContain('Text(verbatim: entry.said)');
+  });
+
+  it('ADR-007 recents v1 is view-only: history strings in Conversations are Text(verbatim:), no send, retry or resume', () => {
+    const conv = read('ConversationsPage.swift');
+    // Every Text in the view is verbatim (said, reply, facts and step lines are third-party-shaped text).
+    expect(conv.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    for (const s of ['entry.said', 'entry.reply', 'facts', 'l.text']) expect(conv).toContain(`Text(verbatim: ${s})`);
+    // Stored steps become the same step lines (shown by the verbatim ForEach above).
+    expect(conv).toContain('if !entry.steps.isEmpty { return entry.steps.map { DoneLine(text: $0.text, status: StepStatus($0.status)) } }');
+    // Only reads, Load older and Clear all: nothing sends stored text anywhere.
+    const calls = [...new Set(conv.match(/model\.\w+(?=\()/g) ?? [])].sort();
+    expect(calls).toEqual(['model.clearHistory', 'model.loadOlderHistory', 'model.refreshAudit', 'model.refreshHistory', 'model.sourceLabel', 'model.timeText']);
+    expect(conv).not.toMatch(/AppRequest|\.send\(|chatSend/);
+    expect(conv).not.toMatch(/(Button|QuietButton)\("(Send|Retry|Try again|Continue|Resume|Resend|Ask again)/i);
+    // The protocol decodes conv and steps, so the page can group by conversation later.
+    expect(read('AppProtocol.swift')).toContain('case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps }');
   });
 
   it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
