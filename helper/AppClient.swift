@@ -110,6 +110,11 @@ final class AppModel: ObservableObject {
    * Drives the "Recording on" sign in the sidebar and the menu bar menu.
    */
   var recordingOn: Bool { connection == .online && replayOn }
+  /**
+   * ADR-007 v2: the listener's `resume` push. True while an "Open in chat" click is armed: the next message sent from
+   * Home or the Ask box continues that earlier chat. Home shows it with Cancel.
+   */
+  @Published private(set) var resumeArmed = false
 
   @Published private(set) var audit: [AuditEntry] = []
   @Published private(set) var auditNotice: String? = nil
@@ -243,6 +248,7 @@ final class AppModel: ObservableObject {
 
   private func goOffline(_ reason: String) {
     connection = .offline
+    resumeArmed = false
     offlineReason = reason
     startWait()
     scheduleRetry()
@@ -326,6 +332,8 @@ final class AppModel: ObservableObject {
     case "state":
       if let s = msg.state { assign(\.state, s) }
       if state == "idle" { assign(\.awaitingReplies, []) }
+    case "resume":
+      resumeArmed = msg.armed ?? false
     case "heard":
       // Typed commands are already in the chat; only voice commands are added here. The label is never empty: an
       // empty detail marks a typed bubble, the only kind Try again may re-send (R10a-2).
@@ -380,8 +388,28 @@ final class AppModel: ObservableObject {
     return line.count > 40 ? String(line.prefix(40)).trimmingCharacters(in: .whitespaces) + "…" : line
   }
 
-  /** ⌘N: start a new chat. Nothing is deleted; the old messages stay in Conversations. */
-  func newChat() { chatSince = chat.last?.id ?? 0 }
+  /** ⌘N: start a new chat. Nothing is deleted; the old messages stay in Conversations. An armed resume is dropped. */
+  func newChat() {
+    chatSince = chat.last?.id ?? 0
+    if resumeArmed { cancelResume() }
+  }
+
+  /**
+   * ADR-007 v2, [DEV REVIEW]: the Open in chat button on a Conversations row, and nothing else, calls this. It only
+   * arms the resume in the listener: nothing goes to the model until the owner sends the next message from the window.
+   */
+  func resumeConversation(_ conv: String) {
+    newChat()
+    request(AppRequest.chatResume(newId(), conv: conv)) { [weak self] msg in
+      if msg.type == "error" { self?.addBubble(.problem, msg.message ?? "could not continue that chat", detail: "") }
+    }
+  }
+
+  /** Cancel on Home (and New chat): the next message starts an ordinary chat. */
+  func cancelResume() {
+    resumeArmed = false
+    request(AppRequest.chatResumeCancel(newId())) { _ in }
+  }
 
   func stopChat() {
     request(AppRequest.chatStop(newId())) { [weak self] msg in
