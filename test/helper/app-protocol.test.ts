@@ -497,7 +497,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('Components/Controls.swift')).toMatch(/Image\(systemName: "mic"\)[^\n]*\n\s*\.frame\(width: 24, height: 24\)/);
     expect(read('Components/ChatThread.swift')).toContain('.foregroundColor(t.ink2).frame(minHeight: 24)');
     const memory = read('MemoryPage.swift');
-    expect(memory.match(/frame\(minHeight: 24\)|frame\(minWidth: 24, minHeight: 24\)/g)?.length).toBeGreaterThanOrEqual(3);
+    // The ⋯ menu and the Related links (the "‹ Personal" back link, the third one, went in UI v4 step d).
+    expect(memory).toContain('.menuStyle(.borderlessButton).fixedSize().frame(minWidth: 24, minHeight: 24)');
+    expect(memory).toMatch(/Text\(verbatim: r\.text\)[^\n]*\n\s*\.frame\(minHeight: 24\)/);
   });
 
   // Any write to the questions list: =, +=, subscript, or a mutating method. Any confirm.answer request, with or
@@ -570,18 +572,14 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('Memory page (UI-PLAN v3.1 section 7a): graph, list alternative, inspector, proposals, Tell Stephen', () => {
     const page = read('MemoryPage.swift');
-    expect(window).toContain('case .memory, .personal: MemoryPage(model: model, nav: nav)');
-    // MemoryPage's old "‹ Personal" link (step d removes it) lands back on Memory.
-    expect(read('MainWindow.swift')).toContain('didSet { if page == .personal { page = .memory } }');
+    expect(window).toContain('case .memory: MemoryPage(model: model)');
     expect(page).toContain('model.refreshMemoryPage()');
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
-    // Header: the old back link (also Esc; it now stays on Memory), the usage chip only over 80%, search (⌘F), ⋯.
-    expect(page).toContain('nav.page = .personal');
-    expect(page).toContain('.onExitCommand');
+    // Header: the usage chip only over 80%, search (⌘F), ⋯.
     expect(page).toContain('if let u = model.memoryUsage, u.warn');
     expect(page).toContain('.keyboardShortcut("f", modifiers: .command)');
     expect(page).toContain('Segmented("Show memory as"');
@@ -590,6 +588,22 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('third-party text');
     expect(client).toContain('func originLabel(_ origin: String) -> String');
     expect(client).toContain('if let o = item.origin');
+  });
+
+  it('Personal routes are gone (UI v4 step d, [DEV REVIEW]): no back link, no Page.personal, Esc stays on Memory', () => {
+    const all = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift')).map(read).join('\n');
+    expect(all).not.toMatch(/[\s(=,\[]\.personal\b/);  // a page value; model.personal (Settings data) stays
+    expect(all).not.toContain('‹ Personal');
+    expect(all).not.toContain('Back to Personal');
+    const main = read('MainWindow.swift');
+    expect(main).toContain('case home, conversations, jobs, memory, settings\n');
+    const page = read('MemoryPage.swift');
+    expect(page).not.toContain('nav.');
+    expect(page).toContain('.onExitCommand { editing = false }');
+    // An old stored "personal" page can't route anywhere: the window stores no page, and any future restore must fall
+    // back with `Page(rawValue:) ?? .<page>`.
+    expect(all).not.toMatch(/@AppStorage\("(page|lastPage|windowPage)"\)/);
+    for (const m of all.matchAll(/Page\(rawValue:[^\n]*/g)) expect(m[0]).toMatch(/\?\? \.\w+/);
   });
 
   it('Jobs page is wired to the protocol, shows job text verbatim', () => {

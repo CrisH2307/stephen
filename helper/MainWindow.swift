@@ -9,9 +9,7 @@ import SwiftUI
 
 /** The window's pages. The five sidebar rows are Page.talk + Page.control (⌘1…⌘5). */
 enum Page: String, CaseIterable, Identifiable {
-  /// `personal` is not a page any more (v4). Only MemoryPage's old back link still sets it, and WindowNav turns it into
-  /// Memory, so the link and Esc stay on Memory. Step d removes the link, then this case can go.
-  case home, conversations, jobs, memory, settings, personal
+  case home, conversations, jobs, memory, settings
 
   static let talk: [Page] = [.home, .conversations, .jobs]
   static let control: [Page] = [.memory, .settings]
@@ -23,7 +21,7 @@ enum Page: String, CaseIterable, Identifiable {
     case .home: return "Home"
     case .conversations: return "Conversations"
     case .jobs: return "Jobs"
-    case .memory, .personal: return "Memory"
+    case .memory: return "Memory"
     case .settings: return "Settings"
     }
   }
@@ -33,7 +31,7 @@ enum Page: String, CaseIterable, Identifiable {
     case .home: return "house"
     case .conversations: return "bubble.left.and.bubble.right"
     case .jobs: return "tray.full"
-    case .memory, .personal: return "note.text"
+    case .memory: return "note.text"
     case .settings: return "gearshape"
     }
   }
@@ -47,9 +45,7 @@ enum Page: String, CaseIterable, Identifiable {
 
 /** The window's shared view state. Outside the views so the Ask box, the app menu and the palette can set it. */
 final class WindowNav: ObservableObject {
-  @Published var page: Page = .home {
-    didSet { if page == .personal { page = .memory } }
-  }
+  @Published var page: Page = .home
   /// The ⌘K palette is open. While it is, the question card's keys are off (\.paletteOpen, Palette.swift).
   @Published var paletteOpen = false
   /// Home's composer text. The palette's Ask row fills it; only Home's Send sends it.
@@ -175,7 +171,7 @@ private struct MainWindowView: View {
       case .conversations: ConversationsPage(model: model, nav: nav)
       case .jobs: JobsView(model: model)
       case .settings: SettingsView(model: model, nav: nav, control: control)
-      case .memory, .personal: MemoryPage(model: model, nav: nav)
+      case .memory: MemoryPage(model: model)
       }
     }
   }

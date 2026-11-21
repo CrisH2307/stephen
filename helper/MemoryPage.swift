@@ -1,5 +1,5 @@
-// Stephen Helper: the Memory page (UI-PLAN v3.1 section 7a), opened from Personal ("See all") and the Ask box.
-// Header (back to Personal, title, "86% full" chip only over 80%, search, ⋯), filter chips, the graph (you in the
+// Stephen Helper: the Memory page (UI-PLAN v3.1 section 7a), the sidebar's Memory row (⌘4) and the Ask box.
+// Header (title, "86% full" chip only over 80%, search, ⋯), filter chips, the graph (you in the
 // center, items grouped by kind, links between related items, the selected node accent, a New proposal dashed amber)
 // or the same items as a list, the inspector (facts, sources, Edit, Forget), New from your chats (Skip / Keep) and
 // the Tell Stephen box.
@@ -118,7 +118,6 @@ func memoryLayout(_ nodes: [GraphNode], size: CGSize) -> (points: [String: CGPoi
 struct MemoryPage: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
-  @ObservedObject var nav: WindowNav
   @State private var filter = "all"
   @State private var search = ""
   @State private var asList = false
@@ -164,7 +163,8 @@ struct MemoryPage: View {
     .padding(Space.xxl)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onAppear { model.refreshMemoryPage() }
-    .onExitCommand { if editing { editing = false } else { nav.page = .personal } }
+    // Esc only ends an edit. It never leaves the page (D1: no back link).
+    .onExitCommand { editing = false }
     .alert("Forget everything?", isPresented: $confirmClear) {
       Button("Forget all", role: .destructive) {
         model.clearMemory()
@@ -180,11 +180,6 @@ struct MemoryPage: View {
 
   private var header: some View {
     HStack(spacing: Space.m) {
-      Button { nav.page = .personal } label: {
-        Text(verbatim: "‹ Personal").font(TypeScale.body).foregroundColor(t.accent)
-          .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#145)
-      }
-      .buttonStyle(.plain).accessibilityLabel("Back to Personal").help("Back to Personal (Esc)")
       Text(verbatim: "Memory").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
       if let u = model.memoryUsage, u.warn {
         StatusPill("\(u.percent)% full", kind: .warn).help("Memory Stephen loads into each chat, of the 8 KB budget")
