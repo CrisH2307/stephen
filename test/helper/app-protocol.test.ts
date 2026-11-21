@@ -794,7 +794,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(follow.indexOf('!model.confirms.isEmpty')).toBeLessThan(follow.indexOf('withAnimation'));
     expect(chat).toContain('.onChange(of: model.confirms.first?.id) { _ in proxy.scrollTo("end", anchor: .bottom) }');
     const home = read('HomeView.swift');
-    expect(home).toContain('private var glide: Bool { return model.confirms.isEmpty ? isEmpty : true }');
+    expect(home).toContain('private var glide: Bool { return model.thread.isEmpty && !model.isWorking }');
+    // The glide never reads the questions, so a question arriving mid-chat cannot start an animation (review of #252).
+    expect(home.match(/private var glide: Bool \{([^\n]*)\}/)?.[1]).not.toContain('confirms');
     expect(home).toContain('.stephenAnimation(Motion.bar, value: glide)');
     expect(home).not.toContain('value: empty)');
     expect(read('Theme.swift')).toContain('.font(Font.system(size: 11, weight: .medium)).tracking(0.88).textCase(.uppercase)');

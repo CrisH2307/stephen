@@ -54,9 +54,9 @@ struct HomeView: View {
   /// No messages yet in this chat (a waiting question or a running command counts as a chat).
   private var isEmpty: Bool { return model.thread.isEmpty && model.confirms.isEmpty && !model.isWorking }
 
-  /// What the composer's glide follows: the empty state, but a waiting question never animates in or out (#139). While
-  /// one waits this stays true, so neither its arrival nor its end changes it.
-  private var glide: Bool { return model.confirms.isEmpty ? isEmpty : true }
+  /// What the composer's glide follows: messages or work, never the waiting questions, so a question never animates in
+  /// or out, before or during a chat (#139).
+  private var glide: Bool { return model.thread.isEmpty && !model.isWorking }
 
   var body: some View {
     let empty = isEmpty
