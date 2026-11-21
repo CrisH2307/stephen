@@ -463,6 +463,13 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .voice');
     // The toolbar and the palette read the same key, so all three agree on the pane.
     for (const f of ['MainWindow.swift', 'Palette.swift']) expect(read(f)).toContain('@AppStorage("settingsPane") private var pane: SettingsItem = .voice');
+    // A pane stored before step c opens its new home (not the default).
+    const init = settings.match(/init\?\(rawValue: String\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(init).toContain('case "connected", "phone", "accounts", "browsers": self = .connected');
+    expect(init).toContain('case "voice", "talk", "wake": self = .voice');
+    expect(init).toContain('case "about", "speed": self = .about');
+    for (const c of ['aboutYou', 'privacy', 'routines', 'model', 'appearance']) expect(init).toContain(`case "${c}": self = .${c}`);
+    expect(init).toContain('default: return nil');
     // UI v4 step c: the sub-list's labels are its group names (You, Stephen, App), not a second "Settings".
     expect(settings).toContain('Text(verbatim: g.title).sectionLabelStyle(t)');
     expect(settings).not.toContain('Text(verbatim: "Settings")');

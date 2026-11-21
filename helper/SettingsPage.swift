@@ -13,6 +13,21 @@ func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.r
 enum SettingsItem: String, CaseIterable, Identifiable {
   case aboutYou, connected, privacy, routines, voice, model, appearance, about
 
+  /// "settingsPane" may still hold a pane from before step c: send it to its new home.
+  init?(rawValue: String) {
+    switch rawValue {
+    case "aboutYou": self = .aboutYou
+    case "connected", "phone", "accounts", "browsers": self = .connected
+    case "privacy": self = .privacy
+    case "routines": self = .routines
+    case "voice", "talk", "wake": self = .voice
+    case "model": self = .model
+    case "appearance": self = .appearance
+    case "about", "speed": self = .about
+    default: return nil
+    }
+  }
+
   /// The sub-list: 3 labelled groups, 8 panes (plan 6.5).
   static let groups: [(title: String, items: [SettingsItem])] = [
     ("You", [.aboutYou, .connected, .privacy, .routines]),
