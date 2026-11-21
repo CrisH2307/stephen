@@ -11,7 +11,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config.js';
 import { packageVersion } from '../server/index.js';
-import { type RunFn, defaultRun, shellQuote } from '../zen-launcher.js';
+import { type RunFn, type RunResult, defaultRun, shellQuote } from '../zen-launcher.js';
 import { HelperClient, openHelperArgv } from './client.js';
 import { HELPER_APP_NAME, HELPER_BUNDLE_ID, HELPER_EXECUTABLE, MAX_SOCKET_PATH_BYTES, helperAppPath, helperLogPath, helperSocketPath } from './paths.js';
 
@@ -104,6 +104,40 @@ export function listFallbackSdks(defaultSdk: string | null): string[] {
     }
   };
   return fallbackSdks(CLT_SDKS_DIR, names, defaultSdk, real);
+}
+
+export interface SdkBuildResult {
+  ok: boolean;
+  /** The SDK of the successful build, else of the first (default) try. */
+  sdkPath: string | null;
+  /** The default SDK, when a fallback SDK was used instead. */
+  fallbackFrom: string | null;
+  /** The result of the successful build, else of the first try (its error is the one to show). */
+  result: RunResult;
+  /** Every SDK tried, in order (null = swiftc's own default). */
+  tried: (string | null)[];
+}
+
+/**
+ * Build with the default SDK. Only when that fails with the SwiftUIMacros plugin error, try the other SDKs newest first
+ * and keep the first one that builds (#248). `build` returns code 0 only for a real, complete build.
+ */
+export async function buildWithSdkFallback(defaultSdk: string | null, build: (sdk: string | null) => Promise<RunResult>, others: () => string[]): Promise<SdkBuildResult> {
+  const first = await build(defaultSdk);
+  const tried: (string | null)[] = [defaultSdk];
+  if (first.code === 0) return { ok: true, sdkPath: defaultSdk, fallbackFrom: null, result: first, tried };
+  if (!SWIFTUI_MACROS_MISSING.test(first.stderr + first.stdout)) return { ok: false, sdkPath: defaultSdk, fallbackFrom: null, result: first, tried };
+  for (const sdk of others()) {
+    tried.push(sdk);
+    const r = await build(sdk);
+    if (r.code === 0) return { ok: true, sdkPath: sdk, fallbackFrom: defaultSdk ?? 'swiftc default', result: r, tried };
+  }
+  return { ok: false, sdkPath: defaultSdk, fallbackFrom: null, result: first, tried };
+}
+
+/** One line about a fallback build: which SDK could not build and which one was used. */
+export function sdkFallbackNote(b: SdkBuildResult): string {
+  return `The default SDK (${b.fallbackFrom}) cannot build SwiftUI's @State with these command line tools (no SwiftUIMacros plugin), so the helper uses ${b.sdkPath}.`;
 }
 
 /** The swiftc argv (after the program). */
