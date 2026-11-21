@@ -9,7 +9,7 @@ import SwiftUI
 /// Where a chat line can take you (UI-V4-IA-PLAN L1, L2). Navigation only; nil hides the link (each place that shows
 /// the thread wires its own).
 struct ChatLinks {
-  /// Settings > Privacy and safety, where "What Stephen may do" is (L1).
+  /// Settings > Privacy and permissions, where "What Stephen may do" is (L1).
   var permissions: (() -> Void)? = nil
 }
 

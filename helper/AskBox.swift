@@ -66,7 +66,7 @@ struct AskBoxActions {
   var micCancel: () -> Void
   var openApp: () -> Void
   var reviewMemory: () -> Void
-  /** A refusal's "See what Stephen may do": the window on Settings > Privacy and safety (L1). */
+  /** A refusal's "See what Stephen may do": the window on Settings > Privacy and permissions (L1). */
   var openPermissions: () -> Void
   var quit: () -> Void
   /** The owner let go of the drag strip: remember where the box is. */

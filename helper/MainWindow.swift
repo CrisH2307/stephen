@@ -103,14 +103,20 @@ private struct MainWindowView: View {
   let control: StephenControl
   let actions: WindowActions
   @AppStorage("sidebarCollapsed") private var collapsed = false
+  /// The expanded sidebar's content width, dragged on the divider (clamped by SidebarMetrics).
+  @AppStorage("sidebarWidth") private var sidebarWidth = Double(SidebarMetrics.expanded)
 
   var body: some View {
+    let width = SidebarMetrics.clamp(CGFloat(sidebarWidth))
     HStack(spacing: 0) {
       SidebarView(model: model, nav: nav, control: control, collapsed: $collapsed)
-        .frame(width: SidebarMetrics.column(collapsed), alignment: .leading).clipped()
+        .frame(width: SidebarMetrics.column(collapsed, width), alignment: .leading).clipped()
         .frame(maxHeight: .infinity, alignment: .top)
         .glassBackground(.sidebar)
+        .environment(\.sidebarWidth, width)
       Rectangle().fill(t.line).frame(width: 1)
+        // Drag the divider to resize the sidebar. The icon rail (collapsed) keeps its fixed width.
+        .overlay { if !collapsed { SidebarResizeHandle(width: $sidebarWidth) } }
       VStack(spacing: 0) {
         WindowToolbar(model: model, nav: nav)
         if !model.confirms.isEmpty { questionBanner }
@@ -127,7 +133,9 @@ private struct MainWindowView: View {
       .background(t.ground)
     }
     .stephenAnimation(Motion.bar, value: collapsed)
-    .frame(minWidth: WindowMetrics.minContent.width, minHeight: WindowMetrics.minContent.height)
+    // A wider sidebar needs a wider window, so the pages keep their measured room (#154). The icon rail needs none.
+    .frame(minWidth: WindowMetrics.minContent.width + (collapsed ? 0 : max(0, width - SidebarMetrics.expanded)),
+           minHeight: WindowMetrics.minContent.height)
   }
 
   /// On every page while a question waits (#138). Safety: it only opens the Ask box, where the card is. No Allow, no
@@ -152,15 +160,12 @@ private struct MainWindowView: View {
     if model.connection != .online {
       if nav.page == .settings {
         // Appearance needs no listener, so Settings keeps it while offline (#144). The other panes do need it.
-        ScrollView {
-          VStack(alignment: .leading, spacing: Space.xl) {
-            OfflineView(model: model, control: control).frame(maxWidth: .infinity)
-            AppearanceSettings()
-          }
-          .padding(Space.xxl)
-          .frame(maxWidth: 640, alignment: .leading)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        // No ScrollView around it: the pane is a Form, which scrolls itself.
+        VStack(alignment: .leading, spacing: 0) {
+          OfflineView(model: model, control: control).frame(maxWidth: .infinity).padding(Space.xl)
+          AppearanceSettings().frame(maxWidth: 640, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       } else {
         OfflineView(model: model, control: control).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -181,7 +186,7 @@ private struct WindowToolbar: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
   @ObservedObject var nav: WindowNav
-  @AppStorage("settingsPane") private var pane: SettingsItem = .talk
+  @AppStorage("settingsPane") private var pane: SettingsItem = .voice
 
   var body: some View {
     let online = model.connection == .online
@@ -254,8 +259,36 @@ private struct WindowToolbar: View {
   }
 }
 
+/// A 9 pt wide grab area over the 1 pt divider: the resize cursor on hover, and a drag that sets the sidebar width.
+private struct SidebarResizeHandle: View {
+  @Binding var width: Double
+  @State private var start: Double? = nil
+  @State private var hovering = false
+
+  var body: some View {
+    Color.clear.frame(width: 9).contentShape(Rectangle())
+      .onHover { inside in
+        if inside && !hovering { NSCursor.resizeLeftRight.push() } else if !inside && hovering { NSCursor.pop() }
+        hovering = inside
+      }
+      .onDisappear { if hovering { NSCursor.pop(); hovering = false } }  // ⌘\ while the pointer is on it
+      .gesture(
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+          .onChanged { v in
+            let from = start ?? Double(SidebarMetrics.clamp(CGFloat(width)))
+            start = from
+            width = Double(SidebarMetrics.clamp(CGFloat(from) + v.translation.width))
+          }
+          .onEnded { _ in start = nil }
+      )
+      .help("Drag to resize the sidebar")
+      .accessibilityHidden(true)  // ⌘\ (collapse) is the keyboard way
+  }
+}
+
 private struct SidebarView: View {
   @Environment(\.stephenTheme) var t
+  @Environment(\.sidebarWidth) var sidebarWidth
   @ObservedObject var model: AppModel
   @ObservedObject var nav: WindowNav
   let control: StephenControl
@@ -275,9 +308,9 @@ private struct SidebarView: View {
         .help(collapsed ? "Show sidebar (⌘\\)" : "Hide sidebar (⌘\\)")
         .accessibilityLabel(collapsed ? "Show sidebar" : "Hide sidebar")
         .padding(.leading, collapsed ? 8 : 0)
-        .frame(width: SidebarMetrics.content(collapsed), alignment: collapsed ? .leading : .trailing)
+        .frame(width: SidebarMetrics.content(collapsed, sidebarWidth), alignment: collapsed ? .leading : .trailing)
       }
-      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+      .frame(width: SidebarMetrics.content(collapsed, sidebarWidth), alignment: .leading)
       VStack(alignment: .leading, spacing: Space.m) {
         SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }
         SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }
@@ -286,7 +319,7 @@ private struct SidebarView: View {
       // At the bottom left, with the Recording on sign right next to it (owner, 2026-11-21).
       StatusRow(model: model, control: control, collapsed: collapsed)
     }
-    .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+    .frame(width: SidebarMetrics.content(collapsed, sidebarWidth), alignment: .leading)
     .padding(.horizontal, SidebarMetrics.pad)
     .padding(.vertical, Space.l)
   }
@@ -303,6 +336,7 @@ private struct SidebarView: View {
 /** Dot + word, and Start/Stop for the listener this helper owns (StephenControl, ROADMAP P2). */
 private struct StatusRow: View {
   @Environment(\.stephenTheme) var t
+  @Environment(\.sidebarWidth) var sidebarWidth
   @ObservedObject var model: AppModel
   @ObservedObject var control: StephenControl
   let collapsed: Bool
@@ -321,7 +355,7 @@ private struct StatusRow: View {
         .padding(.horizontal, Space.s).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
         .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))
-        .help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")
+        .help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and permissions.")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")
       }
@@ -330,7 +364,7 @@ private struct StatusRow: View {
         Spacer(minLength: 0)
         startStop.opacity(collapsed ? 0 : 1).allowsHitTesting(!collapsed)
       }
-      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+      .frame(width: SidebarMetrics.content(collapsed, sidebarWidth), alignment: .leading)
       .help(collapsed ? s.word : "")
       if let p = problem, !collapsed {
         Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)

@@ -274,8 +274,8 @@ Setup: run `npm run build`. Restart `node dist/cli.js listen`.
 - [ ] `[hands]` **10.2 Play after a private read.** Do: hold F5 and say "what's my day". Then (F5 or the phone) say "play Sarà perché ti amo".
   Then, right after a list, say "play the first one".
   See: it plays. There is no confirmation dialog. Nothing is declined. "play the first one" follows on from the list.
-- [ ] `[hands]` **10.3 Stephen window, Accounts.** Do: open the Accounts tab. Then run `phone on` and look again.
-  See: a "Phone link" row says Off · Signed in until …. With `phone on` running it says On.
+- [ ] `[hands]` **10.3 Stephen window, Connected.** Do: open Settings, Connected. Then run `phone on` and look again.
+  See: a "Phone link" row says Off. With `phone on` running it says On (open the pane again to refresh it).
 - [ ] `[hands]` **10.4 Secrets out of the repo.** Do: run `node dist/cli.js doctor`. For each line in the repo `.env`, run
   `node dist/cli.js accounts set canvas-token` (then `notion-token`, and so on) and paste the value when asked (it is hidden).
   Run `node dist/cli.js accounts`. Then delete the repo `.env` and run `doctor` again.
@@ -359,13 +359,13 @@ and allow the microphone for Stephen Helper once. Quit any Terminal listener.
   See: the pages switch. ⌘\ collapses the sidebar and the choice survives a restart. The status row has Start/Stop.
 - [ ] `[hands]` **11.6.2** Do: open Home. Press Send. Click a chip.
   See: "Morning/Afternoon, Cris." and the date, and the Today list. Send shows the reply in the Ask box. Chips fill the box.
-- [ ] `[hands]` **11.6.3** Do: open Personal (⌘4).
-  See: About you, the permission table (Send or submit: Asks you / Asks you / Never), Connected, Routines.
-- [ ] `[hands]` **11.6.4** Do: open Memory, then Personal, See all, to see the graph. Tell Stephen "I moved to Fit4Less". Press Keep. Run `node dist/cli.js memory list`
+- [ ] `[hands]` **11.6.3** Do: open Settings (⌘5) and click each pane in the "You" group.
+  See: About you, Connected, Privacy and permissions (the permission table: Send or submit: Asks you / Asks you / Never), Routines. There is no Personal page.
+- [ ] `[hands]` **11.6.4** Do: open Memory (⌘4) to see the graph. Tell Stephen "I moved to Fit4Less". Press Keep. Run `node dist/cli.js memory list`
   before and after. Switch between Graph and List (try VoiceOver).
   See: a dashed amber node under Places and a row in "New from your chats". `memory list` does not show it yet. After Keep: a solid node, the inspector says
   "You told Stephen · you kept it", and `memory list` shows it. The Graph / List switch works with VoiceOver.
-- [ ] `[hands]` **11.6.5** Do: open Settings, How Stephen talks. Choose Detailed + Formal + Explain steps. Press Save. Then turn Speak off. Then set macOS voice.
+- [ ] `[hands]` **11.6.5** Do: open Settings, Voice. Choose Detailed + Formal + Explain steps. Press Save. Then turn Speak off. Then set macOS voice.
   See: "Saved". `~/.browser-hub/config.json` has the keys under `voice`. The next reply changes. With Speak off, the next reply is silent. macOS voice uses `say`.
 - [ ] `[hands]` **11.6.6** Do: open Settings, Appearance. Try Navy, Rose, Sun, Dark, Light, Follow the Mac.
   See: the window and the Ask box change together.
@@ -627,7 +627,7 @@ At the end, remove your memory test items: `node dist/cli.js memory list`, then 
 ### 16.4 Contrast (PR #161, issue #146)
 - [ ] `[hands]` **16.10** Do: in each theme (Light, Dark, Navy, Rose, Sun), look at the Ask box, the search field in Conversations, the search field in Memory, and a Forget button.
   See: each has an outline you can see clearly. Lists and cards keep the soft line. (#146, #161)
-- [ ] `[hands]` **16.11** Do: open Settings, "How Stephen talks". Look at the selected choice in each theme.
+- [ ] `[hands]` **16.11** Do: open Settings, "Voice". Look at the selected choice in each theme.
   See: the selected choice is easy to tell from the others, in every theme. (#146, #161)
 - [ ] `[hands]` **16.12** Do: in the Sun theme, open Memory and select a filter chip.
   See: the text of the selected chip is easy to read (the accent is darker than before). (#146, #161)
@@ -646,5 +646,26 @@ Voice only. Typed text works as before.
 ### 16.6 The web page (PR #158, issue #151)
 - [ ] `[hands]` **16.17** Do: open `docs/site/index.html` and `docs/site/plain.html` in Safari (double-click, or File, Open File). On each page click the Light and Dark button. Then turn on Reduce Motion (System Settings, Accessibility, Display) and reload `index.html`. Turn it off after.
   See: both pages work in light and dark, with no sideways scroll. With Reduce Motion on, `index.html` has no motion and every step shows. `index.html` starts dark and does not follow the Mac setting. `plain.html` follows the Mac setting. Each page links to the other. (#151, #158)
+
+Send back: any box you could not tick, with its id.
+
+## 17. UI v4 step c: Settings in 3 groups, sidebar resize (branch `feat/ui-v4-settings`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen.
+- [ ] `[hands]` **17.1** Do: open Settings (⌘5). Read the left list.
+  See: three labels, You, Stephen and App, and 8 panes: About you, Connected, Privacy and permissions, Routines; Voice, Model and effort; Appearance, About. Each pane looks like System Settings (grouped rows). No table sits in a box inside another box.
+- [ ] `[hands]` **17.2** Do: open Privacy and permissions. Turn "Save my F5 commands to measure mistakes" on, then off.
+  See: the table first, then the switch with the same words as before, then a closed "Where these rules come from". On shows "Recording on" in the sidebar. Off asks "Delete the saved recordings too?". The note says "Read only. These come from Stephen's safety rules."
+- [ ] `[hands]` **17.3** Do: open Connected. Click "Open Zen for Stephen". Click "Turn on" on the Phone link row, then "Turn off".
+  See: one list with the accounts, Zen and Chrome, and Phone link, each with its state. Zen shows Ready (or Not ready and why). The phone row says On after Turn on and Off after Turn off. "How to connect (Terminal)" is closed.
+- [ ] `[hands]` **17.4** Do: open Voice, then About.
+  See: Voice has Length, Tone, the two switches, Preview and Save; voices and "Wake word and F5" are closed accordions. About has the config file and Open; "Speed, last 7 days" and "Doctor" are closed accordions.
+- [ ] `[hands]` **17.5** Do: open Settings, Model and effort. Go to Home. Press ⌘,.
+  See: Settings opens on Model and effort (the last pane used). (#147)
+- [ ] `[hands]` **17.6** Do: in a Stephen answer that was refused, click "See what Stephen may do".
+  See: Settings opens on Privacy and permissions.
+- [ ] `[hands]` **17.7** Do: choose Stop Stephen. Open Settings. Pick another theme.
+  See: the offline message and the Appearance pane. The theme changes. (#144)
+- [ ] `[hands]` **17.8** Do: point at the line between the sidebar and the page, and drag it right, then left, as far as it goes. Quit and reopen the window. Then press ⌘\ twice.
+  See: the cursor is the left-right resize arrow. The sidebar gets wider and narrower but stops at a minimum and a maximum. The width is the same after reopening. ⌘\ still collapses to the icon rail and back to your width; the rail cannot be dragged.
 
 Send back: any box you could not tick, with its id.

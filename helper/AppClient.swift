@@ -626,7 +626,7 @@ final class AppModel: ObservableObject {
     }
   }
 
-  /** Settings > Privacy and safety: turn the replay recorder on or off; `done(nil)` on success, else the listener's words. */
+  /** Settings > Privacy and permissions: turn the replay recorder on or off; `done(nil)` on success, else the listener's words. */
   func saveReplay(_ on: Bool, done: @escaping (String?) -> Void) {
     request(AppRequest.replaySet(newId(), enabled: on)) { [weak self] msg in
       guard let self = self else { return }

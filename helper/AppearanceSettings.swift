@@ -48,20 +48,25 @@ struct AppearanceSettings: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject private var store = ThemeStore.shared
 
+  /// A grouped Form like every Settings pane. Needs no listener, so it also shows while Stephen is offline (#144).
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      HStack(spacing: Space.m) {
-        ForEach(ThemeName.allCases) { n in
-          ThemeTile(name: n, selected: !store.choice.followMac && store.choice.name == n) { store.pick(n) }
+    Form {
+      Section {
+        HStack(spacing: Space.m) {
+          ForEach(ThemeName.allCases) { n in
+            ThemeTile(name: n, selected: !store.choice.followMac && store.choice.name == n) { store.pick(n) }
+          }
         }
-      }
-      GroupedList {
-        GroupedRow("Follow the Mac", detail: "Light by day, Dark at night. The window and the Ask box change together.", first: true) {
+        .padding(.vertical, Space.xs)
+        FormRow("Follow the Mac", detail: "Light by day, Dark at night. The window and the Ask box change together.") {
           Toggle("Follow the Mac", isOn: Binding(get: { store.choice.followMac }, set: { store.setFollowMac($0) }))
             .labelsHidden().toggleStyle(StephenSwitch())
         }
+      } header: {
+        Text(verbatim: "Theme")
       }
     }
+    .settingsForm()
   }
 }
 

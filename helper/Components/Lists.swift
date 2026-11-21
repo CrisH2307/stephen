@@ -70,6 +70,7 @@ struct PermissionRowData: Identifiable {
   let levels: [PermissionLevel]  // one per column
 }
 
+/// No box of its own: it sits straight in a grouped Form section (Settings, Privacy and permissions; plan 6.5 N1).
 struct PermissionTable: View {
   @Environment(\.stephenTheme) var t
   let columns: [String]  // e.g. ["F5", "Hey Stephen", "Phone"]
@@ -81,7 +82,7 @@ struct PermissionTable: View {
         Text(verbatim: "").frame(maxWidth: .infinity, alignment: .leading)
         ForEach(columns, id: \.self) { c in Text(verbatim: c).sectionLabelStyle(t).frame(width: 78, alignment: .leading) }
       }
-      .padding(.horizontal, Space.l).padding(.vertical, Space.s).accessibilityHidden(true)
+      .padding(.vertical, Space.s).accessibilityHidden(true)
       ForEach(rows) { r in
         Rectangle().fill(t.line).frame(height: 1)
         HStack(spacing: Space.s) {
@@ -94,14 +95,11 @@ struct PermissionTable: View {
             .frame(width: 78, alignment: .leading)
           }
         }
-        .padding(.horizontal, Space.l).padding(.vertical, 10)
+        .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(r.action). " + zip(columns, r.levels).map { "\($0): \($1.rawValue)" }.joined(separator: ". "))
       }
     }
-    .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface))
-    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.line, lineWidth: 1))
-    .clipShape(RoundedRectangle(cornerRadius: Corner.list))
   }
 }
 
@@ -111,16 +109,15 @@ struct VoiceRow: View {
   let name: String
   let source: String  // "ElevenLabs", "on this Mac"
   let current: Bool
-  var first: Bool = false
   let onPlay: () -> Void
   let onSelect: () -> Void
-  init(name: String, source: String, current: Bool, first: Bool = false, onPlay: @escaping () -> Void, onSelect: @escaping () -> Void) {
-    self.name = name; self.source = source; self.current = current; self.first = first; self.onPlay = onPlay; self.onSelect = onSelect
+  init(name: String, source: String, current: Bool, onPlay: @escaping () -> Void, onSelect: @escaping () -> Void) {
+    self.name = name; self.source = source; self.current = current; self.onPlay = onPlay; self.onSelect = onSelect
   }
-  /// GroupedRow's look, with the name side as a real button (#145) so Tab reaches it; Play stays its own button.
+  /// A plain row (it sits in a Settings accordion), with the name side as a real button (#145) so Tab reaches it; Play
+  /// stays its own button.
   var body: some View {
     VStack(spacing: 0) {
-      if !first { Rectangle().fill(t.line).frame(height: 1) }
       HStack(spacing: Space.m) {
         Button(action: onSelect) {
           HStack(spacing: Space.m) {
@@ -143,7 +140,7 @@ struct VoiceRow: View {
         }
         .buttonStyle(.plain).help("Play a sample").accessibilityLabel("Play \(name)")
       }
-      .padding(.horizontal, Space.l).padding(.vertical, Space.m)
+      .padding(.vertical, Space.xs)
     }
     .accessibilityElement(children: .contain)
   }
