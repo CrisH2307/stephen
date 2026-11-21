@@ -59,7 +59,7 @@ import {
   resolvePersonaFile,
   EFFORT_FLAG,
 } from './claude.js';
-import { ToolLogRunner, historyRecorder } from './command-log.js';
+import { ToolLogRunner, finishCommand, historyRecorder } from './command-log.js';
 import { Conversation, ConversationRunner, WarmConversationRunner, memoryKey } from './conversation.js';
 import { WarmClaude, probeWarmProtocol, type WarmClaudeOptions } from './warm-claude.js';
 import { ReplayRecorder } from '../replay/recorder.js';
@@ -538,8 +538,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
       ...(heard && lastTts() ? { tts: lastTts()! } : {}),
     });
-    recordHistory?.(r);
-    app?.commandDone(r, calls.map((t) => t.tool), calls);
+    void finishCommand(r, calls, { audit, record: recordHistory, app });
   };
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
   // Tests inject env.speaker. The speaker is rebuilt when the voice setting changes, and silent when speak is off.
