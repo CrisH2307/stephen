@@ -42,14 +42,15 @@ struct ChatBubble: Identifiable, Equatable {
   var steps: [ChatStep] = []
 }
 
-/// Where a spoken (not typed) command came from, shown under its bubble. Never empty, even for an unknown or missing
-/// source: an empty label would make the bubble look typed, and Try again re-sends only typed bubbles (R10a-2).
+/// Where a spoken (not typed) command came from, shown under its bubble in #142's words ("From: F5"). Never empty,
+/// even for an unknown or missing source: an empty label would make the bubble look typed, and Try again re-sends only
+/// typed bubbles (R10a-2).
 func heardLabel(_ source: String?) -> String {
   switch source {
-  case "voice-ptt": return "Push to talk"
-  case "voice-wake": return "Heard by wake word"
-  case "phone": return "From your phone"
-  case "cli": return "From the command line"
+  case "voice-ptt": return "From: F5"
+  case "voice-wake": return "From: Hey Stephen"
+  case "phone": return "From: Phone"
+  case "cli": return "From: Command line"
   default: return "Not typed here"
   }
 }

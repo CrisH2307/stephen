@@ -370,6 +370,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(returns.length).toBeGreaterThanOrEqual(5);
     for (const r of returns) expect(r, r).toMatch(/^"[^"]+"$/);
     for (const s of ['voice-ptt', 'voice-wake', 'phone', 'cli']) expect(label).toContain(`case "${s}":`);
+    // UI v4 step b (#142, [DEV REVIEW]): the source line in #142's words.
+    for (const [s, w] of [['voice-ptt', 'From: F5'], ['voice-wake', 'From: Hey Stephen'], ['phone', 'From: Phone']]) {
+      expect(label).toContain(`case "${s}": return "${w}"`);
+    }
     // Shown under the bubble (verbatim) and read by VoiceOver.
     expect(chat).toContain('if !bubble.detail.isEmpty {\n          Text(verbatim: bubble.detail)');
     expect(chat).toContain('"You, \\(bubble.detail): \\(bubble.text)"');
