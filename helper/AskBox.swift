@@ -157,7 +157,7 @@ struct AskBoxView: View {
           Spacer(minLength: 0)
           StatusPill(s.word, kind: s.kind)
         }
-        .padding(.horizontal, Space.xs).allowsHitTesting(false)
+        .padding(.leading, Space.xs).padding(.trailing, Space.s).allowsHitTesting(false)  // room before ⋯ and ✕
       }
       menu
       Button(action: actions.close) {
