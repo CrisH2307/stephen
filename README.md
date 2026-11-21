@@ -16,7 +16,7 @@ Everything stays on your Mac: Stephen only talks to browsers on `127.0.0.1` and 
 | | |
 |---|---|
 | macOS | Apple silicon or Intel |
-| Node.js | **20.19 or newer** (`node --version`; install from [nodejs.org](https://nodejs.org) or `brew install node`) |
+| Node.js | **22.12+ (22.x), 24, or 26+; 24 is what CI uses** (odd 21, 23, 25 are out: the tests need `util.styleText`) (`node --version`; install from [nodejs.org](https://nodejs.org) or `brew install node`) |
 | Claude Code | installed and working (`claude --version`) |
 | Google Chrome | **144 or newer** for real-profile mode (Chrome menu → *Help → About Google Chrome*) |
 | Zen | installed in `/Applications` (`Zen.app`, `Zen Browser.app` or `Zen Twilight.app`) |

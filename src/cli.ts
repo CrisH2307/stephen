@@ -49,7 +49,8 @@ import {
   zenLauncherAppPath,
 } from './zen-launcher.js';
 
-const MIN_NODE: [number, number] = [20, 19];
+/** The Node lines Stephen supports: vitest 5's engines (rolldown needs util.styleText). Same as package.json engines. */
+export const NODE_RANGE = '^22.12.0 || ^24.0.0 || >=26.0.0';
 const MIN_CHROME = 144;
 
 const HELP = `stephen ${packageVersion()} — lets Claude use your Mac's browsers (Zen and Chrome), from Claude Code or by voice
@@ -190,9 +191,10 @@ interface Check {
   info?: boolean;
 }
 
-function versionAtLeast(v: string, min: [number, number]): boolean {
+/** Is this Node version in NODE_RANGE? (22.12 or newer 22.x, any 24.x, 26 or newer; odd lines 23 and 25 are out.) */
+export function nodeSupported(v: string): boolean {
   const [maj = 0, minor = 0] = v.replace(/^v/, '').split('.').map(Number);
-  return maj > min[0] || (maj === min[0] && minor >= min[1]);
+  return (maj === 22 && minor >= 12) || maj === 24 || maj >= 26;
 }
 
 function majorOf(version: string | null): number | null {
@@ -232,10 +234,10 @@ async function doctor(network = false, json = false): Promise<number> {
     blocking: true,
   });
   add({
-    ok: versionAtLeast(process.versions.node, MIN_NODE),
-    label: `Node.js ≥ ${MIN_NODE.join('.')}`,
+    ok: nodeSupported(process.versions.node),
+    label: `Node.js ${NODE_RANGE}`,
     detail: process.versions.node,
-    fix: 'Install a current Node.js LTS (https://nodejs.org or `brew install node`).',
+    fix: 'Install Node 24 (the version CI uses): https://nodejs.org or `brew install node@24`. Older Node cannot run the tests.',
     blocking: true,
   });
 

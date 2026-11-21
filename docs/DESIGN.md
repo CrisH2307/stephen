@@ -22,7 +22,7 @@ Let Claude Code drive **Zen** and **Chrome** on macOS for everyday productivity 
 - Works with Claude Code over stdio, MCP SDK v1.
 
 ### Constraints
-- Node ≥ 20.19, ESM, TypeScript strict. Deps: `puppeteer-core`, `@modelcontextprotocol/sdk`, `zod`. Dev: `typescript`, `vitest`, `@types/node`, `@sparticuz/chromium` (real browser for tests on Linux CI).
+- Node 22.12+ or 24 (vitest 5 needs it), ESM, TypeScript strict. Deps: `puppeteer-core`, `@modelcontextprotocol/sdk`, `zod`. Dev: `typescript`, `vitest`, `@types/node`, `@sparticuz/chromium` (real browser for tests on Linux CI).
 - macOS-specific paths are overridable by config (so Linux tests run).
 
 ## 2. High-level design
