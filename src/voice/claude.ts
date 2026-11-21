@@ -216,8 +216,9 @@ export interface ClaudeSettings {
    * starts `serve --instance <id>`, and says where that config and the instance's lock are. The run uses that config
    * instead of `mcpConfigPath`, and deletes the lock once the process group is gone. Absent (tests, eval): the
    * static `mcpConfigPath`, no instance. `trust` is the conversation's (R7-2): `wake` adds `serve --trust wake`.
+   * `assumePrivateRead` (a resumed chat, ADR-007 v2) adds `serve --assume-private-read`.
    */
-  serveInstance?: (trust: Trust) => Promise<ServeInstance>;
+  serveInstance?: (trust: Trust, assumePrivateRead?: boolean) => Promise<ServeInstance>;
 }
 
 /** One `serve --instance` for one Claude process (see ClaudeSettings.serveInstance). */
@@ -237,6 +238,11 @@ export interface RunOptions {
   memory?: readonly string[];
   /** The command's trust (default `wake`): handed to serveInstance, so a `wake` run's serve gets `--trust wake`. */
   trust?: Trust;
+  /**
+   * A resumed chat (ADR-007 v2): the serve starts with `--assume-private-read`. Needs serveInstance (the static
+   * config has no such flag), so a run without one fails instead of starting a serve with a clean gate.
+   */
+  assumePrivateRead?: boolean;
 }
 
 /** A Claude session id we pass back to `--resume`: never option-looking, no separators. */
@@ -357,6 +363,7 @@ export function mcpConfig(
   instance: string | null = null,
   trust: Trust = 'trusted',
   commandFilePath: string | null = null,
+  assumePrivateRead = false,
 ): { mcpServers: Record<string, { command: string; args: string[] }> } {
   // --confirm app: nobody watches a headless chat, so confirmations go to the Ask box, else the macOS dialog (R9-2).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
@@ -365,10 +372,12 @@ export function mcpConfig(
   // --confirm deny for the phone: nobody is at the Mac to answer a dialog, so every confirmation is declined.
   // --tool-log: tool names (never arguments) per call, for the command history (src/server/tool-log.ts).
   // --command-file: the command id file; serve stamps the id on tool-log records and audit entries (a label only).
+  // --assume-private-read: a resumed chat (ADR-007 rule 5): the gate acts as if private data was read from the start.
   const args = [
     cliPath, 'serve', '--confirm', trust === 'phone' ? 'deny' : 'app', '--voice',
     ...(instance ? ['--instance', instance] : []),
     ...(trust !== 'trusted' ? ['--trust', 'wake'] : []),
+    ...(assumePrivateRead ? ['--assume-private-read'] : []),
     ...toolLogServeArgs(toolLogPath),
     ...commandFileServeArgs(commandFilePath),
     ...(sessionStatePath ? ['--session-state', sessionStatePath] : []),
@@ -405,8 +414,9 @@ export async function writeMcpConfig(
   instance: string | null = null,
   trust: Trust = 'trusted',
   commandFilePath: string | null = null,
+  assumePrivateRead = false,
 ): Promise<string> {
-  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust, commandFilePath), null, 2) + '\n');
+  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust, commandFilePath, assumePrivateRead), null, 2) + '\n');
 }
 
 /** <home>/voice/persona.txt: the persona file of file mode (ClaudeSettings.personaFile). */
@@ -661,9 +671,10 @@ export class ClaudeRunner {
     const memory = memoryForTrust(run.trust ?? 'wake', () => this.readMemory());
     // A fresh serve instance per run (docs/REVIEW-7.md R7-1): a serve Claude Code restarts mid-run refuses every call.
     let inst: ServeInstance | null = null;
+    if (run.assumePrivateRead && !this.o.serveInstance) return { kind: 'error', message: 'A resumed chat needs a fresh serve instance.', sessionId: null };
     if (this.o.serveInstance) {
       try {
-        inst = await this.o.serveInstance(run.trust ?? 'wake');
+        inst = await this.o.serveInstance(run.trust ?? 'wake', run.assumePrivateRead === true);
       } catch (e) {
         return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
       }
