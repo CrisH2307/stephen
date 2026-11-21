@@ -413,8 +413,12 @@ struct HistoryEntry: Decodable, Identifiable, Equatable {
   var tools: [HistoryTool] = []
   var followUp: Bool = false
   var ms: Double = 0
+  /// Conversation id (ADR-007), "" on older lines. Kept for grouping later; nothing acts on it.
+  var conv: String = ""
+  /// The steps chat.done showed for this command (ADR-007), [] on older lines. Shown with Text(verbatim:).
+  var steps: [ChatStep] = []
 
-  enum CodingKeys: String, CodingKey { case id, ts, source, said, reply, outcome, tools, followUp, ms }
+  enum CodingKeys: String, CodingKey { case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -427,6 +431,8 @@ struct HistoryEntry: Decodable, Identifiable, Equatable {
     tools = (try? c.decodeIfPresent([HistoryTool].self, forKey: .tools)) ?? []
     followUp = (try? c.decodeIfPresent(Bool.self, forKey: .followUp)) ?? false
     ms = (try? c.decodeIfPresent(Double.self, forKey: .ms)) ?? 0
+    conv = (try? c.decodeIfPresent(String.self, forKey: .conv)) ?? ""
+    steps = (try? c.decodeIfPresent([ChatStep].self, forKey: .steps)) ?? []
   }
 }
 
