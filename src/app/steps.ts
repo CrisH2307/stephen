@@ -19,6 +19,11 @@ import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
 
 export { MAX_CHAT_STEPS, MAX_STEP_CHARS, type ChatStep };
+
+/** Audit entries read to build one command's steps (newest first; a command makes far fewer). */
+const STEPS_AUDIT_LIMIT = 100;
+/** The steps wait at most this long for the audit read; after that the command has none (R10a-9). */
+export const STEPS_AUDIT_WAIT_MS = 400;
 /** Audit lines up to this long before the command's start or after its end still count (clock and write slack). */
 const SLACK_MS = 1000;
 
@@ -59,4 +64,30 @@ export function commandSteps(audit: AuditEntry[], calls: ToolCallRecord[], start
     steps.push(c.isError ? { text: `Tried ${c.tool}, it failed`, status: 'failed' } : { text: `Used ${c.tool}`, status: 'ok' });
   }
   return steps.slice(0, MAX_CHAT_STEPS).map((s) => ({ ...s, text: truncate(s.text, MAX_STEP_CHARS) }));
+}
+
+/**
+ * One audit read, then the steps of command `id` that took `ms` and ended at `end` (ADR-007 point 6): the same list
+ * goes to the history line and to chat.done. A failed or slow (STEPS_AUDIT_WAIT_MS) read gives undefined, so nothing
+ * is stored or sent; no steps at all also gives undefined. Never rejects.
+ */
+export async function readCommandSteps(
+  audit: { recent(limit: number): Promise<AuditEntry[]> } | null,
+  calls: ToolCallRecord[],
+  id: string,
+  ms: number,
+  end: number,
+): Promise<ChatStep[] | undefined> {
+  let entries: AuditEntry[] | null = [];
+  if (audit && ms > 0) {
+    let timer: NodeJS.Timeout | undefined;
+    const slow = new Promise<null>((r) => (timer = setTimeout(() => r(null), STEPS_AUDIT_WAIT_MS)));
+    const read = Promise.resolve()
+      .then(() => audit.recent(STEPS_AUDIT_LIMIT))
+      .catch(() => null);
+    entries = await Promise.race([read, slow]).finally(() => clearTimeout(timer));
+  }
+  if (entries === null) return undefined;
+  const steps = commandSteps(entries, calls, end - ms, end, id);
+  return steps.length > 0 ? steps : undefined;
 }
