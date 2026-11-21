@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { commandSteps, MAX_CHAT_STEPS, MAX_STEP_CHARS } from '../../src/app/steps.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import { commandSteps, MAX_CHAT_STEPS, MAX_STEP_CHARS, readCommandSteps, STEPS_AUDIT_WAIT_MS, type ChatStep } from '../../src/app/steps.js';
+import { HistoryStore } from '../../src/history/store.js';
 import type { AuditEntry } from '../../src/types.js';
+import type { CommandReport } from '../../src/voice/assistant.js';
+import { finishCommand, historyRecorder } from '../../src/voice/command-log.js';
 
 const at = (s: number) => new Date(Date.UTC(2026, 10, 9, 12, 0, s)).toISOString();
 const T0 = Date.parse(at(10));
@@ -64,5 +70,82 @@ describe('commandSteps (the action chain under a reply)', () => {
 
   it('nothing ran: no steps', () => {
     expect(commandSteps([], [], T0, T1)).toEqual([]);
+  });
+});
+
+describe('readCommandSteps (one audit read, R10a-9 bound)', () => {
+  const calls = [{ tool: 'gmail_search', isError: false, ms: 5 }];
+  const end = Date.now();
+
+  it('a fast read gives the steps; no steps at all gives undefined', async () => {
+    expect(await readCommandSteps({ recent: async () => [] }, calls, 'h_1', 900, end)).toEqual([{ text: 'Used gmail_search', status: 'ok' }]);
+    expect(await readCommandSteps({ recent: async () => [] }, [], 'h_1', 900, end)).toBeUndefined();
+  });
+
+  it('a failed read (rejected or thrown) gives undefined, not the tool lines alone', async () => {
+    expect(await readCommandSteps({ recent: () => Promise.reject(new Error('EACCES')) }, calls, 'h_1', 900, end)).toBeUndefined();
+    expect(
+      await readCommandSteps(
+        {
+          recent: () => {
+            throw new Error('sync');
+          },
+        },
+        calls,
+        'h_1',
+        900,
+        end,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('a read slower than the bound gives undefined, with no unhandled error when it lands late', async () => {
+    let release!: (e: AuditEntry[]) => void;
+    const t0 = Date.now();
+    const steps = await readCommandSteps({ recent: () => new Promise((r) => (release = r)) }, calls, 'h_1', 900, end);
+    expect(steps).toBeUndefined();
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(STEPS_AUDIT_WAIT_MS - 20);
+    release([]);
+  });
+});
+
+describe('finishCommand (ADR-007 point 6: steps built before the history append)', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'stephen-finish-'));
+  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+  let n = 0;
+  const report = (id: string): CommandReport => ({ id, result: 'ok', outcome: 'ok', source: 'app', said: 'search my mail', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0, conv: 'c_0123456789abcdef' });
+  function wire(audit: { recent(limit: number): Promise<AuditEntry[]> }) {
+    const history = new HistoryStore({ home: join(tmp, `h${++n}`), retentionDays: 7 });
+    const sent: { id: string; steps?: ChatStep[] }[] = [];
+    let endings = 0;
+    const app = { commandEnding: () => void endings++, commandDone: (r: CommandReport, _t: string[], steps?: ChatStep[]) => void sent.push({ id: r.id, ...(steps ? { steps } : {}) }) };
+    const record = historyRecorder(history, () => [{ tool: 'next_command_tool', isError: false, ms: 1 }], () => {});
+    return { audit, history, sent, app, record, endings: () => endings };
+  }
+  const calls = [{ tool: 'gmail_search', isError: false, ms: 800 }];
+
+  it('the steps stored on the history line equal the steps sent in chat.done for the same command id', async () => {
+    const w = wire({ recent: async () => [{ ts: new Date().toISOString(), tool: 'click', kind: 'click', element: 'button "Send"', outcome: 'denied', verdict: 'confirm', cmd: 'h_same' }] });
+    await finishCommand(report('h_same'), calls, { audit: w.audit, record: w.record, app: w.app });
+    const [line] = w.history.list();
+    expect(line!.id).toBe('h_same');
+    expect(line!.conv).toBe('c_0123456789abcdef');
+    expect(line!.steps).toEqual([
+      { text: 'Refused: click button "Send". you did not allow it', status: 'refused' },
+      { text: 'Used gmail_search', status: 'ok' },
+    ]);
+    expect(w.sent).toEqual([{ id: 'h_same', steps: line!.steps }]);
+    // The tools are the ones captured when the command ended, not whatever the runner holds by now.
+    expect(line!.tools.map((t) => t.tool)).toEqual(['gmail_search']);
+    expect(w.endings()).toBe(1);
+  });
+
+  it('with a failing audit read, neither the history line nor chat.done has steps', async () => {
+    const w = wire({ recent: () => Promise.reject(new Error('EIO')) });
+    await finishCommand(report('h_fail'), calls, { audit: w.audit, record: w.record, app: w.app });
+    const [line] = w.history.list();
+    expect(line!.id).toBe('h_fail');
+    expect(line).not.toHaveProperty('steps');
+    expect(w.sent).toEqual([{ id: 'h_fail' }]);
   });
 });
