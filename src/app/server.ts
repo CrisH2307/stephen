@@ -401,7 +401,12 @@ export class AppServer {
       this.o.resume.cancel();
       return { id: req.id, type: 'ok' };
     }
-    const why = this.o.resume.arm(req.conv);
+    let why: string | null;
+    try {
+      why = this.o.resume.arm(req.conv);
+    } catch (e) {
+      why = (e as Error).message || 'could not read that conversation';
+    }
     return why === null ? { id: req.id, type: 'ok' } : { id: req.id, type: 'error', message: why };
   }
 
