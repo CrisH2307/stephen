@@ -5,7 +5,7 @@
  */
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,6 +54,56 @@ export async function findSwiftCompiler(run: RunFn): Promise<{ ok: true; compile
   if (v.code === 0) return { ok: true, compiler: { swiftc: 'swiftc', sdkPath: null, via: 'PATH' } };
   const why = firstLine(x.stderr || x.stdout) || `xcrun exit code ${x.code}`;
   return { ok: false, reason: `No Swift compiler found (xcrun --find swiftc: ${why}; no swiftc on PATH).` };
+}
+
+/** Command Line Tools keeps its macOS SDKs here; the fallback SDKs come from this folder (#248). */
+export const CLT_SDKS_DIR = '/Library/Developer/CommandLineTools/SDKs';
+/** swiftc's error when the SDK's SwiftUI needs a macro plugin this toolchain lacks (Command Line Tools on macOS 27.2, #248). */
+export const SWIFTUI_MACROS_MISSING = /plugin for module 'SwiftUIMacros' not found/;
+/** What to do when no SDK can build the helper's SwiftUI (only the older SDK was verified, on macOS 27.2.1). */
+export const SDK_FIX =
+  'Install an older macOS SDK next to the default one in ' + CLT_SDKS_DIR + ' (a Command Line Tools package that ships ' +
+  'MacOSX26.x.sdk), or install the full Xcode for this macOS and select it: `sudo xcode-select -s /Applications/Xcode.app`.';
+
+/**
+ * The other macOS SDKs to try, newest first: `MacOSX<version>.sdk` entries of `names`, each real folder once (MacOSX26.sdk
+ * is a link to MacOSX26.5.sdk), without the default SDK. Pure: `real` resolves links. Picks nothing by itself: every
+ * candidate must still build (buildWithSdkFallback).
+ */
+export function fallbackSdks(dir: string, names: readonly string[], defaultSdk: string | null, real: (p: string) => string | null): string[] {
+  const version = (n: string) => /^MacOSX(\d+(?:\.\d+)*)\.sdk$/.exec(n)?.[1]?.split('.').map(Number) ?? null;
+  const skip = defaultSdk ? real(defaultSdk) : null;
+  const byReal = new Map<string, number[]>();
+  for (const n of names) {
+    const v = version(n);
+    const r = v ? real(join(dir, n)) : null;
+    if (!v || !r || r === skip) continue;
+    const had = byReal.get(r);
+    if (!had || v.length > had.length) byReal.set(r, v); // keep the most precise name of a folder
+  }
+  const cmp = (a: number[], b: number[]) => {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (b[i] ?? 0) - (a[i] ?? 0);
+    return 0;
+  };
+  return [...byReal.entries()].sort((a, b) => cmp(a[1], b[1])).map(([r]) => r);
+}
+
+/** fallbackSdks over the real Command Line Tools folder. */
+export function listFallbackSdks(defaultSdk: string | null): string[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(CLT_SDKS_DIR);
+  } catch {
+    return [];
+  }
+  const real = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return null;
+    }
+  };
+  return fallbackSdks(CLT_SDKS_DIR, names, defaultSdk, real);
 }
 
 /** The swiftc argv (after the program). */
