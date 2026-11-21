@@ -763,7 +763,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       }
       out(`Heard: "${text}"`);
       const r = await assistant.handle(text, { source: 'cli', raw: text });
-      await finishing;
+      await finishing;  // bounded: finishCommand waits at most the 400 ms audit read, then one sync append
       return r === 'ok' ? 0 : 1;
     }
 

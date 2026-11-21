@@ -164,6 +164,17 @@ describe('finishCommand (ADR-007 point 6: steps built before the history append)
     expect(w.history.list().map((e) => e.ts)).toEqual([new Date(end).toISOString()]);
   });
 
+  it('is bounded: an audit read that never settles still finishes in about the 400 ms bound, line written (--text awaits this)', async () => {
+    const w = wire({ recent: () => new Promise<never>(() => {}) });
+    const start = Date.now();
+    await finishCommand(report('h_hang'), calls, { audit: w.audit, record: w.record, app: w.app });
+    expect(Date.now() - start).toBeLessThan(STEPS_AUDIT_WAIT_MS + 300);
+    const [line] = w.history.list();
+    expect(line!.id).toBe('h_hang');
+    expect(line).not.toHaveProperty('steps');
+    expect(w.sent).toEqual([{ id: 'h_hang' }]);
+  });
+
   it('with a failing audit read, neither the history line nor chat.done has steps', async () => {
     const w = wire({ recent: () => Promise.reject(new Error('EIO')) });
     await finishCommand(report('h_fail'), calls, { audit: w.audit, record: w.record, app: w.app });
