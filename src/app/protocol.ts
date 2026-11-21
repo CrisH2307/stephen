@@ -59,6 +59,13 @@
  *  - push `{type:"replay", on}` (issue #208): whether the recorder would save an F5 command now. Sent after hello, when
  *    it changes (config.json is re-read every 2 s and on every F5), and after replay.set. Drives the "Recording on"
  *    sign. Read only: nothing the window sends back changes it except replay.set.
+ * Additive (ADR-007 v2, resume), sent only by the window, the owner's own clicks; refused from any other connection:
+ *  - `{id, type:"chat.resume", conv}` (the "Open in chat" button on a Conversations row) → `{id, type:"ok"}` or an
+ *    error. It only arms: nothing goes to the model. The owner's next `chat.send` continues that conversation (a new
+ *    Claude process, `--assume-private-read`, the old turns quoted in one wrapper; src/history/resume.ts). Any other
+ *    command, `chat.resume.cancel` and RESUME_ARM_MS clear the arm.
+ *  - `{id, type:"chat.resume.cancel"}` (Cancel on Home, New chat) → `{id, type:"ok"}`.
+ *  - push `{type:"resume", armed}`: after hello and whenever the arm changes, for the "Continuing an earlier chat" line.
  */
 import type { ChatStep } from './steps.js';
 import { MEDIA_KEY_ACTIONS, type MediaKeyAction } from '../helper/protocol.js';
@@ -94,6 +101,8 @@ export const APP_CONFIRM_TIMEOUT_MAX_MS = 3600 * 1000;
 /** confirmIds are randomUUID() strings. */
 const CONFIRM_ID_RE = /^[0-9a-f-]{36}$/;
 const MEM_ID_MAX_CHARS = 32;
+/** Conversation ids (newConversationId in src/history/store.ts). */
+const APP_CONV_RE = /^c_[0-9a-f]{16}$/;
 
 export type AppRequest =
   | { id: string; type: 'hello'; version: string; confirms?: boolean }
@@ -131,7 +140,9 @@ export type AppRequest =
   | { id: string; type: 'memory.skip'; propId: string }
   | { id: string; type: 'memory.usage' }
   | { id: string; type: 'replay.set'; enabled: boolean }
-  | { id: string; type: 'replay.delete' };
+  | { id: string; type: 'replay.delete' }
+  | { id: string; type: 'chat.resume'; conv: string }
+  | { id: string; type: 'chat.resume.cancel' };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -172,6 +183,8 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'memory.usage',
   'replay.set',
   'replay.delete',
+  'chat.resume',
+  'chat.resume.cancel',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -205,6 +218,7 @@ export type AppMessage =
   | { type: 'confirm.end'; confirmId: string }
   | { type: 'state'; state: AppState }
   | { type: 'replay'; on: boolean }
+  | { type: 'resume'; armed: boolean }
   | { type: 'heard'; text: string; source: string }
   /** `steps`: what Stephen did (src/app/steps.ts), only when there is at least one; an older helper ignores it. */
   | { type: 'chat.done'; entryId: string; reply: string; outcome: ChatOutcome; tools: string[]; ms: number; steps?: ChatStep[] };
@@ -325,6 +339,8 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'memory.usage': () => ok,
   'replay.set': (o) => (typeof o.enabled === 'boolean' ? ok : bad('enabled must be true or false')),
   'replay.delete': () => ok,
+  'chat.resume': (o) => (typeof o.conv === 'string' && APP_CONV_RE.test(o.conv) ? ok : bad('conv must be a conversation id like c_0123456789abcdef')),
+  'chat.resume.cancel': () => ok,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
@@ -365,6 +381,8 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, ...(has('days') ? { days: o.days as number } : {}) };
     case 'replay.set':
       return { id, type, enabled: o.enabled as boolean };
+    case 'chat.resume':
+      return { id, type, conv: o.conv as string };
     default:
       return { id, type } as AppRequest;
   }

@@ -31,7 +31,7 @@ import type { ModelChanges } from './model.js';
 import { truncate } from '../safety/text.js';
 import type { AuditEntry } from '../types.js';
 import type { ChatStep } from './steps.js';
-import type { CommandReport } from '../voice/assistant.js';
+import type { CommandReport, ResumeRequest } from '../voice/assistant.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 import {
   APP_AUDIT_LIMIT_DEFAULT,
@@ -121,6 +121,12 @@ export interface AppServerOptions {
   personal?: () => Promise<PersonalSummary>;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
   openWindow: () => string | null;
+  /**
+   * chat.resume / chat.resume.cancel (ADR-007 v2): `arm` arms the resume of that conversation (null when armed, else
+   * why not), `cancel` clears it, `armed` says whether one is armed. Absent = not available. Arming sends nothing to
+   * the model: the owner's next chat.send carries it (listenerQueue).
+   */
+  resume?: { arm: (conv: string) => string | null; cancel: () => void; armed: () => boolean };
   /** media.key (issue #205): press a Mac media key through Stephen Helper; null when done, else why not. */
   mediaKey?: (action: MediaKeyAction) => Promise<string | null>;
   log?: (line: string) => void;
@@ -331,6 +337,10 @@ export class AppServer {
       this.settle(req.confirmId, req.approve ? 'approved' : 'declined');
       return;
     }
+    if (req.type === 'chat.resume' || req.type === 'chat.resume.cancel') {
+      this.send(sock, this.resumeRequest(sock, req));
+      return;
+    }
     if (req.type === 'hello' && req.confirms) {
       this.askBoxes.add(sock);
       // A box that connects late still gets the questions already waiting.
@@ -345,6 +355,7 @@ export class AppServer {
             this.recordingAllowed();
             this.send(sock, { type: 'replay', on: this.replayOn });
           }
+          if (this.o.resume) this.send(sock, { type: 'resume', armed: this.o.resume.armed() });
         }
       },
       (e: unknown) => this.send(sock, { id: req.id, type: 'error', message: (e as Error).message || 'error' }),
@@ -377,6 +388,26 @@ export class AppServer {
     }
     if (!run) return fail('Stephen got busy with another command. Try again when it is done.');
     run.catch((e: unknown) => fail(`Something went wrong: ${(e as Error).message}`));
+  }
+
+  /**
+   * chat.resume / chat.resume.cancel: only from the window (a client that said hello with confirms, the helper), never
+   * from a gate connection (a serve, which the model can reach). Arming sends nothing to the model.
+   */
+  private resumeRequest(sock: Socket, req: Extract<AppRequest, { type: 'chat.resume' | 'chat.resume.cancel' }>): AppMessage {
+    if (!this.o.resume) return { id: req.id, type: 'error', message: 'not available in this listener' };
+    if (this.gates.has(sock) || !this.askBoxes.has(sock)) return { id: req.id, type: 'error', message: 'Only the Stephen window can continue a chat.' };
+    if (req.type === 'chat.resume.cancel') {
+      this.o.resume.cancel();
+      return { id: req.id, type: 'ok' };
+    }
+    const why = this.o.resume.arm(req.conv);
+    return why === null ? { id: req.id, type: 'ok' } : { id: req.id, type: 'error', message: why };
+  }
+
+  /** The resume arm changed (ADR-007 v2): tell the window, for the "Continuing an earlier chat" line. */
+  resumeArmed(armed: boolean): void {
+    this.broadcast({ type: 'resume', armed });
   }
 
   /** confirm.ask: relay to the Ask boxes (never back to the asker), or "unavailable" when there is none. */
@@ -455,7 +486,7 @@ export class AppServer {
     }
   }
 
-  private async answer(req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' }>): Promise<AppMessage> {
+  private async answer(req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' | 'chat.resume' | 'chat.resume.cancel' }>): Promise<AppMessage> {
     const { id } = req;
     const mem = this.o.memory;
     switch (req.type) {
@@ -625,7 +656,7 @@ export class AppServer {
 
 interface QueueAssistant {
   readonly busy: boolean;
-  command(text: string, opts: { source: 'app'; raw: string; speak: boolean; id: string }): Promise<CommandReport>;
+  command(text: string, opts: { source: 'app'; raw: string; speak: boolean; id: string; resume?: ResumeRequest }): Promise<CommandReport>;
   cancel(): boolean;
   endConversation(): void;
 }
@@ -636,11 +667,18 @@ interface QueueListener {
   cancel(reason: string): boolean;
 }
 
-/** Typed chat in the listener's queue (`stephen listen`). */
-export function listenerQueue(listener: QueueListener, assistant: QueueAssistant): AppCommandQueue {
+/**
+ * Typed chat in the listener's queue (`stephen listen`). `takeResume` (ADR-007 v2): the armed resume, taken when a
+ * window command runs, so only the window's next message continues an earlier chat.
+ */
+export function listenerQueue(listener: QueueListener, assistant: QueueAssistant, takeResume?: () => ResumeRequest | null): AppCommandQueue {
   return {
     busy: () => !listener.idle || assistant.busy,
-    start: (text, o) => listener.submit(() => assistant.command(text, { source: 'app', raw: o.raw, speak: o.speak, id: o.id })),
+    start: (text, o) =>
+      listener.submit(() => {
+        const resume = takeResume?.() ?? null;
+        return assistant.command(text, { source: 'app', raw: o.raw, speak: o.speak, id: o.id, ...(resume ? { resume } : {}) });
+      }),
     stop: () => void listener.cancel('app'),
   };
 }
