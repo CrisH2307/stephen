@@ -67,6 +67,7 @@ struct HomeView: View {
         if empty { greeting.transition(.opacity) } else { thread.transition(.opacity) }
       }
       .frame(maxHeight: .infinity)
+      if model.resumeArmed { resumeLine }
       composer
       // Under the composer: chips and Today while empty. It takes half the free height (so the composer sits in the
       // middle), then none once the chat starts, which is what moves the composer down.
@@ -101,6 +102,16 @@ struct HomeView: View {
       nextUp.padding(.top, Space.xs)
     }
     .padding(.bottom, Space.l)
+  }
+
+  /// ADR-007 v2: an Open in chat click is armed. The next message from the window continues that chat; Cancel drops it.
+  private var resumeLine: some View {
+    HStack(spacing: Space.s) {
+      Text(verbatim: "Continuing an earlier chat. Your next message goes with it.").font(TypeScale.secondary).foregroundColor(t.ink2)
+      Spacer(minLength: Space.s)
+      QuietButton("Cancel") { model.cancelResume() }
+    }
+    .accessibilityElement(children: .contain)
   }
 
   /// The one composer, the same in both states (large, Talk and Send).
