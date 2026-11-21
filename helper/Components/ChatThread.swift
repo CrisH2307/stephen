@@ -239,7 +239,8 @@ struct ConfirmMessage: View {
     }
     .padding(Space.m)
     .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
-    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.accent, lineWidth: 1))
+    // A 1.5 pt warn outline all round, no side stripe: the most distinct shape, in every theme (#139).
+    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))
     .accessibilityElement(children: .contain)
   }
 }

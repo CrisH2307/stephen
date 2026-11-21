@@ -764,6 +764,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const chat = read('Components/ChatThread.swift');
     expect(chat).toContain('Text(verbatim: "Needs your OK").safetyLabelStyle(t)');
     expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // UI v4 step b (#139, [DEV REVIEW]): the question card has a 1.5 pt warn outline all round, solid fill, no glass.
+    const card = chat.match(/struct ConfirmMessage: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(card).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))');
+    expect(card).toContain('.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))');
+    expect(card).not.toMatch(/glass|Material|shadow|stephenAnimation|withAnimation|transition/);
     expect(read('Theme.swift')).toContain('.font(Font.system(size: 11, weight: .medium)).tracking(0.88).textCase(.uppercase)');
     const field = read('Components/Controls.swift').match(/struct AskField: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(field).toMatch(/onKeyPress\(keys: \[\.return\], phases: \.repeat\) \{ press in\s*press\.modifiers\.contains\(\.shift\) \? \.ignored : \.handled/);
