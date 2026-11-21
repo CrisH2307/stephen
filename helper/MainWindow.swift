@@ -326,7 +326,11 @@ private struct SidebarView: View {
   private func rows(_ pages: [Page]) -> some View {
     ForEach(pages) { p in
       SidebarRow(p.title, symbol: p.symbol, selected: nav.page == p, collapsed: collapsed, shortcut: p.key.map { "⌘\($0.character)" },
-                 badge: p == .home ? model.confirms.count : 0) { nav.page = p }
+                 badge: p == .home ? model.confirms.count : 0) {
+          // The sidebar and ⌘2 open Conversations fresh; only a palette jump fills the search and opens a row.
+          if p == .conversations { nav.conversationQuery = ""; nav.conversationOpen = nil }
+          nav.page = p
+        }
         .keyboardShortcut(p.key!, modifiers: .command)  // rows() only gets sidebar pages
     }
   }

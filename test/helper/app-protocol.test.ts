@@ -1081,6 +1081,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const convPage = read('ConversationsPage.swift');
     expect(convPage).toContain('let spoken: String = "You said: \\(entry.said). \\(word.word). \\(facts)"');
     expect(convPage).toContain('.accessibilityLabel(spoken)');
+    // Sidebar and ⌘2 clear the palette's query and open row; the palette jump sets them (#255 review).
+    expect(read('MainWindow.swift')).toContain('if p == .conversations { nav.conversationQuery = ""; nav.conversationOpen = nil }');
     // What you said stays copyable: in full, selectable, in the open row.
     expect(convPage).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\.textSelection\(\.enabled\)/);
     expect(convPage).not.toMatch(/accessibilityLabel\("[^"]*\\\(entry\./);
