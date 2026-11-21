@@ -652,6 +652,24 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(sign).not.toMatch(/if !collapsed \{[^\n]*waveform/);
   });
 
+  it('Home Recent chats (plan 6.1): an accordion of 3, status words, refusals named and counted, verbatim, only View all acts', () => {
+    const home = read('HomeView.swift');
+    expect(home).toContain('model.history.prefix(3)');
+    expect(home).toContain('Accordion(recentChatsTitle(rows.map { $0.word.word }), key: "acc.home.recent")');
+    expect(home).toContain('Text(verbatim: r.entry.said)');
+    // A refusal is the first word checked, so a refused chat is never "Done" or "Failed"; the title counts problems.
+    const word = home.match(/func recentChatWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const order = ['"Refused"', '"Failed"', '"Stopped"', '"Done"'].map((w) => word.indexOf(w));
+    expect(order.every((i) => i >= 0), word).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(home).toMatch(/func recentChatsTitle[\s\S]*?"\\\(refused\) refused"[\s\S]*?"\\\(failed\) failed"/);
+    // Refusals come from the same audit join as Conversations.
+    expect(home).toContain('conversationLines(entry: e, audit: model.audit, parse: model.parseDate)');
+    const recent = home.match(/private var recentChats: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(recent.match(/Button \{[^}]*\}/g)).toEqual(['Button { nav.page = .conversations }']);
+    expect(recent).not.toMatch(/sendChat|model\.\w+\(/);
+  });
+
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
     expect(client).toContain('type: "model.set", model: model, effort: effort');
     expect(read('SettingsPage.swift')).toContain('model.saveModel(model: name, effort: effort)');

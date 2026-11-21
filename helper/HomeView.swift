@@ -1,6 +1,6 @@
 // Stephen Helper: Home (UI-V4-IA-PLAN section 6.1), a chat layout. With no messages: "Morning, Cris.", the date and the
 // Next up line ("1 job running · See jobs", or "Nothing waiting"; only what app.sock already knows), a large centred
-// composer with Talk and Send, three suggestion chips. With messages: the same thread as the Ask box (ChatThreadView)
+// composer with Talk and Send, three suggestion chips, and the Recent chats accordion. With messages: the same thread as the Ask box (ChatThreadView)
 // and the composer at the bottom. No weather, no cards. The chat title and New chat (⌘N) are in the window toolbar
 // (UI v4, MainWindow.swift).
 //
@@ -15,6 +15,24 @@ func homeGreeting(hour: Int, name: String) -> String {
   let part = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening"
   let first = name.split(separator: " ").first.map(String.init) ?? ""
   return first.isEmpty ? "\(part)." : "\(part), \(first)."
+}
+
+/// A past chat's status word for Home's Recent chats (plan 6.1). A refusal is named first and never called done; a
+/// failed step or an error is Failed. Same words and shapes as Conversations and the chat (#140).
+func recentChatWord(_ entry: HistoryEntry, lines: [DoneLine]) -> (word: String, kind: StatusKind) {
+  if lines.contains(where: { $0.status == .refused }) { return ("Refused", .warn) }
+  if entry.outcome == "error" || lines.contains(where: { $0.status == .failed }) { return ("Failed", .bad) }
+  if entry.outcome == "cancelled" { return ("Stopped", .idle) }
+  return ("Done", .ok)
+}
+
+/// "Recent chats (3, 1 refused)": the closed accordion still counts the problems in it (plan section 6).
+func recentChatsTitle(_ words: [String]) -> String {
+  var parts = ["\(words.count)"]
+  let refused = words.filter { $0 == "Refused" }.count, failed = words.filter { $0 == "Failed" }.count
+  if refused > 0 { parts.append("\(refused) refused") }
+  if failed > 0 { parts.append("\(failed) failed") }
+  return "Recent chats (\(parts.joined(separator: ", ")))"
 }
 
 /** Suggestion chips: a click puts the words in the field, nothing is sent until Send. */
@@ -58,11 +76,12 @@ struct HomeView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .stephenAnimation(Motion.bar, value: empty)
     // Ready to type again: after New chat (toolbar, ⌘N) and when the palette closes (its Ask row fills the composer).
-    .onChange(of: empty) { e in if e { composerFocused = true } }
+    .onChange(of: empty) { e in if e { composerFocused = true; refreshRecent() } }
     .onChange(of: nav.paletteOpen) { open in if !open { composerFocused = true } }
     .onAppear {
       model.refreshSettings()  // the name for the greeting
       model.refreshJobs()
+      refreshRecent()
       // Ready to type when Home opens (#149). Next turn: the field must be in the window before it can take focus.
       DispatchQueue.main.async { composerFocused = true }
     }
@@ -92,6 +111,7 @@ struct HomeView: View {
       HStack(spacing: Space.s) {
         ForEach(HOME_SUGGESTIONS, id: \.self) { s in Tag(s) { draft = s } }
       }
+      if !model.history.isEmpty { recentChats.padding(.top, Space.s) }
     }
   }
 
@@ -123,6 +143,36 @@ struct HomeView: View {
     .frame(minHeight: 24)
     .accessibilityElement(children: .contain)
   }
+
+  /// The 3 newest chats, closed by default (owner's option B). Each row: what you said (verbatim, one line) and its
+  /// status word. Only "View all" acts: it opens Conversations.
+  private var recentChats: some View {
+    let rows = model.history.prefix(3).map { e -> (entry: HistoryEntry, word: (word: String, kind: StatusKind)) in
+      (entry: e, word: recentChatWord(e, lines: conversationLines(entry: e, audit: model.audit, parse: model.parseDate)))
+    }
+    return Accordion(recentChatsTitle(rows.map { $0.word.word }), key: "acc.home.recent") {
+      VStack(alignment: .leading, spacing: Space.s) {
+        ForEach(rows, id: \.entry.id) { r in
+          HStack(spacing: Space.s) {
+            Text(verbatim: r.entry.said).font(TypeScale.secondary).foregroundColor(t.ink).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: Space.s)
+            StatusPill(r.word.word, kind: r.word.kind)
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityLabel("You said: \(r.entry.said). \(r.word.word).")
+        }
+        Button { nav.page = .conversations } label: {
+          Text(verbatim: "View all").font(TypeScale.secondary.weight(.medium)).foregroundColor(t.accent)
+            .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#149)
+        }
+        .buttonStyle(.plain).accessibilityLabel("View all conversations")
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /** Recent chats and their status words (refusals come from the audit log, as in Conversations). */
+  private func refreshRecent() { model.refreshHistory(); model.refreshAudit() }
 
   private func send() {
     if model.sendChat(draft) { draft = "" }  // the reply shows right here in the thread
