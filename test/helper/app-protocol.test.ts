@@ -1077,6 +1077,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   // UI v4 step e, plan 6.2.
   it('Conversations (step e): intro, chips on top of conversationMatches, S5 rows, verbatim, Load older', () => {
+    // The row's VoiceOver label is a String variable, never a literal with third-party text (LocalizedStringKey).
+    const convPage = read('ConversationsPage.swift');
+    expect(convPage).toContain('let spoken: String = "You said: \\(entry.said). \\(word.word). \\(facts)"');
+    expect(convPage).toContain('.accessibilityLabel(spoken)');
+    expect(convPage).not.toMatch(/accessibilityLabel\("[^"]*\\\(entry\./);
     // A memory command keeps its own word (it was "Memory" before step e), not "Done".
     expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
     const conv = read('ConversationsPage.swift');

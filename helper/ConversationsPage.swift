@@ -201,6 +201,8 @@ private struct ConversationItem: View {
   var body: some View {
     let word = recentChatWord(entry, lines: lines)
     let facts = conversationFacts(entry, lines: lines, source: source, time: time)
+    // A String, not a literal: a literal picks the LocalizedStringKey overload for third-party text.
+    let spoken: String = "You said: \(entry.said). \(word.word). \(facts)"
     VStack(spacing: 0) {
       if !first { Rectangle().fill(t.line).frame(height: 1) }
       VStack(alignment: .leading, spacing: Space.s) {
@@ -221,7 +223,7 @@ private struct ConversationItem: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("You said: \(entry.said). \(word.word). \(facts)")
+        .accessibilityLabel(spoken)
         .accessibilityHint(expanded ? "Hides the reply and the steps" : "Shows the reply and the steps")
         .accessibilityAddTraits(.isButton)
         if expanded && !entry.reply.isEmpty {
