@@ -1,7 +1,7 @@
 // Stephen Helper: Conversations (UI-V4-IA-PLAN section 6.2). Intro line, search and the All, Refused, Failed chips,
 // then day groups of rows: what you asked (verbatim), a facts line and the status word. A row opens to show the reply
-// and every step; refused and failed lines always show, open or closed. No new protocol: history.list +
-// audit.recent joined here by time.
+// and every step; refused and failed lines always show, open or closed. A line that stored its steps (ADR-007) shows
+// them as chat.done did; an older line joins history.list and audit.recent here by time.
 
 import SwiftUI
 
@@ -24,6 +24,7 @@ func auditActionText(_ a: AuditEntry) -> String {
  * as one line. ponytail: matching is by time only, the audit has no command id; two commands at once could swap lines.
  */
 func conversationLines(entry: HistoryEntry, audit: [AuditEntry], parse: (String) -> Date?) -> [DoneLine] {
+  if !entry.steps.isEmpty { return entry.steps.map { DoneLine(text: $0.text, status: StepStatus($0.status)) } }
   var lines: [DoneLine] = []
   var auditTools = Set<String>()
   if let end = parse(entry.ts) {
