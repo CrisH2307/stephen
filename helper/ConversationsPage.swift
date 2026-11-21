@@ -73,6 +73,7 @@ struct ConversationRecord {
  * Rows that pass the search (conversationMatches) and the chip: a pure filter on top of it. `keep` is the row a
  * palette result opened: it stays even when the chip would hide it, so "that row open" always holds.
  */
+// ponytail: O(history x audit) per keystroke (lines rebuilt for every entry); cache lines per entry when history gets large.
 func conversationRows(_ entries: [HistoryEntry], audit: [AuditEntry], parse: (String) -> Date?, query: String,
                       filter: String = "all", keep: String? = nil) -> [ConversationRecord] {
   return entries.map { ConversationRecord(entry: $0, lines: conversationLines(entry: $0, audit: audit, parse: parse)) }
