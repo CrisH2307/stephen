@@ -52,6 +52,9 @@ final class WindowNav: ObservableObject {
   @Published var draft = ""
   /// Conversations' "Clear all…" (toolbar ⋯ menu) asks first; the page shows the alert.
   @Published var confirmClearAll = false
+  /// Conversations' search text and its open row. Here so a palette result can open the page with both set.
+  @Published var conversationQuery = ""
+  @Published var conversationOpen: String? = nil
   /// Settings > About's doctor result, so the palette's "Run doctor" shows it there.
   @Published var doctor = ""
 }
