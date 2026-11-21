@@ -765,7 +765,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(handle).not.toContain('start ?? width');
     expect(handle).toContain('DragGesture(');
     // A wider sidebar widens the window's minimum, so pages keep their measured room (#154).
-    expect(main).toContain('.frame(minWidth: WindowMetrics.minContent.width + max(0, width - SidebarMetrics.expanded),');
+    expect(main).toContain('.frame(minWidth: WindowMetrics.minContent.width + (collapsed ? 0 : max(0, width - SidebarMetrics.expanded)),');
     // Every sidebar width reads the dragged width (no fixed-width call left).
     for (const f of ['MainWindow.swift', 'Components/Sidebar.swift']) expect(read(f)).not.toMatch(/SidebarMetrics\.content\(collapsed\)/);
   });

@@ -133,8 +133,8 @@ private struct MainWindowView: View {
       .background(t.ground)
     }
     .stephenAnimation(Motion.bar, value: collapsed)
-    // A wider sidebar needs a wider window, so the pages keep their measured room (#154).
-    .frame(minWidth: WindowMetrics.minContent.width + max(0, width - SidebarMetrics.expanded),
+    // A wider sidebar needs a wider window, so the pages keep their measured room (#154). The icon rail needs none.
+    .frame(minWidth: WindowMetrics.minContent.width + (collapsed ? 0 : max(0, width - SidebarMetrics.expanded)),
            minHeight: WindowMetrics.minContent.height)
   }
 
