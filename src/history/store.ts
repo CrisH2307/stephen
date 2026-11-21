@@ -3,7 +3,7 @@
  * `<home>/history/YYYY-MM-DD.jsonl` (local date). A log for the owner only: it is never sent back to Claude.
  *
  *  - Folder 0700, files 0600, opened with O_NOFOLLOW; each entry is ONE O_APPEND write.
- *  - `retentionDays` (config `history.retentionDays`, default 1, 0 to 30): a rolling window (same time N days ago).
+ *  - `retentionDays` (config `history.retentionDays`, default 7, 0 to 30): a rolling window (same time N days ago).
  *    Older entries are deleted on every append, list() and purge() (listener start, `stephen history`).
  *    0 = history off: nothing is written and purge deletes every day file.
  *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 5 MB per day file (a full day drops new entries).
