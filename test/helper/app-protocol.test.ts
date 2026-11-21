@@ -610,6 +610,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(block).toContain('QuietButton("Skip") { model.skipProposal(p.id) }');
     // Nothing saves on its own: no Return, appear or timer path in the block.
     expect(block).not.toMatch(/onSubmit|onAppear|\.task|onChange|onReceive/);
+    // The inspector's edit field: Return never keeps a suggestion (n.new); Keep stays a click.
+    const mem = read('MemoryPage.swift');
+    expect(mem).toContain('.onSubmit { if !n.new { saveEdit(n) } }');
+    expect(mem.match(/\.onSubmit/g)).toHaveLength(1);
     // The old place under the graph is gone: one proposals block, no "Nothing new" row.
     expect(page.match(/GroupedList\("New from your chats"\)/g)).toHaveLength(1);
     expect(page).not.toContain('"Nothing new"');

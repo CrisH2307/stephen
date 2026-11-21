@@ -373,7 +373,8 @@ struct MemoryPage: View {
             TextField("Memory text", text: $editText).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
               .padding(Space.s)
               .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.accent, lineWidth: 1))
-              .onSubmit { saveEdit(n) }
+              // Return saves an edit to a kept item. For a suggestion it does nothing: Keep is a click (#254 review).
+              .onSubmit { if !n.new { saveEdit(n) } }
               .accessibilityLabel("Edit memory text")
           } else {
             Text(verbatim: n.text).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
