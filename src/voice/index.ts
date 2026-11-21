@@ -519,6 +519,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     latency?.mark(speaking.id, 'firstAudio');
   };
   let lastTts: () => string | null = () => null;
+  /** The last command's finishCommand: --text waits for it, so the history line is on disk before the process exits. */
+  let finishing: Promise<void> = Promise.resolve();
   const onDone = (r: CommandReport) => {
     const end = Date.now();
     latency?.mark(r.id, 'replyReady', end - Math.max(0, r.ms - r.replyMs));
@@ -538,7 +540,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
       ...(heard && lastTts() ? { tts: lastTts()! } : {}),
     });
-    void finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end });
+    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end });
   };
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
   // Tests inject env.speaker. The speaker is rebuilt when the voice setting changes, and silent when speak is off.
@@ -761,6 +763,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       }
       out(`Heard: "${text}"`);
       const r = await assistant.handle(text, { source: 'cli', raw: text });
+      await finishing;
       return r === 'ok' ? 0 : 1;
     }
 
