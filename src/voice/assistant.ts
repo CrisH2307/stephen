@@ -61,6 +61,11 @@ export interface RunHooks {
    * The one-shot runner calls it right before it starts Claude, without that guarantee.
    */
   beforeSend?: () => void;
+  /**
+   * A resumed chat (ADR-007 v2): the conversation starts fresh (never `--resume`, never a live process) and its serve
+   * starts with `--assume-private-read`. It can only make the gate stricter.
+   */
+  assumePrivateRead?: boolean;
 }
 
 /** A deterministic router that runs before Claude (timers, jobs): a reply, or null when the text isn't its command. */
