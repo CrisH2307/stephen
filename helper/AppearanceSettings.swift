@@ -50,7 +50,6 @@ struct AppearanceSettings: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.l) {
-      Text(verbatim: "Appearance").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
       HStack(spacing: Space.m) {
         ForEach(ThemeName.allCases) { n in
           ThemeTile(name: n, selected: !store.choice.followMac && store.choice.name == n) { store.pick(n) }

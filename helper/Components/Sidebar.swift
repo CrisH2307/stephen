@@ -2,7 +2,7 @@
 
 import SwiftUI
 
-/// "STEPHEN" / "YOU" label above a group of rows.
+/// "Talk" / "Control" label above a group of rows (sentence case, v4).
 struct SidebarSection<Content: View>: View {
   @Environment(\.stephenTheme) var t
   let title: String
@@ -61,7 +61,7 @@ struct SidebarRow: View {
       .frame(width: width ?? SidebarMetrics.content(collapsed), alignment: .leading)
       .background(
         ZStack(alignment: .leading) {
-          RoundedRectangle(cornerRadius: Corner.row).fill(t.accent.opacity(selected ? 0.12 : 0))
+          RoundedRectangle(cornerRadius: Corner.row).fill(selected ? t.selection : Color.clear)
           // The mark for "you are here": a small accent bar on the leading edge.
           Capsule().fill(t.accent).frame(width: 3, height: 18).padding(.leading, 2).opacity(selected ? 1 : 0)
         }
