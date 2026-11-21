@@ -47,10 +47,10 @@ const entry = (said: string, over: Partial<NewHistoryEntry> = {}): NewHistoryEnt
 });
 
 describe('history config', () => {
-  it('defaults to 1 day; 0 to 30 allowed; strict', () => {
-    expect(parseHistoryConfig(undefined)).toEqual({ retentionDays: 1 });
-    expect(parseHistoryConfig({})).toEqual({ retentionDays: 1 });
-    expect(parseHistoryConfig({ retentionDays: null })).toEqual({ retentionDays: 1 });
+  it('defaults to 7 days; 0 to 30 allowed; strict', () => {
+    expect(parseHistoryConfig(undefined)).toEqual({ retentionDays: 7 });
+    expect(parseHistoryConfig({})).toEqual({ retentionDays: 7 });
+    expect(parseHistoryConfig({ retentionDays: null })).toEqual({ retentionDays: 7 });
     expect(parseHistoryConfig({ retentionDays: 0 })).toEqual({ retentionDays: 0 });
     expect(parseHistoryConfig({ retentionDays: 30 })).toEqual({ retentionDays: 30 });
     for (const bad of [{ retentionDays: 31 }, { retentionDays: -1 }, { retentionDays: 1.5 }, { retentionDays: '7' }, { keep: 1 }, [], 'x']) {

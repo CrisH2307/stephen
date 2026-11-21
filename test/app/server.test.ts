@@ -440,7 +440,7 @@ describe('memory, history, settings, audit, window', () => {
     expect(config.voice).toMatchObject({ model: 'sonnet', wakeWord: true, aboutMe: { school: 'I study software engineering in Toronto.' } });
     expect(JSON.stringify(config)).not.toContain('Secret St'); // R9-12: the home address stays out of the window
     expect(config.memory).toEqual({ enabled: true, confirmWakeWord: true, maxItems: 30 });
-    expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
+    expect(config.history).toEqual({ enabled: true, retentionDays: 7 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });
     const text = JSON.stringify(config);
     for (const leak of ['"elevenlabs":', 'apiKeyFile', 'elevenlabs-key', 'claudePath', '/.local/bin/claude', 'YEBbZ0itqHW31uoXSBns']) expect(text).not.toContain(leak);
