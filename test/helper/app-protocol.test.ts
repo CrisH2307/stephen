@@ -1077,6 +1077,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   // UI v4 step e, plan 6.2.
   it('Conversations (step e): intro, chips on top of conversationMatches, S5 rows, verbatim, Load older', () => {
+    // A memory command keeps its own word (it was "Memory" before step e), not "Done".
+    expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
     const conv = read('ConversationsPage.swift');
     expect(conv).toContain('Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")');
     // Chips: All, Refused, Failed, drawn with Memory's Tag.
