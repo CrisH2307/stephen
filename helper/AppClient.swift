@@ -40,16 +40,6 @@ struct ChatBubble: Identifiable, Equatable {
   let detail: String
   /** What Stephen did for this reply, oldest first. */
   var steps: [ChatStep] = []
-  /** When the command ran (epoch ms, with 1 s of slack each side), for a reply: finds a job it started (L2). */
-  var ran: ClosedRange<Double>? = nil
-}
-
-/// The job a reply started: one the job list says was created while that command ran (L2). From the listener's job
-/// registry, never from the reply's words. ponytail: matched by time; a phone job started in the same seconds would
-/// match too. A command id on the job row would make it exact.
-func startedJob(_ bubble: ChatBubble, _ jobs: [JobRow]) -> JobRow? {
-  guard bubble.kind == .reply, let ran = bubble.ran else { return nil }
-  return jobs.first { ran.contains($0.createdAt) }
 }
 
 /// Where a spoken (not typed) command came from, shown under its bubble in #142's words ("From: F5"). Never empty,
@@ -411,14 +401,11 @@ final class AppModel: ObservableObject {
     // The chain names the steps; an older listener without steps still gets the tool names.
     if steps.isEmpty && !tools.isEmpty { detailParts.append(tools.joined(separator: ", ")) }
     if let ms = msg.ms, ms > 0 { detailParts.append(String(format: "%.1f s", ms / 1000)) }
-    let end = Date().timeIntervalSince1970 * 1000
-    let ran = (end - max(msg.ms ?? 0, 0) - 1000)...(end + 1000)
-    addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "), steps: steps, ran: ran)
-    refreshJobs()  // a job this command started shows under the reply (startedJob)
+    addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "), steps: steps)
   }
 
-  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = [], ran: ClosedRange<Double>? = nil) {
-    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps, ran: ran))
+  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = []) {
+    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps))
     nextBubble += 1
     if chat.count > APP_MAX_BUBBLES { chat.removeFirst(chat.count - APP_MAX_BUBBLES) }
   }
