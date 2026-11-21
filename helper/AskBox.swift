@@ -2,8 +2,8 @@
 // opened by clicking the icon, by F5 (push-to-talk, shown while you talk) or by Cmd+K inside the app. It is a real
 // chat: the current conversation as a scrolling thread (ChatThreadView, the same one Home shows), with the input at the
 // bottom, all from AppModel (the same app.sock connection and chat as the Stephen window). Drag it by the strip on
-// top; it remembers where you left it. The ... button opens a normal pop-up menu over the box (New chat, pin, Reset
-// position, usage), so the chat stays in view.
+// top; it remembers where you left it. The strip shows Stephen's state as a word (S9). The ... button opens a normal
+// pop-up menu over the box (the chat title, New chat, pin, Reset position, usage), so the chat stays in view.
 //
 // Motion: the panel window never changes size. It is a fixed, transparent canvas; only the card inside it grows and
 // shrinks, one SwiftUI animation of its height (clicks on the transparent part go through to the app below). Resizing
@@ -42,6 +42,20 @@ enum AskBoxMode: Equatable {
     if model.state == "recording" || box.micHeld { return .listening }
     return .chat
   }
+}
+
+/// The Ask box strip's state word (S9): is Stephen ready, listening or busy, in words with a dot (never colour alone).
+/// The box can't tell a stopped listener from an unreachable one, so offline says only "Offline".
+func askBoxStateWord(connection: AppConnectionState, state: String, listening: Bool, working: Bool) -> (word: String, kind: StatusKind) {
+  switch connection {
+  case .offline: return ("Offline", .bad)
+  case .connecting: return ("Connecting", .warn)
+  case .online: break
+  }
+  if state == "recording" { return ("Listening", .ok) }
+  if working { return ("Working", .idle) }
+  if state == "speaking" { return ("Speaking", .idle) }
+  return listening ? ("Ready", .ok) : ("Microphone off", .warn)
 }
 
 struct AskBoxActions {
@@ -127,17 +141,20 @@ struct AskBoxView: View {
     withAnimation(.easeInOut(duration: Motion.bar)) { cardHeight = h }
   }
 
-  /// Drag the title area to move the box. The ... button sits beside it, not on top: an AppKit drag view would take
-  /// its clicks (that was the "can't open the menu" bug).
+  /// Drag the strip to move the box. The ... button sits beside it, not on top: an AppKit drag view would take
+  /// its clicks (that was the "can't open the menu" bug). The state word sits next to ... (S9); the chat title is in
+  /// the ... menu (R7).
   private var topStrip: some View {
-    HStack(spacing: Space.xs) {
+    let s = askBoxStateWord(connection: model.connection, state: model.state, listening: model.listening, working: model.isWorking)
+    return HStack(spacing: Space.xs) {
       ZStack {
         DragStrip(onEnd: actions.dragEnded)
-        VStack(spacing: 2) {
-          Capsule().fill(t.line).frame(width: 36, height: 4).accessibilityHidden(true)
-          Text(verbatim: model.threadTitle).font(TypeScale.secondary.weight(.semibold)).foregroundColor(t.ink2).lineLimit(1)
+        Capsule().fill(t.line).frame(width: 36, height: 4).accessibilityHidden(true).allowsHitTesting(false)
+        HStack {
+          Spacer(minLength: 0)
+          StatusPill(s.word, kind: s.kind)
         }
-        .padding(.horizontal, Space.s).allowsHitTesting(false)
+        .padding(.horizontal, Space.xs).allowsHitTesting(false)
       }
       menu
       Button(action: actions.close) {
@@ -187,6 +204,9 @@ struct AskBoxView: View {
   /// hidden buttons below, so they also work with the menu closed.
   private var menu: some View {
     Menu {
+      // The chat's title (your first words, verbatim); a label, not a button.
+      Text(verbatim: model.threadTitle)
+      Divider()
       Button("New chat  ⌘N") { newChat() }
       Button("Open Stephen  ⌘O") { actions.openApp() }
       Toggle("Pin open", isOn: $box.pinned)

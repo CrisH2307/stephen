@@ -670,6 +670,17 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(recent).not.toMatch(/sendChat|model\.\w+\(/);
   });
 
+  it('Ask box strip (S9, R7): the state word with its dot; the chat title only in the ⋯ menu, verbatim', () => {
+    const box = read('AskBox.swift');
+    const strip = box.match(/private var topStrip: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(strip).toContain('StatusPill(s.word, kind: s.kind)');
+    expect(strip).not.toContain('threadTitle');
+    expect(box).toMatch(/Menu \{\s*\/\/[^\n]*\n\s*Text\(verbatim: model\.threadTitle\)/);
+    // Offline never claims more than the box knows; every state is a word.
+    const word = box.match(/func askBoxStateWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    for (const w of ['Offline', 'Connecting', 'Listening', 'Working', 'Speaking', 'Ready', 'Microphone off']) expect(word).toContain(`"${w}"`);
+  });
+
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
     expect(client).toContain('type: "model.set", model: model, effort: effort');
     expect(read('SettingsPage.swift')).toContain('model.saveModel(model: name, effort: effort)');
