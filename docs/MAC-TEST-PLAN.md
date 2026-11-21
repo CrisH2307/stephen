@@ -142,7 +142,7 @@ Write "Mac click check: done" in the PR (or what failed). If a step fails, do no
   See: rows for Canvas, Calendar, Notion, Weather, Gmail. Each says connected or not set, and where it was found. No secret value is shown.
 - [ ] `[hands]` **5.3** Do: quit `stephen listen`. Look at the window. Then start listen again and press Retry.
   See: the window says "Can't reach Stephen" with a Retry button. Retry works after you restart listen.
-- [ ] `[hands]` **5.4** Do: open Memory, History and Audit while they are empty. Then turn on dark mode.
+- [ ] `[hands]` **5.4** Do: open Memory and Conversations while they are empty. Then turn on dark mode.
   See: the empty texts read well. Dark mode looks right.
 - [ ] `[hands]` **5.5** Do: hold F5 and say "play lofi", then "pause it". Open History.
   See: the second entry lists only `media_control`.
@@ -370,7 +370,7 @@ and allow the microphone for Stephen Helper once. Quit any Terminal listener.
 - [ ] `[hands]` **11.6.6** Do: open Settings, Appearance. Try Navy, Rose, Sun, Dark, Light, Follow the Mac.
   See: the window and the Ask box change together.
 - [ ] `[hands]` **11.6.7** Do: open Conversations (⌘2), search, and read a chat. Open Jobs (⌘3), start a job, press Stop, press Open output folder.
-  See: Conversations is one list by day, with actions under each reply and "Refused: …" lines. In Jobs, Stop moves the job to Earlier as Stopped. Open output folder opens it.
+  See: Conversations is one list by day. A click on a row shows the reply and its actions; "Refused: …" lines show even on a closed row. In Jobs, Stop moves the job to Earlier as Stopped. Open output folder opens it.
 
 ## 12. UI v3.2 (chat thread, Home chat, sidebar motion, spacing)
 Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
@@ -471,7 +471,7 @@ The full acceptance is 20 holds and 10 of each stop. If you have little time, do
   See: the `outcomes:` line has no `aborted`. (#86, #108)
 
 ### 14.2 The action list and Try again (PRs #110, #111)
-- [ ] `[hands]` **14.7** Do: ask for a gated action (for example a click on a sign-in page) and click Deny. Right after, ask "what time is it". In the Stephen window, open Conversations and open the steps of the second command (the line like "1 step").
+- [ ] `[hands]` **14.7** Do: ask for a gated action (for example a click on a sign-in page) and click Deny. Right after, ask "what time is it". In the Stephen window, open Conversations and click the second command's row (its facts line says "1 step").
   See: the refused step of the first command is not under the second command. (R10a-1, #93, #110)
 - [ ] `[scripted]` **14.8** Do: run `npx vitest run test/app/steps.test.ts`.
   See: all tests pass. (R10a-1, #93, #110)
@@ -621,7 +621,7 @@ At the end, remove your memory test items: `node dist/cli.js memory list`, then 
   See: the refused step has a hand. If the message is a problem message, the label says "Refused", never "Didn't work". (#140, #160)
 - [ ] `[hands]` **16.8** Do: ask "what time is it" and open its steps.
   See: a done step has a check mark. The three shapes (check, hand, x) look different even without colour. (#140, #160)
-- [ ] `[hands]` **16.9** Do: open Conversations in the Sun theme, then in the Navy theme (Settings, Appearance). Open the steps of the three commands above.
+- [ ] `[hands]` **16.9** Do: open Conversations in the Sun theme, then in the Navy theme (Settings, Appearance). Click the rows of the three commands above to open them.
   See: the same steps show the same shapes and the same words as in Home. Each tool is on its own line ("Used …" or "Tried …, it failed"), not one line like "Used a, b (failed)". Easy to see in both themes. (#140, #160)
 
 ### 16.4 Contrast (PR #161, issue #146)
