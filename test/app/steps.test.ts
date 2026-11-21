@@ -156,6 +156,14 @@ describe('finishCommand (ADR-007 point 6: steps built before the history append)
     expect(logged).toEqual(['Note: could not record the command (end failed).', 'Note: could not record the command (push failed).']);
   });
 
+  it('the stored ts is the end time captured before the audit read, even when the read takes ~400 ms', async () => {
+    const w = wire({ recent: () => new Promise((r) => setTimeout(() => r([]), STEPS_AUDIT_WAIT_MS - 20)) });
+    const end = Date.now();
+    await finishCommand(report('h_late'), calls, { audit: w.audit, record: w.record, app: w.app, end });
+    expect(Date.now() - end).toBeGreaterThanOrEqual(STEPS_AUDIT_WAIT_MS - 40);
+    expect(w.history.list().map((e) => e.ts)).toEqual([new Date(end).toISOString()]);
+  });
+
   it('with a failing audit read, neither the history line nor chat.done has steps', async () => {
     const w = wire({ recent: () => Promise.reject(new Error('EIO')) });
     await finishCommand(report('h_fail'), calls, { audit: w.audit, record: w.record, app: w.app });

@@ -97,21 +97,30 @@ export class ToolLogRunner implements CommandRunner {
   }
 }
 
+/** What finishCommand adds to a history line: the steps, the captured tools and the end time. */
+export interface HistoryExtra {
+  steps?: ChatStep[];
+  calls?: ToolCallRecord[];
+  ts?: Date;
+}
+
 /**
  * Append one history entry per command (finishCommand calls it). Never throws.
  * A tool's `cmd` is left out: the entry has the id itself, and history lines stay as they were before plan A2.
  * `calls`: the command's tools captured when it ended (the runner's list moves on with the next command); without
- * them `tools()` is read now.
+ * them `tools()` is read now. `ts`: when the command ended (before the audit read), so lines keep their order and
+ * their time; default now.
  */
 export function historyRecorder(
   store: HistoryStore,
   tools: (() => ToolCallRecord[]) | null,
   log: (line: string) => void,
-): (r: CommandReport, steps?: ChatStep[], calls?: ToolCallRecord[]) => void {
-  return (r, steps, calls) => {
+): (r: CommandReport, extra?: HistoryExtra) => void {
+  return (r, { steps, calls, ts } = {}) => {
     try {
       store.append({
         id: r.id,
+        ...(ts ? { ts: ts.toISOString() } : {}),
         source: r.source,
         said: r.said,
         reply: r.reply,
@@ -139,20 +148,23 @@ export async function finishCommand(
   calls: ToolCallRecord[],
   o: {
     audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
-    record?: (r: CommandReport, steps?: ChatStep[], calls?: ToolCallRecord[]) => void;
+    record?: (r: CommandReport, extra?: HistoryExtra) => void;
     app?: { commandEnding(): void; commandDone(r: CommandReport, tools: string[], steps?: ChatStep[]): void } | null;
     log?: (line: string) => void;
+    /** When the command ended (epoch ms, the onDone time); default now. The history line's ts and the steps' window. */
+    end?: number;
   },
 ): Promise<void> {
+  const end = o.end ?? Date.now();
   const note = (e: unknown) => o.log?.(`Note: could not record the command (${(e as Error).message}).`);
   try {
     o.app?.commandEnding();
   } catch (e) {
     note(e);
   }
-  const steps = await readCommandSteps(o.audit, calls, r.id, r.ms, Date.now());
+  const steps = await readCommandSteps(o.audit, calls, r.id, r.ms, end);
   try {
-    o.record?.(r, steps, calls);
+    o.record?.(r, { ...(steps ? { steps } : {}), calls, ts: new Date(end) });
   } catch (e) {
     note(e);
   }
