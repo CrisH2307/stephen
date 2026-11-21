@@ -376,9 +376,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   // A fresh `serve --instance` per Claude process (R7-1): the config is rewritten before each spawn (one Claude
   // process at a time: the next spawns only after the previous group is gone), and the runner checks the serve's lock.
   // A wake-word conversation's serve also gets `--trust wake` (R7-2: email shows only who and when).
-  const serveInstance = async (trust: Trust): Promise<ServeInstance> => {
+  // A resumed chat's serve also gets `--assume-private-read` (ADR-007 v2, rule 5).
+  const serveInstance = async (trust: Trust, assumePrivateRead = false): Promise<ServeInstance> => {
     const id = newServeInstance();
-    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust, commandFile) };
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust, commandFile, assumePrivateRead) };
   };
   if (!args.dryRun) sweepServeLocks(home, Date.now() - 24 * 3600_000); // file times are real time: left behind by a killed listener
   // Settings > How Stephen talks: changed live by app.sock settings.set, read at the next command (persona, speak, voice).
@@ -464,7 +465,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       };
       warm = new WarmConversationRunner({
         conversation,
-        start: (key, trust) => new WarmClaude(warmOpts, key, memoryForTrust(trust, memoryNow), trust),
+        start: (key, trust, assumePrivateRead) => new WarmClaude(warmOpts, key, memoryForTrust(trust, memoryNow), trust, assumePrivateRead),
         onTiming: (t) => out(formatTiming(t)),
         now: env.now,
         log: err,
