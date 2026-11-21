@@ -108,12 +108,26 @@ enum Space {
 }
 
 /// Sidebar sizes. The icon column is the same in both states, so collapsing only clips and fades, nothing jumps.
+/// The expanded width is the owner's: dragged on the divider, clamped to minWidth...maxWidth, kept as "sidebarWidth".
 enum SidebarMetrics {
   static let pad = Space.s            // 10 pt each side
-  static let expanded: CGFloat = 220  // content width; the column is 240 with padding
+  static let expanded: CGFloat = 220  // default content width; the column is 240 with padding
+  static let minWidth: CGFloat = 180  // drag range (content width)
+  static let maxWidth: CGFloat = 320
   static let rail: CGFloat = 40       // content width; the rail is 60 with padding (icon centre at 30)
-  static func content(_ collapsed: Bool) -> CGFloat { return collapsed ? rail : expanded }
-  static func column(_ collapsed: Bool) -> CGFloat { return content(collapsed) + 2 * pad }
+  static func clamp(_ width: CGFloat) -> CGFloat { return min(max(width, minWidth), maxWidth) }
+  static func content(_ collapsed: Bool, _ width: CGFloat = expanded) -> CGFloat { return collapsed ? rail : clamp(width) }
+  static func column(_ collapsed: Bool, _ width: CGFloat = expanded) -> CGFloat { return content(collapsed, width) + 2 * pad }
+}
+
+private struct SidebarWidthKey: EnvironmentKey { static let defaultValue = SidebarMetrics.expanded }
+
+extension EnvironmentValues {
+  /// The sidebar's expanded content width (the main window sets it from "sidebarWidth").
+  var sidebarWidth: CGFloat {
+    get { return self[SidebarWidthKey.self] }
+    set { self[SidebarWidthKey.self] = newValue }
+  }
 }
 
 /// Smallest window content (#154). Measured: Memory needs 853 x 606 with the full sidebar, Settings about 826 wide.
