@@ -71,8 +71,9 @@ func conversationMatches(_ entry: HistoryEntry, lines: [DoneLine], query: String
 struct ConversationsPage: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
+  /// The toolbar's ⋯ menu sets nav.confirmClearAll; the alert is here, next to the list it deletes.
+  @ObservedObject var nav: WindowNav
   @State private var search = ""
-  @State private var confirmClear = false
 
   /// Entries with their lines, grouped by day, after the search filter.
   private var days: [(day: HistoryDay, rows: [(entry: HistoryEntry, lines: [DoneLine])])] {
@@ -86,11 +87,6 @@ struct ConversationsPage: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xl) {
-        HStack {
-          Text(verbatim: "Conversations").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
-          Spacer(minLength: 0)
-          if !model.history.isEmpty { QuietButton("Clear all", destructive: true) { confirmClear = true } }
-        }
         if let n = model.historyNotice ?? model.auditNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
         if model.history.isEmpty {
           Text(verbatim: "Nothing yet. What you ask Stephen, and what it does, is listed here.")
@@ -119,7 +115,7 @@ struct ConversationsPage: View {
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .onAppear { model.refreshHistory(); model.refreshAudit() }
-    .alert("Clear all conversations?", isPresented: $confirmClear) {
+    .alert("Clear all conversations?", isPresented: $nav.confirmClearAll) {
       Button("Clear", role: .destructive) { model.clearHistory() }
       Button("Cancel", role: .cancel) {}
     } message: {

@@ -1,5 +1,5 @@
 // Stephen Helper: the Stephen window, SwiftUI hosted in one reused NSWindow. The frame (sidebar, page router) is in
-// MainWindow.swift, Home in HomeView.swift, Personal in PersonalView.swift, Conversations and Jobs in their own files; this
+// MainWindow.swift, Home in HomeView.swift, the ⌘K palette in Palette.swift, Conversations and Jobs in their own files; this
 // file has the Accounts helper and the window controller.
 // Data comes from AppModel (AppClient.swift), which talks to `stephen listen` over <home>/run/app.sock.
 //
@@ -70,7 +70,7 @@ struct OfflineView: View {
 
 // ───────────────────────────── accounts ─────────────────────────────
 
-/** An accounts.status row in words (Personal > Connected). Where the secret was found, never the secret. */
+/** An accounts.status row in words (Settings > Accounts). Where the secret was found, never the secret. */
 func accountStateWord(_ account: AccountRow) -> (word: String, kind: StatusKind) {
   let place = account.source.map { $0 == "keychain" ? " · Keychain" : " · \($0)" } ?? ""
   switch account.state {
@@ -90,7 +90,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
   private let control: StephenControl
   private let nav = WindowNav()
   private var window: NSWindow? = nil
-  /** Ask box hooks (⌘K, the sidebar field, Home's Talk and Send). Set before the first show(). */
+  /** Ask box hooks (the Ask Stephen menu item, the banner, Home's Talk). Set before the first show(). */
   var actions = WindowActions()
 
   init(model: AppModel, control: StephenControl) {
@@ -99,8 +99,15 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     super.init()
   }
 
-  /// ⌘K and the Ask Stephen menu item: open the Ask box, like the sidebar row (owner's choice of 2026-11-13, #87).
+  /// The Ask Stephen menu item: open the Ask box. No shortcut since UI v4: ⌘K is the palette (plan 5.3, open question Q1).
   @objc func askClicked(_ sender: Any?) { actions.ask() }
+
+  /// ⌘K, "Search and actions…": the main window comes forward first, then the palette opens in it. Never over the Ask
+  /// box (plan 7.5.5).
+  @objc func paletteClicked(_ sender: Any?) {
+    show()
+    nav.paletteOpen = true
+  }
 
   /// ⌘,: the window on Settings, which opens on the pane used last (#147).
   @objc func settingsClicked(_ sender: Any?) { show(page: .settings) }
@@ -152,9 +159,12 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     let appItem = NSMenuItem(title: "Stephen", action: nil, keyEquivalent: "")
     let appMenu = NSMenu(title: "Stephen")
-    let ask = NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "k")
+    let ask = NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "")
     ask.target = self
     appMenu.addItem(ask)
+    let palette = NSMenuItem(title: "Search and actions…", action: #selector(paletteClicked(_:)), keyEquivalent: "k")
+    palette.target = self
+    appMenu.addItem(palette)
     let settings = NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")
     settings.target = self
     appMenu.addItem(settings)
