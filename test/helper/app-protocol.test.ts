@@ -1118,8 +1118,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   it('Conversations (step e, [DEV REVIEW]): refused and failed lines sit outside the open or closed condition', () => {
     const conv = read('ConversationsPage.swift');
     const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    // One condition on the open state in the row, and it holds only the reply.
-    expect(item.match(/if !?expanded/g)).toEqual(['if expanded']);
+    // Two conditions on the open state in the row: one holds only what you said (copyable), one only the reply.
+    expect(item.match(/if !?expanded/g)).toEqual(['if expanded', 'if expanded']);
+    expect(item).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\n[^\n]*\n\s*\}\n/);
     expect(item).toMatch(/if expanded && !entry\.reply\.isEmpty \{\s*Text\(verbatim: entry\.reply\)[^\n]*\n[^\n]*\n\s*\}\n/);
     // The step lines follow that block, not inside it. Only ok lines wait for the open row.
     expect(item).toMatch(/\.fixedSize\(horizontal: false, vertical: true\)\n        \}\n(\s*\/\/[^\n]*\n)*\s*ForEach\(Array\(lines\.filter \{ expanded \|\| \$0\.status != \.ok \}\.enumerated\(\)\)/);
