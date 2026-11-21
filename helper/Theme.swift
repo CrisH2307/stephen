@@ -138,7 +138,6 @@ enum WindowMetrics {
 
 /// SF Pro only, SF Mono for numbers and ids. v4 roles: calmer titles, sentence-case section labels.
 enum TypeScale {
-  static let pageTitle = Font.system(size: 22, weight: .semibold, design: .default)
   static let homeTitle = Font.system(size: 26, weight: .semibold, design: .default)
   static let section = Font.system(size: 15, weight: .semibold)
   static let body = Font.system(size: 15)
