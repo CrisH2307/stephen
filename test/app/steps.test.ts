@@ -140,6 +140,22 @@ describe('finishCommand (ADR-007 point 6: steps built before the history append)
     expect(w.endings()).toBe(1);
   });
 
+  it('never rejects: commandEnding and commandDone throw, the history line is still written and the error logged', async () => {
+    const w = wire({ recent: async () => [] });
+    const logged: string[] = [];
+    const app = {
+      commandEnding: () => {
+        throw new Error('end failed');
+      },
+      commandDone: () => {
+        throw new Error('push failed');
+      },
+    };
+    await expect(finishCommand(report('h_throw'), calls, { audit: w.audit, record: w.record, app, log: (l) => logged.push(l) })).resolves.toBeUndefined();
+    expect(w.history.list().map((e) => e.id)).toEqual(['h_throw']);
+    expect(logged).toEqual(['Note: could not record the command (end failed).', 'Note: could not record the command (push failed).']);
+  });
+
   it('with a failing audit read, neither the history line nor chat.done has steps', async () => {
     const w = wire({ recent: () => Promise.reject(new Error('EIO')) });
     await finishCommand(report('h_fail'), calls, { audit: w.audit, record: w.record, app: w.app });

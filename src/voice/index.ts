@@ -538,7 +538,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
       ...(heard && lastTts() ? { tts: lastTts()! } : {}),
     });
-    void finishCommand(r, calls, { audit, record: recordHistory, app });
+    void finishCommand(r, calls, { audit, record: recordHistory, app, log: err });
   };
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
   // Tests inject env.speaker. The speaker is rebuilt when the voice setting changes, and silent when speak is off.

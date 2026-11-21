@@ -131,7 +131,8 @@ export function historyRecorder(
 
 /**
  * ADR-007 point 6: the steps are built BEFORE the history append. One audit read, then the same list goes to the
- * history line (one append, never updated) and to chat.done. A failed or slow read: neither has steps. Never rejects.
+ * history line (one append, never updated) and to chat.done. A failed or slow read: neither has steps.
+ * Never rejects (index.ts calls it with `void`): a throwing hook is logged, and the history line is still written.
  */
 export async function finishCommand(
   r: CommandReport,
@@ -140,10 +141,24 @@ export async function finishCommand(
     audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
     record?: (r: CommandReport, steps?: ChatStep[], calls?: ToolCallRecord[]) => void;
     app?: { commandEnding(): void; commandDone(r: CommandReport, tools: string[], steps?: ChatStep[]): void } | null;
+    log?: (line: string) => void;
   },
 ): Promise<void> {
-  o.app?.commandEnding();
+  const note = (e: unknown) => o.log?.(`Note: could not record the command (${(e as Error).message}).`);
+  try {
+    o.app?.commandEnding();
+  } catch (e) {
+    note(e);
+  }
   const steps = await readCommandSteps(o.audit, calls, r.id, r.ms, Date.now());
-  o.record?.(r, steps, calls);
-  o.app?.commandDone(r, calls.map((t) => t.tool), steps);
+  try {
+    o.record?.(r, steps, calls);
+  } catch (e) {
+    note(e);
+  }
+  try {
+    o.app?.commandDone(r, calls.map((t) => t.tool), steps);
+  } catch (e) {
+    note(e);
+  }
 }
