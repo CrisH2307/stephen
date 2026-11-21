@@ -738,6 +738,13 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // The one honest sentence about the table (R5), and no "change them in Settings" claim.
     expect(settings).toContain('Note("Read only. These come from Stephen\'s safety rules.")');
     expect(settings).not.toMatch(/[Cc]hange them in Settings/);
+    // The "proposes, you keep" promise shows even with no permissions data: outside the `if let`, in its own Section.
+    const perms = settings.match(/private struct PermissionsSection: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const promise = 'Section { Note("Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep.") }';
+    expect(perms).toContain(promise);
+    const ifBlock = perms.slice(perms.indexOf('if let p = model.personal?.permissions'), perms.indexOf('} else if let n = model.personalNotice'));
+    expect(ifBlock).not.toContain('it proposes, you keep');
+    expect(perms.indexOf(promise)).toBeGreaterThan(perms.indexOf('Section { Note(n) }'));
     // Links to it use the new pane (the refusal's "See what Stephen may do").
     expect(settings).toContain('case .privacy: return "Privacy and permissions"');
   });

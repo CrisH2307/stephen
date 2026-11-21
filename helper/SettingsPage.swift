@@ -543,14 +543,13 @@ private struct PermissionsSection: View {
       } header: {
         header("What Stephen may do").accessibilityAddTraits(.isHeader)
       } footer: {
-        VStack(alignment: .leading, spacing: Space.xs) {
-          Note("Read only. These come from Stephen's safety rules.")
-          Note("Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep.")
-        }
+        Note("Read only. These come from Stephen's safety rules.")
       }
     } else if let n = model.personalNotice {
       Section { Note(n) }
     }
+    // Always shown, even with no permissions data: it is a promise, not part of the table.
+    Section { Note("Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep.") }
   }
 }
 
