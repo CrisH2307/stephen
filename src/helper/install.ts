@@ -140,6 +140,21 @@ export function sdkFallbackNote(b: SdkBuildResult): string {
   return `The default SDK (${b.fallbackFrom}) cannot build SwiftUI's @State with these command line tools (no SwiftUIMacros plugin), so the helper uses ${b.sdkPath}.`;
 }
 
+/** A tiny SwiftUI view with @State. Typechecking it takes about a second and fails like the full build when the SDK needs the missing plugin. */
+const STATE_PROBE = 'import SwiftUI\nstruct StephenSdkProbe: View { @State var n = 0; var body: some View { Text("\\(n)") } }\n';
+
+/** For doctor: the same SDK choice as install-helper, by typechecking STATE_PROBE instead of building the whole helper (#248). */
+export async function probeHelperSdk(c: SwiftCompiler, run: RunFn, others: (defaultSdk: string | null) => string[] = listFallbackSdks): Promise<SdkBuildResult> {
+  const dir = await mkdtemp(join(tmpdir(), 'stephen-sdk-'));
+  try {
+    const file = join(dir, 'probe.swift');
+    await writeFile(file, STATE_PROBE, 'utf8');
+    return await buildWithSdkFallback(c.sdkPath, (sdk) => run(c.swiftc, ['-typecheck', '-swift-version', '5', ...(sdk ? ['-sdk', sdk] : []), file], 60_000), () => others(c.sdkPath));
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 /** The swiftc argv (after the program). */
 export function swiftcArgs(sourceDir: string, outFile: string, sdkPath: string | null): string[] {
   return [
