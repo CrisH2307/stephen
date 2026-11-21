@@ -637,7 +637,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const home = read('HomeView.swift');
     // A waiting question makes the chat non-empty, so Home shows the card (#138 banner covers the other pages).
     expect(home).toContain('model.thread.isEmpty && model.confirms.isEmpty');
-    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
+    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.openWindow(.memory) }');
   });
 
   it('Recording on sign (UI v4, [DEV REVIEW]): solid, words unchanged, right next to the state row at the bottom left', () => {
@@ -704,7 +704,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('HomeView.swift')).toContain('ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings }');
     const box = read('AskBox.swift');
     expect(box).toContain('ChatLinks(permissions: actions.openPermissions)');
-    expect(box).toContain('openPermissions: { [weak self] in self?.close(); selectSettingsPane(.privacy); self?.openWindow(.settings) }');
+    expect(box).toContain('openPermissions: { [weak self] in selectSettingsPane(.privacy); self?.openWindow(.settings) }');
     expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
   });
 
