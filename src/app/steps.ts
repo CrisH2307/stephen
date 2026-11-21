@@ -12,20 +12,13 @@
  * so one command's refusal never shows under the next. An entry with no id (or an invalid one) is matched by time
  * only, so a refusal never goes missing. A background job acting in the same seconds can still add a line.
  */
+import { MAX_CHAT_STEPS, MAX_STEP_CHARS, type ChatStep } from '../history/store.js';
 import { validCommandId } from '../lib/command-id.js';
 import { truncate } from '../safety/text.js';
 import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
 
-export interface ChatStep {
-  text: string;
-  status: 'ok' | 'refused' | 'failed';
-}
-
-/** At most this many steps per command (maxTurns bounds a command; this keeps one push small). */
-export const MAX_CHAT_STEPS = 40;
-/** Each step's text is cut to this many characters. */
-export const MAX_STEP_CHARS = 160;
+export { MAX_CHAT_STEPS, MAX_STEP_CHARS, type ChatStep };
 /** Audit lines up to this long before the command's start or after its end still count (clock and write slack). */
 const SLACK_MS = 1000;
 
