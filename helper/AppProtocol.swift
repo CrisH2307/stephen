@@ -18,8 +18,6 @@ let APP_MEMORY_MAX_ITEMS = 30
 let APP_REQUEST_TIMEOUT_SECONDS = 15.0
 /** While someone (window or Ask box) wants the connection and Stephen isn't reachable, the first retry waits this long. */
 let APP_RETRY_SECONDS = 3.0
-/** What the Today card on the Chat tab submits, exactly as if it were typed (test/helper/app-protocol.test.ts). */
-let APP_TODAY_PROMPT = "what's my day?"
 /** Chat bubbles kept in the window. */
 let APP_MAX_BUBBLES = 300
 

@@ -6,10 +6,18 @@
 
 import SwiftUI
 
+/// Where a chat line can take you (UI-V4-IA-PLAN L1, L2). Navigation only; nil hides the link (each place that shows
+/// the thread wires its own).
+struct ChatLinks {
+  /// Settings > Privacy and safety, where "What Stephen may do" is (L1).
+  var permissions: (() -> Void)? = nil
+}
+
 struct ChatThreadView: View {
   @Environment(\.stephenTheme) var t
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @ObservedObject var model: AppModel
+  var links = ChatLinks()
   /// The main window's ⌘K palette is open: the hidden Esc button is off, so Esc only closes the palette (plan 7.5.4).
   @Environment(\.paletteOpen) var paletteOpen
 
@@ -20,7 +28,7 @@ struct ChatThreadView: View {
           let thread = model.thread
           let canRetry = retryableText(thread) != nil
           ForEach(thread) { b in
-            ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil).id(b.id)
+            ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil, links: links).id(b.id)
           }
           if let q = model.confirms.first {
             ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
@@ -42,7 +50,8 @@ struct ChatThreadView: View {
       }
       .onAppear { proxy.scrollTo("end", anchor: .bottom) }
       .onChange(of: model.thread.last?.id) { _ in toEnd(proxy) }
-      .onChange(of: model.confirms.first?.id) { _ in toEnd(proxy) }
+      // A question appears without animation (#139): no scroll animation to it either.
+      .onChange(of: model.confirms.first?.id) { _ in proxy.scrollTo("end", anchor: .bottom) }
       .onChange(of: model.isWorking) { _ in toEnd(proxy) }
     }
   }
@@ -77,6 +86,10 @@ struct ChatBubbleRow: View {
   let isLast: Bool
   /** nil when the last message was not typed: no Try again (R10a-2). */
   let retry: (() -> Void)?
+  var links = ChatLinks()
+
+  /// A step was refused: the message says where the rules live (L1). Never hidden in the folded chain.
+  private var refused: Bool { return bubble.steps.contains { StepStatus($0.status) == .refused } }
 
   var body: some View {
     switch bubble.kind {
@@ -109,6 +122,7 @@ struct ChatBubbleRow: View {
         if bubble.steps.isEmpty && !bubble.detail.isEmpty {
           Text(verbatim: bubble.detail).font(TypeScale.secondary).foregroundColor(t.ink2)
         }
+        if refused, let open = links.permissions { link("See what Stephen may do", open) }
       }
       .accessibilityElement(children: .contain)
     case .problem:
@@ -116,11 +130,21 @@ struct ChatBubbleRow: View {
         Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)
         if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
         Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
+        if refused, let open = links.permissions { link("See what Stephen may do", open) }
         if isLast, let retry = retry { QuietButton("Try again", action: retry) }
       }
     case .info:
       Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
     }
+  }
+
+  /** A text link with a 24 pt target. It only navigates. */
+  private func link(_ title: String, _ action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(verbatim: title).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.accent)
+        .frame(minHeight: 24).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain).accessibilityLabel(title)
   }
 }
 
@@ -239,7 +263,8 @@ struct ConfirmMessage: View {
     }
     .padding(Space.m)
     .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
-    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.accent, lineWidth: 1))
+    // A 1.5 pt warn outline all round, no side stripe: the most distinct shape, in every theme (#139).
+    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))
     .accessibilityElement(children: .contain)
   }
 }

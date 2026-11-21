@@ -370,6 +370,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(returns.length).toBeGreaterThanOrEqual(5);
     for (const r of returns) expect(r, r).toMatch(/^"[^"]+"$/);
     for (const s of ['voice-ptt', 'voice-wake', 'phone', 'cli']) expect(label).toContain(`case "${s}":`);
+    // UI v4 step b (#142, [DEV REVIEW]): the source line in #142's words.
+    for (const [s, w] of [['voice-ptt', 'From: F5'], ['voice-wake', 'From: Hey Stephen'], ['phone', 'From: Phone']]) {
+      expect(label).toContain(`case "${s}": return "${w}"`);
+    }
     // Shown under the bubble (verbatim) and read by VoiceOver.
     expect(chat).toContain('if !bubble.detail.isEmpty {\n          Text(verbatim: bubble.detail)');
     expect(chat).toContain('"You, \\(bubble.detail): \\(bubble.text)"');
@@ -398,8 +402,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const chat = read('Components/ChatThread.swift');
     expect(chat).toMatch(/if let q = model\.confirms\.first \{[\s\S]*?Button\(""\) \{ model\.denyFirstConfirm\(\) \}\.keyboardShortcut\(\.cancelAction\)/);
     expect(chat.match(/\.cancelAction/g)).toHaveLength(1);
-    expect(read('HomeView.swift')).toContain('ChatThreadView(model: model)');
-    expect(box).toContain('ChatThreadView(model: model)');
+    // Same thread view in both (UI v4 step b adds navigation-only links after the model: ChatLinks).
+    expect(read('HomeView.swift')).toMatch(/ChatThreadView\(model: model(, links: ChatLinks\(|\))/);
+    expect(box).toMatch(/ChatThreadView\(model: model(, links: ChatLinks\(|\))/);
     // Nothing on the keyboard approves: Allow is only a click.
     for (const src of [chat, box, read('HomeView.swift')]) expect(src).not.toMatch(/approve: true|answer\(true\)[^\n]*keyboardShortcut/);
   });
@@ -520,7 +525,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     }
   });
 
-  it('Personal is gone (UI v4): its parts (personal.summary, accounts) are read-only Settings panes; Home\'s Today row', () => {
+  it('Personal is gone (UI v4): its parts (personal.summary, accounts) are read-only Settings panes; Home\'s Next up line', () => {
     expect(window).not.toContain('PersonalView');
     const settings = read('SettingsPage.swift');
     expect(settings).toContain('model.refreshPersonal()');
@@ -536,9 +541,14 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(moved).not.toMatch(/model\.(add|update|clear|forget|stop|send|save|delete)\w*\(/);
     expect(moved).toContain('PermissionTable(');
     expect(window).toContain('model.refreshAccounts()');
-    expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
-    // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.
-    expect(client).toContain('let APP_TODAY_PROMPT = "what\'s my day?"');
+    // Home's Next up line (plan 6.1, R8) has no "What's my day?" link: Home sends only from its composer's Send.
+    const home = read('HomeView.swift');
+    expect(home).not.toContain('APP_TODAY_PROMPT');
+    expect(home.match(/sendChat\(/g)).toHaveLength(1);
+    expect(home).toContain('if model.sendChat(draft) { draft = "" }');
+    // "Next up:" only before a running job; with nothing running Home just says "Nothing waiting".
+    expect(home).toMatch(/if running > 0 \{\s*Text\(verbatim: "Next up:"\)/);
+    expect(home).toContain('Button { nav.page = .jobs }');
     expect(client).toContain('AppRequest.accountsStatus(newId())');
     // Only system colours.
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
@@ -599,7 +609,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Text(verbatim: entry.said)');
   });
 
-  it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the top, Home', () => {
+  it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
     const main = read('MainWindow.swift');
     expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
     expect(main).toContain('static let control: [Page] = [.memory, .settings]');
@@ -607,9 +617,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');
     expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
     expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
-    // The state row sits above the groups (v4).
-    expect(main.indexOf('StatusRow(model: model, control: control, collapsed: collapsed)'))
-      .toBeLessThan(main.indexOf('SidebarSection("Talk"'));
+    // The state row sits at the bottom left (owner, 2026-11-21): after both groups and the spacer, the last view in the
+    // sidebar's column.
+    const sidebar = main.match(/private struct SidebarView: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(sidebar).toMatch(/SidebarSection\("Control"[^\n]*\n\s*\}\n\s*Spacer\(minLength: 0\)\n\s*\/\/[^\n]*\n\s*StatusRow\(model: model, control: control, collapsed: collapsed\)\n    \}/);
+    expect(sidebar.match(/StatusRow\(/g)).toHaveLength(1);
     // R2: the fake "Ask Stephen" field is gone. The Ask box stays one click away: the banner, the palette, the app menu.
     expect(main).not.toContain('askField');
     expect(main).not.toContain('Button(action: nav.askHere)');
@@ -625,7 +637,75 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const home = read('HomeView.swift');
     // A waiting question makes the chat non-empty, so Home shows the card (#138 banner covers the other pages).
     expect(home).toContain('model.thread.isEmpty && model.confirms.isEmpty');
-    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
+    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.openWindow(.memory) }');
+  });
+
+  it('Recording on sign (UI v4, [DEV REVIEW]): solid, words unchanged, right next to the state row at the bottom left', () => {
+    const row = read('MainWindow.swift').match(/private struct StatusRow: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const sign = row.match(/if model\.recordingOn \{([\s\S]*?)\n      \}/)?.[1] ?? '';
+    expect(sign).toContain('Text(verbatim: "Recording on")');
+    expect(sign).toContain('Image(systemName: "waveform")');
+    // Solid in the glass sidebar: surface fill and a lineStrong outline, no material.
+    expect(sign).toContain('.background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))');
+    expect(sign).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))');
+    expect(sign).not.toMatch(/glass|Material|opacity/i);
+    expect(sign).toContain('.help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")');
+    expect(sign).toContain('.accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")');
+    // Right next to the state row: the sign's block ends and the state row's HStack starts, nothing in between.
+    expect(row).toMatch(/if model\.recordingOn \{[\s\S]*?\n      \}\n      HStack\(spacing: Space\.s\) \{\n        StatusPill\(s\.word/);
+    // Not inside an accordion, and not hidden when the sidebar is collapsed (the waveform stays).
+    expect(row).not.toMatch(/Accordion|DisclosureGroup/);
+    expect(sign).not.toMatch(/if !collapsed \{[^\n]*waveform/);
+  });
+
+  it('Home Recent (plan 6.1): an accordion of 3, status words, refusals named and counted, verbatim, only View all acts', () => {
+    const home = read('HomeView.swift');
+    expect(home).toContain('model.history.prefix(3)');
+    expect(home).toContain('Accordion(recentChatsTitle(rows.map { $0.word.word }), key: "acc.home.recent")');
+    expect(home).toContain('Text(verbatim: r.entry.said)');
+    // A refusal is the first word checked, so a refused chat is never "Done" or "Failed"; the title counts problems.
+    const word = home.match(/func recentChatWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const order = ['"Refused"', '"Failed"', '"Stopped"', '"Done"'].map((w) => word.indexOf(w));
+    expect(order.every((i) => i >= 0), word).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(home).toMatch(/func recentChatsTitle[\s\S]*?"\\\(refused\) refused"[\s\S]*?"\\\(failed\) failed"/);
+    // Refusals come from the same audit join as Conversations.
+    expect(home).toContain('conversationLines(entry: e, audit: model.audit, parse: model.parseDate)');
+    const recent = home.match(/private var recentChats: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(recent.match(/Button \{[^}]*\}/g)).toEqual(['Button { nav.page = .conversations }']);
+    expect(recent).not.toMatch(/sendChat|model\.\w+\(/);
+  });
+
+  it('Ask box strip (S9, R7): the state word with its dot; the chat title only in the ⋯ menu, verbatim', () => {
+    const box = read('AskBox.swift');
+    const strip = box.match(/private var topStrip: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(strip).toContain('StatusPill(s.word, kind: s.kind)');
+    expect(strip).not.toContain('threadTitle');
+    expect(box).toMatch(/Menu \{\s*\/\/[^\n]*\n\s*Text\(verbatim: model\.threadTitle\)/);
+    // R6: the menu opens the Memory page by its name.
+    expect(box).toContain('Button("Open Memory") { actions.reviewMemory() }');
+    expect(box).not.toContain('Review memory');
+    // Offline never claims more than the box knows; every state is a word.
+    const word = box.match(/func askBoxStateWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    for (const w of ['Offline', 'Connecting', 'Listening', 'Working', 'Speaking', 'Ready', 'Microphone off']) expect(word).toContain(`"${w}"`);
+  });
+
+  it('L1 ([DEV REVIEW]): a refused step shows "See what Stephen may do", outside the folded chain; it only navigates', () => {
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('private var refused: Bool { return bubble.steps.contains { StepStatus($0.status) == .refused } }');
+    // On replies and on problem messages, gated on a refusal; never inside ActionChain (folded by default).
+    expect(chat.match(/if refused, let open = links\.permissions \{ link\("See what Stephen may do", open\) \}/g)).toHaveLength(2);
+    const chain = chat.match(/struct ActionChain: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(chain).not.toContain('See what Stephen may do');
+    // The refusal label and the steps keep their place and look.
+    expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // The link button only runs its closure; the closures only navigate (no model call, no answer, no send).
+    expect(chat).toMatch(/private func link\(_ title: String, _ action: @escaping \(\) -> Void\) -> some View \{\s*Button\(action: action\)/);
+    expect(read('HomeView.swift')).toContain('ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings }');
+    const box = read('AskBox.swift');
+    expect(box).toContain('ChatLinks(permissions: actions.openPermissions)');
+    expect(box).toContain('openPermissions: { [weak self] in selectSettingsPane(.privacy); self?.openWindow(.settings) }');
+    expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
   });
 
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
@@ -704,6 +784,22 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const chat = read('Components/ChatThread.swift');
     expect(chat).toContain('Text(verbatim: "Needs your OK").safetyLabelStyle(t)');
     expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // UI v4 step b (#139, [DEV REVIEW]): the question card has a 1.5 pt warn outline all round, solid fill, no glass.
+    const card = chat.match(/struct ConfirmMessage: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(card).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))');
+    expect(card).toContain('.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))');
+    expect(card).not.toMatch(/glass|Material|shadow|stephenAnimation|withAnimation|transition/);
+    // #139: the question appears without animation: the Ask box card height, the scroll to it, and Home's glide.
+    const follow = read('AskBox.swift').match(/private func follow\(_ h: CGFloat\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(follow).toContain('if cardHeight == 0 || reduceMotion || !model.confirms.isEmpty { cardHeight = h; return }');
+    expect(follow.indexOf('!model.confirms.isEmpty')).toBeLessThan(follow.indexOf('withAnimation'));
+    expect(chat).toContain('.onChange(of: model.confirms.first?.id) { _ in proxy.scrollTo("end", anchor: .bottom) }');
+    const home = read('HomeView.swift');
+    expect(home).toContain('private var glide: Bool { return model.thread.isEmpty && !model.isWorking }');
+    // The glide never reads the questions, so a question arriving mid-chat cannot start an animation (review of #252).
+    expect(home.match(/private var glide: Bool \{([^\n]*)\}/)?.[1]).not.toContain('confirms');
+    expect(home).toContain('.stephenAnimation(Motion.bar, value: glide)');
+    expect(home).not.toContain('value: empty)');
     expect(read('Theme.swift')).toContain('.font(Font.system(size: 11, weight: .medium)).tracking(0.88).textCase(.uppercase)');
     const field = read('Components/Controls.swift').match(/struct AskField: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(field).toMatch(/onKeyPress\(keys: \[\.return\], phases: \.repeat\) \{ press in\s*press\.modifiers\.contains\(\.shift\) \? \.ignored : \.handled/);

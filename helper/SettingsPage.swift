@@ -7,6 +7,9 @@
 import AppKit
 import SwiftUI
 
+/** Show `item` when Settings opens next (the pane is remembered under "settingsPane"). */
+func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }
+
 enum SettingsItem: String, CaseIterable, Identifiable {
   case aboutYou, talk, model, appearance, wake, phone, accounts, browsers, privacy, routines, speed, about
   var id: String { return rawValue }

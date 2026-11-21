@@ -1,6 +1,6 @@
 // Stephen Helper: the main window's frame (UI v4 shell, docs/research/UI-V4-IA-PLAN.md sections 5, 7 and 8).
-// Sidebar (glass): wordmark and collapse (⌘\, 60 pt icon rail, remembered), the state row and the solid "Recording on"
-// sign at the top, then two groups: Talk (Home, Conversations, Jobs) and Control (Memory, Settings), ⌘1…⌘5.
+// Sidebar (glass): wordmark and collapse (⌘\, 60 pt icon rail, remembered), two groups: Talk (Home, Conversations,
+// Jobs) and Control (Memory, Settings), ⌘1…⌘5, then at the bottom left the solid "Recording on" sign and the state row.
 // Content column: the toolbar (glass: page title, page actions, Search ⌘K), the waiting-question banner (solid), then
 // the page. The ⌘K palette (Palette.swift) opens over the page, under the banner.
 
@@ -278,13 +278,13 @@ private struct SidebarView: View {
         .frame(width: SidebarMetrics.content(collapsed), alignment: collapsed ? .leading : .trailing)
       }
       .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
-      // At the top, where the HIG wants important controls (v4, moved from the bottom).
-      StatusRow(model: model, control: control, collapsed: collapsed)
       VStack(alignment: .leading, spacing: Space.m) {
         SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }
         SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }
       }
       Spacer(minLength: 0)
+      // At the bottom left, with the Recording on sign right next to it (owner, 2026-11-21).
+      StatusRow(model: model, control: control, collapsed: collapsed)
     }
     .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
     .padding(.horizontal, SidebarMetrics.pad)
@@ -311,18 +311,8 @@ private struct StatusRow: View {
   var body: some View {
     let s = listenerWord(connection: model.connection, listening: model.listening, listener: control.listener)
     VStack(alignment: .leading, spacing: Space.s) {
-      HStack(spacing: Space.s) {
-        StatusPill(s.word, kind: s.kind, showWord: !collapsed).padding(.leading, Space.s + 6)  // the dot sits under the icons
-        Spacer(minLength: 0)
-        startStop.opacity(collapsed ? 0 : 1).allowsHitTesting(!collapsed)
-      }
-      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
-      .help(collapsed ? s.word : "")
-      if let p = problem, !collapsed {
-        Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
-      }
       // The replay recorder is on (issue #48): in words with a waveform, not a red dot that looks like the mic.
-      // Solid, even in the glass sidebar (plan 8.1): surface fill and a strong outline.
+      // Solid, even in the glass sidebar (plan 8.1): surface fill and a strong outline. Always right above the state row.
       if model.recordingOn {
         HStack(spacing: Space.s) {
           Image(systemName: "waveform").foregroundColor(t.ink2).accessibilityHidden(true)
@@ -334,6 +324,16 @@ private struct StatusRow: View {
         .help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")
+      }
+      HStack(spacing: Space.s) {
+        StatusPill(s.word, kind: s.kind, showWord: !collapsed).padding(.leading, Space.s + 6)  // the dot sits under the icons
+        Spacer(minLength: 0)
+        startStop.opacity(collapsed ? 0 : 1).allowsHitTesting(!collapsed)
+      }
+      .frame(width: SidebarMetrics.content(collapsed), alignment: .leading)
+      .help(collapsed ? s.word : "")
+      if let p = problem, !collapsed {
+        Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
       }
     }
     .onAppear { control.refresh() }
