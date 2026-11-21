@@ -214,6 +214,8 @@ export interface InstallHelperDeps {
   quitRunning: (stephenHome: string) => Promise<boolean>;
   /** Open the app once at the end (default true). */
   openAfter: boolean;
+  /** Other macOS SDKs to try when the default one lacks SwiftUIMacros (#248). Default: listFallbackSdks. */
+  fallbackSdks?: (defaultSdk: string | null) => string[];
 }
 
 export async function quitRunningHelper(stephenHome: string): Promise<boolean> {
@@ -346,14 +348,25 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
   try {
     const out = join(tmp, HELPER_EXECUTABLE);
     log(`Compiling Stephen Helper with ${swiftc} (this takes a minute)…`);
-    const args = swiftcArgs(plan.sourceDir, out, sdkPath);
-    const r = await deps.run(swiftc, args, 600_000);
-    if (r.code !== 0 || !deps.exists(out)) {
+    const b = await buildWithSdkFallback(
+      sdkPath,
+      async (sdk) => {
+        const r = await deps.run(swiftc, swiftcArgs(plan.sourceDir, out, sdk), 600_000);
+        return r.code === 0 && !deps.exists(out) ? { ...r, code: 1 } : r;
+      },
+      () => (deps.fallbackSdks ?? listFallbackSdks)(sdkPath),
+    );
+    if (!b.ok) {
+      const r = b.result;
       const text = (r.stderr || r.stdout).trim().split('\n').slice(0, 40).join('\n');
-      log(`✗ swiftc failed (exit code ${r.code}):\n${text}\n\nCommand: ${display(swiftc, args)}`);
-      if (/xcrun: error|invalid active developer path|unable to find sdk|no such module/i.test(text)) log(XCODE_TOOLS_FIX);
+      log(`✗ swiftc failed (exit code ${r.code}):\n${text}\n\nCommand: ${display(swiftc, swiftcArgs(plan.sourceDir, out, sdkPath))}`);
+      if (b.tried.length > 1) log(`The default SDK has no SwiftUIMacros plugin, and no other SDK built it either (tried ${b.tried.slice(1).join(', ')}). ${SDK_FIX}`);
+      else if (SWIFTUI_MACROS_MISSING.test(text)) log(`The default SDK has no SwiftUIMacros plugin, and there is no other SDK in ${CLT_SDKS_DIR}. ${SDK_FIX}`);
+      else if (/xcrun: error|invalid active developer path|unable to find sdk|no such module/i.test(text)) log(XCODE_TOOLS_FIX);
       return 1;
     }
+    log(`SDK: ${b.sdkPath ?? 'swiftc default'}`);
+    if (b.fallbackFrom) log(sdkFallbackNote(b));
 
     const template = await readFile(join(plan.sourceDir, 'Info.plist'), 'utf8');
     await rm(staging, { recursive: true, force: true });
