@@ -137,7 +137,8 @@ struct AskBoxView: View {
 
   private func follow(_ h: CGFloat) {
     guard h > 0, abs(h - cardHeight) > 0.5 else { return }
-    if cardHeight == 0 || reduceMotion { cardHeight = h; return }
+    // A waiting question appears at once, never with a height animation (#139).
+    if cardHeight == 0 || reduceMotion || !model.confirms.isEmpty { cardHeight = h; return }
     withAnimation(.easeInOut(duration: Motion.bar)) { cardHeight = h }
   }
 

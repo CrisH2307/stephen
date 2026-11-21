@@ -769,6 +769,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(card).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))');
     expect(card).toContain('.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))');
     expect(card).not.toMatch(/glass|Material|shadow|stephenAnimation|withAnimation|transition/);
+    // #139: the question appears without animation: the Ask box card height, the scroll to it, and Home's glide.
+    const follow = read('AskBox.swift').match(/private func follow\(_ h: CGFloat\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(follow).toContain('if cardHeight == 0 || reduceMotion || !model.confirms.isEmpty { cardHeight = h; return }');
+    expect(follow.indexOf('!model.confirms.isEmpty')).toBeLessThan(follow.indexOf('withAnimation'));
+    expect(chat).toContain('.onChange(of: model.confirms.first?.id) { _ in proxy.scrollTo("end", anchor: .bottom) }');
+    const home = read('HomeView.swift');
+    expect(home).toContain('private var glide: Bool { return model.confirms.isEmpty ? isEmpty : true }');
+    expect(home).toContain('.stephenAnimation(Motion.bar, value: glide)');
+    expect(home).not.toContain('value: empty)');
     expect(read('Theme.swift')).toContain('.font(Font.system(size: 11, weight: .medium)).tracking(0.88).textCase(.uppercase)');
     const field = read('Components/Controls.swift').match(/struct AskField: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(field).toMatch(/onKeyPress\(keys: \[\.return\], phases: \.repeat\) \{ press in\s*press\.modifiers\.contains\(\.shift\) \? \.ignored : \.handled/);

@@ -42,7 +42,8 @@ struct ChatThreadView: View {
       }
       .onAppear { proxy.scrollTo("end", anchor: .bottom) }
       .onChange(of: model.thread.last?.id) { _ in toEnd(proxy) }
-      .onChange(of: model.confirms.first?.id) { _ in toEnd(proxy) }
+      // A question appears without animation (#139): no scroll animation to it either.
+      .onChange(of: model.confirms.first?.id) { _ in proxy.scrollTo("end", anchor: .bottom) }
       .onChange(of: model.isWorking) { _ in toEnd(proxy) }
     }
   }

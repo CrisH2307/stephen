@@ -54,6 +54,10 @@ struct HomeView: View {
   /// No messages yet in this chat (a waiting question or a running command counts as a chat).
   private var isEmpty: Bool { return model.thread.isEmpty && model.confirms.isEmpty && !model.isWorking }
 
+  /// What the composer's glide follows: the empty state, but a waiting question never animates in or out (#139). While
+  /// one waits this stays true, so neither its arrival nor its end changes it.
+  private var glide: Bool { return model.confirms.isEmpty ? isEmpty : true }
+
   var body: some View {
     let empty = isEmpty
     VStack(spacing: Space.m) {
@@ -74,7 +78,7 @@ struct HomeView: View {
     .frame(maxWidth: 720)
     .padding(.horizontal, Space.xxl).padding(.vertical, Space.xl)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .stephenAnimation(Motion.bar, value: empty)
+    .stephenAnimation(Motion.bar, value: glide)
     // Ready to type again: after New chat (toolbar, ⌘N) and when the palette closes (its Ask row fills the composer).
     .onChange(of: empty) { e in if e { composerFocused = true; refreshRecent() } }
     .onChange(of: nav.paletteOpen) { open in if !open { composerFocused = true } }
