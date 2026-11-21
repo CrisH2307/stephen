@@ -1,6 +1,8 @@
-// Stephen Helper: Jobs (UI-PLAN v3.1 section 4). A grouped list: Running first, then the rest. Each job shows its
-// status in words, how long it ran and what it cost so far (budget used), the job's own summary (shown as written,
-// so check it), Stop for running jobs (the owner's own click, as before) and Reveal in Finder for the output folder.
+// Stephen Helper: Jobs (UI-V4-IA-PLAN section 6.4). Intro line with the caution (R9), then Running (open), Failed in
+// the last 7 days (open, never an accordion: a failed job is never hidden), then the closed accordion Earlier (N) for
+// the rest. Each row: the task, a facts line ("Started 2:10 PM · 3 min · $0.12 spent"), the status in words, Stop on
+// running rows only (the owner's own click, as before). An open row: the job's own summary (labelled as written by
+// the job, so check it), turns, and Reveal in Finder for the output folder.
 
 import AppKit
 import SwiftUI
@@ -29,6 +31,20 @@ func jobUsedText(_ job: JobRow, now: Double) -> String {
   return parts.joined(separator: " · ")
 }
 
+/** Failed or timed out (the red status words). */
+func jobFailed(_ job: JobRow) -> Bool { return !job.isRunning && jobStatusWord(job.status).kind == .bad }
+
+/** Failed jobs that ended in the last 7 days: shown open, never in an accordion (plan 6.4). */
+func jobFailedRecently(_ job: JobRow, now: Double) -> Bool {
+  return jobFailed(job) && now - (job.endedAt ?? job.createdAt) <= 7 * 24 * 3600 * 1000.0
+}
+
+/** "Earlier (5)", or "Earlier (5, 1 failed)": a closed accordion counts the problems in it (plan section 6). */
+func jobsEarlierTitle(_ jobs: [JobRow]) -> String {
+  let failed = jobs.filter(jobFailed).count
+  return "Earlier (\(jobs.count)\(failed > 0 ? ", \(failed) failed" : ""))"
+}
+
 /** "3 min", "1 h 05 min": whole minutes between two epoch-millisecond times. */
 func jobDurationText(from: Double, to: Double) -> String {
   let minutes = max(0, Int((to - from) / 60000.0))
@@ -43,20 +59,24 @@ struct JobsView: View {
   @State private var openId: String? = nil
 
   var body: some View {
+    let now = Date().timeIntervalSince1970 * 1000.0
     let running = model.jobs.filter { $0.isRunning }
-    let past = model.jobs.filter { !$0.isRunning }
+    let failed = model.jobs.filter { jobFailedRecently($0, now: now) }
+    let earlier = model.jobs.filter { !$0.isRunning && !jobFailedRecently($0, now: now) }
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xl) {
-        Text(verbatim: "Jobs").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
+        // R9: the caution once, here.
+        Text(verbatim: "Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it.")
+          .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
         if let n = model.jobsNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
         if model.jobs.isEmpty {
-          Text(verbatim: "No jobs yet. Say \"start a job to ...\" and it shows up here.").font(TypeScale.body).foregroundColor(t.ink2)
+          Text(verbatim: "No jobs yet. Say \"start a job to find 5 internships\".").font(TypeScale.body).foregroundColor(t.ink2)
         }
-        if !running.isEmpty { group("Running", running) }
-        if !past.isEmpty { group("Earlier", past) }
-        if !model.jobs.isEmpty {
-          Text(verbatim: "The summary is written by the job itself, so check it before you rely on it.")
-            .font(TypeScale.secondary).foregroundColor(t.ink2)
+        if !running.isEmpty { GroupedList("Running") { rows(running) } }
+        // [DEV REVIEW] Safety: failed jobs are never inside a closed accordion.
+        if !failed.isEmpty { GroupedList("Failed, last 7 days") { rows(failed) } }
+        if !earlier.isEmpty {
+          Accordion(jobsEarlierTitle(earlier), key: "acc.jobs.earlier") { GroupedList { rows(earlier) } }
         }
       }
       .padding(Space.xxl)
@@ -77,12 +97,10 @@ struct JobsView: View {
     .onReceive(model.$state.dropFirst().removeDuplicates()) { s in if s == "idle" { model.refreshJobs() } }
   }
 
-  private func group(_ title: String, _ jobs: [JobRow]) -> some View {
-    GroupedList(title) {
-      ForEach(Array(jobs.enumerated()), id: \.element.id) { i, job in
-        JobItem(job: job, first: i == 0, expanded: openId == job.id,
-                toggle: { openId = openId == job.id ? nil : job.id }, stop: { model.stopJob(job.id) })
-      }
+  private func rows(_ jobs: [JobRow]) -> some View {
+    ForEach(Array(jobs.enumerated()), id: \.element.id) { i, job in
+      JobItem(job: job, first: i == 0, expanded: openId == job.id,
+              toggle: { openId = openId == job.id ? nil : job.id }, stop: { model.stopJob(job.id) })
     }
   }
 }
@@ -126,6 +144,7 @@ private struct JobItem: View {
           if job.isRunning { QuietButton("Stop", destructive: true, action: stop).accessibilityLabel("Stop job: \(job.task)") }
         }
         if expanded {
+          if !job.summary.isEmpty { Text(verbatim: "Summary, written by the job").sectionLabelStyle(t) }
           Text(verbatim: bodyText).font(TypeScale.secondary).foregroundColor(t.ink).textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
           Text(verbatim: "\(job.turns) turns").font(TypeScale.secondary).foregroundColor(t.ink2)

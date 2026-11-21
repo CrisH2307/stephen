@@ -654,6 +654,33 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('return parts.joined(separator: " · ")');
   });
 
+  it('Jobs step d (plan 6.4): caution intro, Running open, Failed open [DEV REVIEW], Earlier accordion, Stop on running only', () => {
+    const jobs = read('JobsPage.swift');
+    // R9: the caution once, in the intro; the summary keeps its label.
+    expect(jobs).toContain('Each summary is written by the job: check it before you rely on it.');
+    expect(jobs).not.toContain('The summary is written by the job itself');
+    expect(jobs).toContain('Text(verbatim: "Summary, written by the job")');
+    expect(jobs).toContain('Text(verbatim: job.task)');
+    const body = jobs.match(/struct JobsView: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
+    expect(body).toContain('if !running.isEmpty { GroupedList("Running") { rows(running) } }');
+    // A failed job is never hidden: its group is open, and not inside any Accordion.
+    const failedLine = body.split('\n').find((l) => l.includes('GroupedList("Failed, last 7 days")')) ?? '';
+    expect(failedLine).toContain('if !failed.isEmpty { GroupedList("Failed, last 7 days") { rows(failed) } }');
+    expect(body.match(/Accordion\(/g)).toHaveLength(1);
+    const accordion = body.slice(body.indexOf('Accordion('));
+    expect(accordion).not.toContain('Failed, last 7 days');
+    expect(body.indexOf('GroupedList("Failed')).toBeLessThan(body.indexOf('Accordion('));
+    // Earlier is a closed accordion that counts its failures in the label.
+    expect(body).toContain('Accordion(jobsEarlierTitle(earlier), key: "acc.jobs.earlier") { GroupedList { rows(earlier) } }');
+    expect(jobs).toContain('func jobsEarlierTitle(_ jobs: [JobRow]) -> String');
+    expect(jobs).toMatch(/jobsEarlierTitle[\s\S]*?failed\) failed/);
+    expect(jobs).toContain('let earlier = model.jobs.filter { !$0.isRunning && !jobFailedRecently($0, now: now) }');
+    expect(jobs).toContain('now - (job.endedAt ?? job.createdAt) <= 7 * 24 * 3600 * 1000.0');
+    // Stop: exactly one, on running rows only.
+    expect(jobs.match(/QuietButton\("Stop"/g)).toHaveLength(1);
+    expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop", destructive: true, action: stop\)/);
+  });
+
   it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {
     const conv = read('ConversationsPage.swift');
     expect(window).toContain('case .conversations: ConversationsPage(model: model, nav: nav)');
