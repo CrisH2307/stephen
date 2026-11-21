@@ -318,7 +318,7 @@ private struct StatusRow: View {
         .padding(.horizontal, Space.s).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
         .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))
-        .help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")
+        .help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and permissions.")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")
       }

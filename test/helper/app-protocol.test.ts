@@ -57,7 +57,7 @@ const RESPONSES: Record<string, string[]> = {
   'memory.keep': ['memory', 'error'],
   'memory.skip': ['suggestions', 'error'],
   'memory.usage': ['memory.usage', 'error'],
-  // Settings > Privacy and safety (issue #48 PR 2): the replay recorder switch and its Delete; only the owner's click.
+  // Settings > Privacy and permissions (issue #48 PR 2): the replay recorder switch and its Delete; only the owner's click.
   'replay.set': ['settings', 'error'],
   'replay.delete': ['ok', 'error'],
 };
@@ -649,7 +649,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(sign).toContain('.background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))');
     expect(sign).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))');
     expect(sign).not.toMatch(/glass|Material|opacity/i);
-    expect(sign).toContain('.help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")');
+    expect(sign).toContain('.help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and permissions.")');
     expect(sign).toContain('.accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")');
     // Right next to the state row: the sign's block ends and the state row's HStack starts, nothing in between.
     expect(row).toMatch(/if model\.recordingOn \{[\s\S]*?\n      \}\n      HStack\(spacing: Space\.s\) \{\n        StatusPill\(s\.word/);
