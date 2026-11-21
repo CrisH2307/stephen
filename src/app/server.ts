@@ -105,7 +105,7 @@ export interface AppServerOptions {
   /** model.set (Settings > Model): validated changes in; applies from the next command. Absent = read-only. */
   setModel?: (changes: ModelChanges) => void;
   /**
-   * replay.set / replay.delete (Settings > Privacy and safety, issue #48 PR 2): `set` writes voice.replay.enabled to
+   * replay.set / replay.delete (Settings > Privacy and permissions, issue #48 PR 2): `set` writes voice.replay.enabled to
    * config.json, `deleteAll` is `stephen replay delete --all` (behind any queued write). Absent = not available.
    */
   replay?: { set: (enabled: boolean) => void; deleteAll: () => Promise<number>; on: () => boolean };

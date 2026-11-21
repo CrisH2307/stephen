@@ -52,7 +52,7 @@
  *    proposal's origin; `text` = the owner's edit). A refused keep leaves the proposal waiting.
  *  - `{id, type:"memory.skip", propId}` → `suggestions`.
  *  - `{id, type:"memory.usage"}` → `{id, type:"memory.usage", memory:{percent, warn, bytes, budget}}` (usage.get's memory bar).
- * Additive (replay recorder switch, issue #48 PR 2), sent only by Settings > Privacy and safety, the owner's own clicks:
+ * Additive (replay recorder switch, issue #48 PR 2), sent only by Settings > Privacy and permissions, the owner's own clicks:
  *  - `{id, type:"replay.set", enabled}` → `settings` (config.replay.enabled is the saved value). The only message that
  *    writes `voice.replay.enabled`: settings.set and model.set refuse it.
  *  - `{id, type:"replay.delete"}` → `{id, type:"ok"}`: every saved clip, the same code as `stephen replay delete --all`.

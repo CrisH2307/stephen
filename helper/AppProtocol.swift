@@ -140,7 +140,7 @@ struct AppRequest: Encodable {
   /** model.set: a model alias or name ("haiku", "default") and/or an effort level ("low"..."max", "default"). */
   var model: String? = nil
   var effort: String? = nil
-  /** replay.set: the replay recorder switch (Settings > Privacy and safety, the owner's click only). */
+  /** replay.set: the replay recorder switch (Settings > Privacy and permissions, the owner's click only). */
   var enabled: Bool? = nil
 
   static func hello(_ id: String) -> AppRequest {
@@ -176,7 +176,7 @@ struct AppRequest: Encodable {
   static func modelSet(_ id: String, model: String?, effort: String?) -> AppRequest {
     return AppRequest(id: id, type: "model.set", model: model, effort: effort)
   }
-  /** Settings > Privacy and safety (issue #48): the owner's switch and its Delete. Nothing else sends these. */
+  /** Settings > Privacy and permissions (issue #48): the owner's switch and its Delete. Nothing else sends these. */
   static func replaySet(_ id: String, enabled: Bool) -> AppRequest {
     return AppRequest(id: id, type: "replay.set", enabled: enabled)
   }
