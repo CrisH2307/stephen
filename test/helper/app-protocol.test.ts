@@ -664,18 +664,19 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const body = jobs.match(/struct JobsView: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
     expect(body).toContain('if !running.isEmpty { GroupedList("Running") { rows(running) } }');
     // A failed job is never hidden: its group is open, and not inside any Accordion.
-    const failedLine = body.split('\n').find((l) => l.includes('GroupedList("Failed, last 7 days")')) ?? '';
-    expect(failedLine).toContain('if !failed.isEmpty { GroupedList("Failed, last 7 days") { rows(failed) } }');
+    const failedLine = body.split('\n').find((l) => l.includes('GroupedList("Failed")')) ?? '';
+    expect(failedLine).toContain('if !failed.isEmpty { GroupedList("Failed") { rows(failed) } }');
     expect(body.match(/Accordion\(/g)).toHaveLength(1);
     const accordion = body.slice(body.indexOf('Accordion('));
-    expect(accordion).not.toContain('Failed, last 7 days');
+    expect(accordion).not.toContain('"Failed"');
     expect(body.indexOf('GroupedList("Failed')).toBeLessThan(body.indexOf('Accordion('));
-    // Earlier is a closed accordion that counts its failures in the label.
+    // Every failed job, however old, is in Failed; Earlier (a closed accordion) never holds one (#254 review).
+    expect(body).toContain('let failed = model.jobs.filter(jobFailed)');
+    expect(body).toContain('let earlier = model.jobs.filter { !$0.isRunning && !jobFailed($0) }');
+    expect(jobs).not.toContain('jobFailedRecently');
+    expect(jobs).not.toMatch(/24 \* 3600/);
     expect(body).toContain('Accordion(jobsEarlierTitle(earlier), key: "acc.jobs.earlier") { GroupedList { rows(earlier) } }');
-    expect(jobs).toContain('func jobsEarlierTitle(_ jobs: [JobRow]) -> String');
-    expect(jobs).toMatch(/jobsEarlierTitle[\s\S]*?failed\) failed/);
-    expect(jobs).toContain('let earlier = model.jobs.filter { !$0.isRunning && !jobFailedRecently($0, now: now) }');
-    expect(jobs).toContain('now - (job.endedAt ?? job.createdAt) <= 7 * 24 * 3600 * 1000.0');
+    expect(jobs).toContain('func jobsEarlierTitle(_ jobs: [JobRow]) -> String { return "Earlier (\\(jobs.count))" }');
     // Stop: exactly one, on running rows only.
     expect(jobs.match(/QuietButton\("Stop"/g)).toHaveLength(1);
     expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop", destructive: true, action: stop\)/);

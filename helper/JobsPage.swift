@@ -1,5 +1,5 @@
-// Stephen Helper: Jobs (UI-V4-IA-PLAN section 6.4). Intro line with the caution (R9), then Running (open), Failed in
-// the last 7 days (open, never an accordion: a failed job is never hidden), then the closed accordion Earlier (N) for
+// Stephen Helper: Jobs (UI-V4-IA-PLAN section 6.4). Intro line with the caution (R9), then Running (open), Failed
+// (open, never an accordion: a failed job is never hidden, however old), then the closed accordion Earlier (N) for
 // the rest. Each row: the task, a facts line ("Started 2:10 PM · 3 min · $0.12 spent"), the status in words, Stop on
 // running rows only (the owner's own click, as before). An open row: the job's own summary (labelled as written by
 // the job, so check it), turns, and Reveal in Finder for the output folder.
@@ -34,16 +34,8 @@ func jobUsedText(_ job: JobRow, now: Double) -> String {
 /** Failed or timed out (the red status words). */
 func jobFailed(_ job: JobRow) -> Bool { return !job.isRunning && jobStatusWord(job.status).kind == .bad }
 
-/** Failed jobs that ended in the last 7 days: shown open, never in an accordion (plan 6.4). */
-func jobFailedRecently(_ job: JobRow, now: Double) -> Bool {
-  return jobFailed(job) && now - (job.endedAt ?? job.createdAt) <= 7 * 24 * 3600 * 1000.0
-}
-
-/** "Earlier (5)", or "Earlier (5, 1 failed)": a closed accordion counts the problems in it (plan section 6). */
-func jobsEarlierTitle(_ jobs: [JobRow]) -> String {
-  let failed = jobs.filter(jobFailed).count
-  return "Earlier (\(jobs.count)\(failed > 0 ? ", \(failed) failed" : ""))"
-}
+/** "Earlier (5)": finished and stopped jobs only. Failed jobs are never in it (Accordion rule in Controls.swift). */
+func jobsEarlierTitle(_ jobs: [JobRow]) -> String { return "Earlier (\(jobs.count))" }
 
 /** "3 min", "1 h 05 min": whole minutes between two epoch-millisecond times. */
 func jobDurationText(from: Double, to: Double) -> String {
@@ -59,10 +51,9 @@ struct JobsView: View {
   @State private var openId: String? = nil
 
   var body: some View {
-    let now = Date().timeIntervalSince1970 * 1000.0
     let running = model.jobs.filter { $0.isRunning }
-    let failed = model.jobs.filter { jobFailedRecently($0, now: now) }
-    let earlier = model.jobs.filter { !$0.isRunning && !jobFailedRecently($0, now: now) }
+    let failed = model.jobs.filter(jobFailed)
+    let earlier = model.jobs.filter { !$0.isRunning && !jobFailed($0) }
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xl) {
         // R9: the caution once, here.
@@ -74,7 +65,7 @@ struct JobsView: View {
         }
         if !running.isEmpty { GroupedList("Running") { rows(running) } }
         // [DEV REVIEW] Safety: failed jobs are never inside a closed accordion.
-        if !failed.isEmpty { GroupedList("Failed, last 7 days") { rows(failed) } }
+        if !failed.isEmpty { GroupedList("Failed") { rows(failed) } }
         if !earlier.isEmpty {
           Accordion(jobsEarlierTitle(earlier), key: "acc.jobs.earlier") { GroupedList { rows(earlier) } }
         }

@@ -689,6 +689,6 @@ Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Ha
 - [ ] `[hands]` **18.8** Do: press Stop. Then open the row.
   See: the job moves into the closed "Earlier (N)" accordion; open it and the row says Stopped with no Stop button. The open row shows "Summary, written by the job" (when there is one), the turns and "Open output folder". There is no separate footer line.
 - [ ] `[hands]` **18.9** Do: start a job that fails (for example stop the network, or wait for a timeout). Open Jobs.
-  See: a "Failed, last 7 days" group, open, above Earlier, with the word Failed (or "Failed, timed out"). It is never inside the accordion. No Stop button on it.
+  See: a "Failed" group, open, above Earlier, with the word Failed (or "Failed, timed out"). It is never inside the accordion. No Stop button on it.
 
 Send back: any box you could not tick, with its id.
