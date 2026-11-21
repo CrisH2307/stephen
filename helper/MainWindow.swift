@@ -275,7 +275,7 @@ private struct SidebarResizeHandle: View {
       .gesture(
         DragGesture(minimumDistance: 1, coordinateSpace: .global)
           .onChanged { v in
-            let from = start ?? width
+            let from = start ?? Double(SidebarMetrics.clamp(CGFloat(width)))
             start = from
             width = Double(SidebarMetrics.clamp(CGFloat(from) + v.translation.width))
           }

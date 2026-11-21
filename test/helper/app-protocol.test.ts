@@ -748,7 +748,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(num('minWidth')).toBeLessThan(num('expanded'));
     expect(num('expanded')).toBeLessThan(num('maxWidth'));
     expect(num('rail')).toBe(40);
-    expect(theme).toContain('static func clamp(_ width: CGFloat) -> CGFloat { return min(max(width, minWidth), maxWidth) }');
+    expect(theme).toContain('static func clamp(_ width: CGFloat) -> CGFloat { return width.isNaN ? expanded : min(max(width, minWidth), maxWidth) }');
     // Collapsed is the rail whatever the stored width; expanded is always clamped.
     expect(theme).toContain('static func content(_ collapsed: Bool, _ width: CGFloat = expanded) -> CGFloat { return collapsed ? rail : clamp(width) }');
     const main = read('MainWindow.swift');
@@ -760,6 +760,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const handle = main.match(/private struct SidebarResizeHandle: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(handle).toContain('NSCursor.resizeLeftRight.push()');
     expect(handle).toContain('width = Double(SidebarMetrics.clamp(CGFloat(from) + v.translation.width))');
+    // A stored width out of range (or NaN) must not make the first drag jump: it starts from the clamped width.
+    expect(handle).toContain('let from = start ?? Double(SidebarMetrics.clamp(CGFloat(width)))');
+    expect(handle).not.toContain('start ?? width');
     expect(handle).toContain('DragGesture(');
     // A wider sidebar widens the window's minimum, so pages keep their measured room (#154).
     expect(main).toContain('.frame(minWidth: WindowMetrics.minContent.width + max(0, width - SidebarMetrics.expanded),');

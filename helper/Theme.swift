@@ -115,7 +115,7 @@ enum SidebarMetrics {
   static let minWidth: CGFloat = 180  // drag range (content width)
   static let maxWidth: CGFloat = 320
   static let rail: CGFloat = 40       // content width; the rail is 60 with padding (icon centre at 30)
-  static func clamp(_ width: CGFloat) -> CGFloat { return min(max(width, minWidth), maxWidth) }
+  static func clamp(_ width: CGFloat) -> CGFloat { return width.isNaN ? expanded : min(max(width, minWidth), maxWidth) }
   static func content(_ collapsed: Bool, _ width: CGFloat = expanded) -> CGFloat { return collapsed ? rail : clamp(width) }
   static func column(_ collapsed: Bool, _ width: CGFloat = expanded) -> CGFloat { return content(collapsed, width) + 2 * pad }
 }
