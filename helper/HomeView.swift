@@ -23,6 +23,7 @@ func recentChatWord(_ entry: HistoryEntry, lines: [DoneLine]) -> (word: String, 
   if lines.contains(where: { $0.status == .refused }) { return ("Refused", .warn) }
   if entry.outcome == "error" || lines.contains(where: { $0.status == .failed }) { return ("Failed", .bad) }
   if entry.outcome == "cancelled" { return ("Stopped", .idle) }
+  if entry.outcome == "memory" { return ("Memory", .idle) }
   return ("Done", .ok)
 }
 

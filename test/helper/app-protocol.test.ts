@@ -971,11 +971,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   // The palette's allow list (plan 7.3, review of #246). Any member of model or control (any spacing, line breaks,
   // trailing closures), any free function call, raw requests and rebinding model or control to another name.
   const PALETTE_MEMBERS = ['newChat', 'refreshHistory', 'refreshJobs', 'refreshMemoryPage', 'loadOlderHistory', 'runDoctor', 'confirms', 'configPath'];
-  const PALETTE_FREE_CALLS = ['openConfigFile', 'doctorText'];
+  // Step e's Conversations source reads the loaded history (both private(set) in AppModel) and formats it. Reads only:
+  // none sends a request or changes state (checked in the Conversations source test).
+  const PALETTE_READS = ['history', 'audit', 'parseDate', 'sourceLabel', 'timeText'];
+  const PALETTE_FREE_CALLS = ['openConfigFile', 'doctorText', 'conversationRows'];
   function paletteCallProblems(src: string): string[] {
     const code = src.replace(/\/\/[^\n]*/g, '');  // comments say "model" too
     const bad: string[] = [];
-    for (const m of code.matchAll(/\b(model|control)\s*\.\s*(\w+)/g)) if (!PALETTE_MEMBERS.includes(m[2] ?? '')) bad.push(`${m[1]}.${m[2]}`);
+    const allowed = [...PALETTE_MEMBERS, ...PALETTE_READS];
+    for (const m of code.matchAll(/\b(model|control)\s*\.\s*(\w+)/g)) if (!allowed.includes(m[2] ?? '')) bad.push(`${m[1]}.${m[2]}`);
     for (const m of code.matchAll(/(?<![.\w@])([a-z]\w*)\s*\(/g)) {
       const name = m[1] ?? '';
       const swiftOrLocal = ['if', 'for', 'switch', 'guard', 'return', 'init', 'min', 'max', 'move', 'run', 'close', 'items', 'filter', 'contains', 'lowercased', 'map', 'zip'];
@@ -1016,7 +1020,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   it('⌘K palette allow-list test catches planted calls', () => {
     for (const planted of [
       'control.start { _ in }', 'control.phoneOn { _ in }', 'appRequestOnce(appSocketPath, .phoneOn("p")) { _ in }',
-      'model\n  .clearHistory()', 'let m = model; m.forgetMemory("x")', 'model . sendChat("x")', 'model.request(.confirmAnswer("a", confirmId: "b", approve: true)) { _ in }',
+      'model\n  .clearHistory()', 'let m = model; m.forgetMemory("x")', 'model . sendChat("x")', 'model.resumeConversation(r.entry.id)', 'model.editAndResend(q)', 'model.request(.confirmAnswer("a", confirmId: "b", approve: true)) { _ in }',
     ]) expect(paletteCallProblems(`struct P { func go() { ${planted} } }`), planted).not.toEqual([]);
     expect(paletteCallProblems('struct P { func go() { control.runDoctor { nav.doctor = doctorText($0) }; model.newChat() } }')).toEqual([]);
   });
@@ -1026,7 +1030,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const pal = read('Palette.swift');
     expect(paletteCallProblems(pal)).toEqual([]);
     for (const m of pal.matchAll(/\bactions\.(\w+)/g)) expect(['ask'], m[0]).toContain(m[1]);
-    for (const m of pal.matchAll(/\bnav\.(\w+)\s*=[^=]/g)) expect(['page', 'draft', 'paletteOpen', 'doctor'], m[0]).toContain(m[1]);
+    for (const m of pal.matchAll(/\bnav\.(\w+)\s*=[^=]/g)) expect(['page', 'draft', 'paletteOpen', 'doctor', 'conversationQuery', 'conversationOpen'], m[0]).toContain(m[1]);
     for (const m of pal.matchAll(/ThemeStore\.shared\.(\w+)/g)) expect(['pick', 'setFollowMac'], m[0]).toContain(m[1]);
     // No answer, no Allow (not even disabled), nothing sent to the model, no shortcut that could reach the card.
     expect(pal).not.toMatch(/\bAllow\b|\bDeny\b|approve|answerConfirm|denyFirstConfirm|confirmAnswer|sendChat|confirms\.first|keyboardShortcut|\.defaultAction/);
@@ -1039,6 +1043,91 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(pal).toMatch(/let item = items\[selected\]\s*close\(\)\s*item\.run\(\)/);
     // The Ask row only fills Home's composer.
     expect(pal).toContain('if !q.isEmpty { nav.draft = q }');
+  });
+
+  // UI v4 step e, plan 7.2 and 7.5.3 ([DEV REVIEW]): the palette's Conversations source.
+  it('⌘K palette Conversations source: the page\'s rows and search, at most 5, verbatim, navigate only', () => {
+    const pal = read('Palette.swift');
+    const conv = pal.match(/private func conversations\(_ q: String\) -> \[PaletteItem\] \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    // Only for typed words, local over the loaded history, the same rows and search as the page, never more than 5.
+    expect(conv).toContain('guard !q.isEmpty else { return [] }');
+    expect(conv).toContain('conversationRows(model.history, audit: model.audit, parse: model.parseDate, query: q).prefix(5)');
+    expect(conv.match(/prefix\(/g)).toHaveLength(1);
+    expect(pal).toContain('return list + matching(goTo, q) + conversations(q) + matching(appActions, q)');
+    // What you said, verbatim, one line; source · time under it.
+    expect(conv).toContain('title: r.entry.said');
+    expect(conv).toContain('detail: "\\(model.sourceLabel(r.entry.source)) · \\(model.timeText(r.entry.ts))"');
+    expect(pal).toContain('Text(verbatim: item.title).font(TypeScale.body).foregroundColor(t.ink).lineLimit(1).truncationMode(.tail)');
+    expect(pal).toContain('if let d = item.detail { Text(verbatim: d)');
+    // A result only navigates: the query, the open row, the page. Nothing else.
+    const run = conv.match(/\) \{\n([\s\S]*?)\n      \}/)?.[1] ?? '';
+    expect(run.split('\n').map((l) => l.trim())).toEqual([
+      'nav.conversationQuery = q', 'nav.conversationOpen = r.entry.id', 'nav.page = .conversations',
+    ]);
+    // The reads it uses send nothing and change nothing.
+    const appClient = read('AppClient.swift');
+    for (const sig of ['func parseDate(_ iso: String) -> Date? {', 'func timeText(_ iso: String) -> String {', 'func sourceLabel(_ source: String) -> String {']) {
+      const i = appClient.indexOf(sig);
+      expect(i, sig).toBeGreaterThanOrEqual(0);
+      expect(appClient.slice(i, appClient.indexOf('\n  }\n', i)), sig).not.toMatch(/request\(|assign\(|self\.\w+ =/);
+    }
+    for (const v of ['history', 'audit']) expect(appClient).toContain(`@Published private(set) var ${v}:`);
+    expect(read('MainWindow.swift')).toContain('@Published var conversationQuery = ""\n  @Published var conversationOpen: String? = nil');
+  });
+
+  // UI v4 step e, plan 6.2.
+  it('Conversations (step e): intro, chips on top of conversationMatches, S5 rows, verbatim, Load older', () => {
+    // The row's VoiceOver label is a String variable, never a literal with third-party text (LocalizedStringKey).
+    const convPage = read('ConversationsPage.swift');
+    expect(convPage).toContain('let spoken: String = "You said: \\(entry.said). \\(word.word). \\(facts)"');
+    expect(convPage).toContain('.accessibilityLabel(spoken)');
+    // Sidebar and ⌘2 clear the palette's query and open row; the palette jump sets them (#255 review).
+    expect(read('MainWindow.swift')).toContain('if p == .conversations { nav.conversationQuery = ""; nav.conversationOpen = nil }');
+    // What you said stays copyable: in full, selectable, in the open row.
+    expect(convPage).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\.textSelection\(\.enabled\)/);
+    expect(convPage).not.toMatch(/accessibilityLabel\("[^"]*\\\(entry\./);
+    // A memory command keeps its own word (it was "Memory" before step e), not "Done".
+    expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
+    const conv = read('ConversationsPage.swift');
+    expect(conv).toContain('Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")');
+    // Chips: All, Refused, Failed, drawn with Memory's Tag.
+    expect(conv).toMatch(/let CONVERSATION_FILTERS = \[\s*MemoryFilter\(id: "all", title: "All"\), MemoryFilter\(id: "refused", title: "Refused"\), MemoryFilter\(id: "failed", title: "Failed"\),\s*\]/);
+    expect(conv).toContain('ForEach(CONVERSATION_FILTERS) { f in Tag(f.title, selected: filter == f.id) { filter = f.id }.fixedSize() }');
+    // The filter is a pure filter on top of conversationMatches: the search runs first, for every row.
+    const rows = conv.match(/func conversationRows\([\s\S]*?\n\}/)?.[0] ?? '';
+    expect(rows).toMatch(/\.filter \{ r in\s*guard conversationMatches\(r\.entry, lines: r\.lines, query: query\) else \{ return false \}/);
+    expect(rows).toContain('case "refused": return r.lines.contains { $0.status == .refused }');
+    expect(rows).toContain('case "failed": return r.entry.outcome == "error" || r.lines.contains { $0.status == .failed }');
+    const page = conv.match(/struct ConversationsPage: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(page).toContain('conversationRows(day.entries, audit: model.audit, parse: model.parseDate, query: nav.conversationQuery,');
+    expect(page).not.toMatch(/\.filter \{/);
+    expect(page).toContain('TextField("Search conversations", text: $nav.conversationQuery)');
+    expect(page).toContain('QuietButton("Load older") { model.loadOlderHistory() }');
+    // S5 row: title verbatim, facts line in the chat's format, the status word with Home's words.
+    expect(conv).toContain('Text(verbatim: entry.said)');
+    expect(conv).toContain('Text(verbatim: entry.reply)');
+    expect(conv).toContain('Text(verbatim: l.text)');
+    expect(conv).toContain('let word = recentChatWord(entry, lines: lines)');
+    expect(conv).toContain('StatusPill(word.word, kind: word.kind)');
+    expect(conv).toContain('return parts.joined(separator: " · ")');
+    // All conversation text is data: no Markdown, no links.
+    expect(conv.match(/\bText\((?!verbatim:)/g)).toBeNull();
+    expect(conv).not.toMatch(/AttributedString|LocalizedStringKey|Link\(/);
+  });
+
+  it('Conversations (step e, [DEV REVIEW]): refused and failed lines sit outside the open or closed condition', () => {
+    const conv = read('ConversationsPage.swift');
+    const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    // Two conditions on the open state in the row: one holds only what you said (copyable), one only the reply.
+    expect(item.match(/if !?expanded/g)).toEqual(['if expanded', 'if expanded']);
+    expect(item).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\n[^\n]*\n\s*\}\n/);
+    expect(item).toMatch(/if expanded && !entry\.reply\.isEmpty \{\s*Text\(verbatim: entry\.reply\)[^\n]*\n[^\n]*\n\s*\}\n/);
+    // The step lines follow that block, not inside it. Only ok lines wait for the open row.
+    expect(item).toMatch(/\.fixedSize\(horizontal: false, vertical: true\)\n        \}\n(\s*\/\/[^\n]*\n)*\s*ForEach\(Array\(lines\.filter \{ expanded \|\| \$0\.status != \.ok \}\.enumerated\(\)\)/);
+    expect(item.match(/ForEach\(/g)).toHaveLength(1);
+    // The closed row's facts count the problems too, so a closed row never reads as fine.
+    expect(conv).toContain('if refused > 0 { parts.append("\\(refused) refused") }');
+    expect(conv).toContain('if failed > 0 { parts.append("\\(failed) failed") }');
   });
 
   it('⌘K palette: while open, the question card buttons and its Esc are off; the banner stays above it', () => {
