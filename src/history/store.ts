@@ -3,10 +3,13 @@
  * `<home>/history/YYYY-MM-DD.jsonl` (local date). A log for the owner only: it is never sent back to Claude.
  *
  *  - Folder 0700, files 0600, opened with O_NOFOLLOW; each entry is ONE O_APPEND write.
- *  - `retentionDays` (config `history.retentionDays`, default 1, 0 to 30): a rolling window (same time N days ago).
+ *  - `retentionDays` (config `history.retentionDays`, default 7, 0 to 30): a rolling window (same time N days ago).
  *    Older entries are deleted on every append, list() and purge() (listener start, `stephen history`).
  *    0 = history off: nothing is written and purge deletes every day file.
- *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 5 MB per day file (a full day drops new entries).
+ *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 40 steps of 160 chars, 5 MB per day file (a full day
+ *    drops new entries).
+ *  - Optional `conv` (conversation id) and `steps` (what chat.done showed), ADR-007. Old lines without them still read.
+ *    Stored text is data for the owner to look at, never instructions: nothing reads it to decide anything.
  *  - Malformed lines are skipped when reading.
  */
 import { randomBytes } from 'node:crypto';
@@ -27,6 +30,17 @@ export type HistorySource = (typeof HISTORY_SOURCES)[number];
 export const HISTORY_OUTCOMES = ['ok', 'error', 'cancelled', 'memory'] as const;
 export type HistoryOutcome = (typeof HISTORY_OUTCOMES)[number];
 
+/** One line of a command's action chain (src/app/steps.ts builds them; chat.done and the history line carry them). */
+export interface ChatStep {
+  text: string;
+  status: 'ok' | 'refused' | 'failed';
+}
+export const CHAT_STEP_STATUSES = ['ok', 'refused', 'failed'] as const;
+/** At most this many steps per command (maxTurns bounds a command; this keeps one push small). */
+export const MAX_CHAT_STEPS = 40;
+/** Each step's text is cut to this many characters. */
+export const MAX_STEP_CHARS = 160;
+
 /** One command, exactly as stored (section 2). */
 export interface HistoryEntry {
   id: string;
@@ -43,6 +57,10 @@ export interface HistoryEntry {
   ms: number;
   /** Claude turns used (0 for memory commands handled locally). */
   turns: number;
+  /** Conversation id (newConversationId), the same on every line of one conversation. Absent on older lines. */
+  conv?: string;
+  /** The steps chat.done carried for this command (ADR-007 point 6). Absent when there were none or the audit read failed. */
+  steps?: ChatStep[];
 }
 
 /** What callers pass to append: id and ts are filled in when absent. */
@@ -57,6 +75,7 @@ export const DEFAULT_LIST_LIMIT = 20;
 
 const DAY_FILE_RE = /^(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const CONV_RE = /^c_[0-9a-f]{16}$/;
 
 /** `<home>/history` */
 export function historyDir(home: string): string {
@@ -66,6 +85,25 @@ export function historyDir(home: string): string {
 /** A fresh history entry id ("h_" + 16 hex digits). The Assistant picks it when a command starts (app chat.accepted). */
 export function newHistoryId(): string {
   return `h_${randomBytes(8).toString('hex')}`;
+}
+
+/** A fresh conversation id ("c_" + 16 hex digits). The Assistant mints it when a conversation starts. */
+export function newConversationId(): string {
+  return `c_${randomBytes(8).toString('hex')}`;
+}
+
+/** Valid steps from parsed JSON, cut to the caps (bad lines are dropped). */
+export function parseSteps(v: unknown): ChatStep[] {
+  if (!Array.isArray(v)) return [];
+  const out: ChatStep[] = [];
+  for (const s of v) {
+    if (out.length >= MAX_CHAT_STEPS) break;
+    if (!s || typeof s !== 'object') continue;
+    const { text, status } = s as Record<string, unknown>;
+    if (typeof text !== 'string' || !CHAT_STEP_STATUSES.includes(status as ChatStep['status'])) continue;
+    out.push({ text: truncate(text, MAX_STEP_CHARS), status: status as ChatStep['status'] });
+  }
+  return out;
 }
 
 /** Local calendar date as YYYY-MM-DD. */
@@ -109,6 +147,7 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
   if (typeof o.said !== 'string' || typeof o.reply !== 'string') return null;
   if (!Array.isArray(o.tools)) return null;
   const tools = o.tools.map(parseToolCallRecord).filter((t): t is ToolCallRecord => t !== null);
+  const steps = parseSteps(o.steps);
   return {
     id: o.id,
     ts: o.ts,
@@ -120,6 +159,8 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
     followUp: o.followUp === true,
     ms: nonNegInt(o.ms),
     turns: nonNegInt(o.turns),
+    ...(typeof o.conv === 'string' && CONV_RE.test(o.conv) ? { conv: o.conv } : {}),
+    ...(steps.length > 0 ? { steps } : {}),
   };
 }
 

@@ -440,7 +440,7 @@ describe('memory, history, settings, audit, window', () => {
     expect(config.voice).toMatchObject({ model: 'sonnet', wakeWord: true, aboutMe: { school: 'I study software engineering in Toronto.' } });
     expect(JSON.stringify(config)).not.toContain('Secret St'); // R9-12: the home address stays out of the window
     expect(config.memory).toEqual({ enabled: true, confirmWakeWord: true, maxItems: 30 });
-    expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
+    expect(config.history).toEqual({ enabled: true, retentionDays: 7 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });
     const text = JSON.stringify(config);
     for (const leak of ['"elevenlabs":', 'apiKeyFile', 'elevenlabs-key', 'claudePath', '/.local/bin/claude', 'YEBbZ0itqHW31uoXSBns']) expect(text).not.toContain(leak);
@@ -745,35 +745,13 @@ describe('pushes', () => {
     expect(await h.client.waitFor((m) => m.type === 'chat.done')).toEqual({ type: 'chat.done', entryId: 'h_v', reply: '', outcome: 'cancelled', tools: [], ms: 900 });
   });
 
-  it('chat.done carries the action chain as steps when something ran (audit outside the command is left out)', async () => {
+  it('chat.done carries the steps it is given (readCommandSteps builds them), and none when there are none', async () => {
     const h = await harness();
-    const calls = [{ tool: 'gmail_search', isError: false, ms: 800 }, { tool: 'weather_now', isError: true, ms: 20 }];
-    h.server.commandDone({ id: 'h_s', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search', 'weather_now'], calls);
-    const done = await h.client.waitFor((m) => m.type === 'chat.done');
-    expect(done.steps).toEqual([
-      { text: 'Used gmail_search', status: 'ok' },
-      { text: 'Tried weather_now, it failed', status: 'failed' },
-    ]);
-  });
-
-  it('R10a-9 chat.done goes out without steps when the audit read is slower than the bound, once, with no unhandled error', async () => {
-    let release!: (e: typeof AUDIT) => void;
-    const slow = new Promise<typeof AUDIT>((r) => (release = r));
-    const h = await harness({ audit: { recent: () => slow } });
-    const calls = [{ tool: 'gmail_search', isError: false, ms: 800 }];
-    h.server.commandDone({ id: 'h_slow', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search'], calls);
-    const done = await h.client.waitFor((m) => m.type === 'chat.done');
-    expect(done.steps).toBeUndefined();
-    release(AUDIT);
-    await sleep(30);
-    expect(h.client.messages.filter((m) => m.type === 'chat.done')).toHaveLength(1);
-  });
-
-  it('R10a-9 chat.done carries steps when the audit read is fast', async () => {
-    const h = await harness();
-    h.server.commandDone({ id: 'h_fast', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search'], [{ tool: 'gmail_search', isError: false, ms: 5 }]);
-    const done = await h.client.waitFor((m) => m.type === 'chat.done');
-    expect(done.steps).toEqual([{ text: 'Used gmail_search', status: 'ok' }]);
+    const steps = [{ text: 'Used gmail_search', status: 'ok' as const }, { text: 'Tried weather_now, it failed', status: 'failed' as const }];
+    h.server.commandDone({ id: 'h_s', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search', 'weather_now'], steps);
+    expect((await h.client.waitFor((m) => m.type === 'chat.done' && m.entryId === 'h_s')).steps).toEqual(steps);
+    h.server.commandDone({ id: 'h_n', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, [], []);
+    expect((await h.client.waitFor((m) => m.type === 'chat.done' && m.entryId === 'h_n')).steps).toBeUndefined();
   });
 
   it('closing the server disconnects clients', async () => {

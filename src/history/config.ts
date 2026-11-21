@@ -1,12 +1,12 @@
 /**
  * The `history` section of config.json (docs/PLAN-1.9-MEMORY-DASHBOARD.md sections 9 and 12.2):
- * `{ "retentionDays": 1 }`. Default 1 (a one-day trial), allowed 0 to 30; 0 = history off (nothing is written,
+ * `{ "retentionDays": 7 }`. Default 7 (ADR-007, owner answer Q6), allowed 0 to 30; 0 = history off (nothing is written,
  * existing day files are deleted on the next purge).
  */
 import { z } from 'zod';
 import { ConfigError } from '../lib/errors.js';
 
-export const DEFAULT_HISTORY_RETENTION_DAYS = 1;
+export const DEFAULT_HISTORY_RETENTION_DAYS = 7;
 export const MAX_HISTORY_RETENTION_DAYS = 30;
 
 const HistoryConfigSchema = z.strictObject({

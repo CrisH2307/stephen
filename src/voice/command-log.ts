@@ -17,7 +17,9 @@
  * a cancelled command's serve can take up to 8 s to shut down (src/server/index.ts), and an audit entry it writes in
  * that time gets the next command's id. The id is a label for joining logs, so that is a wrong label, nothing more.
  */
+import { readCommandSteps, type ChatStep } from '../app/steps.js';
 import type { HistoryStore } from '../history/store.js';
+import type { AuditEntry } from '../types.js';
 import { clearCommandFile, validCommandId, writeCommandFile } from '../lib/command-id.js';
 import { readToolLog, resetToolLog, type ToolCallRecord } from '../server/tool-log.js';
 import type { ClaudeOutcome } from './claude.js';
@@ -95,26 +97,80 @@ export class ToolLogRunner implements CommandRunner {
   }
 }
 
+/** What finishCommand adds to a history line: the steps, the captured tools and the end time. */
+export interface HistoryExtra {
+  steps?: ChatStep[];
+  calls?: ToolCallRecord[];
+  ts?: Date;
+}
+
 /**
- * The Assistant's onDone hook: append one history entry per command. Never throws.
+ * Append one history entry per command (finishCommand calls it). Never throws.
  * A tool's `cmd` is left out: the entry has the id itself, and history lines stay as they were before plan A2.
+ * `calls`: the command's tools captured when it ended (the runner's list moves on with the next command); without
+ * them `tools()` is read now. `ts`: when the command ended (before the audit read), so lines keep their order and
+ * their time; default now.
  */
-export function historyRecorder(store: HistoryStore, tools: (() => ToolCallRecord[]) | null, log: (line: string) => void): (r: CommandReport) => void {
-  return (r) => {
+export function historyRecorder(
+  store: HistoryStore,
+  tools: (() => ToolCallRecord[]) | null,
+  log: (line: string) => void,
+): (r: CommandReport, extra?: HistoryExtra) => void {
+  return (r, { steps, calls, ts } = {}) => {
     try {
       store.append({
         id: r.id,
+        ...(ts ? { ts: ts.toISOString() } : {}),
         source: r.source,
         said: r.said,
         reply: r.reply,
         outcome: r.outcome,
-        tools: r.ranClaude && tools ? tools().map(({ tool, isError, ms }) => ({ tool, isError, ms })) : [],
+        tools: r.ranClaude && (calls || tools) ? (calls ?? tools!()).map(({ tool, isError, ms }) => ({ tool, isError, ms })) : [],
         followUp: r.followUp,
         ms: r.ms,
         turns: r.turns,
+        ...(r.conv ? { conv: r.conv } : {}),
+        ...(steps ? { steps } : {}),
       });
     } catch (e) {
       log(`Note: could not write the command history (${(e as Error).message}).`);
     }
   };
+}
+
+/**
+ * ADR-007 point 6: the steps are built BEFORE the history append. One audit read, then the same list goes to the
+ * history line (one append, never updated) and to chat.done. A failed or slow read: neither has steps.
+ * Never rejects (index.ts calls it with `void`): a throwing hook is logged, and the history line is still written.
+ */
+export async function finishCommand(
+  r: CommandReport,
+  calls: ToolCallRecord[],
+  o: {
+    audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
+    record?: (r: CommandReport, extra?: HistoryExtra) => void;
+    app?: { commandEnding(): void; commandDone(r: CommandReport, tools: string[], steps?: ChatStep[]): void } | null;
+    log?: (line: string) => void;
+    /** When the command ended (epoch ms, the onDone time); default now. The history line's ts and the steps' window. */
+    end?: number;
+  },
+): Promise<void> {
+  const end = o.end ?? Date.now();
+  const note = (e: unknown) => o.log?.(`Note: could not record the command (${(e as Error).message}).`);
+  try {
+    o.app?.commandEnding();
+  } catch (e) {
+    note(e);
+  }
+  const steps = await readCommandSteps(o.audit, calls, r.id, r.ms, end);
+  try {
+    o.record?.(r, { ...(steps ? { steps } : {}), calls, ts: new Date(end) });
+  } catch (e) {
+    note(e);
+  }
+  try {
+    o.app?.commandDone(r, calls.map((t) => t.tool), steps);
+  } catch (e) {
+    note(e);
+  }
 }

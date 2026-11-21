@@ -12,7 +12,7 @@ export const HISTORY_HELP = `stephen history: your recent Stephen commands (kept
   stephen history [--limit N]   newest first (default ${DEFAULT_LIST_LIMIT}, at most ${MAX_LIST_LIMIT})
   stephen history clear         delete all history
 
-Kept for history.retentionDays days in config.json (default 1, 0 to 30; 0 = off).`;
+Kept for history.retentionDays days in config.json (default 7, 0 to 30; 0 = off).`;
 
 export type HistoryArgs = { cmd: 'list'; limit: number } | { cmd: 'clear' };
 

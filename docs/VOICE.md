@@ -448,7 +448,7 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4â
   `stephen history clear` deletes them all.
 - Stored only on this Mac in `<home>/history/YYYY-MM-DD.jsonl` (folder 0700, files 0600): what you said, the reply,
   the outcome, tool names and timings. Never sent back to Claude. Caps: said 2000 chars, reply 4000 chars, 5 MB a day.
-- `"history": { "retentionDays": 1 }` in config.json (default 1, 0 to 30). A rolling window: entries from before the
+- `"history": { "retentionDays": 7 }` in config.json (default 7, 0 to 30). A rolling window: entries from before the
   same time N days ago are deleted when `stephen listen` starts, on every new entry and when history is listed
   (`stephen history`, the app); `0` turns history off and deletes what is there.
 - **Claude Code's own copy.** With follow-ups on, Claude Code saves each voice session as a transcript in
