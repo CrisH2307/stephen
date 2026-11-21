@@ -324,13 +324,13 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('main.swift')).toContain('home + "/run/app.sock"');
   });
 
-  it('Settings > Speed: sends latency.get and shows the report text verbatim', () => {
+  it('Settings > About > Speed (UI v4 step c: an accordion): sends latency.get and shows the report text verbatim', () => {
     expect(client).toContain('type: "latency.get"');
     expect(client).toContain('msg.type == "latency"');
     const settings = read('SettingsPage.swift');
-    expect(settings).toContain('case .speed: SpeedSettingsPane(control: control)');
-    expect(settings).toMatch(/struct SpeedSettingsPane[\s\S]*control\.latency \{ report = latencyText\(\$0\) \}/);
-    expect(settings).toMatch(/struct SpeedSettingsPane[\s\S]*Text\(verbatim: report\)/);
+    expect(settings).toContain('Accordion("Speed, last 7 days", key: "acc.settings.about.speed") { SpeedSection(control: control) }');
+    expect(settings).toMatch(/struct SpeedSection[\s\S]*control\.latency \{ report = latencyText\(\$0\) \}/);
+    expect(settings).toMatch(/struct SpeedSection[\s\S]*Text\(verbatim: report\)/);
   });
 
   it('Ask box usage lines: sends usage.get and decodes the P2 shape (PR #18) without importing it', () => {
@@ -460,8 +460,12 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('#147: Cmd+comma opens Settings on the last pane, one large title, captions over the choices', () => {
     const settings = read('SettingsPage.swift');
-    expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .talk');
-    expect(settings).toContain('Text(verbatim: "Settings").sectionLabelStyle(t)');
+    expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .voice');
+    // The toolbar and the palette read the same key, so all three agree on the pane.
+    for (const f of ['MainWindow.swift', 'Palette.swift']) expect(read(f)).toContain('@AppStorage("settingsPane") private var pane: SettingsItem = .voice');
+    // UI v4 step c: the sub-list's labels are its group names (You, Stephen, App), not a second "Settings".
+    expect(settings).toContain('Text(verbatim: g.title).sectionLabelStyle(t)');
+    expect(settings).not.toContain('Text(verbatim: "Settings")');
     expect(settings).not.toMatch(/"Settings"\)\.font\(TypeScale\.pageTitle\)/);
     for (const label of ['Length', 'Tone', 'Model', 'Effort']) {
       expect(settings).toMatch(new RegExp(`Segmented\\("${label}",[^\\n]*caption: true\\)`));
@@ -470,6 +474,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const app = read('AppWindow.swift');
     expect(app).toContain('NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")');
     expect(app).toContain('@objc func settingsClicked(_ sender: Any?) { show(page: .settings) }');
+    // ⌘, only opens Settings: nothing on that path picks a pane, so the last one used shows (#147).
+    expect(app).not.toMatch(/settingsClicked[^\n]*(selectSettingsPane|settingsPane)/);
+    expect(settings.match(/selectSettingsPane\(/g)).toHaveLength(1);  // only its definition
   });
 
   it('#145 (now part): job and voice rows are real buttons; small controls have 24 pt targets', () => {
@@ -531,7 +538,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(settings).toContain('model.refreshPersonal()');
     expect(settings).toContain('case .aboutYou: AboutYouSettingsPane(model: model)');
     expect(settings).toContain('case .routines: RoutinesSettingsPane(model: model)');
-    expect(settings).toContain('case .accounts: AccountsSettingsPane(model: model)');
+    expect(settings).toContain('case .connected: ConnectedSettingsPane(model: model, control: control)');
     expect(settings).toMatch(/struct PrivacySettingsPane[\s\S]*?PermissionsSection\(model: model\)/);
     expect(client).toContain('AppRequest.personalSummary(newId())');
     expect(client).toContain('if type == "personal" { personal = try? PersonalSummary(from: decoder) }');
@@ -656,6 +663,108 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // Not inside an accordion, and not hidden when the sidebar is collapsed (the waveform stays).
     expect(row).not.toMatch(/Accordion|DisclosureGroup/);
     expect(sign).not.toMatch(/if !collapsed \{[^\n]*waveform/);
+  });
+
+  it('Settings (UI v4 step c, plan 6.5): 8 panes in 3 labelled groups, each a grouped Form, rare things in accordions', () => {
+    const settings = read('SettingsPage.swift');
+    expect(settings).toContain('case aboutYou, connected, privacy, routines, voice, model, appearance, about');
+    expect(settings).toContain('("You", [.aboutYou, .connected, .privacy, .routines]),');
+    expect(settings).toContain('("Stephen", [.voice, .model]),');
+    expect(settings).toContain('("App", [.appearance, .about]),');
+    const titles = [...(settings.match(/var title: String \{([\s\S]*?)\n  \}/)?.[1] ?? '').matchAll(/case \.(\w+): return "([^"]+)"/g)].map((m) => m[2]);
+    expect(titles).toEqual(['About you', 'Connected', 'Privacy and permissions', 'Routines', 'Voice', 'Model and effort', 'Appearance', 'About']);
+    // The sub-list is built from the groups only.
+    expect(settings).toContain('ForEach(SettingsItem.groups, id: \\.title) { g in');
+    expect(settings).not.toContain('SettingsItem.allCases');
+    // Every pane is a grouped Form (S7): the 7 here plus Appearance; the pane is not wrapped in a ScrollView.
+    expect(settings).toContain('func settingsForm() -> some View { return formStyle(.grouped).scrollContentBackground(.hidden) }');
+    const appearance = read('AppearanceSettings.swift');
+    for (const pane of ['AboutYouSettingsPane', 'ConnectedSettingsPane', 'PrivacySettingsPane', 'RoutinesSettingsPane', 'VoiceSettingsPane', 'ModelSettingsPane', 'AboutSettingsPane']) {
+      const body = settings.match(new RegExp(`struct ${pane}: View \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+      expect(body, pane).toMatch(/\bForm \{/);
+      expect(body, pane).toContain('.settingsForm()');
+    }
+    expect(appearance).toMatch(/Form \{[\s\S]*\.settingsForm\(\)/);
+    expect(settings.match(/struct SettingsView: View \{([\s\S]*?)\n\}/)?.[1]).not.toMatch(/ScrollView \{/);
+    // A table goes straight into its section: the permission table has no box of its own.
+    const table = read('Components/Lists.swift').match(/struct PermissionTable: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(table).not.toMatch(/\.background\(|\.overlay\(RoundedRectangle/);
+    // The plan's accordions, closed by default (Accordion's AppStorage default), one key each.
+    for (const [title, key] of [
+      ['Where this comes from', 'acc.settings.aboutYou.source'], ['How to connect (Terminal)', 'acc.settings.connected.terminal'],
+      ['Where these rules come from', 'acc.settings.privacy.rules'], ['Voices and fallback order', 'acc.settings.voice.voices'],
+      ['Wake word and F5', 'acc.settings.voice.wake'], ['What the models cost and do', 'acc.settings.model.about'],
+      ['Speed, last 7 days', 'acc.settings.about.speed'],
+    ]) expect(settings).toContain(`Accordion("${title}", key: "${key}")`);
+    expect(settings).toContain('Accordion("Doctor", key: Self.doctorKey)');
+    // Connected: accounts, Zen and Chrome, and the phone link in one list, each with its state; one button each.
+    const connected = settings.match(/struct ConnectedSettingsPane: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(connected).toContain('ForEach(model.accounts, id: \\.id)');
+    expect(connected).toContain('FormRow("Zen and Chrome"');
+    expect(connected).toContain('FormRow("Phone link"');
+    expect(connected.match(/QuietButton\(/g)).toHaveLength(2);
+    expect(connected).toContain('if phoneOn { control.phoneOff(done) } else { control.phoneOn(done) }');
+    expect(read('StephenControl.swift')).toContain('func phoneLinkOn() -> Bool {');
+    // Offline (#144): Settings still shows Appearance, with no ScrollView around the Form.
+    const main = read('MainWindow.swift');
+    const offline = main.match(/if nav\.page == \.settings \{([\s\S]*?)\n      \} else \{/)?.[1] ?? '';
+    expect(offline).toContain('AppearanceSettings()');
+    expect(offline).not.toMatch(/ScrollView \{/);
+    // Personal is gone for good, and the old pane names with it.
+    for (const old of ['AccountsSettingsPane', 'BrowsersSettingsPane', 'PhoneSettingsPane', 'WakeSettingsPane', 'TalkSettingsPane', 'SpeedSettingsPane', '"Privacy and safety"', '"How Stephen talks"']) {
+      expect(window, old).not.toContain(old);
+    }
+  });
+
+  it('Settings > Privacy and permissions ([DEV REVIEW]): the table, then the recording switch with the same words and behaviour', () => {
+    const settings = read('SettingsPage.swift');
+    const pane = settings.match(/private struct PrivacySettingsPane: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    // Order: the read-only table, the switch, then the rules accordion.
+    const order = ['PermissionsSection(model: model)', 'FormRow(Self.label)', 'RulesSourceSection(model: model)'].map((x) => pane.indexOf(x));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The switch's words and behaviour are unchanged.
+    expect(pane).toContain('private static let label = "Save my F5 commands to measure mistakes"');
+    expect(pane).toContain('Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))');
+    expect(pane).toContain('.toggleStyle(StephenSwitch()).disabled(model.connection != .online)');
+    expect(pane).toContain('Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")');
+    expect(pane).toContain('if model.connection != .online { Note("Start Stephen to change this.") }');
+    expect(pane).toContain('.alert("Delete the saved recordings too?", isPresented: $askDelete)');
+    expect(pane).toContain('Button("Keep", role: .cancel) { done = "Kept. They are deleted after 30 days." }');
+    expect(pane).toMatch(/model\.saveReplay\(on\) \{ err in[\s\S]*?if err == nil && !on \{ askDelete = true \}/);
+    // Only this pane sends the switch's requests.
+    expect(window.match(/saveReplay\(/g)).toHaveLength(1);
+    expect(window.match(/deleteRecordings\b/g)).toHaveLength(1);
+    // The one honest sentence about the table (R5), and no "change them in Settings" claim.
+    expect(settings).toContain('Note("Read only. These come from Stephen\'s safety rules.")');
+    expect(settings).not.toMatch(/[Cc]hange them in Settings/);
+    // Links to it use the new pane (the refusal's "See what Stephen may do").
+    expect(settings).toContain('case .privacy: return "Privacy and permissions"');
+  });
+
+  it('sidebar drag-to-resize (owner): clamped width kept in AppStorage, resize cursor, rail unchanged', () => {
+    const theme = read('Theme.swift');
+    const num = (name: string) => Number(theme.match(new RegExp(`static let ${name}: CGFloat = (\\d+)`))?.[1]);
+    expect(num('minWidth')).toBeLessThan(num('expanded'));
+    expect(num('expanded')).toBeLessThan(num('maxWidth'));
+    expect(num('rail')).toBe(40);
+    expect(theme).toContain('static func clamp(_ width: CGFloat) -> CGFloat { return min(max(width, minWidth), maxWidth) }');
+    // Collapsed is the rail whatever the stored width; expanded is always clamped.
+    expect(theme).toContain('static func content(_ collapsed: Bool, _ width: CGFloat = expanded) -> CGFloat { return collapsed ? rail : clamp(width) }');
+    const main = read('MainWindow.swift');
+    expect(main).toContain('@AppStorage("sidebarWidth") private var sidebarWidth = Double(SidebarMetrics.expanded)');
+    expect(main).toContain('let width = SidebarMetrics.clamp(CGFloat(sidebarWidth))');
+    expect(main).toContain('.frame(width: SidebarMetrics.column(collapsed, width), alignment: .leading).clipped()');
+    // The handle is on the divider, only when expanded; the drag clamps; the cursor is the system resize cursor.
+    expect(main).toContain('.overlay { if !collapsed { SidebarResizeHandle(width: $sidebarWidth) } }');
+    const handle = main.match(/private struct SidebarResizeHandle: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(handle).toContain('NSCursor.resizeLeftRight.push()');
+    expect(handle).toContain('width = Double(SidebarMetrics.clamp(CGFloat(from) + v.translation.width))');
+    expect(handle).toContain('DragGesture(');
+    // A wider sidebar widens the window's minimum, so pages keep their measured room (#154).
+    expect(main).toContain('.frame(minWidth: WindowMetrics.minContent.width + max(0, width - SidebarMetrics.expanded),');
+    // Every sidebar width reads the dragged width (no fixed-width call left).
+    for (const f of ['MainWindow.swift', 'Components/Sidebar.swift']) expect(read(f)).not.toMatch(/SidebarMetrics\.content\(collapsed\)/);
   });
 
   it('Home Recent (plan 6.1): an accordion of 3, status words, refusals named and counted, verbatim, only View all acts', () => {
