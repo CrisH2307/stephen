@@ -36,7 +36,7 @@ struct CommandPalette: View {
   let control: StephenControl
   let actions: WindowActions
   @Binding var sidebarCollapsed: Bool
-  @AppStorage("settingsPane") private var pane: SettingsItem = .talk
+  @AppStorage("settingsPane") private var pane: SettingsItem = .voice
   @State private var query = ""
   @State private var selected = 0
   @FocusState private var focused: Bool

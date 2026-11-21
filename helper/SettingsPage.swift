@@ -1,8 +1,8 @@
-// Stephen Helper: Settings (UI-PLAN v3.1 section 8). A left sub-list and one pane. "How Stephen talks" and
-// "Appearance" are real; the others show what Stephen already tells us (read only) or say plainly where the setting
-// lives today. The temporary P2 controls (phone link, Zen, doctor) sit in their panes, so the menu items could go later.
-// UI v4 step a: the toolbar shows the pane's name, so panes have no big title. Personal is gone: About you and Routines
-// are panes here, the permission table is in Privacy and safety, Connected is the Accounts pane. Step c regroups them.
+// Stephen Helper: Settings (UI v4 step c, docs/research/UI-V4-IA-PLAN.md section 6.5). A left sub-list with 3
+// labelled groups and 8 panes (You: About you, Connected, Privacy and permissions, Routines; Stephen: Voice, Model and
+// effort; App: Appearance, About), and one pane. Every pane is a `Form` with `.formStyle(.grouped)`; a table goes
+// straight into its section. Rare things sit in closed accordions at the end of a pane. The toolbar shows the pane's
+// name, so panes have no big title. Personal's parts live here (About you, the permission table, Connected, Routines).
 
 import AppKit
 import SwiftUI
@@ -11,40 +11,45 @@ import SwiftUI
 func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }
 
 enum SettingsItem: String, CaseIterable, Identifiable {
-  case aboutYou, talk, model, appearance, wake, phone, accounts, browsers, privacy, routines, speed, about
+  case aboutYou, connected, privacy, routines, voice, model, appearance, about
+
+  /// The sub-list: 3 labelled groups, 8 panes (plan 6.5).
+  static let groups: [(title: String, items: [SettingsItem])] = [
+    ("You", [.aboutYou, .connected, .privacy, .routines]),
+    ("Stephen", [.voice, .model]),
+    ("App", [.appearance, .about]),
+  ]
+
   var id: String { return rawValue }
   var title: String {
     switch self {
     case .aboutYou: return "About you"
-    case .talk: return "How Stephen talks"
+    case .connected: return "Connected"
+    case .privacy: return "Privacy and permissions"
+    case .routines: return "Routines"
+    case .voice: return "Voice"
     case .model: return "Model and effort"
     case .appearance: return "Appearance"
-    case .wake: return "Wake word and F5"
-    case .phone: return "Phone link"
-    case .accounts: return "Accounts"
-    case .browsers: return "Browsers"
-    case .privacy: return "Privacy and safety"
-    case .routines: return "Routines"
-    case .speed: return "Speed"
     case .about: return "About"
     }
   }
   var symbol: String {
     switch self {
     case .aboutYou: return "person.crop.circle"
-    case .talk: return "waveform"
-    case .model: return "cpu"
-    case .appearance: return "paintpalette"
-    case .wake: return "mic"
-    case .phone: return "iphone"
-    case .accounts: return "key"
-    case .browsers: return "globe"
+    case .connected: return "link"
     case .privacy: return "lock"
     case .routines: return "repeat"
-    case .speed: return "speedometer"
+    case .voice: return "waveform"
+    case .model: return "cpu"
+    case .appearance: return "paintpalette"
     case .about: return "info.circle"
     }
   }
+}
+
+extension View {
+  /// Every Settings pane: a grouped `Form` on the theme's ground (S7).
+  func settingsForm() -> some View { return formStyle(.grouped).scrollContentBackground(.hidden) }
 }
 
 struct SettingsView: View {
@@ -53,28 +58,28 @@ struct SettingsView: View {
   @ObservedObject var nav: WindowNav
   let control: StephenControl
   /// The pane used last, so Settings (and ⌘,) opens where you left it (#147).
-  @AppStorage("settingsPane") private var item: SettingsItem = .talk
+  @AppStorage("settingsPane") private var item: SettingsItem = .voice
 
   var body: some View {
     HStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: 2) {
-        // Small: the pane's title is the one large title on the page (#147).
-        Text(verbatim: "Settings").sectionLabelStyle(t).accessibilityAddTraits(.isHeader)
-          .padding(.leading, Space.s).padding(.bottom, Space.s)
-        ForEach(SettingsItem.allCases) { i in
-          SidebarRow(i.title, symbol: i.symbol, selected: item == i, width: 190) { item = i }
+      VStack(alignment: .leading, spacing: Space.m) {
+        ForEach(SettingsItem.groups, id: \.title) { g in
+          VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: g.title).sectionLabelStyle(t).accessibilityAddTraits(.isHeader)
+              .padding(.leading, Space.s).padding(.bottom, Space.xs)
+            ForEach(g.items) { i in
+              SidebarRow(i.title, symbol: i.symbol, selected: item == i, width: 190) { item = i }
+            }
+          }
         }
         Spacer(minLength: 0)
       }
       .padding(Space.l)
       .frame(width: 230)
       Rectangle().fill(t.line).frame(width: 1)
-      ScrollView {
-        pane
-          .padding(Space.xxl)
-          .frame(maxWidth: 640, alignment: .leading)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
+      pane
+        .frame(maxWidth: 640, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     .onAppear {
       model.refreshSettings()
@@ -87,24 +92,70 @@ struct SettingsView: View {
   private var pane: some View {
     switch item {
     case .aboutYou: AboutYouSettingsPane(model: model)
-    case .talk: TalkSettingsPane(model: model)
-    case .model: ModelSettingsPane(model: model)
-    case .appearance: AppearanceSettings()
-    case .wake: WakeSettingsPane(model: model)
-    case .phone: PhoneSettingsPane(control: control)
-    case .accounts: AccountsSettingsPane(model: model)
-    case .browsers: BrowsersSettingsPane(control: control)
+    case .connected: ConnectedSettingsPane(model: model, control: control)
     case .privacy: PrivacySettingsPane(model: model)
     case .routines: RoutinesSettingsPane(model: model)
-    case .speed: SpeedSettingsPane(control: control)
+    case .voice: VoiceSettingsPane(model: model)
+    case .model: ModelSettingsPane(model: model)
+    case .appearance: AppearanceSettings()
     case .about: AboutSettingsPane(model: model, nav: nav, control: control)
     }
   }
 }
 
-// MARK: How Stephen talks
+/// One Form row: title, optional detail line under it, optional trailing control. Text is verbatim (account and
+/// routine names come from config.json).
+struct FormRow<Trailing: View>: View {
+  @Environment(\.stephenTheme) var t
+  let title: String
+  var detail: String? = nil
+  let trailing: Trailing
+  init(_ title: String, detail: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+    self.title = title; self.detail = detail; self.trailing = trailing()
+  }
+  var body: some View {
+    HStack(spacing: Space.m) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(verbatim: title).font(TypeScale.body).foregroundColor(t.ink)
+        if let d = detail { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true) }
+      }
+      Spacer(minLength: Space.m)
+      trailing
+    }
+    .accessibilityElement(children: .contain)
+  }
+}
 
-private struct TalkSettingsPane: View {
+extension FormRow where Trailing == EmptyView {
+  init(_ title: String, detail: String? = nil) { self.init(title, detail: detail) { EmptyView() } }
+}
+
+private struct Note: View {
+  @Environment(\.stephenTheme) var t
+  let text: String
+  init(_ text: String) { self.text = text }
+  var body: some View { Text(verbatim: text).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true) }
+}
+
+/** A section header in the pane's own words. */
+private func header(_ s: String) -> some View { return Text(verbatim: s) }
+
+/** voice.<key> from the settings.get config, as text; nil when absent. */
+private func voiceValue(_ config: AppJSON?, _ key: String) -> String? {
+  guard case .object(let c)? = config, case .object(let v)? = c["voice"], let x = v[key] else { return nil }
+  return x.isScalar ? x.scalarText : x.renderLines().joined(separator: ", ")
+}
+
+private extension Binding {
+  /// Run `change` whenever the value is set (to clear "Saved").
+  func onSet(_ change: @escaping () -> Void) -> Binding<Value> {
+    return Binding(get: { wrappedValue }, set: { wrappedValue = $0; change() })
+  }
+}
+
+// MARK: Stephen: Voice (How Stephen talks, then voices and the wake word in accordions)
+
+private struct VoiceSettingsPane: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
   @State private var draft = TalkSettings.blank
@@ -121,41 +172,50 @@ private struct TalkSettingsPane: View {
   ]
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
+    Form {
       if model.talk == nil {
-        Text(verbatim: model.settingsNotice ?? "Stephen's settings are not available yet. Start Stephen and open this page again.")
-          .font(TypeScale.secondary).foregroundColor(t.ink2)
+        Section { Note(model.settingsNotice ?? "Stephen's settings are not available yet. Start Stephen and open this page again.") }
       } else {
-        Segmented("Length", options: [("brief", "Brief"), ("balanced", "Balanced"), ("detailed", "Detailed")], selection: bind(\.length), caption: true)
-        Segmented("Tone", options: [("casual", "Casual"), ("friendly", "Friendly"), ("formal", "Formal")], selection: bind(\.tone), caption: true)
-        GroupedList {
-          GroupedRow("Speak replies out loud", first: true) { switchView("Speak replies out loud", bind(\.speak)) }
-          GroupedRow("Explain steps as you go") { switchView("Explain steps as you go", bind(\.explain)) }
+        Section {
+          Segmented("Length", options: [("brief", "Brief"), ("balanced", "Balanced"), ("detailed", "Detailed")], selection: bind(\.length), caption: true)
+          Segmented("Tone", options: [("casual", "Casual"), ("friendly", "Friendly"), ("formal", "Formal")], selection: bind(\.tone), caption: true)
+          FormRow("Speak replies out loud") { switchView("Speak replies out loud", bind(\.speak)) }
+          FormRow("Explain steps as you go") { switchView("Explain steps as you go", bind(\.explain)) }
         }
-        VStack(alignment: .leading, spacing: Space.xs) {
-          Text(verbatim: "Preview").sectionLabelStyle(t)
-          Text(verbatim: draft.preview).font(TypeScale.body).foregroundColor(t.ink)
-            .padding(Space.m).frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface))
-            .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.line, lineWidth: 1))
+        Section {
+          Text(verbatim: draft.preview).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
+        } header: { header("Preview") }
+        Section {
+          HStack(spacing: Space.m) {
+            PrimaryButton("Save") { save() }
+            if saved { Text(verbatim: "Saved").font(TypeScale.secondary).foregroundColor(t.ok) }
+            if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+          }
+        } footer: {
+          Note("Applies from your next command. A conversation that is already running keeps its way of talking until it ends.")
         }
-        GroupedList("Voice") {
-          ForEach(Array(Self.voices.enumerated()), id: \.element.id) { i, v in
-            VoiceRow(name: v.name, source: v.source, current: draft.voice == v.id, first: i == 0, onPlay: { play(v.id) }, onSelect: { draft.voice = v.id; saved = false })
+        Section {
+          Accordion("Voices and fallback order", key: "acc.settings.voice.voices") {
+            VStack(alignment: .leading, spacing: Space.s) {
+              ForEach(Self.voices, id: \.id) { v in
+                VoiceRow(name: v.name, source: v.source, current: draft.voice == v.id, onPlay: { play(v.id) }, onSelect: { draft.voice = v.id; saved = false })
+              }
+              Note("Stephen uses the checked voice first and falls back down the list when one isn't available. Save to keep your choice.")
+              if let n = voiceNote { Note(n) }
+            }
+          }
+          Accordion("Wake word and F5", key: "acc.settings.voice.wake") {
+            VStack(alignment: .leading, spacing: Space.s) {
+              FormRow("Wake word", detail: (voiceValue(model.configJSON, "wakeWord") ?? "true") == "true" ? "On" : "Off")
+              FormRow("Wake phrases", detail: voiceValue(model.configJSON, "wakePhrases") ?? "hey stephen")
+              FormRow("Push to talk", detail: "Hold F5 (Fn and Option work too)")
+              Note("Read only for now. Change the wake word in voice.wakeWord and voice.wakePhrases in config.json, then restart Stephen.")
+            }
           }
         }
-        Text(verbatim: "Stephen uses the checked voice first and falls back down the list when one isn't available.")
-          .font(TypeScale.secondary).foregroundColor(t.ink2)
-        if let n = voiceNote { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
-        HStack(spacing: Space.m) {
-          PrimaryButton("Save") { save() }
-          if saved { Text(verbatim: "Saved").font(TypeScale.secondary).foregroundColor(t.ok) }
-          if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
-        }
-        Text(verbatim: "Applies from your next command. A conversation that is already running keeps its way of talking until it ends.")
-          .font(TypeScale.secondary).foregroundColor(t.ink2)
       }
     }
+    .settingsForm()
     .onAppear(perform: adopt)
     .onChange(of: model.talk) { _ in adopt() }
   }
@@ -196,7 +256,7 @@ private struct TalkSettingsPane: View {
   }
 }
 
-// MARK: Model and effort
+// MARK: Stephen: Model and effort
 
 /// Which Claude model and effort Stephen's commands use. Quick to switch (Haiku for small tests). Saved to config.json;
 /// applies from the next command (the listener ends the running conversation so that is the next one).
@@ -213,21 +273,31 @@ private struct ModelSettingsPane: View {
   private static let aliases = ["haiku", "sonnet", "opus"]
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      Segmented("Model", options: Self.aliases.map { ($0, $0.capitalized) } + [("default", "Default"), ("other", "Other")], selection: $choice.onSet { saved = false }, caption: true)
-      if choice == "other" {
-        TextField("Model name, for example claude-haiku-5-5", text: $custom).textFieldStyle(.roundedBorder).font(TypeScale.body)
-          .accessibilityLabel("Model name").onChange(of: custom) { _ in saved = false }
+    Form {
+      Section {
+        Segmented("Model", options: Self.aliases.map { ($0, $0.capitalized) } + [("default", "Default"), ("other", "Other")], selection: $choice.onSet { saved = false }, caption: true)
+        if choice == "other" {
+          TextField("Model name, for example claude-haiku-5-5", text: $custom).textFieldStyle(.roundedBorder).font(TypeScale.body)
+            .accessibilityLabel("Model name").onChange(of: custom) { _ in saved = false }
+        }
+        Segmented("Effort", options: [("default", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra"), ("max", "Max")], selection: $effort.onSet { saved = false }, caption: true)
       }
-      Segmented("Effort", options: [("default", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra"), ("max", "Max")], selection: $effort.onSet { saved = false }, caption: true)
-      Note("Haiku is fastest and cheapest, good for small tests. Opus with a high effort is slowest and best for hard requests. Default means Claude Code's own choice.")
-      HStack(spacing: Space.m) {
-        PrimaryButton("Save") { save() }
-        if saved { Text(verbatim: "Saved").font(TypeScale.secondary).foregroundColor(t.ok) }
-        if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+      Section {
+        HStack(spacing: Space.m) {
+          PrimaryButton("Save") { save() }
+          if saved { Text(verbatim: "Saved").font(TypeScale.secondary).foregroundColor(t.ok) }
+          if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+        }
+      } footer: {
+        Note("Applies from your next command. Stephen starts a fresh conversation for it.")
       }
-      Note("Applies from your next command. Stephen starts a fresh conversation for it.")
+      Section {
+        Accordion("What the models cost and do", key: "acc.settings.model.about") {
+          Note("Haiku is fastest and cheapest, good for small tests. Opus with a high effort is slowest and best for hard requests. Default means Claude Code's own choice.")
+        }
+      }
     }
+    .settingsForm()
     .onAppear(perform: adopt)
     .onChange(of: model.configJSON) { _ in adopt() }
   }
@@ -251,89 +321,61 @@ private struct ModelSettingsPane: View {
   }
 }
 
-private extension Binding {
-  /// Run `change` whenever the value is set (to clear "Saved").
-  func onSet(_ change: @escaping () -> Void) -> Binding<Value> {
-    return Binding(get: { wrappedValue }, set: { wrappedValue = $0; change() })
-  }
-}
+// MARK: You: Connected (accounts, Zen and Chrome, phone link: one list)
 
-// MARK: Other panes
-
-private struct Note: View {
+/// Each row has its state and its one button. Accounts are signed in from Terminal (the accordion says how).
+private struct ConnectedSettingsPane: View {
   @Environment(\.stephenTheme) var t
-  let text: String
-  init(_ text: String) { self.text = text }
-  var body: some View { Text(verbatim: text).font(TypeScale.secondary).foregroundColor(t.ink2) }
-}
-
-/** voice.<key> from the settings.get config, as text; nil when absent. */
-private func voiceValue(_ config: AppJSON?, _ key: String) -> String? {
-  guard case .object(let c)? = config, case .object(let v)? = c["voice"], let x = v[key] else { return nil }
-  return x.isScalar ? x.scalarText : x.renderLines().joined(separator: ", ")
-}
-
-private struct WakeSettingsPane: View {
   @ObservedObject var model: AppModel
-  var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      GroupedList {
-        GroupedRow("Wake word", detail: (voiceValue(model.configJSON, "wakeWord") ?? "true") == "true" ? "On" : "Off", first: true)
-        GroupedRow("Wake phrases", detail: voiceValue(model.configJSON, "wakePhrases") ?? "hey stephen")
-        GroupedRow("Push to talk", detail: "Hold F5 (Fn and Option work too)")
-      }
-      Note("Read only for now. Change the wake word in voice.wakeWord and voice.wakePhrases in config.json, then restart Stephen.")
-    }
-  }
-}
-
-private struct PhoneSettingsPane: View {
   let control: StephenControl
-  @State private var result = ""
-  var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      Note("Lets your phone send Stephen requests through Claude Remote Control, locked to Stephen's phone tools.")
-      HStack(spacing: Space.m) {
-        PrimaryButton("Turn on") { result = "Working..."; control.phoneOn { result = phoneText($0) } }
-        QuietButton("Turn off") { result = "Working..."; control.phoneOff { result = phoneText($0) } }
-      }
-      if !result.isEmpty { Text(verbatim: result).font(TypeScale.mono).textSelection(.enabled) }
-    }
-  }
-}
+  @State private var zen: String? = nil  // nil: not checked; "" ready; else why not
+  @State private var zenWorking = false
+  @State private var phoneOn = false
+  @State private var phoneResult = ""
 
-private struct AccountsSettingsPane: View {
-  @Environment(\.stephenTheme) var t
-  @ObservedObject var model: AppModel
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      GroupedList {
-        if model.accounts.isEmpty { GroupedRow(model.accountsNotice ?? "No accounts listed yet", first: true) }
-        ForEach(Array(model.accounts.enumerated()), id: \.element.id) { i, a in
+    Form {
+      Section {
+        if model.accounts.isEmpty { FormRow(model.accountsNotice ?? "No accounts listed yet") }
+        ForEach(model.accounts, id: \.id) { a in
           let w = accountStateWord(a)
-          GroupedRow(a.name, detail: a.state == "connected" ? a.detail : a.hint, first: i == 0) { StatusPill(w.word, kind: w.kind) }
+          FormRow(a.name, detail: a.state == "connected" ? a.detail : a.hint) { StatusPill(w.word, kind: w.kind) }
+        }
+        FormRow("Zen and Chrome", detail: "Stephen works in Zen (the one you have open) and Chrome. Zen needs to be opened with the Zen for Stephen app. A normal Zen window can't connect to Stephen.") {
+          if zenWorking { StatusPill("Opening", kind: .warn) } else if let z = zen { StatusPill(z.isEmpty ? "Ready" : "Not ready", kind: z.isEmpty ? .ok : .warn) }
+          QuietButton("Open Zen for Stephen") {
+            zenWorking = true
+            control.openZen { m in zenWorking = false; zen = zenProblem(m) ?? "" }
+          }
+        }
+        FormRow("Phone link", detail: "Lets your phone send Stephen requests through Claude Remote Control, locked to Stephen's phone tools.") {
+          StatusPill(phoneOn ? "On" : "Off", kind: phoneOn ? .ok : .idle)
+          QuietButton(phoneOn ? "Turn off" : "Turn on") {
+            phoneResult = "Working..."
+            let done: (AppMessage) -> Void = { m in phoneResult = phoneText(m); phoneOn = control.phoneLinkOn() }
+            if phoneOn { control.phoneOff(done) } else { control.phoneOn(done) }
+          }
         }
       }
-      Note("Sign in and out with `stephen connect` and `stephen disconnect` in Terminal. Keys and tokens stay in the Keychain.")
+      if let z = zen, !z.isEmpty { Section { Text(verbatim: z).font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled) } }
+      if !phoneResult.isEmpty { Section { Text(verbatim: phoneResult).font(TypeScale.mono).textSelection(.enabled) } }
+      Section {
+        Accordion("How to connect (Terminal)", key: "acc.settings.connected.terminal") {
+          Note("Sign in and out with `stephen connect` and `stephen disconnect` in Terminal. Keys and tokens stay in the Keychain.")
+        }
+      }
     }
+    .settingsForm()
+    .onAppear { phoneOn = control.phoneLinkOn() }
   }
 }
 
-private struct BrowsersSettingsPane: View {
-  let control: StephenControl
-  @State private var result = ""
-  var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      Note("Stephen works in Zen (the one you have open) and Chrome. Zen needs to be opened with the Zen for Stephen app. A normal Zen window can't connect to Stephen.")
-      QuietButton("Open Zen for Stephen") { result = "Opening..."; control.openZen { result = zenProblem($0) ?? "Zen is ready for Stephen." } }
-      if !result.isEmpty { Text(verbatim: result).font(TypeScale.secondary).textSelection(.enabled) }
-    }
-  }
-}
+// MARK: You: Privacy and permissions
 
 /**
- * The replay recorder switch (issue #48 PR 2). Off by default; only this click turns it on (app.sock replay.set, which
- * nothing else sends). Off stops saving at once and asks whether to delete what was saved (replay.delete).
+ * The permission table (read only), then the replay recorder switch (issue #48 PR 2, [DEV REVIEW]: words and behaviour
+ * unchanged, only the pane moved). Off by default; only this click turns it on (app.sock replay.set, which nothing else
+ * sends). Off stops saving at once and asks whether to delete what was saved (replay.delete).
  */
 private struct PrivacySettingsPane: View {
   @Environment(\.stephenTheme) var t
@@ -345,20 +387,24 @@ private struct PrivacySettingsPane: View {
   private static let label = "Save my F5 commands to measure mistakes"
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
+    Form {
       PermissionsSection(model: model)
-      Note("Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep.")
-      GroupedList {
-        GroupedRow(Self.label, first: true) {
+      Section {
+        FormRow(Self.label) {
           Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))
             .toggleStyle(StephenSwitch()).disabled(model.connection != .online)
         }
+        if let d = done { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ok) }
+        if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+      } footer: {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")
+          if model.connection != .online { Note("Start Stephen to change this.") }
+        }
       }
-      Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")
-      if model.connection != .online { Note("Start Stephen to change this.") }
-      if let d = done { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ok) }
-      if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
+      RulesSourceSection(model: model)
     }
+    .settingsForm()
     .alert("Delete the saved recordings too?", isPresented: $askDelete) {
       Button("Delete", role: .destructive) { delete() }
       Button("Keep", role: .cancel) { done = "Kept. They are deleted after 30 days." }
@@ -383,14 +429,53 @@ private struct PrivacySettingsPane: View {
   }
 }
 
-/** Read only: the latency log of the last 7 days as `stephen latency` prints it (ids, code words and numbers). */
-private struct SpeedSettingsPane: View {
+// MARK: App: About (config file; Speed and Doctor in accordions)
+
+private struct AboutSettingsPane: View {
+  @Environment(\.stephenTheme) var t
+  @ObservedObject var model: AppModel
+  /// The doctor result is in WindowNav, so the palette's "Run doctor" shows it here too.
+  @ObservedObject var nav: WindowNav
+  let control: StephenControl
+  private static let doctorKey = "acc.settings.about.doctor"
+
+  var body: some View {
+    Form {
+      Section {
+        FormRow("Config file", detail: model.configPath ?? "unknown") {
+          QuietButton("Open") { openConfigFile(model.configPath) }
+        }
+      }
+      Section {
+        Accordion("Speed, last 7 days", key: "acc.settings.about.speed") { SpeedSection(control: control) }
+        Accordion("Doctor", key: Self.doctorKey) {
+          VStack(alignment: .leading, spacing: Space.s) {
+            QuietButton("Run doctor") { nav.doctor = "Checking..."; control.runDoctor { nav.doctor = doctorText($0) } }
+            if !nav.doctor.isEmpty { Text(verbatim: nav.doctor).font(TypeScale.mono).foregroundColor(t.ink).textSelection(.enabled) }
+          }
+        }
+      }
+    }
+    .settingsForm()
+    // The palette's "Run doctor" lands here: open the Doctor accordion so its result shows.
+    .onAppear { openDoctor(nav.doctor) }
+    .onChange(of: nav.doctor) { openDoctor($0) }
+  }
+
+  private func openDoctor(_ result: String) {
+    if !result.isEmpty { UserDefaults.standard.set(true, forKey: Self.doctorKey) }
+  }
+}
+
+/** Read only: the latency log of the last 7 days as `stephen latency` prints it (ids, code words and numbers). Loads
+ *  when its accordion opens. */
+private struct SpeedSection: View {
   @Environment(\.stephenTheme) var t
   let control: StephenControl
   @State private var report = ""
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
+    VStack(alignment: .leading, spacing: Space.s) {
       Note("How long commands took in the last 7 days, from end of speech. Kept on this Mac only.")
       QuietButton("Refresh") { load() }
       if !report.isEmpty { Text(verbatim: report).font(TypeScale.mono).foregroundColor(t.ink).textSelection(.enabled) }
@@ -401,26 +486,6 @@ private struct SpeedSettingsPane: View {
   private func load() {
     report = "Loading..."
     control.latency { report = latencyText($0) }
-  }
-}
-
-private struct AboutSettingsPane: View {
-  @Environment(\.stephenTheme) var t
-  @ObservedObject var model: AppModel
-  /// The doctor result is in WindowNav, so the palette's "Run doctor" shows it here too.
-  @ObservedObject var nav: WindowNav
-  let control: StephenControl
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      GroupedList {
-        GroupedRow("Config file", detail: model.configPath ?? "unknown", first: true) {
-          QuietButton("Open") { openConfigFile(model.configPath) }
-        }
-      }
-      QuietButton("Run doctor") { nav.doctor = "Checking..."; control.runDoctor { nav.doctor = doctorText($0) } }
-      if !nav.doctor.isEmpty { Text(verbatim: nav.doctor).font(TypeScale.mono).foregroundColor(t.ink).textSelection(.enabled) }
-    }
   }
 }
 
@@ -438,7 +503,7 @@ func openConfigFile(_ configPath: String?) {
   }
 }
 
-// MARK: From Personal (UI v4: Personal is gone; step c moves these into the "You" group)
+// MARK: From Personal (view only: personal.summary; About you, the permission table and Routines)
 
 /** About you: what Stephen reads from voice.aboutMe in config.json. Read only. */
 private struct AboutYouSettingsPane: View {
@@ -448,34 +513,54 @@ private struct AboutYouSettingsPane: View {
     let fields: [(String, String)] =
       [("Name", a?.name), ("School", a?.school), ("Work", a?.work)].compactMap { k, v in v.map { (k, $0) } }
       + (a?.notes ?? []).map { ("Note", $0) }
-    VStack(alignment: .leading, spacing: Space.l) {
-      if let n = model.personalNotice { Note(n) }
-      GroupedList {
-        if fields.isEmpty {
-          GroupedRow("Nothing here yet", detail: "Stephen reads this from voice.aboutMe in config.json.", first: true)
+    Form {
+      if let n = model.personalNotice { Section { Note(n) } }
+      Section {
+        if fields.isEmpty { FormRow("Nothing here yet", detail: "Stephen reads this from voice.aboutMe in config.json.") }
+        ForEach(Array(fields.enumerated()), id: \.offset) { _, f in FormRow(f.1, detail: f.0) }
+        if let tz = a?.timeZone, !tz.isEmpty { FormRow(tz, detail: "Time zone") }
+      } footer: { Note("Read only.") }
+      Section {
+        Accordion("Where this comes from", key: "acc.settings.aboutYou.source") {
+          Note("Stephen reads it from voice.aboutMe in config.json. Change it there.")
         }
-        ForEach(Array(fields.enumerated()), id: \.offset) { i, f in
-          GroupedRow(f.1, detail: f.0, first: i == 0)
-        }
-        if let tz = a?.timeZone, !tz.isEmpty { GroupedRow(tz, detail: "Time zone", first: fields.isEmpty) }
       }
-      Note("Read only. Change it in voice.aboutMe in config.json.")
+    }
+    .settingsForm()
+  }
+}
+
+/** What Stephen may do, by how a command was started (personal.summary). Read only; the table sits straight in the
+ *  section (no box inside a box). */
+private struct PermissionsSection: View {
+  @ObservedObject var model: AppModel
+  var body: some View {
+    if let p = model.personal?.permissions {
+      Section {
+        PermissionTable(
+          columns: p.columns,
+          rows: p.rows.map { r in PermissionRowData(action: r.action, levels: r.cells.map { permissionLevel($0.level) }) })
+      } header: {
+        header("What Stephen may do").accessibilityAddTraits(.isHeader)
+      } footer: {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Note("Read only. These come from Stephen's safety rules.")
+          Note("Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep.")
+        }
+      }
+    } else if let n = model.personalNotice {
+      Section { Note(n) }
     }
   }
 }
 
-/** What Stephen may do, by how a command was started (personal.summary). Read only. */
-private struct PermissionsSection: View {
+/** The rule behind each cell of the permission table, in a closed accordion. Read only. */
+private struct RulesSourceSection: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
   var body: some View {
     if let p = model.personal?.permissions {
-      VStack(alignment: .leading, spacing: Space.s) {
-        Text(verbatim: "What Stephen may do").sectionLabelStyle(t).accessibilityAddTraits(.isHeader)
-        PermissionTable(
-          columns: p.columns,
-          rows: p.rows.map { r in PermissionRowData(action: r.action, levels: r.cells.map { permissionLevel($0.level) }) })
-        Note("Read only. These come from Stephen's safety rules.")
+      Section {
         Accordion("Where these rules come from", key: "acc.settings.privacy.rules") {
           VStack(alignment: .leading, spacing: Space.s) {
             ForEach(p.rows, id: \.action) { r in
@@ -487,8 +572,6 @@ private struct PermissionsSection: View {
           }
         }
       }
-    } else if let n = model.personalNotice {
-      Note(n)
     }
   }
 }
@@ -497,17 +580,18 @@ private struct RoutinesSettingsPane: View {
   @ObservedObject var model: AppModel
   var body: some View {
     let list = model.personal?.routines ?? []
-    VStack(alignment: .leading, spacing: Space.l) {
-      if let n = model.personalNotice { Note(n) }
-      GroupedList {
-        if list.isEmpty { GroupedRow("No routines listed yet", first: true) }
-        ForEach(Array(list.enumerated()), id: \.element.id) { i, r in
-          GroupedRow(r.name, detail: "Uses \(r.uses). Say \"\(r.say)\"", first: i == 0) {
+    Form {
+      if let n = model.personalNotice { Section { Note(n) } }
+      Section {
+        if list.isEmpty { FormRow("No routines listed yet") }
+        ForEach(list, id: \.id) { r in
+          FormRow(r.name, detail: "Uses \(r.uses). Say \"\(r.say)\"") {
             StatusPill(routineWord(r).word, kind: routineWord(r).kind)
           }
         }
       }
     }
+    .settingsForm()
   }
 }
 

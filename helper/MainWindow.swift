@@ -152,15 +152,12 @@ private struct MainWindowView: View {
     if model.connection != .online {
       if nav.page == .settings {
         // Appearance needs no listener, so Settings keeps it while offline (#144). The other panes do need it.
-        ScrollView {
-          VStack(alignment: .leading, spacing: Space.xl) {
-            OfflineView(model: model, control: control).frame(maxWidth: .infinity)
-            AppearanceSettings()
-          }
-          .padding(Space.xxl)
-          .frame(maxWidth: 640, alignment: .leading)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        // No ScrollView around it: the pane is a Form, which scrolls itself.
+        VStack(alignment: .leading, spacing: 0) {
+          OfflineView(model: model, control: control).frame(maxWidth: .infinity).padding(Space.xl)
+          AppearanceSettings().frame(maxWidth: 640, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       } else {
         OfflineView(model: model, control: control).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -181,7 +178,7 @@ private struct WindowToolbar: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
   @ObservedObject var nav: WindowNav
-  @AppStorage("settingsPane") private var pane: SettingsItem = .talk
+  @AppStorage("settingsPane") private var pane: SettingsItem = .voice
 
   var body: some View {
     let online = model.connection == .online
