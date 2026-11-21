@@ -66,6 +66,8 @@ struct AskBoxActions {
   var micCancel: () -> Void
   var openApp: () -> Void
   var reviewMemory: () -> Void
+  /** A refusal's "See what Stephen may do": the window on Settings > Privacy and safety (L1). */
+  var openPermissions: () -> Void
   var quit: () -> Void
   /** The owner let go of the drag strip: remember where the box is. */
   var dragEnded: () -> Void
@@ -175,7 +177,7 @@ struct AskBoxView: View {
       if !model.thread.isEmpty || !model.confirms.isEmpty || model.isWorking {
         // Fixed height once the chat has started (owner, 2026-11-09): the box keeps one size and a long chat scrolls,
         // instead of growing with every message.
-        ChatThreadView(model: model).frame(height: 340)
+        ChatThreadView(model: model, links: ChatLinks(permissions: actions.openPermissions)).frame(height: 340)
       }
       AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)
     case .listening:
@@ -408,6 +410,7 @@ final class AskBoxController: NSObject {
       micCancel: { [weak self] in self?.box.micHeld = false; self?.cancelTalk() },
       openApp: { [weak self] in self?.close(); self?.openWindow(nil) },
       reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) },
+      openPermissions: { [weak self] in self?.close(); selectSettingsPane(.privacy); self?.openWindow(.settings) },
       quit: { [weak self] in self?.quit() },
       dragEnded: { [weak self] in self?.savePosition() },
       resetPosition: { [weak self] in self?.resetPosition() },

@@ -402,8 +402,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const chat = read('Components/ChatThread.swift');
     expect(chat).toMatch(/if let q = model\.confirms\.first \{[\s\S]*?Button\(""\) \{ model\.denyFirstConfirm\(\) \}\.keyboardShortcut\(\.cancelAction\)/);
     expect(chat.match(/\.cancelAction/g)).toHaveLength(1);
-    expect(read('HomeView.swift')).toContain('ChatThreadView(model: model)');
-    expect(box).toContain('ChatThreadView(model: model)');
+    // Same thread view in both (UI v4 step b adds navigation-only links after the model: ChatLinks).
+    expect(read('HomeView.swift')).toMatch(/ChatThreadView\(model: model(, links: ChatLinks\(|\))/);
+    expect(box).toMatch(/ChatThreadView\(model: model(, links: ChatLinks\(|\))/);
     // Nothing on the keyboard approves: Allow is only a click.
     for (const src of [chat, box, read('HomeView.swift')]) expect(src).not.toMatch(/approve: true|answer\(true\)[^\n]*keyboardShortcut/);
   });
@@ -686,6 +687,24 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // Offline never claims more than the box knows; every state is a word.
     const word = box.match(/func askBoxStateWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
     for (const w of ['Offline', 'Connecting', 'Listening', 'Working', 'Speaking', 'Ready', 'Microphone off']) expect(word).toContain(`"${w}"`);
+  });
+
+  it('L1 ([DEV REVIEW]): a refused step shows "See what Stephen may do", outside the folded chain; it only navigates', () => {
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('private var refused: Bool { return bubble.steps.contains { StepStatus($0.status) == .refused } }');
+    // On replies and on problem messages, gated on a refusal; never inside ActionChain (folded by default).
+    expect(chat.match(/if refused, let open = links\.permissions \{ link\("See what Stephen may do", open\) \}/g)).toHaveLength(2);
+    const chain = chat.match(/struct ActionChain: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(chain).not.toContain('See what Stephen may do');
+    // The refusal label and the steps keep their place and look.
+    expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // The link button only runs its closure; the closures only navigate (no model call, no answer, no send).
+    expect(chat).toMatch(/private func link\(_ title: String, _ action: @escaping \(\) -> Void\) -> some View \{\s*Button\(action: action\)/);
+    expect(read('HomeView.swift')).toContain('ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings }');
+    const box = read('AskBox.swift');
+    expect(box).toContain('ChatLinks(permissions: actions.openPermissions)');
+    expect(box).toContain('openPermissions: { [weak self] in self?.close(); selectSettingsPane(.privacy); self?.openWindow(.settings) }');
+    expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
   });
 
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {

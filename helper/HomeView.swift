@@ -121,7 +121,8 @@ struct HomeView: View {
 
   /// Messages: the same thread as the Ask box. The title and New chat are in the toolbar.
   private var thread: some View {
-    ChatThreadView(model: model).frame(maxHeight: .infinity)
+    ChatThreadView(model: model, links: ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings }))
+      .frame(maxHeight: .infinity)
   }
 
   /// Next up (S8, R8): facts only. Running jobs first; else "Nothing waiting". The "Plan my day" chip asks about the day,
