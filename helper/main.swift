@@ -364,7 +364,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     case .running(let fromApp): startStop.title = fromApp ? "Stop Stephen" : "Stephen is running in Terminal"
     }
     startStop.isEnabled = control.listener != .running(fromApp: false)
-    phoneItem.state = phoneLinkOn() ? .on : .off
+    phoneItem.state = control.phoneLinkOn() ? .on : .off
     recordingItem.isHidden = !recordingOn()
     render()
   }
@@ -395,20 +395,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     if control.listener == .stopped { control.start(report) } else { control.stop(report) }
   }
 
-  /** On when the phone marker (<home>/phone/.on, src/phone/setup.ts) names a live process: true however it was turned on. */
-  private func phoneLinkOn() -> Bool {
-    guard let data = FileManager.default.contents(atPath: control.home + "/phone/.on"),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let pid = json["pid"] as? Int, pid > 0
-    else { return false }
-    return kill(pid_t(pid), 0) == 0
-  }
-
   @objc func phoneClicked(_ sender: Any?) {
     let done: (AppMessage) -> Void = { [weak self] m in
       MainActor.assumeIsolated { self?.show(m.on == true ? "Phone link on" : "Phone link off", phoneText(m)) }
     }
-    if phoneLinkOn() { control.phoneOff(done) } else { control.phoneOn(done) }
+    if control.phoneLinkOn() { control.phoneOff(done) } else { control.phoneOn(done) }
   }
 
   @objc func zenClicked(_ sender: Any?) {
