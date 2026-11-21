@@ -1,8 +1,8 @@
-// Stephen Helper: Home (UI-PLAN v3.2 section 6), a chat layout. With no messages: "Morning, Cris." and the date, a
-// large centred composer with Talk and Send, three suggestion chips, and Today as one line ("Nothing waiting · What's
-// my day?"; only what app.sock already knows, due items and to-dos come from asking). With messages: the same thread
-// as the Ask box (ChatThreadView) and the composer at the bottom. No weather, no cards. The chat title and New chat (⌘N)
-// are in the window toolbar (UI v4, MainWindow.swift).
+// Stephen Helper: Home (UI-V4-IA-PLAN section 6.1), a chat layout. With no messages: "Morning, Cris.", the date and the
+// Next up line ("1 job running · See jobs", or "Nothing waiting"; only what app.sock already knows), a large centred
+// composer with Talk and Send, three suggestion chips. With messages: the same thread as the Ask box (ChatThreadView)
+// and the composer at the bottom. No weather, no cards. The chat title and New chat (⌘N) are in the window toolbar
+// (UI v4, MainWindow.swift).
 //
 // Motion: one layout, not two swapped views. The composer is the same view in both states; the space under it shrinks
 // to nothing when the chat starts, so the composer glides from the centre to the bottom while the greeting and chips
@@ -74,6 +74,7 @@ struct HomeView: View {
       Text(verbatim: homeGreeting(hour: Calendar.current.component(.hour, from: now), name: model.ownerName))
         .font(TypeScale.homeTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
       Text(verbatim: now.formatted(date: .complete, time: .omitted)).font(TypeScale.body).foregroundColor(t.ink2)
+      nextUp.padding(.top, Space.xs)
     }
     .padding(.bottom, Space.l)
   }
@@ -91,7 +92,6 @@ struct HomeView: View {
       HStack(spacing: Space.s) {
         ForEach(HOME_SUGGESTIONS, id: \.self) { s in Tag(s) { draft = s } }
       }
-      todayLine.padding(.top, Space.xs)
     }
   }
 
@@ -100,23 +100,27 @@ struct HomeView: View {
     ChatThreadView(model: model).frame(maxHeight: .infinity)
   }
 
-  /// "Nothing waiting · What's my day?" Running jobs come first when there are any. (A waiting question is never here:
-  /// it makes the chat non-empty, so Home shows the card instead, and the banner shows on every page, #138.)
-  private var todayLine: some View {
+  /// Next up (S8, R8): facts only. Running jobs first; else "Nothing waiting". The "Plan my day" chip asks about the day,
+  /// so there is no second "What's my day?" link. (A waiting question is never here: it makes the chat non-empty, so
+  /// Home shows the card instead, and the banner shows on every page, #138.)
+  /// ponytail: no calendar item yet. app.sock has no calendar read; add it with a read-only request (S8, C5).
+  private var nextUp: some View {
     let running = model.jobs.filter { $0.isRunning }.count
-    let (text, word, act): (String, String, () -> Void) = {
-      if running > 0 { return (running == 1 ? "1 job running" : "\(running) jobs running", "See jobs", { nav.page = .jobs }) }
-      return ("Nothing waiting", "What's my day?", { model.sendChat(APP_TODAY_PROMPT) })
-    }()
     return HStack(spacing: Space.s) {
-      Text(verbatim: text).font(TypeScale.secondary).foregroundColor(t.ink2)
-      Text(verbatim: "·").font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true)
-      Button(action: act) {
-        Text(verbatim: word).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.accent)
-          .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#149)
+      Text(verbatim: "Next up:").font(TypeScale.secondary.weight(.medium)).foregroundColor(t.ink2)
+      if running > 0 {
+        Text(verbatim: running == 1 ? "1 job running" : "\(running) jobs running").font(TypeScale.secondary).foregroundColor(t.ink)
+        Text(verbatim: "·").font(TypeScale.secondary).foregroundColor(t.ink2).accessibilityHidden(true)
+        Button { nav.page = .jobs } label: {
+          Text(verbatim: "See jobs").font(TypeScale.secondary.weight(.medium)).foregroundColor(t.accent)
+            .frame(minHeight: 24).contentShape(Rectangle())  // a 24 pt target (#149)
+        }
+        .buttonStyle(.plain).accessibilityLabel("See jobs")
+      } else {
+        Text(verbatim: "Nothing waiting").font(TypeScale.secondary).foregroundColor(t.ink)
       }
-      .buttonStyle(.plain).accessibilityLabel(word)
     }
+    .frame(minHeight: 24)
     .accessibilityElement(children: .contain)
   }
 

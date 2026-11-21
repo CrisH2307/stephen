@@ -520,7 +520,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     }
   });
 
-  it('Personal is gone (UI v4): its parts (personal.summary, accounts) are read-only Settings panes; Home\'s Today row', () => {
+  it('Personal is gone (UI v4): its parts (personal.summary, accounts) are read-only Settings panes; Home\'s Next up line', () => {
     expect(window).not.toContain('PersonalView');
     const settings = read('SettingsPage.swift');
     expect(settings).toContain('model.refreshPersonal()');
@@ -536,9 +536,13 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(moved).not.toMatch(/model\.(add|update|clear|forget|stop|send|save|delete)\w*\(/);
     expect(moved).toContain('PermissionTable(');
     expect(window).toContain('model.refreshAccounts()');
-    expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
-    // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.
-    expect(client).toContain('let APP_TODAY_PROMPT = "what\'s my day?"');
+    // Home's Next up line (plan 6.1, R8) has no "What's my day?" link: Home sends only from its composer's Send.
+    const home = read('HomeView.swift');
+    expect(home).not.toContain('APP_TODAY_PROMPT');
+    expect(home.match(/sendChat\(/g)).toHaveLength(1);
+    expect(home).toContain('if model.sendChat(draft) { draft = "" }');
+    expect(home).toContain('Text(verbatim: "Next up:")');
+    expect(home).toContain('Button { nav.page = .jobs }');
     expect(client).toContain('AppRequest.accountsStatus(newId())');
     // Only system colours.
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
