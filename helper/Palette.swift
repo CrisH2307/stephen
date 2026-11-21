@@ -1,6 +1,6 @@
-// Stephen Helper: the ⌘K palette (docs/research/UI-V4-IA-PLAN.md section 7, step a: Waiting, Ask, Go to, Actions).
-// It only goes to a page, opens the Ask box, fills Home's composer (never sends), or runs an app action from the allow
-// list in plan 7.3. It never answers a question. Typed text never leaves the Mac.
+// Stephen Helper: the ⌘K palette (docs/research/UI-V4-IA-PLAN.md section 7: Waiting, Ask, Go to, Conversations,
+// Actions). It only goes to a page, opens the Ask box, fills Home's composer (never sends), opens a past conversation,
+// or runs an app action from the allow list in plan 7.3. It never answers a question. Typed text never leaves the Mac.
 //
 // Keys: Up and Down move, Return runs the selected row, Esc closes the palette (only the palette). While it is open,
 // the question card's buttons and its Esc are off (\.paletteOpen, read by ConfirmButtons and ChatThreadView).
@@ -26,6 +26,8 @@ struct PaletteItem: Identifiable {
   let section: String
   let title: String
   let symbol: String
+  /// A second line, for a conversation's source · time.
+  var detail: String? = nil
   let run: () -> Void
 }
 
@@ -49,13 +51,13 @@ struct CommandPalette: View {
       VStack(spacing: 0) {
         HStack(spacing: Space.s) {
           Image(systemName: "magnifyingglass").foregroundColor(t.ink2).accessibilityHidden(true)
-          TextField("Search pages and actions", text: $query).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
+          TextField("Search pages, actions and conversations", text: $query).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
             .focused($focused)
             .onSubmit { run(items) }
             .onKeyPress(.upArrow) { move(-1, items.count); return .handled }
             .onKeyPress(.downArrow) { move(1, items.count); return .handled }
             .onKeyPress(.escape) { close(); return .handled }
-            .accessibilityLabel("Search pages and actions")
+            .accessibilityLabel("Search pages, actions and conversations")
         }
         .padding(.horizontal, Space.m).padding(.vertical, 12)
         Rectangle().fill(t.line).frame(height: 1)
@@ -99,8 +101,11 @@ struct CommandPalette: View {
     Button(action: action) {
       HStack(spacing: Space.s) {
         Image(systemName: item.symbol).font(.system(size: 15)).foregroundColor(selected ? t.accent : t.ink2).frame(width: 20)
-        // Verbatim: the Ask row repeats what you typed.
-        Text(verbatim: item.title).font(TypeScale.body).foregroundColor(t.ink).lineLimit(1).truncationMode(.tail)
+        // Verbatim: the Ask row repeats what you typed; a conversation row shows what you said, one line.
+        VStack(alignment: .leading, spacing: 2) {
+          Text(verbatim: item.title).font(TypeScale.body).foregroundColor(t.ink).lineLimit(1).truncationMode(.tail)
+          if let d = item.detail { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ink2).lineLimit(1) }
+        }
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 12).padding(.vertical, 8)
@@ -113,7 +118,7 @@ struct CommandPalette: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel(item.title)
+    .accessibilityLabel(item.detail.map { "\(item.title), \($0)" } ?? item.title)
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
   }
 
@@ -134,8 +139,26 @@ struct CommandPalette: View {
       if !q.isEmpty { nav.draft = q }
       nav.page = .home
     })
-    let rest = goTo + appActions
-    return list + (q.isEmpty ? rest : rest.filter { $0.title.localizedCaseInsensitiveContains(q) })
+    return list + matching(goTo, q) + conversations(q) + matching(appActions, q)
+  }
+
+  private func matching(_ rows: [PaletteItem], _ q: String) -> [PaletteItem] {
+    return q.isEmpty ? rows : rows.filter { $0.title.localizedCaseInsensitiveContains(q) }
+  }
+
+  /// [DEV REVIEW] Plan 7.2 and 7.5.3: up to 5 past conversations that match, from the page's own rows and search
+  /// (conversationRows, conversationMatches). Local only: typed text never leaves the Mac. Shown verbatim, one line.
+  /// A result only navigates: Conversations with the query filled and that row open.
+  private func conversations(_ q: String) -> [PaletteItem] {
+    guard !q.isEmpty else { return [] }
+    return conversationRows(model.history, audit: model.audit, parse: model.parseDate, query: q).prefix(5).map { r in
+      PaletteItem(id: "conv.\(r.entry.id)", section: "Conversations", title: r.entry.said, symbol: "bubble.left",
+                  detail: "\(model.sourceLabel(r.entry.source)) · \(model.timeText(r.entry.ts))") {
+        nav.conversationQuery = q
+        nav.conversationOpen = r.entry.id
+        nav.page = .conversations
+      }
+    }
   }
 
   private var goTo: [PaletteItem] {
