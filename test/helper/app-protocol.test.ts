@@ -614,6 +614,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const mem = read('MemoryPage.swift');
     expect(mem).toContain('.onSubmit { if !n.new { saveEdit(n) } }');
     expect(mem.match(/\.onSubmit/g)).toHaveLength(1);
+    // Keep on an empty edit says so and keeps the field open; it never closes silently.
+    const keepEdited = mem.match(/private func keepEdited\(_ p: MemoryProposal\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(keepEdited).toContain('if text.isEmpty { emptyNote = "Empty, nothing kept."; return }');
+    expect(keepEdited.indexOf('if text.isEmpty')).toBeLessThan(keepEdited.indexOf('editingProposal = nil'));
+    expect(block).toContain('if let e = emptyNote { Text(verbatim: e)');
     // The old place under the graph is gone: one proposals block, no "Nothing new" row.
     expect(page.match(/GroupedList\("New from your chats"\)/g)).toHaveLength(1);
     expect(page).not.toContain('"Nothing new"');

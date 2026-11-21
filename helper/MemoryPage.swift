@@ -127,6 +127,8 @@ struct MemoryPage: View {
   @State private var editText = ""
   /// The proposal being edited in "New from your chats" (it shares editText with the inspector, one edit at a time).
   @State private var editingProposal: String? = nil
+  /// Shown under a suggestion's edit field when Keep found it empty.
+  @State private var emptyNote: String? = nil
   @State private var confirmClear = false
   @FocusState private var searchFocused: Bool
 
@@ -467,6 +469,7 @@ struct MemoryPage: View {
                 .padding(Space.s)
                 .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.accent, lineWidth: 1))
                 .accessibilityLabel("Edit suggestion text")
+              if let e = emptyNote { Text(verbatim: e).font(TypeScale.secondary).foregroundColor(t.warn) }
             } else {
               Text(verbatim: p.text).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
             }
@@ -475,10 +478,10 @@ struct MemoryPage: View {
             HStack(spacing: Space.s) {
               if editingProposal == p.id {
                 PrimaryButton("Keep") { keepEdited(p) }
-                QuietButton("Cancel") { editingProposal = nil }
+                QuietButton("Cancel") { editingProposal = nil; emptyNote = nil }
               } else {
                 PrimaryButton("Keep") { model.keepProposal(p.id) }
-                QuietButton("Edit") { editing = false; editText = p.text; editingProposal = p.id }
+                QuietButton("Edit") { editing = false; editText = p.text; editingProposal = p.id; emptyNote = nil }
                 QuietButton("Skip") { model.skipProposal(p.id) }
               }
             }
@@ -494,8 +497,10 @@ struct MemoryPage: View {
 
   private func keepEdited(_ p: MemoryProposal) {
     let text = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Empty: say so and stay in the field, never close silently (#254 review).
+    if text.isEmpty { emptyNote = "Empty, nothing kept."; return }
     editingProposal = nil
-    if text.isEmpty { return }
+    emptyNote = nil
     model.keepProposal(p.id, text: text == p.text ? nil : text)
   }
 
