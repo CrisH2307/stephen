@@ -599,7 +599,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Text(verbatim: entry.said)');
   });
 
-  it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the top, Home', () => {
+  it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
     const main = read('MainWindow.swift');
     expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
     expect(main).toContain('static let control: [Page] = [.memory, .settings]');
@@ -607,9 +607,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');
     expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
     expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
-    // The state row sits above the groups (v4).
-    expect(main.indexOf('StatusRow(model: model, control: control, collapsed: collapsed)'))
-      .toBeLessThan(main.indexOf('SidebarSection("Talk"'));
+    // The state row sits at the bottom left (owner, 2026-11-21): after both groups and the spacer, the last view in the
+    // sidebar's column.
+    const sidebar = main.match(/private struct SidebarView: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(sidebar).toMatch(/SidebarSection\("Control"[^\n]*\n\s*\}\n\s*Spacer\(minLength: 0\)\n\s*\/\/[^\n]*\n\s*StatusRow\(model: model, control: control, collapsed: collapsed\)\n    \}/);
+    expect(sidebar.match(/StatusRow\(/g)).toHaveLength(1);
     // R2: the fake "Ask Stephen" field is gone. The Ask box stays one click away: the banner, the palette, the app menu.
     expect(main).not.toContain('askField');
     expect(main).not.toContain('Button(action: nav.askHere)');
@@ -626,6 +628,24 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // A waiting question makes the chat non-empty, so Home shows the card (#138 banner covers the other pages).
     expect(home).toContain('model.thread.isEmpty && model.confirms.isEmpty');
     expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
+  });
+
+  it('Recording on sign (UI v4, [DEV REVIEW]): solid, words unchanged, right next to the state row at the bottom left', () => {
+    const row = read('MainWindow.swift').match(/private struct StatusRow: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const sign = row.match(/if model\.recordingOn \{([\s\S]*?)\n      \}/)?.[1] ?? '';
+    expect(sign).toContain('Text(verbatim: "Recording on")');
+    expect(sign).toContain('Image(systemName: "waveform")');
+    // Solid in the glass sidebar: surface fill and a lineStrong outline, no material.
+    expect(sign).toContain('.background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))');
+    expect(sign).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))');
+    expect(sign).not.toMatch(/glass|Material|opacity/i);
+    expect(sign).toContain('.help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and safety.")');
+    expect(sign).toContain('.accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")');
+    // Right next to the state row: the sign's block ends and the state row's HStack starts, nothing in between.
+    expect(row).toMatch(/if model\.recordingOn \{[\s\S]*?\n      \}\n      HStack\(spacing: Space\.s\) \{\n        StatusPill\(s\.word/);
+    // Not inside an accordion, and not hidden when the sidebar is collapsed (the waveform stays).
+    expect(row).not.toMatch(/Accordion|DisclosureGroup/);
+    expect(sign).not.toMatch(/if !collapsed \{[^\n]*waveform/);
   });
 
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
