@@ -27,25 +27,25 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed (#108 merged), Mac check pending | dev | #86, `fix/mic-stop-f5` |
-| S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | fixed in code | dev | #52, `fix/forget-tie-ps-tty` |
-| S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | in review | review | `docs/review-10a`, PR #95 |
-| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170 and the #169 follow-up; PR 2 (Settings switch, owner-only app.sock `replay.set`, "Recording on" sign) merged (#206); PR 3 mark to come | dev | #48, `feat/replay-recorder`, `feat/replay-switch-48` |
-| S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | open | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
-| S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed (#114 merged), Mac check pending | dev | #90, #54, #68, `fix/remember-once` |
-| S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed (#118 merged), Mac check pending | dev | #87, `fix/ask-button` |
-| S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | fixed in code | dev | #65, #67, `fix/claude-cli-contract` |
-| S4-9 B1 | review 4 | P0 | Owner-only memory origin | fixed in code | dev | #53, `fix/memory-origin-you` |
-| S4-10 DOC1 | review 4 | P1 | Reconcile docs (this ledger, plan corrections, superseded banners) | in progress | review | `docs/plan-reconcile` |
-| S4-11 REL | review 4 | P0 | Release `qa` to `main` after R10a fixes and Mac sections 0 and 13 | open | owner | PR #92 (sync), release PR none |
-| S4-12 C5 | review 4 | P0 | Split `AppClient.swift` | open | dev | #56, `ui/split-appclient` |
+| S4-1 T1 | review 4 | P0 | Mic cannot be stopped; F5 fails 9 in 10 | fixed (#108 merged; issue #86 closed), Mac check pending (test plan 14.1) | dev | #86, `fix/mic-stop-f5` |
+| S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | closed (#112) | dev | #52, `fix/forget-tie-ps-tty` |
+| S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | closed (#95) | review | `docs/review-10a`, PR #95 |
+| S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170, #173 and #238 (#208); PR 2 (Settings switch, owner-only app.sock `replay.set`, "Recording on" sign) merged (#206); PR 3 mark not started | dev | #48, `feat/replay-recorder`, `feat/replay-switch-48` |
+| S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | closed (#98, #99, #105: `mac-checks` and the plain test plan); the Mac pass itself is #49, owner | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
+| S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed (#114 merged; issue #90 closed), Mac check pending (test plan 14.4) | dev | #90, #54, #68, `fix/remember-once` |
+| S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed (#118 merged; issue #87 closed), Mac check pending | dev | #87, `fix/ask-button` |
+| S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | closed (#115, #116) | dev | #65, #67, `fix/claude-cli-contract` |
+| S4-9 B1 | review 4 | P0 | Owner-only memory origin | closed (#113) | dev | #53, `fix/memory-origin-you` |
+| S4-10 DOC1 | review 4 | P1 | Reconcile docs (this ledger, plan corrections, superseded banners) | closed (#97; ledger kept current by #163, #176, #234 and this refresh) | review | `docs/plan-reconcile` |
+| S4-11 REL | review 4 | P0 | Release `qa` to `main` after R10a fixes and Mac sections 0 and 13 | in progress: release prepared by the review lane 2026-11-21 (`docs/release-prep`); release PR not opened yet | owner | PR #92 (sync), release PR none |
+| S4-12 C5 | review 4 | P0 | Split `AppClient.swift` | closed (#241, five files, no behaviour change); issue #56 still open | dev | #56, `ui/split-appclient` |
 | S4-13 A2b | review 4 | P0 | Monitor gaps: Esc, chime, tool times, ASR and TTS names, cold or warm | fixed in code, Mac check pending | dev | #43, `feat/latency-gaps` |
 | S4-14 E4a | review 4 | P1 | Wake endpoint p50 at or under 800 ms | open | dev | #73, `fix/wake-endpoint` |
-| S4-15 E6a | review 4 | P0 | Command grammar in shadow mode | open | review | #59, `feat/command-grammar-shadow` |
+| S4-15 E6a | review 4 | P0 | Command grammar in shadow mode | closed (#100, #126, #157: shadow mode, labels only); the full E6 stays on #59 | review | #59, `feat/command-grammar-shadow` |
 | S4-16 A3 | review 4 | P0 | YouTube account-frame rule; real Zen must play YouTube with no prompt | open | dev | #50, `fix/youtube-account-frame` |
-| S4-17 A4 | review 4 | P0 | open_url redirect residual: owner accepted; docs plus one test | accepted | review | #51, `docs/open-url-residual`, PR #96 |
-| S4-18 | review 4 | P0 | ADR-007 conversation store and ADR-008 fast path and gate | open | review | #55, #60, `docs/adr-007-conversation-store`, `docs/adr-008-fast-path` |
-| S4-19 | review 4 | P1 | Zen connect message (#89); bot-check facts (A9) | open | dev | #89, #66, `fix/zen-connect-message`, `docs/zen-bot-check` |
+| S4-17 A4 | review 4 | P0 | open_url redirect residual: owner accepted; docs plus one test | closed (#96, accepted residual) | review | #51, `docs/open-url-residual`, PR #96 |
+| S4-18 | review 4 | P0 | ADR-007 conversation store and ADR-008 fast path and gate | closed (#101 ADR-007 and ADR-008, #119 resume); ADR-007 v1 and v2 built in #257, #258 | review | #55, #60, `docs/adr-007-conversation-store`, `docs/adr-008-fast-path` |
+| S4-19 | review 4 | P1 | Zen connect message (#89); bot-check facts (A9) | closed (#179 for #89; #177 and ADR-009 #212, #215 for the A9 facts); the ADR-009 add-on is not built | dev | #89, #66, `fix/zen-connect-message`, `docs/zen-bot-check` |
 | S4-20 A6b | review 4 | P0 | Scorer and baseline v0 | open | review | #48, `feat/replay-scorer` |
 
 ## C. Open items named in the plan and older reviews
