@@ -29,16 +29,16 @@ function world(retentionDays = 7) {
   let t = T0;
   const home = mkdtempSync(join(tmp, 'h-'));
   const store = new HistoryStore({ home, retentionDays, now: () => new Date(t) });
-  const add = (said: string, o: { conv: string; reply?: string; source?: HistorySource; followUp?: boolean; steps?: ChatStep[]; editOf?: { conv: string; id: string } }) => {
+  const add = (said: string, o: { conv: string; reply?: string; source?: HistorySource; followUp?: boolean; steps?: ChatStep[]; editOf?: { conv: string; id: string; ts: number } }) => {
     t += 1000;
     return store.append({ source: o.source ?? 'app', said, reply: o.reply ?? `re: ${said}`, outcome: 'ok', tools: [], followUp: o.followUp ?? true, ms: 5, turns: 1, conv: o.conv, ...(o.steps ? { steps: o.steps } : {}), ...(o.editOf ? { editOf: o.editOf } : {}) })!;
   };
   /** The original conversation C: T1 ... T4, each with one step line. */
   const C = newConversationId();
   const T = [1, 2, 3, 4].map((i) => add(`turn ${i}`, { conv: C, followUp: i > 1, steps: [{ text: `step of turn ${i}`, status: 'ok' }] }));
-  /** An edit of `line` from the store, as the listener writes it (a new conv, editOf on its first line). */
-  const edit = (line: HistoryEntry, said: string) => {
-    const ctx = editContext(store.all(), line.id, textHash(line.said));
+  /** An edit of `line` seen in branch `view` (default: its own), as the listener writes it (a new conv, editOf on its first line). */
+  const edit = (line: HistoryEntry, said: string, view = line.conv!) => {
+    const ctx = editContext(store.all(), line.id, textHash(line.said), view);
     if ('refused' in ctx) throw new Error(ctx.refused);
     return add(said, { conv: newConversationId(), followUp: false, editOf: ctx.editOf });
   };
@@ -46,8 +46,8 @@ function world(retentionDays = 7) {
   return { store, add, C, T, edit, lines, tick: (ms: number) => (t += ms) };
 }
 
-const ctxOf = (entries: HistoryEntry[], line: HistoryEntry): EditContext => {
-  const c = editContext(entries, line.id, textHash(line.said));
+const ctxOf = (entries: HistoryEntry[], line: HistoryEntry, view = line.conv!): EditContext => {
+  const c = editContext(entries, line.id, textHash(line.said), view);
   if ('refused' in c) throw new Error(c.refused);
   return c;
 };
@@ -61,12 +61,13 @@ const after = (prompt: string) => prompt.slice(wrapper(prompt).length).replace(/
 describe('ADR-010 store and model', () => {
   it('a line with editOf parses; a line without it still parses; a bad editOf is dropped, not trusted', () => {
     const base = { id: 'h_0000000000000001', ts: new Date(T0).toISOString(), source: 'app', said: 's', reply: 'r', outcome: 'ok', tools: [], followUp: false, ms: 1, turns: 1, conv: 'c_00112233aabbccdd' };
-    const good = { conv: 'c_ffeeddccbbaa0011', id: 'h_00000000000000aa' };
+    const good = { conv: 'c_ffeeddccbbaa0011', id: 'h_00000000000000aa', ts: T0 - 1000 };
     expect(parseHistoryEntry({ ...base, editOf: { ...good, extra: 'x' } })?.editOf).toEqual(good);
     const plain = parseHistoryEntry(base);
     expect(plain).not.toBeNull();
     expect(plain).not.toHaveProperty('editOf');
-    for (const bad of [{ conv: '../x', id: 'h_1' }, { conv: good.conv, id: 'a b' }, { conv: good.conv }, { id: good.id }, 'c_ffeeddccbbaa0011/h_1', [good], null, 7]) {
+    const noTs = { conv: good.conv, id: good.id };
+    for (const bad of [{ ...good, conv: '../x' }, { ...good, id: 'a b' }, { conv: good.conv, ts: T0 }, { id: good.id, ts: T0 }, noTs, { ...good, ts: '1700000000000' }, { ...good, ts: Number.NaN }, { ...good, ts: Infinity }, { ...good, ts: -1 }, 'c_ffeeddccbbaa0011/h_1', [good], null, 7]) {
       const e = parseHistoryEntry({ ...base, editOf: bad });
       expect(e, JSON.stringify(bad)).not.toBeNull(); // the line still reads
       expect(e, JSON.stringify(bad)).not.toHaveProperty('editOf'); // the bad field is dropped
@@ -84,7 +85,7 @@ describe('ADR-010 store and model', () => {
     expect(branchView(all, w.C).lines.map((e) => e.said)).toEqual(['turn 1', 'turn 2', 'turn 3', 'turn 4']);
     // C2 copies nothing: T1 and T2 are stored once, in C.
     expect(all.filter((e) => e.said === 'turn 1')).toHaveLength(1);
-    expect(x.editOf).toEqual({ conv: w.C, id: w.T[2]!.id });
+    expect(x.editOf).toEqual({ conv: w.C, id: w.T[2]!.id, ts: Date.parse(w.T[2]!.ts) });
     for (const id of [w.T[2]!.id, x.id, y.id]) expect(versionsOf(all, id).map((e) => e.said), id).toEqual(['turn 3', 'turn 3, edited', 'turn 3, edited again']);
     // A line nobody edited is its only version; a later line of a branch is not a version of the edited message.
     expect(versionsOf(all, w.T[1]!.id).map((e) => e.id)).toEqual([w.T[1]!.id]);
@@ -98,8 +99,8 @@ describe('ADR-010 store and model', () => {
     // Editing the edited message names it (in C2); editing a later line of C2 names that line.
     const y = w.edit(x, 'turn 2, v3');
     const z = w.edit(x2, 'more in v2, edited');
-    expect(y.editOf).toEqual({ conv: x.conv, id: x.id });
-    expect(z.editOf).toEqual({ conv: x.conv, id: x2.id });
+    expect(y.editOf).toEqual({ conv: x.conv, id: x.id, ts: Date.parse(x.ts) });
+    expect(z.editOf).toEqual({ conv: x.conv, id: x2.id, ts: Date.parse(x2.ts) });
     const all = w.store.all();
     expect(branchView(all, y.conv!).lines.map((e) => e.said)).toEqual(['turn 1', 'turn 2, v3']);
     expect(branchView(all, z.conv!).lines.map((e) => e.said)).toEqual(['turn 1', 'turn 2, v2', 'more in v2, edited']);
@@ -114,11 +115,38 @@ describe('ADR-010 store and model', () => {
     for (let v = 2; v <= MAX_VERSIONS; v++) last = w.edit(v % 2 ? last : w.T[0]!, `turn 1, v${v}`); // edits and edits of edits
     const all = w.store.all();
     expect(versionsOf(all, w.T[0]!.id)).toHaveLength(MAX_VERSIONS);
-    expect(editContext(all, w.T[0]!.id, textHash('turn 1'))).toEqual({ refused: TOO_MANY_VERSIONS_MESSAGE });
-    expect(editContext(all, last.id, textHash(last.said))).toEqual({ refused: TOO_MANY_VERSIONS_MESSAGE });
+    expect(editContext(all, w.T[0]!.id, textHash('turn 1'), w.C)).toEqual({ refused: TOO_MANY_VERSIONS_MESSAGE });
+    expect(editContext(all, last.id, textHash(last.said), last.conv!)).toEqual({ refused: TOO_MANY_VERSIONS_MESSAGE });
     expect(TOO_MANY_VERSIONS_MESSAGE).toBe('Too many versions of this message. Start a new conversation instead.');
     // Another message of the same conversation can still be edited.
-    expect('refused' in editContext(all, w.T[1]!.id, textHash('turn 2'))).toBe(false);
+    expect('refused' in editContext(all, w.T[1]!.id, textHash('turn 2'), w.C)).toBe(false);
+  });
+
+  it('a chain of edits (each an edit of the last) cannot get past the 10-version cap', () => {
+    const w = world();
+    let last = w.T[1]!;
+    for (let v = 2; v <= MAX_VERSIONS; v++) last = w.edit(last, `turn 2, v${v}`);
+    const all = w.store.all();
+    // Every link names its own parent, and all of them count toward turn 2's ten.
+    expect(last.editOf?.conv).not.toBe(w.C);
+    expect(versionsOf(all, w.T[1]!.id)).toHaveLength(MAX_VERSIONS);
+    expect(versionsOf(all, last.id)).toHaveLength(MAX_VERSIONS);
+    expect(editContext(all, last.id, textHash(last.said), last.conv!)).toEqual({ refused: TOO_MANY_VERSIONS_MESSAGE });
+    expect(editContext(all, w.T[1]!.id, textHash('turn 2'), w.C)).toEqual({ refused: TOO_MANY_VERSIONS_MESSAGE });
+    expect(() => w.edit(last, 'turn 2, v11')).toThrow(TOO_MANY_VERSIONS_MESSAGE);
+  });
+
+  it('an editOf whose time is outside the retention window is dropped on read', () => {
+    const w = world(1);
+    const x = w.edit(w.T[1]!, 'turn 2, edited');
+    const old = w.add('edited long ago', { conv: newConversationId(), followUp: false, editOf: { conv: w.C, id: w.T[0]!.id, ts: T0 - 2 * 86_400_000 } });
+    const future = w.add('edited in the future', { conv: newConversationId(), followUp: false, editOf: { conv: w.C, id: w.T[0]!.id, ts: T0 + 86_400_000 } });
+    const all = w.store.all();
+    expect(all.find((e) => e.id === x.id)?.editOf).toEqual(x.editOf);
+    expect(all.find((e) => e.id === old.id)).not.toHaveProperty('editOf');
+    expect(all.find((e) => e.id === future.id)).not.toHaveProperty('editOf');
+    expect(w.store.list({ limit: 100 }).find((e) => e.id === old.id)).not.toHaveProperty('editOf');
+    expect(branchView(all, old.conv!).lines.map((e) => e.said)).toEqual(['edited long ago']);
   });
 
   it('retention: an expired T1 is not shown and not sent; the page shows the "expired" line', () => {
@@ -155,7 +183,7 @@ describe('ADR-010 store and model', () => {
     versionsOf(all, x.id);
     const ctx = ctxOf(all, x);
     quotePrompt(ctx.earlier, 'trusted', 'm', ctx.replaced);
-    editContext(all, x.id, 'f'.repeat(64));
+    editContext(all, x.id, 'f'.repeat(64), x.conv!);
     w.store.purge();
     expect(w.lines()).toEqual(before);
 
@@ -167,7 +195,9 @@ describe('ADR-010 store and model', () => {
     const left = w.store.all();
     expect(left.map((e) => e.said)).toEqual(['turn 1', 'turn 2', 'turn 3, v3']);
     expect(versionsOf(left, y.id).map((e) => e.said)).toEqual(['turn 3, v3']);
-    expect(branchView(left, y.conv!).lines.map((e) => e.said)).toContain('turn 3, v3');
+    // The cut is editOf.ts: with Tk deleted, the later version still shows T1 ... Tk-1, and no expired line.
+    expect(branchView(left, y.conv!)).toEqual({ lines: left, expired: false });
+    expect(branchView(left, y.conv!).lines.map((e) => e.said)).toEqual(['turn 1', 'turn 2', 'turn 3, v3']);
     // A line of another conversation, or an unknown id, deletes nothing.
     expect(w.store.deleteVersion(w.C, y.id)).toBe(0);
     expect(w.store.deleteVersion(w.C, 'h_ffffffffffffffff')).toBe(0);
@@ -263,13 +293,37 @@ describe('ADR-010 context', () => {
     expect(after(p)).toBe('open my calendar');
   });
 
+  it('the viewed branch: the context follows the branch on screen; a line outside it is refused', () => {
+    const w = world();
+    const x = w.edit(w.T[2]!, 'turn 3, v2'); // C2 = T1, T2 (from C), then its own lines
+    w.add('more in v2', { conv: x.conv!, steps: [{ text: 'step of v2', status: 'ok' }] });
+    const other = w.edit(w.T[1]!, 'turn 2, other'); // C3, another branch
+    const all = w.store.all();
+    // Match: T2 is in C2's shared history. Seen in C2, the replaced step lines are C2's, not C's T3 and T4.
+    const inC2 = ctxOf(all, w.T[1]!, x.conv!);
+    expect(inC2.editOf).toEqual({ conv: w.C, id: w.T[1]!.id, ts: Date.parse(w.T[1]!.ts) });
+    expect(inC2.earlier.map((e) => e.said)).toEqual(['turn 1']);
+    expect(inC2.replaced.map((e) => e.said)).toEqual(['turn 2', 'turn 3, v2', 'more in v2']);
+    const p = quotePrompt(inC2.earlier, 'trusted', 'turn 2, again', inC2.replaced);
+    expect(p).toContain('- step of v2');
+    expect(p).not.toContain('step of turn 3');
+    expect(p).not.toContain('step of turn 4');
+    // Seen in C, the same line gets C's later steps.
+    expect(ctxOf(all, w.T[1]!, w.C).replaced.map((e) => e.said)).toEqual(['turn 2', 'turn 3', 'turn 4']);
+    // Refused: a line of another branch, a line after the cut (T3 is not in C2's view), a conversation with no lines.
+    expect(editContext(all, other.id, textHash(other.said), x.conv!)).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
+    expect(editContext(all, w.T[2]!.id, textHash('turn 3'), x.conv!)).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
+    expect(editContext(all, x.id, textHash(x.said), w.C)).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
+    expect(editContext(all, w.T[0]!.id, textHash('turn 1'), 'c_ffffffffffffffff')).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
+  });
+
   it('a wrong old-text hash, a gone line or a line with no conversation is refused', () => {
     const w = world();
     const all = w.store.all();
-    expect(editContext(all, w.T[1]!.id, textHash('turn 2 (changed)'))).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
-    expect(editContext(all, 'h_ffffffffffffffff', textHash('turn 2'))).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
+    expect(editContext(all, w.T[1]!.id, textHash('turn 2 (changed)'), w.C)).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
+    expect(editContext(all, 'h_ffffffffffffffff', textHash('turn 2'), w.C)).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
     const noConv = { ...all[0]!, id: 'h_0000000000000abc', conv: undefined };
-    expect(editContext([...all, noConv], noConv.id, textHash(noConv.said))).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
+    expect(editContext([...all, noConv], noConv.id, textHash(noConv.said), w.C)).toEqual({ refused: CONVERSATION_CHANGED_MESSAGE });
     expect(CONVERSATION_CHANGED_MESSAGE).toBe('This conversation changed. Open it again.');
     expect(textHash('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
