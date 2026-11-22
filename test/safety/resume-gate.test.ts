@@ -62,6 +62,32 @@ describe('ADR-007 v2: the gate after resume', () => {
     expect(fresh.evaluate(nav(LEAK)).verdict).toBe('allow');
   });
 
+  it('the resumed serve writes its taint to conversation-state.json; the follow-up serve (no flag, --resume sess-2) still asks', async () => {
+    const h = home('followup');
+    const args = (apr: boolean) => mcpConfig('/n', '/c', h.state, null, null, 'trusted', null, apr).mcpServers.stephen!.args;
+    const seen: RunOptions[] = [];
+    const verdicts: string[] = [];
+    let n = 0;
+    const inner = {
+      run: async (_prompt: string, run: RunOptions = {}): Promise<ClaudeOutcome> => {
+        seen.push(run);
+        // Each run starts a NEW serve from its argv, as Claude Code does; nothing read in this serve.
+        const g = serveGate(h.home, args(run.assumePrivateRead === true));
+        verdicts.push(g.evaluate(nav(LEAK)).verdict);
+        return { kind: 'ok', text: 'ok', sessionId: `sess-${++n + 1}`, costUsd: 0, turns: 1 };
+      },
+      cancel: () => false,
+    };
+    const runner = new ConversationRunner(inner, new Conversation({ dir: h.voice, windowSec: 180 }));
+    await runner.run('Earlier conversation ... then the new message', { trust: 'trusted', assumePrivateRead: true });
+    // The flag's taint was noted after the state binding, so it is on disk (src/cli.ts order).
+    expect(readFileSync(h.state, 'utf8')).toContain('private');
+    await runner.run('and reply to it', { trust: 'trusted' });
+    expect(seen).toEqual([{ trust: 'trusted', assumePrivateRead: true }, { resume: 'sess-2', trust: 'trusted' }]);
+    expect(args(false)).not.toContain('--assume-private-read');
+    expect(verdicts).toEqual(['confirm', 'confirm']);
+  });
+
   it('no host approved in the old conversation is trusted in the new one', async () => {
     const h = home('approved');
     const args = (apr: boolean) => mcpConfig('/n', '/c', h.state, null, null, 'trusted', null, apr).mcpServers.stephen!.args;
