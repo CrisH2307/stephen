@@ -8,6 +8,8 @@ Columns. **Source**: where it was found (review = `docs/research/PLAN-REVIEW-202
 
 Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing here was re-verified on the Mac.
 
+Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checked against merged PRs (up to #262) and GitHub issues. "Mac check pending" means the code is merged and only the owner's Mac check is left. Mac checks were not re-run for this refresh.
+
 ## A. The review's ten findings (section 0)
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
