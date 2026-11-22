@@ -104,10 +104,10 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | DL-1 | tracker #10 | P0 | Review of the #86 fix | done (comment on #86) | review | #86 |
-| DL-2 | tracker #10 | P0 | `mac-checks`: key listener check | in review | review | `feat/mac-checks-key-listener` |
-| DL-3 | tracker #10 | P1 | Test plan section 0: re-add Input Monitoring after every `install-helper` | in review | review | `docs/mac-test-input-monitoring` |
-| DL-4 | tracker #10 | P1 | Design note: keep the Input Monitoring grant across rebuilds | option A fixed in code, Mac check pending | review | `docs/helper-grant-note`, `feat/install-helper-skip-unchanged` |
-| DL-5 | tracker #10 | P0 | ADR-008 Mac measurements: steps for the owner; 1 of 4 done | in review, 3 open for the owner | review, owner | `docs/adr-008-measurements` |
+| DL-2 | tracker #10 | P0 | `mac-checks`: key listener check | closed (#105) | review | `feat/mac-checks-key-listener` |
+| DL-3 | tracker #10 | P1 | Test plan section 0: re-add Input Monitoring after every `install-helper` | closed (#103) | review | `docs/mac-test-input-monitoring` |
+| DL-4 | tracker #10 | P1 | Design note: keep the Input Monitoring grant across rebuilds | option A fixed (#104 note, #135 merged), Mac check pending | review | `docs/helper-grant-note`, `feat/install-helper-skip-unchanged` |
+| DL-5 | tracker #10 | P0 | ADR-008 Mac measurements: steps for the owner; 1 of 4 done | in progress: #102 merged; 3 of 4 measurements open for the owner | review, owner | `docs/adr-008-measurements` |
 
 ## G. Review 10b (`docs/REVIEW-10B.md`, PRs #111, #113 to #117) and the manager's jobs of 2026-11-13
 
