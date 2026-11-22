@@ -66,6 +66,16 @@
  *    command, `chat.resume.cancel` and RESUME_ARM_MS clear the arm.
  *  - `{id, type:"chat.resume.cancel"}` (Cancel on Home, New chat) → `{id, type:"ok"}`.
  *  - push `{type:"resume", armed}`: after hello and whenever the arm changes, for the "Continuing an earlier chat" line.
+ * Additive (ADR-010, edit and resend), sent only by the window, the owner's own clicks; refused from any other connection:
+ *  - `{id, type:"chat.edit", oldId, oldHash, text}` (Send in a Conversations row's inline editor, or Return in its
+ *    field) → `chat.accepted` then a `chat.done` push, like chat.send; or an error: "busy", "This conversation
+ *    changed. Open it again." (the old line is gone or `oldHash`, SHA-256 hex of its stored text, does not match),
+ *    "Too many versions of this message. Start a new conversation instead.". Nothing else is taken from the app: the
+ *    listener builds the earlier turns from the store and sends them through the resume path (src/history/branch.ts).
+ *  - `{id, type:"history.versions", entryId}` → `{id, type:"versions", entries:[HistoryEntry], expired}`: the versions
+ *    of that message, oldest first, and whether the earlier part of its branch has expired. Read only.
+ *  - `{id, type:"history.deleteVersion", entryId}` ("Delete this version", behind a confirm in the helper) →
+ *    `{id, type:"ok"}`: deletes that version's own lines (that message and what followed it in its conversation).
  */
 import type { ChatStep } from './steps.js';
 import { MEDIA_KEY_ACTIONS, type MediaKeyAction } from '../helper/protocol.js';
@@ -103,6 +113,10 @@ const CONFIRM_ID_RE = /^[0-9a-f-]{36}$/;
 const MEM_ID_MAX_CHARS = 32;
 /** Conversation ids (newConversationId in src/history/store.ts). */
 const APP_CONV_RE = /^c_[0-9a-f]{16}$/;
+/** History entry ids (ID_RE in src/history/store.ts). */
+const APP_ENTRY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+/** chat.edit oldHash: SHA-256 hex (textHash in src/history/branch.ts). */
+const APP_HASH_RE = /^[0-9a-f]{64}$/;
 
 export type AppRequest =
   | { id: string; type: 'hello'; version: string; confirms?: boolean }
@@ -142,7 +156,10 @@ export type AppRequest =
   | { id: string; type: 'replay.set'; enabled: boolean }
   | { id: string; type: 'replay.delete' }
   | { id: string; type: 'chat.resume'; conv: string }
-  | { id: string; type: 'chat.resume.cancel' };
+  | { id: string; type: 'chat.resume.cancel' }
+  | { id: string; type: 'chat.edit'; oldId: string; oldHash: string; text: string }
+  | { id: string; type: 'history.versions'; entryId: string }
+  | { id: string; type: 'history.deleteVersion'; entryId: string };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -185,6 +202,9 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'replay.delete',
   'chat.resume',
   'chat.resume.cancel',
+  'chat.edit',
+  'history.versions',
+  'history.deleteVersion',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -197,6 +217,7 @@ export type AppMessage =
   | { id: string; type: 'chat.accepted'; entryId: string }
   | { id: string; type: 'ok' }
   | { id: string; type: 'history'; entries: HistoryEntry[] }
+  | { id: string; type: 'versions'; entries: HistoryEntry[]; expired: boolean }
   | { id: string; type: 'memory'; items: MemoryItem[] }
   | { id: string; type: 'settings'; config: Record<string, unknown>; configPath: string }
   | { id: string; type: 'audit'; entries: AuditEntry[] }
@@ -264,6 +285,10 @@ function memId(o: Fields): Check {
   const v = o.memId;
   if (typeof v !== 'string' || !v || v.length > MEM_ID_MAX_CHARS) return bad('memId must be a memory id like "m7"');
   return ok;
+}
+
+function entryId(o: Fields): Check {
+  return typeof o.entryId === 'string' && APP_ENTRY_ID_RE.test(o.entryId) ? ok : bad('entryId must be a history entry id');
 }
 
 function propId(o: Fields): Check {
@@ -341,6 +366,14 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'replay.delete': () => ok,
   'chat.resume': (o) => (typeof o.conv === 'string' && APP_CONV_RE.test(o.conv) ? ok : bad('conv must be a conversation id like c_0123456789abcdef')),
   'chat.resume.cancel': () => ok,
+  'chat.edit': (o) =>
+    typeof o.oldId !== 'string' || !APP_ENTRY_ID_RE.test(o.oldId)
+      ? bad('oldId must be a history entry id')
+      : typeof o.oldHash !== 'string' || !APP_HASH_RE.test(o.oldHash)
+        ? bad('oldHash must be the SHA-256 of the old text, in hex')
+        : text(o, 'text', APP_CHAT_MAX_CHARS, 'text'),
+  'history.versions': entryId,
+  'history.deleteVersion': entryId,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
@@ -383,6 +416,11 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, enabled: o.enabled as boolean };
     case 'chat.resume':
       return { id, type, conv: o.conv as string };
+    case 'chat.edit':
+      return { id, type, oldId: o.oldId as string, oldHash: o.oldHash as string, text: o.text as string };
+    case 'history.versions':
+    case 'history.deleteVersion':
+      return { id, type, entryId: o.entryId as string };
     default:
       return { id, type } as AppRequest;
   }
