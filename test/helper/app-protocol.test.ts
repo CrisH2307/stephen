@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { helperSourceDir } from '../../src/helper/install.js';
+import { EDIT_REQUEST_MAX } from '../../src/jobs/spec.js';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'app-protocol-v1.jsonl');
 const MAX_LINE_BYTES = 256 * 1024;
@@ -701,6 +702,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(uses(/AppRequest\.jobsEdit\(/g)).toEqual(['AppClient.swift']);
     expect(uses(/\beditJob\(/g).sort()).toEqual(['AppClient.swift', 'JobsPage.swift']);
     expect(client).toContain('request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS)');
+    // The edited request is capped as the listener caps it (EDIT_REQUEST_MAX), with a counter; Continue is off over it.
+    expect(jobs).toContain(`let JOB_EDIT_MAX = ${EDIT_REQUEST_MAX}\n`);
+    expect(item).toContain('Text(verbatim: "\\(jobEditCount(draft)) of \\(JOB_EDIT_MAX) characters")');
+    expect(item).toMatch(/QuietButton\("Continue"[^\n]*\n\s*\.disabled\([^\n]*\|\| jobEditCount\(draft\) > JOB_EDIT_MAX\)/);
+    expect(item).toMatch(/guard [^\n]*jobEditCount\(draft\) <= JOB_EDIT_MAX else \{ return \}/);
     // The real id (an edited job's -v<N>) shows only once the job started: the started line and the open row.
     expect(client).toContain('if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \\(row.id)" }');
     expect(jobs).toContain('if let s = model.jobStarted { Text(verbatim: s)');
