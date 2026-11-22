@@ -54,8 +54,11 @@ export function branchView(entries: readonly HistoryEntry[], conv: string, depth
   if (!first) return { lines: [], expired: false };
   if (!first.editOf || depth >= MAX_DEPTH) return { lines: mine, expired: first.followUp };
   const parent = branchView(entries, first.editOf.conv, depth + 1);
+  // At the edited message while it is stored (exact, also for lines of the same millisecond); by its time once deleted.
+  const at = parent.lines.findIndex((e) => e.id === first.editOf!.id);
   const cut = first.editOf.ts;
-  return { lines: [...parent.lines.filter((e) => Date.parse(e.ts) < cut), ...mine], expired: parent.expired };
+  const earlier = at >= 0 ? parent.lines.slice(0, at) : parent.lines.filter((e) => Date.parse(e.ts) < cut);
+  return { lines: [...earlier, ...mine], expired: parent.expired };
 }
 
 /** An edited branch's first line: it carries editOf and starts its conversation. */
