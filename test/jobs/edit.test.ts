@@ -142,16 +142,17 @@ describe('Edit request: a NEW job, only after the owner approves the job dialog 
     expect(h.audit.entries.at(-1)).toMatchObject({ tool: 'job_start', outcome: 'ok', args: { id: r.id, editOf: old.id, version: 2, source: 'app' } });
   });
 
-  it.each(['declined', 'unavailable', 'throw'] as const)('dialog %s: nothing is created, nothing starts', async (answer) => {
+  it.each(['declined', 'unavailable', 'throw'] as const)('dialog %s: no state file, no meta folder, no job folder; nothing starts', async (answer) => {
     const h = harness(tmp);
     const old = await oldJob(h, 'write my lab report draft');
-    const before = { ids: jobIds(h), root: readdirSync(h.root).sort(), spawns: h.supervisor.calls.length };
+    const before = { ids: jobIds(h), root: readdirSync(h.root).sort(), jobs: readdirSync(join(h.home, 'jobs')).sort(), spawns: h.supervisor.calls.length };
     const d = dialog(answer);
     const r = await new JobRouter({ jobs: h.manager, confirmer: d.confirmer }).editJob(old.id, 'write my lab report draft again');
     expect(r).toHaveProperty('refused');
     expect(d.shown).toHaveLength(1);
     expect(jobIds(h)).toEqual(before.ids);
     expect(readdirSync(h.root).sort()).toEqual(before.root);
+    expect(readdirSync(join(h.home, 'jobs')).sort()).toEqual(before.jobs); // no state file, no meta folder
     expect(h.supervisor.calls.length).toBe(before.spawns);
   });
 
@@ -211,6 +212,81 @@ describe('Edit request: a NEW job, only after the owner approves the job dialog 
     expect(v.get(v3.id)).toEqual({ version: 3, versions: 3 });
     const rows = appJobs(h.manager, router).list();
     expect(rows.find((x) => x.id === v3.id)).toMatchObject({ version: 3, versions: 3, request: 'write my lab report draft shorter' });
+  });
+});
+
+describe('versions and ids: the family\'s top version + 1, claimed atomically; the caps count edits', () => {
+  it('two edits of version 1 give version 2 and version 3, with distinct ids', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    const router = new JobRouter({ jobs: h.manager, confirmer: dialog('approved').confirmer });
+    const a = await router.editJob(old.id, 'write my lab report draft longer');
+    const b = await router.editJob(old.id, 'write my lab report draft shorter');
+    if ('refused' in a || 'refused' in b) throw new Error('refused');
+    expect([a.editVersion, b.editVersion]).toEqual([2, 3]);
+    expect([a.editOf, b.editOf]).toEqual([old.id, old.id]);
+    expect([a.id, b.id]).toEqual([`${TODAY}-write-my-lab-report-draft-v2`, `${TODAY}-write-my-lab-report-draft-v3`]);
+    expect(jobVersions(h.manager.list()).get(old.id)).toEqual({ version: 1, versions: 3 });
+  });
+
+  it('a race (two dialogs open at once, both planned as version 2): the second start claims the next version; two distinct ids', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    // Both dialogs are open before either is answered, so both plans pick the same id.
+    let release: () => void = () => undefined;
+    const bothShown = new Promise<void>((r) => (release = r));
+    const shown: ConfirmPrompt[] = [];
+    const confirmer = {
+      kind: 'fake',
+      confirm: async (p: ConfirmPrompt) => {
+        shown.push(p);
+        if (shown.length === 2) release();
+        await bothShown;
+        return 'approved' as const;
+      },
+    };
+    const router = new JobRouter({ jobs: h.manager, confirmer });
+    const [a, b] = await Promise.all([router.editJob(old.id, 'write my lab report draft longer'), router.editJob(old.id, 'write my lab report draft shorter')]);
+    if ('refused' in a || 'refused' in b) throw new Error('refused');
+    expect(shown.map((p) => p.body.match(/Folder: .*-v(\d+)/)?.[1])).toEqual(['2', '2']);
+    expect(new Set([a.id, b.id]).size).toBe(2);
+    expect([a.editVersion, b.editVersion].sort()).toEqual([2, 3]);
+    for (const j of [a, b]) {
+      expect(readJobState(h.home, j.id)).toMatchObject({ id: j.id, folder: join(h.root, j.id), editVersion: j.editVersion });
+      expect(existsSync(j.folder)).toBe(true);
+    }
+  });
+
+  it('the same race through the manager: planned twice, started twice, the folders never shared', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    writeFileSync(join(old.folder, 'draft.md'), 'v1');
+    const p1 = await h.manager.planEdit(old.id, 'write my lab report draft longer');
+    const p2 = await h.manager.planEdit(old.id, 'write my lab report draft shorter');
+    if ('error' in p1 || 'error' in p2) throw new Error('error');
+    expect(p1.id).toBe(p2.id);
+    const s1 = await h.manager.start(p1, 'app');
+    const s2 = await h.manager.start(p2, 'app');
+    if ('refused' in s1 || 'refused' in s2) throw new Error('refused');
+    expect(s1.id).toBe(`${TODAY}-write-my-lab-report-draft-v2`);
+    expect(s2.id).toBe(`${TODAY}-write-my-lab-report-draft-v3`);
+    expect(s2).toMatchObject({ editVersion: 3, folder: join(h.root, s2.id), cwd: join(h.root, s2.id) });
+    expect(s2.task).toContain('shorter');
+    expect(readFileSync(join(s2.folder, 'draft.md'), 'utf8')).toBe('v1');
+  });
+
+  it('an edited job counts toward the daily cap, the one a phone start is checked against too', async () => {
+    const h = harness(tmp, { jobs: { dailyStarts: 2 } });
+    const old = await oldJob(h, 'write my lab report draft');
+    const router = new JobRouter({ jobs: h.manager, confirmer: dialog('approved').confirmer });
+    const e = await router.editJob(old.id, 'write my lab report draft longer');
+    if ('refused' in e) throw new Error(e.refused);
+    expect(e.id.startsWith(TODAY)).toBe(true);
+    expect(h.manager.capError()).toBe("That's 2 jobs today already, the daily limit.");
+    expect(await h.manager.plan('write a poem about rain')).toEqual({ error: "That's 2 jobs today already, the daily limit." });
+    expect(await router.startFromPhone('write a poem about rain', false)).toEqual({ ok: false, text: "That's 2 jobs today already, the daily limit." });
+    writeJobState(h.home, { ...e, status: 'done', endedAt: NOW });
+    expect(await router.editJob(e.id, 'write my lab report draft again')).toEqual({ refused: "That's 2 jobs today already, the daily limit." });
   });
 });
 
@@ -319,6 +395,48 @@ describe('code jobs: a NEW worktree branch cut from the old job\'s branch; the o
     expect(git(repo, 'rev-parse', `refs/heads/${old.repo!.branch}`).trim()).toBe(oldHead);
     expect(snapshot(oldTree)).toEqual(oldSnap);
     expect(d.shown[0]!.body).toContain(`on a new branch ${r.repo!.branch}, cut from the old job's branch ${old.repo!.branch}. The old worktree is not used. Nothing is pushed.`);
+  });
+
+  const repoAt = (dir: string) => {
+    mkdirSync(dir, { recursive: true });
+    git(dir, 'init', '-q', '-b', 'main');
+    writeFileSync(join(dir, 'README.md'), '# app\n');
+    git(dir, 'add', '.');
+    git(dir, 'commit', '-q', '-m', 'init');
+    return dir;
+  };
+
+  it('stays on the old job\'s repo when the edited text names another repo or a path', async () => {
+    const repo = repoAt(join(tmp, 'edit-repo3', 'myapp'));
+    const other = repoAt(join(tmp, 'edit-repo3', 'otherapp'));
+    const h = harness(tmp, { jobs: { repos: { myapp: repo, otherapp: other } } });
+    const old = await oldJob(h, 'fix the tests in myapp');
+    const router = new JobRouter({ jobs: h.manager, confirmer: dialog('approved').confirmer });
+    const r = await router.editJob(old.id, 'fix the tests in otherapp instead');
+    if ('refused' in r) throw new Error(r.refused);
+    expect(r.repo?.name).toBe('myapp');
+    expect(git(repo, 'branch', '--list', r.repo!.branch).trim()).not.toBe('');
+    expect(git(other, 'branch', '--list', 'stephen/*').trim()).toBe('');
+    writeJobState(h.home, { ...r, status: 'done', endedAt: NOW });
+    const r2 = await router.editJob(r.id, `fix the tests in ${other} and /tmp`);
+    if ('refused' in r2) throw new Error(r2.refused);
+    expect(r2.repo?.name).toBe('myapp');
+    expect(git(r2.cwd, 'rev-parse', '--show-toplevel').trim()).toBe(r2.cwd);
+    expect(git(other, 'worktree', 'list').trim().split('\n')).toHaveLength(1);
+  });
+
+  it('declined: no state file, no meta folder, no job folder, no worktree, no branch', async () => {
+    const repo = repoAt(join(tmp, 'edit-repo4', 'myapp'));
+    const h = harness(tmp, { jobs: { repos: { myapp: repo } } });
+    const old = await oldJob(h, 'fix the tests in myapp');
+    const before = { jobs: readdirSync(join(h.home, 'jobs')).sort(), root: readdirSync(h.root).sort(), trees: git(repo, 'worktree', 'list'), branches: git(repo, 'branch', '--list') };
+    const d = dialog('declined');
+    expect(await new JobRouter({ jobs: h.manager, confirmer: d.confirmer }).editJob(old.id, 'fix the tests in myapp again')).toEqual({ refused: "Okay, I didn't start it." });
+    expect(d.shown).toHaveLength(1);
+    expect(readdirSync(join(h.home, 'jobs')).sort()).toEqual(before.jobs);
+    expect(readdirSync(h.root).sort()).toEqual(before.root);
+    expect(git(repo, 'worktree', 'list')).toBe(before.trees);
+    expect(git(repo, 'branch', '--list')).toBe(before.branches);
   });
 
   it('the old branch is gone: refused, no dialog', async () => {
