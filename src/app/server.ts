@@ -68,6 +68,8 @@ export const MEMORY_OFF_MESSAGE = 'Memory is off (memory.enabled is false in con
 export const MEMORY_GONE_MESSAGE = "That memory doesn't exist any more.";
 export const PROPOSAL_GONE_MESSAGE = 'That suggestion is no longer waiting.';
 export const ONLY_WINDOW_EDITS_MESSAGE = 'Only the Stephen window can edit a message.';
+/** ADR-010 Edit request: only the window's own click reaches it (threat E4). */
+export const ONLY_WINDOW_JOB_EDITS_MESSAGE = 'Only the Stephen window can edit a job request.';
 export { VERSION_GONE_MESSAGE };
 
 /** Where typed chat runs (Listener.submit + Assistant.command in `stephen listen`). */
@@ -352,6 +354,10 @@ export class AppServer {
       this.edit(sock, req);
       return;
     }
+    if (req.type === 'jobs.edit') {
+      void this.jobEdit(sock, req).then((m) => this.send(sock, m));
+      return;
+    }
     if (req.type === 'history.deleteVersion') {
       this.send(sock, this.deleteVersion(sock, req));
       return;
@@ -464,6 +470,22 @@ export class AppServer {
       edit: { ...first.editOf, source: first.source },
     };
     this.startChat(sock, req.id, text, req.text.trim(), edit);
+  }
+
+  /**
+   * jobs.edit (ADR-010 Edit request), [DEV REVIEW]: only from the window (the same isWindow check as chat.edit), never
+   * from a gate connection (a serve the model can reach). The listener plans a NEW job from the old one (refused while
+   * it is queued or running), shows the job dialog with every field, and starts it only on the owner's Allow.
+   */
+  private async jobEdit(sock: Socket, req: Extract<AppRequest, { type: 'jobs.edit' }>): Promise<AppMessage> {
+    if (!this.isWindow(sock)) return { id: req.id, type: 'error', message: ONLY_WINDOW_JOB_EDITS_MESSAGE };
+    if (!this.o.jobs) return { id: req.id, type: 'error', message: 'jobs are turned off' };
+    try {
+      const r = await this.o.jobs.edit(req.jobId, req.text);
+      return 'refused' in r ? { id: req.id, type: 'error', message: r.refused } : { id: req.id, type: 'job', job: r };
+    } catch {
+      return { id: req.id, type: 'error', message: 'could not edit the job' };
+    }
   }
 
   /**
@@ -589,7 +611,7 @@ export class AppServer {
   }
 
   private async answer(
-    req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' | 'chat.resume' | 'chat.resume.cancel' | 'chat.edit' | 'history.deleteVersion' }>,
+    req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' | 'chat.resume' | 'chat.resume.cancel' | 'chat.edit' | 'jobs.edit' | 'history.deleteVersion' }>,
   ): Promise<AppMessage> {
     const { id } = req;
     const mem = this.o.memory;
