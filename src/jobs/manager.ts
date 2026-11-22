@@ -118,12 +118,24 @@ export const COPY_GONE = "The old job folder isn't there any more (or isn't a pl
  * the rest are skipped). Over COPY_MAX_FILES entries (files and folders) or COPY_MAX_BYTES → COPY_TOO_BIG. With `dst`
  * (a fresh empty folder), each file is copied there: opened O_NOFOLLOW (a file swapped for a link since the walk is
  * skipped), written O_CREAT|O_EXCL|O_NOFOLLOW 0600, bytes counted as copied. `src` is only ever read.
+ *
+ * [DEV REVIEW] Folders: Node cannot read a folder's entries through an O_DIRECTORY|O_NOFOLLOW fd (no fdopendir), so
+ * each folder, `src` included, must be a plain folder whose realpath is exactly its own path (no symlink anywhere on
+ * the way) before it is read, after it is read, and after each of its files is opened. A folder swapped for a symlink
+ * at any level → COPY_GONE, and the caller removes what was copied (fail closed). `src` must be a realpath.
+ * `beforeRead` is a test hook (the gap between the check and the read).
  */
-export function copyJobFolder(src: string, dst: string | null): { files: number; bytes: number } | { error: string } {
+export function copyJobFolder(src: string, dst: string | null, beforeRead?: (dir: string) => void): { files: number; bytes: number } | { error: string } {
   let entries = 0;
   let files = 0;
   let bytes = 0;
   const buf = Buffer.allocUnsafe(1024 * 1024);
+  let swapped = false;
+  const plain = (dir: string): boolean => {
+    if (plainFolder(dir)) return true;
+    swapped = true;
+    return false;
+  };
   const copyFile = (from: string, to: string): boolean => {
     let fd: number;
     try {
@@ -132,6 +144,7 @@ export function copyJobFolder(src: string, dst: string | null): { files: number;
       return true; // a link or gone since the walk: skipped
     }
     try {
+      if (!plain(dirname(from))) return false; // the folder was swapped while the file was opened
       if (!fstatSync(fd).isFile()) return true;
       const out = openSync(to, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
       try {
@@ -149,7 +162,11 @@ export function copyJobFolder(src: string, dst: string | null): { files: number;
     }
   };
   const walk = (from: string, to: string | null): boolean => {
-    for (const n of readdirSync(from).sort()) {
+    if (!plain(from)) return false;
+    beforeRead?.(from);
+    const names = readdirSync(from).sort();
+    if (!plain(from)) return false; // swapped while it was read: the names may be another folder's
+    for (const n of names) {
       const a = join(from, n);
       const st = lstatSync(a, { throwIfNoEntry: false });
       if (!st || !(st.isDirectory() || st.isFile())) continue;
@@ -167,7 +184,22 @@ export function copyJobFolder(src: string, dst: string | null): { files: number;
     }
     return true;
   };
-  return walk(src, dst) ? { files, bytes } : { error: COPY_TOO_BIG };
+  return walk(src, dst) ? { files, bytes } : { error: swapped ? COPY_GONE : COPY_TOO_BIG };
+}
+
+/** A real folder (not a symlink) whose realpath is exactly `dir`: no symlink anywhere on its path. */
+function plainFolder(dir: string): boolean {
+  try {
+    const st = lstatSync(dir);
+    return st.isDirectory() && !st.isSymbolicLink() && realpathSync(dir) === dir;
+  } catch {
+    return false;
+  }
+}
+
+/** ADR-010: the old job folder may be copied: a plain folder directly in the job root (checked at plan and at start). */
+function oldFolderOk(folder: string, realRoot: string): boolean {
+  return !!folder && plainFolder(folder) && dirname(folder) === realRoot;
 }
 
 /** The owner's drop folder for job inputs (owner, 2026-11-05): `<jobs root>/inbox/`. */
@@ -363,8 +395,7 @@ export class JobManager {
       edit = { of: old.id, version: 0, base: '', fromBranch: from };
     } else {
       // The old folder must still be a plain folder in the job root (it came from Stephen's own state file).
-      const st = old.folder ? lstatSync(old.folder, { throwIfNoEntry: false }) : undefined;
-      if (!st || st.isSymbolicLink() || !st.isDirectory() || realpathSync(old.folder) !== old.folder || dirname(old.folder) !== realRoot) return { error: COPY_GONE };
+      if (!oldFolderOk(old.folder, realRoot)) return { error: COPY_GONE };
       const scan = copyJobFolder(old.folder, null);
       if ('error' in scan) return scan;
       edit = { of: old.id, version: 0, base: '', copyFrom: old.folder, ...scan };
@@ -497,7 +528,9 @@ export class JobManager {
       // copies. Over them, or anything failing: the new folders go and nothing is started. The old folder is only read.
       let copied: ReturnType<typeof copyJobFolder>;
       try {
-        copied = plan.edit.copyFrom ? copyJobFolder(plan.edit.copyFrom, folder) : { error: COPY_GONE };
+        // planEdit's folder check again, right before the copy: the folder may have been swapped while the dialog was open.
+        const from = plan.edit.copyFrom ?? '';
+        copied = oldFolderOk(from, dirname(folder)) ? copyJobFolder(from, folder) : { error: COPY_GONE };
       } catch (e) {
         copied = { error: `I couldn't copy the old job folder (${(e as Error).message}).` };
       }
