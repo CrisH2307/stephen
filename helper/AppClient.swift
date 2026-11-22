@@ -129,6 +129,8 @@ final class AppModel: ObservableObject {
 
   @Published private(set) var jobs: [JobRow] = []
   @Published private(set) var jobsNotice: String? = nil
+  /** ADR-010: "Job started: <id>" after an Edit request starts; the dialog never named the id (it is fixed at the start). */
+  @Published private(set) var jobStarted: String? = nil
 
   /** Last `usage` answer; nil until one arrives (and again when the listener doesn't know the request). */
   @Published private(set) var usage: AppUsage? = nil
@@ -810,7 +812,8 @@ final class AppModel: ObservableObject {
   func editJob(_ jobId: String, request text: String) {
     request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS) { [weak self] msg in
       guard let self = self else { return }
-      self.jobsNotice = msg.type == "job" ? nil : (msg.message ?? "error")
+      // The real id (with its -v<N>) is known only now that the job started; the dialog never named it.
+      if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \(row.id)" } else { self.jobsNotice = msg.message ?? "error"; self.jobStarted = nil }
       self.refreshJobs()
     }
   }
