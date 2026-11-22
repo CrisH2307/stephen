@@ -32,6 +32,8 @@ export const RESUME_WRAPPER_END = '(End of the earlier conversation.)';
 const RANK: Record<Trust, number> = { phone: 0, wake: 1, trusted: 2 };
 /** Who spoke, by the turn's trust: a wake-word or phone turn names its source inside the wrapper. */
 const LABEL: Record<Trust, string> = { trusted: 'You', wake: 'You (wake word)', phone: 'You (phone)' };
+/** ADR-010: a step line done for a wake-word or phone turn names that source too, like the turn itself. */
+const STEP_LABEL: Record<Trust, string> = { trusted: '', wake: '(wake word) ', phone: '(phone) ' };
 
 /** The trust of a stored turn: trustOf its source; a source this build does not know counts as phone. */
 export function storedTrust(source: unknown): Trust {
@@ -112,9 +114,9 @@ export function quotePrompt(turns: readonly HistoryEntry[], current: Trust, mess
   const steps = replaced
     .filter((e) => mayQuote(e.source, current))
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))
-    .flatMap((e) => e.steps ?? [])
+    .flatMap((e) => (e.steps ?? []).map((s) => ({ s, label: STEP_LABEL[storedTrust(e.source)] })))
     .slice(0, EDIT_MAX_STEP_LINES)
-    .map((s) => `- ${oneLine(truncate(s.text, MAX_STEP_CHARS))}`);
+    .map(({ s, label }) => `- ${label}${oneLine(truncate(s.text, MAX_STEP_CHARS))}`);
   const block = () => [RESUME_WRAPPER_HEAD, ...kept, ...(steps.length ? [EDIT_DONE_HEAD, ...steps] : []), RESUME_WRAPPER_END].join('\n');
   while (bytes(block()) > RESUME_MAX_BYTES && kept.length > 1) kept.shift();
   while (bytes(block()) > RESUME_MAX_BYTES && steps.length > 0) steps.pop();
