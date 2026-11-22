@@ -707,6 +707,13 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('AppProtocol.swift')).toContain('case id, task, status, createdAt, startedAt, endedAt, turns, costUsd, folder, summary, error, request, version, versions');
     // All text on the page stays verbatim.
     expect(jobs.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    // Cancel in the editor sends nothing: it only closes the editor. The row's edit (jobs.edit) runs only in sendDraft,
+    // which only Continue reaches; opening the editor sends nothing either.
+    expect(item.match(/\bedit\(/g)).toHaveLength(1);
+    expect(item.match(/\bsendDraft\(\)/g)).toHaveLength(2); // called by Continue, defined once
+    expect(item).not.toMatch(/onSubmit/);
+    expect(item.match(/QuietButton\("Cancel"\) \{([^}]*)\}/)?.[1]?.trim()).toBe('editing = false');
+    expect(item.match(/QuietButton\("Edit request", symbol: "pencil"\) \{([^}]*)\}/)?.[1]?.trim()).toBe('draft = job.request; editing = true');
     // The palette never reaches it.
     expect(read('Palette.swift')).not.toMatch(/editJob|jobsEdit|jobs\.edit|Edit request/);
     expect(PALETTE_MEMBERS).not.toContain('editJob');
