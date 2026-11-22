@@ -348,7 +348,7 @@ describe('chat', () => {
     const h = await harness();
     const accepted = await h.client.request({ id: 'c1', type: 'chat.send', text: "  what's the weather\u0007 in Toronto  " });
     expect(accepted).toEqual({ id: 'c1', type: 'chat.accepted', entryId: expect.stringMatching(/^h_test\d+$/) });
-    expect(h.queue.started).toEqual([{ text: "what's the weather in Toronto", opts: { id: accepted.entryId, raw: "what's the weather\u0007 in Toronto", speak: false } }]);
+    expect(h.queue.started).toEqual([{ text: "what's the weather in Toronto", opts: { id: accepted.entryId, raw: "what's the weather\u0007 in Toronto", speak: false, window: false } }]);
     h.queue.finish(h.server, { reply: "It's 8 degrees and cloudy." }, ['web_search', 'read_page', 'web_search']);
     const done = await h.client.waitFor((m) => m.type === 'chat.done');
     expect(done).toEqual({ type: 'chat.done', entryId: accepted.entryId, reply: "It's 8 degrees and cloudy.", outcome: 'ok', tools: ['web_search', 'read_page'], ms: 1234 });
