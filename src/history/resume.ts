@@ -41,8 +41,19 @@ export function mayQuote(source: unknown, current: Trust): boolean {
   return RANK[current] >= RANK[storedTrust(source)];
 }
 
-/** One line of stored text: whitespace and line breaks folded, so stored text can never start a line of its own. */
-const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+/**
+ * One line of stored text: whitespace and line breaks folded (\s covers U+2028 and U+2029; U+0085 is added), so stored
+ * text can never start a line of its own; and the wrapper's own head and end lines become "[...]", so stored text can
+ * never look like the start or the end of the record.
+ */
+const oneLine = (s: string) =>
+  s
+    .replace(/[\s\u0085]+/g, ' ')
+    .split(RESUME_WRAPPER_HEAD)
+    .join('[...]')
+    .split(RESUME_WRAPPER_END)
+    .join('[...]')
+    .trim();
 
 /** The quoted lines of one stored turn (said and reply; never steps or tool names). */
 function turnLines(e: HistoryEntry): string {
