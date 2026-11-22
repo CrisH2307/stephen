@@ -31,6 +31,8 @@ const BOUNDARIES: readonly Boundary[] = [
   // Resume (ADR-007 v2) sends stored turns back to the model: only the owner's click may start it (covered by
   // src/history/ above too; named so a move out of src/history keeps the rule).
   { target: 'src/history/resume.ts', importers: CLAUDE_REACHABLE },
+  // Edit and resend (ADR-010) builds a resend's context from the store: only the window's chat.edit may reach it.
+  { target: 'src/history/branch.ts', importers: CLAUDE_REACHABLE },
 ];
 
 /**
@@ -175,6 +177,8 @@ describe('MCP tool surface', () => {
     for (const n of [...names, ...voiceNames]) expect(n, n).not.toMatch(MEMORY_TOOL_RE);
     // ADR-007 v2: no model tool can resume or continue a stored chat.
     for (const n of [...names, ...voiceNames]) expect(n, n).not.toMatch(/resume|continue|conversation/i);
+    // ADR-010: no model tool can edit or resend a message.
+    for (const n of [...names, ...voiceNames]) expect(n, n).not.toMatch(/edit|resend|version/i);
   });
 });
 
@@ -223,5 +227,69 @@ describe('resume has one entry point: an owner click in the window', () => {
     for (const f of files.filter((f) => (f.startsWith('src/voice/') || f.startsWith('src/phone/')) && !['src/voice/index.ts', 'src/voice/assistant.ts', 'src/voice/conversation.ts', 'src/voice/claude.ts', 'src/voice/warm-claude.ts', 'src/voice/command-log.ts'].includes(f))) {
       expect(src(f), f).not.toMatch(/ResumeArm|ResumeRequest|resumePrompt|chat\.resume|assumePrivateRead|history\/resume/);
     }
+  });
+});
+
+/**
+ * ADR-010 (edit and resend, [DEV REVIEW]): one entry point, the window's chat.edit (Send in a Conversations row's
+ * editor). No MCP tool, voice route, phone route or job can start an edit or a resend. Node side, by source and by
+ * behaviour; the helper side is in test/helper/app-protocol.test.ts.
+ */
+describe('edit and resend has one entry point: the window', () => {
+  const refs = scanSrc();
+  const src = (f: string) => readFileSync(join(REPO_ROOT, f), 'utf8');
+  const files = listTsFiles().map((abs) => relative(REPO_ROOT, abs).split(sep).join('/'));
+
+  it('src/history/branch.ts is loaded only by the listener side (app.sock and src/voice/index.ts), nothing model-reachable', () => {
+    const from = [...new Set(refs.filter((r) => r.resolved === 'src/history/branch.ts').map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`))].sort();
+    expect(from).toEqual(['src/app/server.ts', 'src/voice/index.ts']);
+    expect(transitiveViolations({ target: 'src/history/branch.ts', importers: CLAUDE_REACHABLE }, refs).map((c) => c.join(' -> '))).toEqual([]);
+    expect([...staticReach('src/cli.ts')]).not.toContain('src/history/branch.ts');
+  });
+
+  it('chat.edit and history.deleteVersion are app.sock requests only; the context is built in one place', () => {
+    expect(files.filter((f) => /['"]chat\.edit['"]/.test(src(f))).sort()).toEqual(['src/app/protocol.ts', 'src/app/server.ts']);
+    expect(files.filter((f) => /['"]history\.deleteVersion['"]/.test(src(f))).sort()).toEqual(['src/app/protocol.ts', 'src/app/server.ts']);
+    // editContext (the resend's context) is called only by app.sock's chat.edit; deleteVersion only by its request.
+    expect(files.filter((f) => /\beditContext\(/.test(src(f)) && f !== 'src/history/branch.ts')).toEqual(['src/app/server.ts']);
+    expect(files.filter((f) => /\.deleteVersion\(/.test(src(f)))).toEqual(['src/app/server.ts']);
+    // ResumeRequest.edit is set in one place: AppServer.edit, behind the window check.
+    const server = src('src/app/server.ts');
+    expect(server.match(/\bedit: \{ conv: /g)).toHaveLength(1);
+    expect(server).toMatch(/private edit\(sock: Socket, req: [^)]*\): void \{\s*if \(!this\.isWindow\(sock\)\) \{/);
+    expect(server).toMatch(/private isWindow\(sock: Socket\): boolean \{\s*return this\.askBoxes\.has\(sock\) && !this\.gates\.has\(sock\);/);
+    // The gate's own app.sock client sends confirm.ask and nothing else.
+    expect(src('src/safety/app-confirm.ts')).not.toMatch(/chat\.edit|deleteVersion|history\./);
+  });
+
+  it('no MCP tool, voice route, phone route or job names it', () => {
+    const owners = ['src/app/', 'src/history/', 'src/voice/index.ts', 'src/voice/assistant.ts', 'src/voice/command-log.ts'];
+    const re = /chat\.edit|editContext|EditedMessage|editResendAudit|branchView|versionsOf|deleteVersion|EDIT_DONE_HEAD|history\/branch/;
+    const reach = (f: string, p: string) => (p.endsWith('/') ? f.startsWith(p) : f === p);
+    expect(files.filter((f) => re.test(src(f)) && !owners.some((p) => reach(f, p)))).toEqual([]);
+    for (const f of files.filter((f) => CLAUDE_REACHABLE.some((p) => reach(f, p)) || f.startsWith('src/phone/') || f.startsWith('src/jobs/'))) {
+      expect(src(f), f).not.toMatch(re);
+    }
+    // The phone and --text paths call the Assistant without a resume (so without an edit).
+    const index = src('src/voice/index.ts');
+    expect(index).toMatch(/a\.command\(text, \{ source: 'phone', raw: text, speak: false \}\)/);
+    expect(index).toMatch(/assistant\.handle\(text, \{ source: 'cli', raw: text \}\)/);
+  });
+
+  it('listenerQueue drops an edit that does not come from the window', async () => {
+    const { listenerQueue } = await import('../../src/app/server.js');
+    const seen: unknown[] = [];
+    const assistant = {
+      busy: false,
+      command: async (_t: string, o: unknown) => (seen.push(o), {} as never),
+      cancel: () => false,
+      endConversation: () => undefined,
+    };
+    const q = listenerQueue({ idle: true, submit: (run) => run(), cancel: () => false }, assistant);
+    const edit = { saved: () => true, prompt: (m: string) => m, edit: { conv: 'c_00112233aabbccdd', id: 'h_1', source: 'app' as const } };
+    await q.start('play sara', { id: 'h_2', raw: 'play sara', speak: false, edit });
+    await q.start('play sara', { id: 'h_3', raw: 'play sara', speak: false, window: true, edit });
+    expect(seen[0]).not.toHaveProperty('resume');
+    expect(seen[1]).toMatchObject({ source: 'app', resume: edit });
   });
 });
