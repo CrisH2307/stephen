@@ -128,3 +128,30 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | UI-147 | #136, UI review P10 | P2 | Settings: Cmd+comma on the last pane, one title, captions | closed (#200 merged), Mac check pending | dev | #147 |
 | UI-145 | #136, UI review P8 | P2 | Keyboard, VoiceOver, hit targets, text size | in progress: buttons and 24 pt targets merged (#204); VoiceOver announcements, text size, Esc to stop to do | dev | #145 |
 | PA-202 | Ponytail audit | Low | Simplify and speed up: dead code, perf, tests | in progress: DEAD, A1, A2, B1, B2, B3, T4, T5, C6, T1 merged (#209 to #211, #217 to #227, #229 to #233); then P1 (#240), H3 (#239), C7 (#243), C1 (#244), C2 (#245); T2 and C8 open | dev | #202 |
+
+## H. Findings filed 2026-11-18 to 22 (added by the release prep of 2026-11-21)
+
+Severity "not rated" means the review named the problem but gave no level.
+
+| ID | Source | Severity | Title | Status | Lane | Issue or branch |
+|---|---|---|---|---|---|---|
+| R258-1 | Review 10b of #258 | not rated | Planted wrapper head or end lines in an earlier turn could look like Stephen's own wrapper; U+0085, U+2028, U+2029 not folded | closed (#258, cfb405e) | dev | #258 |
+| R258-2 | Review 10b of #258 | not rated | Any `chat.send` could take the resume arm, not only one from the window socket | closed (#258, bce6a50, 640fd54) | dev | #258 |
+| R258-3 | Review 10b of #258 | not rated | Resume of a conversation that is gone, or too big, could fail silently | closed (#258, b12cb0e: "That conversation is no longer saved.", " [cut to fit]") | dev | #258 |
+| R258-4 | Review 10b of #258 | not rated | No test that the resumed serve's taint reaches the next one-shot serve | closed (#258, 4ed012a) | dev | #258 |
+| R252-1 | review of #252 | not rated | "Started a job, Open in Jobs" matched jobs by time only, so a phone or routine job could get an ok mark | closed (#252, line removed); follow-up: bring it back once `JobRow` carries a command id | dev | #252 |
+| R252-2 | review of #252 | not rated | The question card could fade in on Home mid-chat (#139) | closed (#252, test pinned) | dev | #252 |
+| R253-1 | review of #253 | not rated | Sidebar drag started from an unclamped width; NaN width; window min width grew with a collapsed sidebar; old `settingsPane` values; "it proposes, you keep" not always shown | closed (#253) | dev | #253 |
+| R253-2 | #253 follow-ups | Low | Grouped Form rows use system colours (Navy, Rose, Sun may look off); sidebar resize has no keyboard way | open | dev | none |
+| R254-1 | review of #254 | not rated | A failed job could move to Earlier; Return in the inspector kept a suggestion; Keep on an empty edit | closed (#254, tests pinned) | dev | #254 |
+| R255-1 | review of #255 | not rated | VoiceOver label type, what you said not copyable, palette query not cleared by the sidebar and Cmd+2 | closed (#255) | dev | #255 |
+| R257-1 | review of #257 | not rated | `finishCommand` could reject and drop the history line; line time; `--text` could hang on an audit read | closed (#257) | dev | #257 |
+| I-248 | tester intern, Mac test 0.2 and 0.4 | Medium | `swiftc` cannot find `SwiftUIMacros.StateMacro` on macOS 27.2.1, so `install-helper` fails | fixed (#251 merged: fall back to an older SDK), Mac check pending; issue still open | dev | #248 |
+| I-249 | tester intern | Low | `npx vitest run` fails on Node 21.5.0 but `doctor` passes it | closed (#250: engines `^20.19.0 \|\| >=22.12.0`, doctor checks the same) | dev | #249 |
+| I-262 | macOS CI | Low | Two macOS CI flakes: Zen early exit race, cross-site iframe click read too early | closed (#262) | dev | #109, #262 |
+| I-263 | macOS CI on qa `cd8027e` | Low | `test/drivers/review1.test.ts` D4 "defaults to a 60 s Allow wait" got "Not connected." | open (flake, not rerun alone yet) | dev | #263, #109 |
+| CI-14 | GitHub, PR #259 | Low | GitHub retired the hosted `macos-14` runner on 2026-11-02; no macOS 14 job is possible | closed (#259: macOS 14 is the minimum, the `macos` job on macos-15 builds the helper for a macOS 14 target; #260 research) | review | #259, #260 |
+| I-171 | tracker | Low | Second test suite: the lock message was lost in a vitest TypeError | fixed (#178 merged); issue still open | dev | #171 |
+| I-207 | CI #195 | Low | A click after typing is lost when the Chrome window is not painting (macOS CI) | open; CI uses headless Chrome on macOS as the workaround (#195) | dev | #207 |
+| I-208 | review of #206 | Medium | Recording on sign can lag after a hand edit of config.json; a clip can land after off or Delete | closed (#238) | dev | #208 |
+| DEC-261 | dev lane decision | Low | A "?" anywhere blocks a typed memory save too, not only a spoken one | closed (#261) | dev | #261 |
