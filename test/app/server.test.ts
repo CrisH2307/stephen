@@ -206,15 +206,16 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
     const expected = new Map(lines.filter((l) => l.kind === 'response').map((l) => [l.msg.id!, l.msg]));
     const requests = lines.filter((l) => l.kind === 'request').map((l) => l.msg);
     expect(requests.length).toBeGreaterThan(15);
-    // The fixture's client also sent confirm.ask (a gate), so the window's resume requests go on a window connection
+    // The fixture's client also sent confirm.ask (a gate), so the window's resume and edit requests go on a window connection
     // (opened only then: an earlier Ask box would take the fixture's confirm.ask).
     let win: TestClient | null = null;
     for (const req of requests) {
-      if (req.type.startsWith('chat.resume') && !win) {
+      const windowOnly = req.type.startsWith('chat.resume') || req.type === 'chat.edit' || req.type === 'history.deleteVersion';
+      if (windowOnly && !win) {
         win = await h.connect();
         await win.request({ id: 'w0', type: 'hello', version: '1', confirms: true });
       }
-      const got = await (req.type.startsWith('chat.resume') ? win! : h.client).request(req);
+      const got = await (windowOnly ? win! : h.client).request(req);
       const want = expected.get(req.id!)!;
       expect({ id: got.id, type: got.type }, JSON.stringify(req)).toEqual({ id: want.id, type: want.type });
       if (want.type === 'error' && ['busy', MEMORY_MESSAGES.secret, MEMORY_GONE_MESSAGE].includes(want.message as string)) {

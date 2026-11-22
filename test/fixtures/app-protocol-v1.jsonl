@@ -107,3 +107,9 @@
 {"from":"app","kind":"request","msg":{"id":"a47","type":"chat.resume.cancel"}}
 {"from":"node","kind":"push","msg":{"type":"resume","armed":false}}
 {"from":"node","kind":"response","msg":{"id":"a47","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a48","type":"history.versions","entryId":"h_0123456789abcdef"}}
+{"from":"node","kind":"response","msg":{"id":"a48","type":"versions","entries":[],"expired":false}}
+{"from":"app","kind":"request","msg":{"id":"a49","type":"chat.edit","oldId":"h_0123456789abcdef","oldHash":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","text":"play sara"}}
+{"from":"node","kind":"response","msg":{"id":"a49","type":"error","message":"This conversation changed. Open it again."}}
+{"from":"app","kind":"request","msg":{"id":"a50","type":"history.deleteVersion","entryId":"h_0123456789abcdef"}}
+{"from":"node","kind":"response","msg":{"id":"a50","type":"error","message":"That message is no longer saved."}}
