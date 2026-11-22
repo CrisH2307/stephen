@@ -34,7 +34,7 @@ const DEST = 'https://evil.example/news';
 const edit: ResumeRequest = {
   saved: () => true,
   prompt: (m) => `Earlier conversation ... then ${m}`,
-  edit: { conv: 'c_00112233aabbccdd', id: 'h_0000000000000002', source: 'voice-ptt' },
+  edit: { conv: 'c_00112233aabbccdd', id: 'h_0000000000000002', ts: NOW - 60_000, source: 'voice-ptt' },
 };
 
 function serveGate(home: string, args: string[]): SafetyGate {

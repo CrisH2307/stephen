@@ -797,7 +797,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(item).toMatch(/TextField\("Edit this message", text: \$draft\)[\s\S]*?\.onSubmit \{ sendDraft\(\) \}/);
     expect(item).toMatch(/QuietButton\("Send", symbol: "paperplane"\) \{ sendDraft\(\) \}\s*\.disabled\(busy \|\|/);
     expect(item).toContain('QuietButton("Cancel") { editing = false }');
-    expect(item).toMatch(/private func sendDraft\(\) \{\s*guard !busy, [^\n]*\n\s*send\(shown, draft\)/);
+    expect(item).toMatch(/private func sendDraft\(\) \{\s*guard !busy, [^\n]*\n\s*send\(shown, shown\.conv, draft\)/);
     expect(conv).toContain('versions: model.versions[row.entry.id], busy: model.isWorking,');
     // After Send: the Edited tag, the plain line once above the new reply, Version N of M with arrows.
     expect(item).toContain('if shown.editOf != nil { Text(verbatim: "Edited")');
@@ -826,9 +826,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // editMessage is called once, by the page's sendEdit, which only the editor's sendDraft reaches (through `send`).
     expect(uses(/\beditMessage\(/g).sort()).toEqual(['AppClient.swift', 'ConversationsPage.swift']);
     const conv = read('ConversationsPage.swift');
-    expect(conv).toMatch(/private func sendEdit\(_ old: HistoryEntry, _ text: String\) \{\s*model\.editMessage\(old, text: text\)\s*\}/);
+    expect(conv).toMatch(/private func sendEdit\(_ old: HistoryEntry, _ conv: String, _ text: String\) \{\s*model\.editMessage\(old, viewing: conv, text: text\)\s*\}/);
     expect(conv.match(/\bsendEdit\(/g)).toHaveLength(2); // defined once, passed once as the row's `send`
-    expect(conv).toContain('send: { old, text in sendEdit(old, text) },');
+    expect(conv).toContain('send: { old, conv, text in sendEdit(old, conv, text) },');
     const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}\n?$/)?.[1] ?? '';
     expect(item.replace(/\/\/[^\n]*/g, '').match(/\bsend\(/g)).toHaveLength(1); // only in sendDraft
     expect(item.match(/\bsendDraft\(\)/g)).toHaveLength(3); // the field's Return, the Send button, its definition
@@ -838,9 +838,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(item.match(/private var versionSwitch: some View \{([\s\S]*?)\n  \}/)?.[1]).not.toMatch(/send|edit\(|delete/i);
     // The app model: the text, the old id and the hash of the stored text, nothing else; refused while working.
     const app = read('AppClient.swift');
-    const fn = app.match(/func editMessage\(_ old: HistoryEntry, text raw: String\) -> Bool \{([\s\S]*?)\n  \}/)?.[1] ?? '';
-    expect(fn).toContain('guard !trimmed.isEmpty, connection == .online, !isWorking, !old.conv.isEmpty else { return false }');
-    expect(fn).toContain('request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), text: text))');
+    const fn = app.match(/func editMessage\(_ old: HistoryEntry, viewing conv: String, text raw: String\) -> Bool \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(fn).toContain('guard !trimmed.isEmpty, connection == .online, !isWorking, !conv.isEmpty else { return false }');
+    // ADR-010 review: it also names the conversation of the version on screen.
+    expect(fn).toContain('request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), conv: conv, text: text))');
     expect(app).toContain('return SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()');
     expect(app.match(/func sendChat\([\s\S]*?\n  \}/)?.[0] ?? '').not.toMatch(/chatEdit/);
     // The palette never reaches it, and its allow list stays as it is.

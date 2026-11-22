@@ -255,7 +255,7 @@ describe('edit and resend has one entry point: the window', () => {
     expect(files.filter((f) => /\.deleteVersion\(/.test(src(f)))).toEqual(['src/app/server.ts']);
     // ResumeRequest.edit is set in one place: AppServer.edit, behind the window check.
     const server = src('src/app/server.ts');
-    expect(server.match(/\bedit: \{ conv: /g)).toHaveLength(1);
+    expect(server.match(/\bedit: \{ \.\.\.first\.editOf, source: first\.source \}/g)).toHaveLength(1);
     expect(server).toMatch(/private edit\(sock: Socket, req: [^)]*\): void \{\s*if \(!this\.isWindow\(sock\)\) \{/);
     expect(server).toMatch(/private isWindow\(sock: Socket\): boolean \{\s*return this\.askBoxes\.has\(sock\) && !this\.gates\.has\(sock\);/);
     // The gate's own app.sock client sends confirm.ask and nothing else.
@@ -286,7 +286,7 @@ describe('edit and resend has one entry point: the window', () => {
       endConversation: () => undefined,
     };
     const q = listenerQueue({ idle: true, submit: (run) => run(), cancel: () => false }, assistant);
-    const edit = { saved: () => true, prompt: (m: string) => m, edit: { conv: 'c_00112233aabbccdd', id: 'h_1', source: 'app' as const } };
+    const edit = { saved: () => true, prompt: (m: string) => m, edit: { conv: 'c_00112233aabbccdd', id: 'h_1', ts: 1, source: 'app' as const } };
     await q.start('play sara', { id: 'h_2', raw: 'play sara', speak: false, edit });
     await q.start('play sara', { id: 'h_3', raw: 'play sara', speak: false, window: true, edit });
     expect(seen[0]).not.toHaveProperty('resume');

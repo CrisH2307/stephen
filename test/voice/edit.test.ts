@@ -27,7 +27,7 @@ const REPLACED = [line('h_0000000000000002', 'play sarah', 'voice-wake', 2, [{ t
 const edit: ResumeRequest = {
   saved: () => true,
   prompt: (m, trust) => quotePrompt(EARLIER, trust, m, REPLACED),
-  edit: { conv: CONV, id: REPLACED[0]!.id, source: 'voice-wake' },
+  edit: { conv: CONV, id: REPLACED[0]!.id, ts: Date.parse(REPLACED[0]!.ts), source: 'voice-wake' },
 };
 const flagValue = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
 
@@ -70,7 +70,7 @@ describe('ADR-010: the serve of a resend', () => {
     expect(p).toContain(`${EDIT_DONE_HEAD}\n- navigate youtube.com`);
     expect(p.endsWith('\n\nplay sara')).toBe(true);
     // The report: source app, a new conversation, and the message it is a version of.
-    expect(reports[1]).toMatchObject({ source: 'app', said: 'play sara', editOf: { conv: CONV, id: REPLACED[0]!.id, source: 'voice-wake' } });
+    expect(reports[1]).toMatchObject({ source: 'app', said: 'play sara', editOf: { conv: CONV, id: REPLACED[0]!.id, ts: Date.parse(REPLACED[0]!.ts), source: 'voice-wake' } });
     expect(reports[1]!.conv).not.toBe(reports[0]!.conv);
     expect(reports[0]).not.toHaveProperty('editOf');
   });
