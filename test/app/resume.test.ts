@@ -10,7 +10,7 @@ import { AppServer, listenerQueue } from '../../src/app/server.js';
 import type { AppSettings } from '../../src/app/settings.js';
 import { RESUME_WRAPPER_HEAD, ResumeArm, conversationEntries, resumePrompt } from '../../src/history/resume.js';
 import { HistoryStore } from '../../src/history/store.js';
-import { Assistant, type CommandRunner, type RunHooks, type Trust } from '../../src/voice/assistant.js';
+import { Assistant, RESUME_GONE_MESSAGE, RESUME_NOT_USED_MESSAGE, type CommandRunner, type LocalRouter, type RunHooks, type Trust } from '../../src/voice/assistant.js';
 import type { ClaudeOutcome } from '../../src/voice/claude.js';
 import { RecordingChimes, RecordingSpeaker } from '../voice/helpers.js';
 import { TestClient } from './helpers.js';
@@ -18,6 +18,7 @@ import { TestClient } from './helpers.js';
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-resume-app-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 const CONV = 'c_00112233aabbccdd';
+const timers: LocalRouter = { route: async (t) => (t === 'set a timer for 5 minutes' ? { reply: 'Timer set.', changed: false } : null) };
 
 /** Records every prompt and its hooks: what would reach the model. */
 class ModelRunner implements CommandRunner {
@@ -53,13 +54,15 @@ async function world() {
   const runner = new ModelRunner();
   let app: AppServer | null = null;
   const arm = new ResumeArm({ onChange: (on) => app?.resumeArmed(on) });
-  const assistant = new Assistant({ runner, speaker: new RecordingSpeaker(), chimes: new RecordingChimes(), speak: false, status: () => {}, onStart: (c) => arm.commandStarted(c.source) });
+  const assistant = new Assistant({ runner, speaker: new RecordingSpeaker(), chimes: new RecordingChimes(), speak: false, status: () => {}, onStart: (c) => arm.commandStarted(c.source), onDone: (r) => app?.commandDone(r, []), timers });
   const listener = { idle: true, submit: (run: () => ReturnType<Assistant['command']>) => run(), cancel: () => false };
   app = new AppServer({
     home,
     queue: listenerQueue(listener, assistant, () => {
       const conv = arm.take();
-      return conv ? { prompt: (m: string, trust: Trust) => resumePrompt(conversationEntries((o) => history.list(o), conv), conv, trust, m) } : null;
+      if (!conv) return null;
+      const entries = () => conversationEntries((o) => history.list(o), conv);
+      return { saved: () => entries().length > 0, prompt: (m: string, trust: Trust) => resumePrompt(entries(), conv, trust, m) };
     }),
     listening: () => true,
     model: 'sonnet',
@@ -88,7 +91,7 @@ async function world() {
     if (hello) await c.request({ id: 'h', type: 'hello', version: '1', confirms: true });
     return c;
   };
-  return { runner, arm, assistant, app, connect, window: await connect(true) };
+  return { runner, arm, assistant, app, history, connect, window: await connect(true) };
 }
 
 describe('ADR-007 v2 resume through app.sock', () => {
@@ -146,6 +149,28 @@ describe('ADR-007 v2 resume through app.sock', () => {
     await w.window.request({ id: 's1', type: 'chat.send', text: 'hello' });
     await new Promise((r) => setTimeout(r, 30));
     expect(w.runner.runs[0]!.prompt).toBe('hello');
+  });
+
+  it('never silently: a conversation gone since the click sends nothing, not even the message, and says so', async () => {
+    const w = await world();
+    await w.window.request({ id: 'r1', type: 'chat.resume', conv: CONV });
+    w.history.clear(); // deleted between the click and the message
+    await w.window.request({ id: 's1', type: 'chat.send', text: 'what day was the exam?' });
+    const done = await w.window.waitFor((m) => m.type === 'chat.done');
+    expect(done).toMatchObject({ reply: RESUME_GONE_MESSAGE, outcome: 'error' });
+    expect(w.runner.runs).toEqual([]);
+    expect(w.runner.ends).toBe(0);
+    expect(w.arm.armed).toBe(false);
+  });
+
+  it('never silently: an armed message a local router answers says the earlier chat was not used', async () => {
+    const w = await world();
+    await w.window.request({ id: 'r1', type: 'chat.resume', conv: CONV });
+    await w.window.request({ id: 's1', type: 'chat.send', text: 'set a timer for 5 minutes' });
+    const done = await w.window.waitFor((m) => m.type === 'chat.done');
+    expect(done.reply).toBe(`Timer set. ${RESUME_NOT_USED_MESSAGE}`);
+    expect(w.runner.runs).toEqual([]);
+    expect(w.arm.armed).toBe(false);
   });
 
   it('a chat.send from a non-window socket does not take the arm', async () => {

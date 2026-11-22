@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   RESUME_ARM_MS,
+  RESUME_CUT_NOTE,
   RESUME_MAX_BYTES,
   RESUME_MAX_TURNS,
   RESUME_WRAPPER_END,
@@ -85,6 +86,20 @@ describe('ADR-007 v2: the wrapper', () => {
     expect(p.split(RESUME_WRAPPER_HEAD).length).toBe(2);
     expect(p.split(RESUME_WRAPPER_END).length).toBe(2);
     expect(p).not.toMatch(/[\u0085\u2028\u2029]/);
+    expect(after(p)).toBe('next');
+  });
+
+  it('never silently: a newest turn over 16 KB on its own is cut to fit and marked as cut, not dropped', () => {
+    const big = entry('read the long page', `${'\u4e2d'.repeat(3990)} the end`); // about 12 KB of reply...
+    // Within the store's caps (said 2000, reply 4000 characters), 3-byte characters make about 18 KB: too big alone.
+    const huge = entry(`and the next one ${'\u4e2d'.repeat(1980)}`, '\u4e2d'.repeat(4000));
+    const p = resumePrompt([big, huge], CONV, 'trusted', 'next');
+    const w = wrapper(p);
+    expect(Buffer.byteLength(w, 'utf8')).toBeLessThanOrEqual(RESUME_MAX_BYTES);
+    expect(w).toContain('You: and the next one');
+    expect(w.split('\n')[2]!.endsWith(RESUME_CUT_NOTE)).toBe(true);
+    expect(w).not.toContain('read the long page'); // the older turn no longer fits
+    expect(w).not.toContain('\uFFFD'); // cut on whole characters
     expect(after(p)).toBe('next');
   });
 

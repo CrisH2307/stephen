@@ -96,8 +96,15 @@ export interface HandleOptions {
 
 /** What HandleOptions.resume needs: builds the first prompt from the owner's message (src/history/resume.ts). */
 export interface ResumeRequest {
+  /** The conversation still has stored turns. False: nothing is sent and the owner is told (RESUME_GONE_MESSAGE). */
+  saved(): boolean;
   prompt(message: string, trust: Trust): string;
 }
+
+/** A resume whose conversation is gone: the owner's message is not sent anywhere; this is the reply. */
+export const RESUME_GONE_MESSAGE = 'That conversation is no longer saved.';
+/** A resumed message a local router answered (timer, memory, job): the earlier chat was not used. */
+export const RESUME_NOT_USED_MESSAGE = 'The earlier chat was not used for this.';
 
 /** What happened to one command (onDone, and the return value of command()). */
 export interface CommandReport {
@@ -220,8 +227,6 @@ export class Assistant {
     let said = text;
     let via: CommandReport['route'] = 'model';
     let replyAt = t0;
-    // A resumed chat starts a new conversation (ADR-007 v2): the old one ends first, whatever the window says.
-    if (opts.resume) this.endConversation();
     let conv = this.conv ?? newConversationId();
     this.conv = conv;
     const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs' | 'conv'>): CommandReport => {
@@ -236,6 +241,24 @@ export class Assistant {
       return full;
     };
     try {
+      if (opts.resume) {
+        // Never resume silently: a conversation with no stored turns sends nothing, not even the owner's message.
+        let saved = false;
+        try {
+          saved = opts.resume.saved();
+        } catch {
+          saved = false;
+        }
+        if (!saved) {
+          replyAt = now();
+          await this.deliver(RESUME_GONE_MESSAGE, false, opts.speak, t0);
+          return report({ result: 'error', outcome: 'error', reply: RESUME_GONE_MESSAGE, ranClaude: false, followUp: false, turns: 0 });
+        }
+        // A resumed chat starts a new conversation: the old one ends first.
+        this.endConversation();
+        conv = newConversationId();
+        this.conv = conv;
+      }
       let prefix = '';
       let prompt = text;
       const local = { source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) };
@@ -263,8 +286,10 @@ export class Assistant {
         }
         if (this.cancelled) return report({ result: 'cancelled', outcome: 'cancelled', reply: '', ranClaude: false, followUp: false, turns: 0 });
         if (!route.rest) {
-          await this.deliver(route.reply, true, opts.speak, t0);
-          return report({ result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', reply: route.reply, ranClaude: false, followUp: false, turns: 0 });
+          // An armed resume answered locally: say the earlier chat was not used, never drop it silently.
+          const reply = opts.resume ? `${route.reply} ${RESUME_NOT_USED_MESSAGE}` : route.reply;
+          await this.deliver(reply, true, opts.speak, t0);
+          return report({ result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', reply, ranClaude: false, followUp: false, turns: 0 });
         }
         this.o.status(`Stephen: ${route.reply}`);
         prefix = route.reply;

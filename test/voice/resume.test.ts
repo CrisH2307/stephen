@@ -24,7 +24,7 @@ const CONV = 'c_00112233aabbccdd';
 const OLD: HistoryEntry[] = [
   { id: 'h_0000000000000001', ts: '2026-11-20T10:00:00.000Z', source: 'app', said: 'read my mail', reply: 'Two new emails.', outcome: 'ok', tools: [], followUp: false, ms: 5, turns: 1, conv: CONV },
 ];
-const resume: ResumeRequest = { prompt: (m, trust) => resumePrompt(OLD, CONV, trust, m) };
+const resume: ResumeRequest = { saved: () => true, prompt: (m, trust) => resumePrompt(OLD, CONV, trust, m) };
 const flagValue = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
 const quiet = { speaker: new RecordingSpeaker(), chimes: new RecordingChimes(), speak: false, status: () => {} };
 

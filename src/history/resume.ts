@@ -62,9 +62,26 @@ function turnLines(e: HistoryEntry): string {
 
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
 
+/** Said at the end of a newest turn that was cut to fit RESUME_MAX_BYTES (never dropped silently). */
+export const RESUME_CUT_NOTE = ' [cut to fit]';
+
+/** The longest start of `s` (whole characters) that fits in `max` UTF-8 bytes. */
+function cutToBytes(s: string, max: number): string {
+  let out = '';
+  let n = 0;
+  for (const ch of s) {
+    const b = bytes(ch);
+    if (n + b > max) break;
+    out += ch;
+    n += b;
+  }
+  return out;
+}
+
 /**
  * The first prompt of a resumed chat: the wrapper with the quotable turns of `conv` (oldest first; at most
- * RESUME_MAX_TURNS and RESUME_MAX_BYTES, newest kept), then the owner's new message. No quotable turn: the message
+ * RESUME_MAX_TURNS and RESUME_MAX_BYTES, newest kept; a newest turn too big on its own is cut and marked with
+ * RESUME_CUT_NOTE), then the owner's new message. No quotable turn: the message
  * alone. `entries` may be in any order and hold other conversations.
  */
 export function resumePrompt(entries: readonly HistoryEntry[], conv: string, current: Trust, message: string): string {
@@ -74,8 +91,12 @@ export function resumePrompt(entries: readonly HistoryEntry[], conv: string, cur
   const kept: string[] = [];
   let size = bytes(RESUME_WRAPPER_HEAD) + bytes(RESUME_WRAPPER_END) + 2;
   for (let i = turns.length - 1; i >= 0 && kept.length < RESUME_MAX_TURNS; i--) {
-    const t = turnLines(turns[i]!);
-    if (size + bytes(t) + 1 > RESUME_MAX_BYTES) break;
+    let t = turnLines(turns[i]!);
+    if (size + bytes(t) + 1 > RESUME_MAX_BYTES) {
+      if (kept.length > 0) break;
+      // The newest turn alone is too big: keep its start, and say in the wrapper that it was cut.
+      t = cutToBytes(t, RESUME_MAX_BYTES - size - 1 - bytes(RESUME_CUT_NOTE)) + RESUME_CUT_NOTE;
+    }
     size += bytes(t) + 1;
     kept.unshift(t);
   }

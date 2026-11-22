@@ -657,7 +657,9 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       // through resumePrompt's wrapper, under the content rule for that command's trust.
       queue: listenerQueue(l, a, () => {
         const conv = resumeArm.take();
-        return conv ? { prompt: (m: string, trust: Trust) => resumePrompt(conversationEntries((o) => history.list(o), conv), conv, trust, m) } : null;
+        if (!conv) return null;
+        const entries = () => conversationEntries((o) => history.list(o), conv);
+        return { saved: () => entries().length > 0, prompt: (m: string, trust: Trust) => resumePrompt(entries(), conv, trust, m) };
       }),
       resume: {
         arm: (conv: string) => {
