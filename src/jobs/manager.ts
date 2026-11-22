@@ -453,8 +453,24 @@ export class JobManager {
       return { refused: `I couldn't make the job folder (${(e as Error).message}).` };
     }
     if (plan.repo) {
-      const r = await (this.o.git ?? defaultGit)(['-C', plan.repo.path, 'worktree', 'add', join(folder, 'repo'), '-b', plan.repo.branch]);
+      // ADR-010: an edited code job's new branch is cut from the old job's branch; the old worktree is never used.
+      const from = plan.edit?.fromBranch ? [`refs/heads/${plan.edit.fromBranch}`] : [];
+      const r = await (this.o.git ?? defaultGit)(['-C', plan.repo.path, 'worktree', 'add', join(folder, 'repo'), '-b', plan.repo.branch, ...from]);
       if (r.code !== 0) return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
+    } else if (plan.edit) {
+      // ADR-010 [DEV REVIEW]: a copy of the old job's folder (shown in the dialog), checked against the caps again as it
+      // copies. Over them, or anything failing: the new folders go and nothing is started. The old folder is only read.
+      let copied: ReturnType<typeof copyJobFolder>;
+      try {
+        copied = plan.edit.copyFrom ? copyJobFolder(plan.edit.copyFrom, folder) : { error: COPY_GONE };
+      } catch (e) {
+        copied = { error: `I couldn't copy the old job folder (${(e as Error).message}).` };
+      }
+      if ('error' in copied) {
+        rmSync(folder, { recursive: true, force: true });
+        rmSync(metaDir, { recursive: true, force: true });
+        return { refused: copied.error };
+      }
     } else {
       const input = join(folder, 'input');
       mkdirSync(input, { mode: 0o700 });
@@ -518,6 +534,7 @@ export class JobManager {
       denials: 0,
       summary: '',
       error: '',
+      ...(plan.edit ? { editOf: plan.edit.of, editVersion: plan.edit.version } : {}),
     };
     const sup: SupervisorSpec = { version: 1, home, claudePath: this.o.claudePath, auditLogPath: this.o.auditLogPath ?? null, spec };
     try {
@@ -534,7 +551,7 @@ export class JobManager {
         tool: 'job_start',
         outcome: 'ok',
         confirmation: 'approved',
-        args: { id: plan.id, task: plan.task, folder, web: plan.web, model: plan.model, maxTurns: plan.maxTurns, maxBudgetUsd: plan.maxBudgetUsd, wallClockMin: plan.wallClockMs / 60_000, source, ...(plan.repo ? { repo: plan.repo.name, branch: plan.repo.branch } : {}) },
+        args: { id: plan.id, task: plan.task, folder, web: plan.web, model: plan.model, maxTurns: plan.maxTurns, maxBudgetUsd: plan.maxBudgetUsd, wallClockMin: plan.wallClockMs / 60_000, source, ...(plan.repo ? { repo: plan.repo.name, branch: plan.repo.branch } : {}), ...(plan.edit ? { editOf: plan.edit.of, version: plan.edit.version } : {}) },
       })
       .catch(() => undefined);
     // The supervisor gets the same scratch environment as the job (it passes it on), its own process group (a
