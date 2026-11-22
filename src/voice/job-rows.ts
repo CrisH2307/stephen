@@ -7,25 +7,10 @@ import { APP_JOB_REQUEST_MAX, APP_JOB_SUMMARY_MAX, APP_JOB_TASK_MAX, type AppJob
 import type { JobManager } from '../jobs/manager.js';
 import type { JobRouter } from '../jobs/router.js';
 import { cleanJobOutput, requestOf } from '../jobs/spec.js';
-import type { JobState } from '../jobs/state.js';
-import { clean } from '../safety/text.js';
+import { jobVersions, type JobState } from '../jobs/state.js';
 
-/** ADR-010: a job's version and the highest version of its family (the jobs linked to it by editOf). */
-export function jobVersions(all: readonly JobState[]): Map<string, { version: number; versions: number }> {
-  const byId = new Map(all.map((j) => [j.id, j]));
-  const rootOf = (j: JobState): string => {
-    const seen = new Set<string>();
-    while (j.editOf && byId.has(j.editOf) && !seen.has(j.id)) {
-      seen.add(j.id);
-      j = byId.get(j.editOf)!;
-    }
-    return j.id;
-  };
-  const top = new Map<string, number>();
-  const roots = new Map(all.map((j) => [j.id, rootOf(j)]));
-  for (const j of all) top.set(roots.get(j.id)!, Math.max(top.get(roots.get(j.id)!) ?? 1, j.editVersion ?? 1));
-  return new Map(all.map((j) => [j.id, { version: j.editVersion ?? 1, versions: top.get(roots.get(j.id)!)! }]));
-}
+export { jobVersions };
+import { clean } from '../safety/text.js';
 
 export function jobRow(j: JobState, v: { version: number; versions: number } = { version: j.editVersion ?? 1, versions: j.editVersion ?? 1 }): JobRow {
   return {

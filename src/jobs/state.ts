@@ -116,6 +116,23 @@ export function parseJobState(raw: unknown, id: string): JobState | null {
   };
 }
 
+/** ADR-010: a job's version and the highest version of its family (the jobs linked to it by editOf). */
+export function jobVersions(all: readonly JobState[]): Map<string, { version: number; versions: number }> {
+  const byId = new Map(all.map((j) => [j.id, j]));
+  const rootOf = (j: JobState): string => {
+    const seen = new Set<string>();
+    while (j.editOf && byId.has(j.editOf) && !seen.has(j.id)) {
+      seen.add(j.id);
+      j = byId.get(j.editOf)!;
+    }
+    return j.id;
+  };
+  const top = new Map<string, number>();
+  const roots = new Map(all.map((j) => [j.id, rootOf(j)]));
+  for (const j of all) top.set(roots.get(j.id)!, Math.max(top.get(roots.get(j.id)!) ?? 1, j.editVersion ?? 1));
+  return new Map(all.map((j) => [j.id, { version: j.editVersion ?? 1, versions: top.get(roots.get(j.id)!)! }]));
+}
+
 /** Read one job's state (null: missing, not ours, or unreadable). */
 export function readJobState(home: string, id: string): JobState | null {
   if (!isJobId(id)) return null;
