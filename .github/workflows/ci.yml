@@ -32,6 +32,10 @@ jobs:
           - os: macos
             runner: macos-15
             timeout: 30
+          # The oldest macOS Stephen supports (helper/Info.plist LSMinimumSystemVersion 14.0).
+          - os: macos-14
+            runner: macos-14
+            timeout: 30
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
@@ -49,7 +53,7 @@ jobs:
           command -v lsof >/dev/null && command -v ps >/dev/null || \
             { sudo apt-get update && sudo apt-get install -y lsof procps; }
       - name: Swift must exist on macOS (the Swift tests skip without it)
-        if: matrix.os == 'macos'
+        if: runner.os == 'macOS'
         run: swiftc --version
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
