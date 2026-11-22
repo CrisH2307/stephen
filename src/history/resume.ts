@@ -8,12 +8,14 @@
  *  - Content rule (ADR-007 rule 5): a stored turn is quoted only if the new command's trust is at least that turn's
  *    trust (phone < wake < trusted, from its `source` through trustOf; a source this build does not know counts as
  *    phone).
- *  - At most RESUME_MAX_TURNS turns and RESUME_MAX_BYTES bytes, newest kept. Step lines are never sent.
+ *  - At most RESUME_MAX_TURNS turns and RESUME_MAX_BYTES bytes, newest kept. Step lines are never sent, except an
+ *    edit's (ADR-010): the step lines of the turns it replaces, under EDIT_DONE_HEAD inside the same wrapper.
  *  - Stored text is data: nothing here reads it to decide anything except the content rule on `source`.
  * The fresh start and `--assume-private-read` are the runners' part (HandleOptions.resume in src/voice/assistant.ts).
  */
 import { trustOf, type Trust } from '../voice/assistant.js';
-import { HISTORY_SOURCES, type HistoryEntry, type HistorySource } from './store.js';
+import { truncate } from '../safety/text.js';
+import { HISTORY_SOURCES, MAX_STEP_CHARS, type HistoryEntry, type HistorySource } from './store.js';
 
 /** At most this many stored turns are quoted (one turn = what was said and Stephen's reply). */
 export const RESUME_MAX_TURNS = 10;
@@ -53,6 +55,8 @@ const oneLine = (s: string) =>
     .join('[...]')
     .split(RESUME_WRAPPER_END)
     .join('[...]')
+    .split(EDIT_DONE_HEAD)
+    .join('[...]')
     .trim();
 
 /** The quoted lines of one stored turn (said and reply; never steps or tool names). */
@@ -78,6 +82,11 @@ function cutToBytes(s: string, max: number): string {
   return out;
 }
 
+/** ADR-010: the head of the step list inside the wrapper, for the turns an edit replaces. */
+export const EDIT_DONE_HEAD = 'Already done after the old message (a record; the owner may want it done again or not):';
+/** At most this many step lines of the replaced turns (each cut to MAX_STEP_CHARS). */
+export const EDIT_MAX_STEP_LINES = 20;
+
 /**
  * The first prompt of a resumed chat: the wrapper with the quotable turns of `conv` (oldest first; at most
  * RESUME_MAX_TURNS and RESUME_MAX_BYTES, newest kept; a newest turn too big on its own is cut and marked with
@@ -85,23 +94,36 @@ function cutToBytes(s: string, max: number): string {
  * alone. `entries` may be in any order and hold other conversations.
  */
 export function resumePrompt(entries: readonly HistoryEntry[], conv: string, current: Trust, message: string): string {
-  const turns = entries
-    .filter((e) => e.conv === conv && mayQuote(e.source, current))
-    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
-  const kept: string[] = [];
-  let size = bytes(RESUME_WRAPPER_HEAD) + bytes(RESUME_WRAPPER_END) + 2;
-  for (let i = turns.length - 1; i >= 0 && kept.length < RESUME_MAX_TURNS; i--) {
-    let t = turnLines(turns[i]!);
-    if (size + bytes(t) + 1 > RESUME_MAX_BYTES) {
-      if (kept.length > 0) break;
-      // The newest turn alone is too big: keep its start, and say in the wrapper that it was cut.
-      t = cutToBytes(t, RESUME_MAX_BYTES - size - 1 - bytes(RESUME_CUT_NOTE)) + RESUME_CUT_NOTE;
-    }
-    size += bytes(t) + 1;
-    kept.unshift(t);
+  return quotePrompt(entries.filter((e) => e.conv === conv), current, message);
+}
+
+/**
+ * The one wrapper (ADR-007 v2, reused by ADR-010 edit and resend). `turns`: the earlier turns of the branch (any
+ * order; the content rule picks the quotable ones). `replaced` (edit only): the edited message and what followed it;
+ * ONLY their step lines go in, under EDIT_DONE_HEAD, at most EDIT_MAX_STEP_LINES. Over RESUME_MAX_BYTES: the oldest
+ * turns go first, then the step list is cut, then the newest turn is cut (RESUME_CUT_NOTE). Then the owner's message.
+ */
+export function quotePrompt(turns: readonly HistoryEntry[], current: Trust, message: string, replaced: readonly HistoryEntry[] = []): string {
+  const kept = turns
+    .filter((e) => mayQuote(e.source, current))
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))
+    .slice(-RESUME_MAX_TURNS)
+    .map(turnLines);
+  const steps = replaced
+    .filter((e) => mayQuote(e.source, current))
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))
+    .flatMap((e) => e.steps ?? [])
+    .slice(0, EDIT_MAX_STEP_LINES)
+    .map((s) => `- ${oneLine(truncate(s.text, MAX_STEP_CHARS))}`);
+  const block = () => [RESUME_WRAPPER_HEAD, ...kept, ...(steps.length ? [EDIT_DONE_HEAD, ...steps] : []), RESUME_WRAPPER_END].join('\n');
+  while (bytes(block()) > RESUME_MAX_BYTES && kept.length > 1) kept.shift();
+  while (bytes(block()) > RESUME_MAX_BYTES && steps.length > 0) steps.pop();
+  if (bytes(block()) > RESUME_MAX_BYTES && kept.length === 1) {
+    // The newest turn alone is too big: keep its start, and say in the wrapper that it was cut.
+    kept[0] = cutToBytes(kept[0]!, RESUME_MAX_BYTES - (bytes(block()) - bytes(kept[0]!)) - bytes(RESUME_CUT_NOTE)) + RESUME_CUT_NOTE;
   }
-  if (kept.length === 0) return message;
-  return `${RESUME_WRAPPER_HEAD}\n${kept.join('\n')}\n${RESUME_WRAPPER_END}\n\n${message}`;
+  if (kept.length === 0 && steps.length === 0) return message;
+  return `${block()}\n\n${message}`;
 }
 
 /**
