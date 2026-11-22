@@ -23,6 +23,7 @@ import {
   branchFor,
   buildJobEnv,
   cleanTask,
+  editedTask,
   isJobId,
   jobFiles,
   jobIdFor,
@@ -30,6 +31,7 @@ import {
   jobSettings,
   jobSlug,
   reposNamed,
+  SLUG_MAX,
   slugOf,
   wantsWeb,
   type JobSpec,
@@ -318,6 +320,79 @@ export class JobManager {
         maxBudgetUsd: this.o.config.maxBudgetUsd,
         wallClockMs: this.o.config.wallClockMin * 60_000,
         ...(repo ? { repo: { ...repo, branch } } : {}),
+      };
+    }
+    return { error: 'Too many jobs with that name today.' };
+  }
+
+  /**
+   * ADR-010 Edit request, [DEV REVIEW]: plan a NEW job from a stopped, finished or failed one. Creates nothing; the
+   * caller shows the job dialog (startPrompt) and starts only after the owner approves it, like any job. Nothing of
+   * the old job is reused unless the plan carries it and the dialog shows it: web, budgets and model come fresh from
+   * the edited request and the settings; the old folder is copied (never reused, never written); a code job gets a new
+   * worktree branch cut from the old job's branch (the old worktree is never used). The id is today's date and the
+   * old slug with `-v<version>`, so the caps count it like any start.
+   */
+  async planEdit(oldId: string, rawRequest: string): Promise<JobPlan | { error: string }> {
+    if (!this.o.config.enabled) return { error: 'Jobs are turned off in your Stephen settings (jobs.enabled).' };
+    const old = this.get(oldId);
+    if (!old) return { error: `There's no job ${oldId}.` };
+    if (!isFinal(old.status)) return { error: EDIT_STOP_FIRST };
+    const request = cleanTask(rawRequest);
+    if (request.split(' ').filter(Boolean).length < 2) return { error: 'Say what the job should do, like "write my lab report draft".' };
+    const cap = this.capError();
+    if (cap) return { error: cap };
+    const root = this.root();
+    const rootErr = this.rootError(root);
+    if (rootErr) return { error: rootErr };
+    const realRoot = existsSync(root) ? realpathSync(root) : '';
+    if (!realRoot) return { error: COPY_GONE };
+    const git = this.o.git ?? defaultGit;
+    const version = (old.editVersion ?? 1) + 1;
+    let repo: { name: string; path: string } | undefined;
+    let edit: NonNullable<JobPlan['edit']>;
+    if (old.repo) {
+      const configured = this.o.config.repos[old.repo.name];
+      if (!configured) return { error: `Your repo "${old.repo.name}" is no longer in your Stephen settings. Start a new job instead.` };
+      const path = expandPath(configured, this.userHome);
+      const top = await git(['-C', path, 'rev-parse', '--show-toplevel']);
+      if (top.code !== 0) return { error: `Your repo "${old.repo.name}" (${path}) isn't a git repository I can use.` };
+      repo = { name: old.repo.name, path: realpathSync(top.stdout.trim()) };
+      const from = old.repo.branch;
+      const has = /^stephen\/job-[a-z0-9][a-z0-9-]*$/.test(from) ? await git(['-C', repo.path, 'rev-parse', '--verify', '--quiet', `refs/heads/${from}`]) : { code: 1 };
+      if (has.code !== 0) return { error: `The old job's branch ${from} is gone. Start a new job instead.` };
+      edit = { of: old.id, version, fromBranch: from };
+    } else {
+      // The old folder must still be a plain folder in the job root (it came from Stephen's own state file).
+      const st = old.folder ? lstatSync(old.folder, { throwIfNoEntry: false }) : undefined;
+      if (!st || st.isSymbolicLink() || !st.isDirectory() || realpathSync(old.folder) !== old.folder || dirname(old.folder) !== realRoot) return { error: COPY_GONE };
+      const scan = copyJobFolder(old.folder, null);
+      if ('error' in scan) return scan;
+      edit = { of: old.id, version, copyFrom: old.folder, ...scan };
+    }
+    const suffix = `-v${version}`;
+    const base = (old.editOf ? slugOf(old.id).replace(/-v\d+(?:-\d+)?$/, '') : slugOf(old.id)).slice(0, SLUG_MAX - suffix.length - 3).replace(/-+$/, '') || 'job';
+    const day = this.today();
+    for (let n = 1; n <= 50; n++) {
+      const id = jobIdFor(day, `${base}${suffix}`, n);
+      const folder = join(realRoot, id);
+      if (existsSync(folder) || existsSync(metaDirOf(this.o.home, id))) continue;
+      const branch = branchFor(slugOf(id));
+      if (repo && (await git(['-C', repo.path, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0) continue;
+      const picked = this.o.modelPrefs?.();
+      return {
+        id,
+        task: editedTask(old.task, request),
+        folder,
+        cwd: repo ? join(folder, 'repo') : folder,
+        web: wantsWeb(request),
+        model: picked?.model ?? this.o.config.model,
+        ...(picked?.effort ? { effort: picked.effort } : {}),
+        maxTurns: this.o.config.maxTurns,
+        maxBudgetUsd: this.o.config.maxBudgetUsd,
+        wallClockMs: this.o.config.wallClockMin * 60_000,
+        ...(repo ? { repo: { ...repo, branch } } : {}),
+        edit,
       };
     }
     return { error: 'Too many jobs with that name today.' };
