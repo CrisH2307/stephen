@@ -674,6 +674,44 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('return parts.joined(separator: " · ")');
   });
 
+  // ADR-010 Edit request ([DEV REVIEW]): off while queued or running (with the line), the editor only sends the text,
+  // the listener shows the job dialog; "Version N of M"; all verbatim; the palette never reaches it.
+  it('ADR-010 Jobs: Edit request button and its disabled line, the editor, the version label, Text(verbatim:), not in the palette', () => {
+    const jobs = read('JobsPage.swift');
+    const item = jobs.match(/private struct JobItem: View \{([\s\S]*?)\n\}\n/)?.[1] ?? '';
+    expect(item.length).toBeGreaterThan(1000);
+    // One button, off while the job is queued or running; Stop stays next to it (running rows only).
+    expect(item.match(/QuietButton\("Edit request"/g)).toHaveLength(1);
+    expect(item).toMatch(/if job\.isRunning \{ QuietButton\("Stop"[^\n]*\n(\s*\/\/[^\n]*\n)?\s*QuietButton\("Edit request", symbol: "pencil"\) \{ draft = job\.request; editing = true \}\s*\.disabled\(job\.isRunning\)/);
+    expect(jobs).toContain('let JOB_EDIT_STOP_FIRST = "Stop the job first to change its request."');
+    expect(item).toContain('if job.isRunning { Text(verbatim: JOB_EDIT_STOP_FIRST)');
+    expect(item).toContain('if editing && !job.isRunning { editor }');
+    // The editor: prefilled with the old request; Continue (off while running or empty) and Cancel; it only sends.
+    expect(item).toMatch(/TextField\("Edit the request", text: \$draft\)/);
+    expect(item).toMatch(/QuietButton\("Continue", symbol: "arrow\.right"\) \{ sendDraft\(\) \}\s*\.disabled\(job\.isRunning \|\|/);
+    expect(item).toContain('QuietButton("Cancel") { editing = false }');
+    expect(item).toMatch(/private func sendDraft\(\) \{\s*guard !job\.isRunning, [^\n]*\n\s*edit\(draft\)\s*editing = false\s*\}/);
+    expect(item).toContain('nothing starts until you allow it');
+    // Wired once: the row's edit goes to model.editJob, which sends jobs.edit with the control timeout (the dialog).
+    expect(jobs.match(/model\.editJob\(/g)).toHaveLength(1);
+    expect(jobs).toContain('edit: { model.editJob(job.id, request: $0) })');
+    const all = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'));
+    const uses = (re: RegExp) => all.flatMap((f) => (read(f).match(re) ?? []).map(() => f));
+    expect(uses(/"jobs\.edit"/g)).toEqual(['AppProtocol.swift']);
+    expect(uses(/AppRequest\.jobsEdit\(/g)).toEqual(['AppClient.swift']);
+    expect(uses(/\beditJob\(/g).sort()).toEqual(['AppClient.swift', 'JobsPage.swift']);
+    expect(client).toContain('request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS)');
+    // Version N of M, verbatim, only when there is more than one version.
+    expect(jobs).toContain('return job.versions > 1 ? "Version \\(job.version) of \\(job.versions)" : nil');
+    expect(item).toContain('if let v = jobVersionText(job) { Text(verbatim: v)');
+    expect(read('AppProtocol.swift')).toContain('case id, task, status, createdAt, startedAt, endedAt, turns, costUsd, folder, summary, error, request, version, versions');
+    // All text on the page stays verbatim.
+    expect(jobs.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    // The palette never reaches it.
+    expect(read('Palette.swift')).not.toMatch(/editJob|jobsEdit|jobs\.edit|Edit request/);
+    expect(PALETTE_MEMBERS).not.toContain('editJob');
+  });
+
   it('Jobs step d (plan 6.4): caution intro, Running open, Failed open [DEV REVIEW], Earlier accordion, Stop on running only', () => {
     const jobs = read('JobsPage.swift');
     // R9: the caution once, in the intro; the summary keeps its label.
