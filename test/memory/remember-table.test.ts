@@ -37,8 +37,8 @@ const TABLE: [string, Want, Want, Want][] = [
   ['Remember my gym?', 'N', 'N', 'N'],
   ["Can you remember my sister's name?", 'N', 'N', 'N'],
   ['Remember that I moved to Toronto?', 'N', 'N', 'N'],
-  ['Remember that? That was crazy', 'S', 'N', 'N'],
-  ['Remember my gym？', 'S', 'N', 'N'],
+  ['Remember that? That was crazy', 'N', 'N', 'N'],
+  ['Remember my gym？', 'N', 'N', 'N'],
   // "can you remember" without "that" (#122 second layer)
   ["Can you remember my sister's name", 'N', 'N', 'N'],
   ['Will you remember my birthday', 'N', 'N', 'N'],

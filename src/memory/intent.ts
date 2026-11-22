@@ -150,11 +150,11 @@ export interface ParseOpts {
  *
  * The one remember guard for typed and voice text (#202, H3): MemoryRouter.route calls it for every source. A new
  * rule goes here, and the source decides who it applies to. Today the differences are all voice-only refusals:
- * - voice: a "?" anywhere in the raw transcript (also full-width) is a question (R10b-1);
  * - voice: "can you remember ..." saves only with "that" (R10b-1);
  * - voice: the saved text needs a fact shape (#137);
  * - wake word only: no openers without the word "remember" (R10b-4).
- * Typed and voice share the rest, including the trailing "?" check on both the words and the raw text (#114, #122).
+ * Typed and voice share the rest, including the "?" checks: a trailing one on the words or the raw text (#114, #122),
+ * and one anywhere in the raw text, also full-width (R10b-1; typed too since 2026-11-21).
  * test/memory/remember-table.test.ts runs one phrase table through every source.
  */
 export function parseDetailed(command: string, opts: ParseOpts): { intent: MemoryIntent; opener?: string } | null {
@@ -174,8 +174,9 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
   // Speech to text drops the "?" from the normalized words, so check the raw transcript too (R10b-1).
   const QUESTION_RE = /\?["')\s]*$/;
   if (QUESTION_RE.test(command) || (opts.raw !== undefined && QUESTION_RE.test(opts.raw))) return null;
-  // By voice a "?" anywhere ("remember that? that was crazy", a curly quote after it, a full-width one) is a question too.
-  if (voice && opts.raw !== undefined && /[?？¿]/.test(opts.raw)) return null;
+  // A "?" anywhere ("remember that? that was crazy", a curly quote after it, a full-width one) is a question too,
+  // typed or spoken (dev lane, 2026-11-21).
+  if (/[?？¿]/.test(opts.raw ?? command)) return null;
   let body: string | null = null;
   let opener = '';
   for (const [i, re] of REMEMBER_RES.entries()) {
