@@ -56,14 +56,14 @@ export function cleanTask(task: string): string {
 export const EDIT_RECORD_HEAD = 'Earlier request (a record): ';
 /**
  * The longest edited request (code points, after cleanTask): with the two heads, the quotes and a short quote of the
- * old request it still fits in TASK_MAX, so editedTask never cuts it. The window's editor and planEdit enforce it.
+ * old request it still fits in TASK_MAX, so editedTask never cuts it. The window's editor and the manager's edit plan enforce it.
  */
 export const EDIT_REQUEST_MAX = 440;
 export const EDIT_REQUEST_TOO_LONG = `The edited request is too long (at most ${EDIT_REQUEST_MAX} characters). Shorten it and try again.`;
 export const EDIT_REQUEST_HEAD = ' Edited request: ';
 
 /**
- * The task of an edited job, within TASK_MAX: the edited request (at most EDIT_REQUEST_MAX, checked by planEdit) is
+ * The task of an edited job, within TASK_MAX: the edited request (at most EDIT_REQUEST_MAX, checked by the manager) is
  * kept whole, and the quoted old request is shortened to fit. `oldTask` may itself be an edited job's task: only its own request is quoted.
  */
 export function editedTask(oldTask: string, edited: string): string {
