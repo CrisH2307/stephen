@@ -144,6 +144,11 @@ struct AppRequest: Encodable {
   var enabled: Bool? = nil
   /** chat.resume: the conversation id ("c_" + 16 hex) of the Conversations row whose Open in chat was clicked. */
   var conv: String? = nil
+  /** chat.edit (ADR-010): the edited message's command id and the SHA-256 hex of its stored text. Nothing else. */
+  var oldId: String? = nil
+  var oldHash: String? = nil
+  /** history.versions / history.deleteVersion (ADR-010): a history entry id. */
+  var entryId: String? = nil
 
   static func hello(_ id: String) -> AppRequest {
     return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
@@ -160,6 +165,18 @@ struct AppRequest: Encodable {
   static func chatResume(_ id: String, conv: String) -> AppRequest { return AppRequest(id: id, type: "chat.resume", conv: conv) }
   /** Cancel on Home and New chat: drop the armed resume. */
   static func chatResumeCancel(_ id: String) -> AppRequest { return AppRequest(id: id, type: "chat.resume.cancel") }
+  /**
+   * ADR-010, [DEV REVIEW]: only Send (or Return) in a Conversations row's inline editor sends this
+   * (AppModel.editMessage). The text is what the owner typed or checked; the listener builds the rest from the store.
+   */
+  static func chatEdit(_ id: String, oldId: String, oldHash: String, text: String) -> AppRequest {
+    return AppRequest(id: id, type: "chat.edit", text: text, oldId: oldId, oldHash: oldHash)
+  }
+  static func historyVersions(_ id: String, entryId: String) -> AppRequest { return AppRequest(id: id, type: "history.versions", entryId: entryId) }
+  /** ADR-010: only the confirm alert of "Delete this version" sends this (AppModel.deleteVersion). */
+  static func historyDeleteVersion(_ id: String, entryId: String) -> AppRequest {
+    return AppRequest(id: id, type: "history.deleteVersion", entryId: entryId)
+  }
   static func historyList(_ id: String, before: String?, limit: Int) -> AppRequest {
     return AppRequest(id: id, type: "history.list", before: before, limit: limit)
   }
@@ -423,8 +440,10 @@ struct HistoryEntry: Decodable, Identifiable, Equatable {
   var conv: String = ""
   /// The steps chat.done showed for this command (ADR-007), [] on older lines. Shown with Text(verbatim:).
   var steps: [ChatStep] = []
+  /// ADR-010: on the first line of an edited branch, the message it is a new version of (shown as "Edited").
+  var editOf: EditOf? = nil
 
-  enum CodingKeys: String, CodingKey { case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps }
+  enum CodingKeys: String, CodingKey { case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps, editOf }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -439,7 +458,14 @@ struct HistoryEntry: Decodable, Identifiable, Equatable {
     ms = (try? c.decodeIfPresent(Double.self, forKey: .ms)) ?? 0
     conv = (try? c.decodeIfPresent(String.self, forKey: .conv)) ?? ""
     steps = (try? c.decodeIfPresent([ChatStep].self, forKey: .steps)) ?? []
+    editOf = try? c.decodeIfPresent(EditOf.self, forKey: .editOf)
   }
+}
+
+/** ADR-010: the message an edited branch is a version of. Nothing acts on it but the "Edited" tag. */
+struct EditOf: Decodable, Equatable {
+  var conv: String
+  var id: String
 }
 
 /** One browser-action audit log line (src/types.ts AuditEntry); only the displayed fields. */
@@ -509,6 +535,8 @@ struct AppMessage: Decodable {
   var on: Bool? = nil
   /** The `resume` push (ADR-007 v2): a resume is armed for the window's next message. */
   var armed: Bool? = nil
+  /** versions (ADR-010): the earlier part of that message's branch has expired. */
+  var expired: Bool? = nil
   var lines: [String]? = nil
   var ok: Bool? = nil
   var checks: [DoctorCheck]? = nil
@@ -535,7 +563,7 @@ struct AppMessage: Decodable {
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, steps, message, entries, items, config,
       configPath, state, text, source, accounts, note, jobs, job, on, lines, ok, checks, problems, blocking, context, memory,
-      confirmId, title, body, suggestions, nodes, links, armed
+      confirmId, title, body, suggestions, nodes, links, armed, expired
   }
 
   init(localError: String, id: String?) {
@@ -559,7 +587,7 @@ struct AppMessage: Decodable {
     steps = try? c.decodeIfPresent([ChatStep].self, forKey: .steps)
     message = try? c.decodeIfPresent(String.self, forKey: .message)
     // `entries` holds history entries or audit entries depending on `type`.
-    if type == "history" {
+    if type == "history" || type == "versions" {
       historyEntries = try? c.decodeIfPresent([HistoryEntry].self, forKey: .entries)
     } else if type == "audit" {
       auditEntries = try? c.decodeIfPresent([AuditEntry].self, forKey: .entries)
@@ -573,6 +601,7 @@ struct AppMessage: Decodable {
     job = try? c.decodeIfPresent(JobRow.self, forKey: .job)
     on = try? c.decodeIfPresent(Bool.self, forKey: .on)
     armed = try? c.decodeIfPresent(Bool.self, forKey: .armed)
+    expired = try? c.decodeIfPresent(Bool.self, forKey: .expired)
     lines = try? c.decodeIfPresent([String].self, forKey: .lines)
     ok = try? c.decodeIfPresent(Bool.self, forKey: .ok)
     checks = try? c.decodeIfPresent([DoctorCheck].self, forKey: .checks)
