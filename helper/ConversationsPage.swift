@@ -341,7 +341,7 @@ private struct ConversationItem: View {
       Button("Delete", role: .destructive) { deleteVersion(shown.id); pick = nil }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text(verbatim: "This message and what followed it in this version are deleted. The other versions stay.")
+      Text(verbatim: "This message and what followed it in this version are deleted. The other versions stay. If another version still uses these messages, nothing is deleted.")
     }
   }
 
