@@ -9,6 +9,8 @@
  *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 40 steps of 160 chars, 5 MB per day file (a full day
  *    drops new entries).
  *  - Optional `conv` (conversation id) and `steps` (what chat.done showed), ADR-007. Old lines without them still read.
+ *  - Optional `editOf` (ADR-010): only on the first line of an edited branch, the conversation and command id of the
+ *    message that was edited. Parsed field by field; a bad one is dropped, never trusted.
  *    Stored text is data for the owner to look at, never instructions: nothing reads it to decide anything.
  *  - Malformed lines are skipped when reading.
  */
@@ -61,6 +63,21 @@ export interface HistoryEntry {
   conv?: string;
   /** The steps chat.done carried for this command (ADR-007 point 6). Absent when there were none or the audit read failed. */
   steps?: ChatStep[];
+  /** ADR-010: on the first line of an edited branch only, the message it is a new version of. */
+  editOf?: EditOf;
+}
+
+/** The message a branch is an edit of (ADR-010): its conversation and its command id. */
+export interface EditOf {
+  conv: string;
+  id: string;
+}
+
+/** A valid editOf from parsed JSON, or null (a bad one is dropped, never trusted). */
+export function parseEditOf(v: unknown): EditOf | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const { conv, id } = v as Record<string, unknown>;
+  return typeof conv === 'string' && CONV_RE.test(conv) && typeof id === 'string' && ID_RE.test(id) ? { conv, id } : null;
 }
 
 /** What callers pass to append: id and ts are filled in when absent. */
@@ -148,6 +165,7 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
   if (!Array.isArray(o.tools)) return null;
   const tools = o.tools.map(parseToolCallRecord).filter((t): t is ToolCallRecord => t !== null);
   const steps = parseSteps(o.steps);
+  const editOf = parseEditOf(o.editOf);
   return {
     id: o.id,
     ts: o.ts,
@@ -161,6 +179,7 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
     turns: nonNegInt(o.turns),
     ...(typeof o.conv === 'string' && CONV_RE.test(o.conv) ? { conv: o.conv } : {}),
     ...(steps.length > 0 ? { steps } : {}),
+    ...(editOf ? { editOf } : {}),
   };
 }
 
