@@ -457,11 +457,31 @@ export class JobManager {
     const cap = this.capError() || extraCap?.() || '';
     if (cap) return { refused: cap };
     const home = this.o.home;
-    const metaDir = metaDirOf(home, plan.id);
-    let folder: string;
+    let folder = '';
+    let metaDir = '';
     try {
       await ensurePrivateDir(jobsDir(home), home);
-      folder = this.makeFolder(plan);
+      // [DEV REVIEW] ADR-010: the exclusive mkdir claims the id. An edited job whose id a sibling edit took first (two
+      // dialogs open at once) moves to the next free version; nothing of the sibling's folder is touched.
+      for (let tries = 0; ; tries++) {
+        try {
+          folder = this.makeFolder(plan);
+          break;
+        } catch (e) {
+          if (!plan.edit || (e as NodeJS.ErrnoException).code !== 'EEXIST' || tries >= 20) throw e;
+          const next = await this.editTarget(plan.edit.of, plan.edit.base, dirname(plan.folder), plan.repo?.path, plan.edit.version + 1);
+          if (!next) throw e;
+          plan = {
+            ...plan,
+            id: next.id,
+            folder: next.folder,
+            cwd: plan.repo ? join(next.folder, 'repo') : next.folder,
+            ...(plan.repo ? { repo: { ...plan.repo, branch: next.branch } } : {}),
+            edit: { ...plan.edit, version: next.version },
+          };
+        }
+      }
+      metaDir = metaDirOf(home, plan.id);
       mkdirSync(metaDir, { mode: 0o700 }); // fresh too
       if (lstatSync(metaDir).isSymbolicLink()) throw new Error(`${metaDir} is a symlink`);
     } catch (e) {
