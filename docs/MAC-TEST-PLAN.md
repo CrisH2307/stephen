@@ -685,6 +685,7 @@ Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Ha
   See: no "New from your chats" box at first. After Return it appears at the top, above the search field, with Keep, Edit and Skip. Nothing is in `node dist/cli.js memory list` yet.
 - [ ] `[hands]` **18.3** Do: on that row press Edit, change the words, press Return, then Keep. Tell Stephen something else and press Skip.
   See: Return in the edit field does not keep it; only the Keep click does. After Keep the edited words are in `memory list`. After Skip the row goes and nothing is saved.
+  Also: tell Stephen one more thing, press Edit, delete all the words and click Keep. See: the note "Empty, nothing kept." The edit field stays open and nothing new is in `memory list`.
 - [ ] `[hands]` **18.4** Do: if you have a suggestion from an email or a page (third-party text), look at its row.
   See: its words are shown exactly, and the line under them says "third-party text, check it" in amber.
 - [ ] `[hands]` **18.5** Do: press ⌘F, type a word. Click a node. Make the window as wide as it goes, then as narrow as it goes.
