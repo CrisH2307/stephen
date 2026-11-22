@@ -780,3 +780,32 @@ phone.
   See: it has the old command id, the old and new conversation ids and the old source. It has no message text.
 
 Send back: any box you could not tick, with its id.
+
+## 22. ADR-010 part b: Edit request on a job (branch `feat/job-edit-request`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen with the window open and jobs on. Put a
+small file in the jobs inbox, then ask "start a job to write a short poem about rain" and allow the dialog. Let it
+finish. Start a second job, "start a job to write a long story about snow", and leave it running.
+- [ ] `[hands]` **22.1** Do: open Jobs (⌘3) and look at the running job's row.
+  See: `[DEV REVIEW]` "Edit request" is there but off (greyed, clicking does nothing), with the line "Stop the job first to change its request." under the row. Stop is next to it.
+- [ ] `[hands]` **22.2** Do: click Stop on the running job. When it says Stopped, look at its row again.
+  See: "Edit request" is on now, and the "Stop the job first" line is gone.
+- [ ] `[hands]` **22.3** Do: on the finished poem job, click "Edit request".
+  See: an editor opens with the old request prefilled ("write a short poem about rain"), a line that this starts a new job and that nothing starts until you allow it, and Continue and Cancel. Cancel closes it. Nothing is sent.
+- [ ] `[hands]` **22.4** Do: click "Edit request" again, change it to "write a short poem about rain in French" and click Continue. Read the dialog, then click Deny.
+  See: `[DEV REVIEW]` the same "Stephen: start a background job?" dialog as a new job, with every field: "Edited job: a new job, version 2, from the job ...", the Task (it quotes "Earlier request (a record)" and then your edit), the new Folder ending in `-v2`, "Input files: a copy of the old job folder ... symlinks are skipped", Budgets, Web: off, Model. After Deny: a note "Okay, I didn't start it." No new row, no new folder in Stephen Jobs.
+- [ ] `[hands]` **22.5** Do: do 22.4 again and click Allow this time.
+  See: `[DEV REVIEW]` a new row appears (Waiting, then Running) with "Version 2 of 2". The old poem row shows "Version 1 of 2" and its summary is unchanged. In Finder, the new folder `...-v2` has a copy of the old folder's files; the old folder's files are unchanged (same dates).
+- [ ] `[hands]` **22.6** Do: before 22.5, in Terminal make a symlink in the old poem folder: `ln -s ~/Documents "<old job folder>/docs-link"`. Then do 22.5.
+  See: `[DEV REVIEW]` the new `-v2` folder has no `docs-link` and none of your Documents. The old folder still has the link.
+- [ ] `[hands]` **22.7** Do: edit a job whose request did not say "with web" while the old job had web on (or just check the dialog of 22.4).
+  See: Web is off unless your edited request says "with web", and the dialog says which. The inbox file from setup is still in the inbox (an edited job does not take it).
+- [ ] `[hands]` **22.8** Do: with a repo in `jobs.repos`, start a code job ("start a job to fix the readme in <repo>"), let it end, then click "Edit request" and Allow.
+  See: `[DEV REVIEW]` the dialog says "a new branch stephen/job-...-v2, cut from the old job's branch ... The old worktree is not used." Afterwards `git -C <repo> branch` shows both branches, and the old job's worktree folder is unchanged.
+- [ ] `[hands]` **22.9** Do: make a job folder over the cap (for example `mkfile -n 600m "<old job folder>/big.bin"`), then click "Edit request" and Continue.
+  See: the note "The old job folder is too big to copy. Start a new job instead." No dialog, no new folder.
+- [ ] `[hands]` **22.10** Do: press ⌘K and look through the actions. Say "Hey Stephen, edit my last job" and type the same in the Ask box.
+  See: there is no Edit request in the palette. The phrase is an ordinary command (or a new job's dialog if it reads as "start a job"); no old job is edited and no `-v2` folder appears.
+- [ ] `[hands]` **22.11** Do: after 22.5, open the audit log (`auditLogPath` in config.json) and find the newest `job_start` line.
+  See: it has the new id, `editOf` with the old id, `version` 2 and source `app`.
+
+Send back: any box you could not tick, with its id.
