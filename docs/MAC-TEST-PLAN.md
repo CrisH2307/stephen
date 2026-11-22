@@ -36,7 +36,7 @@ release PR. Each section names the PRs it checks.
 | 18 | UI v4 step d: Memory and Jobs | 9 | 0 |
 | 19 | UI v4 step e: Conversations | 9 | 0 |
 | 20 | ADR-007 v2: resume, "Open in chat" | 10 | 0 |
-| 21 | ADR-010 part a: edit and resend | 14 | 0 |
+| 21 | ADR-010 part a: edit and resend | 15 | 0 |
 | 22 | ADR-010 part b: Edit request on a job | 11 | 0 |
 
 ## Two-minute click check (every PR that changes helper/)
@@ -777,6 +777,8 @@ phone.
   See: `[DEV REVIEW]` a confirm alert "Delete this version?" comes first. Cancel keeps everything. Delete removes only the edited message and what followed it in that version. Version 1 and the earlier turns stay.
 - [ ] `[hands]` **21.9b** Do: edit a message again so it has two versions, show version 1 and click "Delete this version", then Delete. Open version 2 in chat and ask "what did I ask before this?".
   See: version 1 and what followed it are gone. Version 2 shows no "earlier part has expired" line, and Stephen still knows the turns before the edited message.
+- [ ] `[hands]` **21.9c** Do: start a new chat with three messages. Edit message 2, so it has two versions. Show version 1 of message 2, then edit message 3 (the one after it in version 1). Now show version 1 of message 2 again and click "Delete this version", then Delete.
+  See: `[DEV REVIEW]` the note "Another version still uses these messages." Nothing is deleted: both versions of message 2 and both versions of message 3 are still there. (#266)
 - [ ] `[hands]` **21.10** Do: show version 2 of a row and click "Open in chat", then type a follow-up on Home.
   See: Stephen continues version 2 (it knows "play jazz", not the old later turns). "Continuing an earlier chat" shows as in section 20.
 - [ ] `[hands]` **21.11** Do: edit the wake-word row's text and send it. Note `app.speakReplies` in config.json.
