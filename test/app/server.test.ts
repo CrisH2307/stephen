@@ -157,6 +157,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     personal: async () =>
       personalSummary({ aboutMe: { name: 'Cris' }, accounts: await accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }), jobsOn: true, timeZone: 'America/Toronto' }),
     newId: () => `h_test${++ids}`,
+    resume: { arm: () => null, cancel: () => {}, armed: () => false },
     ...o,
   });
   await server.start();
@@ -205,8 +206,15 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
     const expected = new Map(lines.filter((l) => l.kind === 'response').map((l) => [l.msg.id!, l.msg]));
     const requests = lines.filter((l) => l.kind === 'request').map((l) => l.msg);
     expect(requests.length).toBeGreaterThan(15);
+    // The fixture's client also sent confirm.ask (a gate), so the window's resume requests go on a window connection
+    // (opened only then: an earlier Ask box would take the fixture's confirm.ask).
+    let win: TestClient | null = null;
     for (const req of requests) {
-      const got = await h.client.request(req);
+      if (req.type.startsWith('chat.resume') && !win) {
+        win = await h.connect();
+        await win.request({ id: 'w0', type: 'hello', version: '1', confirms: true });
+      }
+      const got = await (req.type.startsWith('chat.resume') ? win! : h.client).request(req);
       const want = expected.get(req.id!)!;
       expect({ id: got.id, type: got.type }, JSON.stringify(req)).toEqual({ id: want.id, type: want.type });
       if (want.type === 'error' && ['busy', MEMORY_MESSAGES.secret, MEMORY_GONE_MESSAGE].includes(want.message as string)) {
