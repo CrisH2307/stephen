@@ -16,3 +16,39 @@ Stephen is Cris's Mac voice and browser assistant. The repo is public. New here?
   Allow and Deny are clicks only. Changes to `src/safety/`, `helper/AppConfirm.swift`, the memory, timer and job
   write paths, or the app.sock protocol need `[DEV REVIEW]` and an independent review.
 - Checks before a PR: `npm run build && npm run typecheck && npx vitest run`.
+
+## Build, commit and PR (do it this way every time)
+
+1. **Start a task:**
+   ```bash
+   git fetch origin
+   git worktree add -b <type>/<short-name> .claude/worktrees/<lane>-<short-name> origin/qa
+   cd .claude/worktrees/<lane>-<short-name>
+   ln -s ../../../node_modules node_modules   # never npm install
+   ```
+2. **Commit as Cris, every commit.** `--author` alone is not enough, because the committer shows too:
+   ```bash
+   export GIT_AUTHOR_NAME="Cris Huynh" GIT_AUTHOR_EMAIL="119613966+CrisH2307@users.noreply.github.com"
+   export GIT_COMMITTER_NAME="Cris Huynh" GIT_COMMITTER_EMAIL="119613966+CrisH2307@users.noreply.github.com"
+   git commit -m "area: what changed"
+   ```
+   Check before you push: `git log --format='%an <%ae> | %cn <%ce>' origin/qa..HEAD` shows only Cris.
+3. **Build and test, one suite at a time:**
+   ```bash
+   npm run build && npm run typecheck && npx vitest run   # about 6 to 10 minutes
+   npx vitest run test/helper                              # also, for a change under helper/
+   ```
+4. **Open the PR:** `git push -u origin <branch>` (your own branch only), then
+   `gh pr create --base qa` and fill `.github/pull_request_template.md`. Report "ready: #<n>" when `linux` and
+   `macos` are green. GitHub blocks a merge into `qa` until both pass.
+
+## Why the commits matter: Cris's GitHub contributions
+
+Every commit counts on Cris's GitHub profile, so keep them correct:
+
+- **Use the noreply email above, exactly.** It is linked to Cris's account. Any other email (an AI address, a
+  local hostname) does not count for him.
+- **Many small commits** (a few files and one change each), each with a clear message. Never one big commit.
+- **Commits count when they reach `main`.** They reach it through the release PR, which Cris merges with a merge
+  commit, never squash. So never squash, rebase away or rewrite commits that are already pushed.
+- PRs Cris's account opens count on his profile right away.
