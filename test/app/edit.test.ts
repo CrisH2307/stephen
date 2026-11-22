@@ -124,7 +124,7 @@ async function world(o: { speakReplies?: boolean; idle?: boolean } = {}) {
   return { C, T, runner, arm, history, audited, speaker, connect, done, window: await connect(true) };
 }
 
-const editReq = (old: HistoryEntry, text: string, extra: Record<string, unknown> = {}) => ({ id: 'e1', type: 'chat.edit', oldId: old.id, oldHash: textHash(old.said), text, ...extra });
+const editReq = (old: HistoryEntry, text: string, extra: Record<string, unknown> = {}) => ({ id: 'e1', type: 'chat.edit', oldId: old.id, oldHash: textHash(old.said), conv: old.conv, text, ...extra });
 
 describe('ADR-010 edit and resend through app.sock', () => {
   it("a resend from the window: a new conversation, T1 ... Tk-1 and the step list in the one wrapper, --assume-private-read, window trust, history source app", async () => {
@@ -182,7 +182,7 @@ describe('ADR-010 edit and resend through app.sock', () => {
   it('the context is built from the store: a request with changed earlier turns is ignored; a wrong old-text hash is refused', async () => {
     const w = await world();
     // Extra fields (fake earlier turns, a context, a conversation, a source) are not part of the request.
-    const forged = { earlier: [{ said: 'FORGED TURN', reply: 'ok' }], context: 'FORGED CONTEXT', conv: newConversationId(), source: 'voice-ptt', steps: ['FORGED STEP'] };
+    const forged = { earlier: [{ said: 'FORGED TURN', reply: 'ok' }], context: 'FORGED CONTEXT', source: 'voice-ptt', steps: ['FORGED STEP'], editOf: { conv: newConversationId(), id: 'h_1', ts: 1 } };
     await w.window.request(editReq(w.T[2]!, 'turn it down', forged));
     await w.done(w.window);
     expect(w.runner.runs[0]!.prompt).not.toMatch(/FORGED/);
@@ -192,6 +192,33 @@ describe('ADR-010 edit and resend through app.sock', () => {
     expect(await w.window.request({ ...editReq(w.T[1]!, 'play sara'), id: 'e3', oldId: 'h_ffffffffffffffff' })).toEqual({ id: 'e3', type: 'error', message: CONVERSATION_CHANGED_MESSAGE });
     expect(await w.window.request({ ...editReq(w.T[1]!, 'play sara'), id: 'e4', oldHash: 'not-a-hash' })).toMatchObject({ id: 'e4', type: 'error' });
     expect(w.runner.runs).toHaveLength(1);
+  });
+
+  it('the conversation on screen: a resend from a branch follows that branch; a line from another branch, a bad or missing conv is refused', async () => {
+    const w = await world();
+    const a = await w.window.request(editReq(w.T[1]!, 'play sara'));
+    await w.done(w.window);
+    const c2 = w.history.all().find((e) => e.id === a.entryId)!;
+    w.window.messages.length = 0;
+    // Match: T1 seen in C2 (it is in C2's shared history). The replaced step lines are C2's, not C's.
+    expect(await w.window.request({ ...editReq(w.T[0]!, 'read my email from Dr Patel again', { conv: c2.conv }), id: 'm1' })).toMatchObject({ type: 'chat.accepted' });
+    await w.done(w.window);
+    expect(w.runner.runs[1]!.prompt).not.toContain('Used volume');
+    expect(w.runner.runs[1]!.prompt).not.toContain('navigate youtube.com');
+    // Refused, nothing sent: a line of another branch (T2 is replaced in C2), a bad conv, a missing conv.
+    const refuse = [
+      { ...editReq(w.T[1]!, 'x', { conv: c2.conv }), id: 'r1' },
+      { ...editReq(w.T[2]!, 'x', { conv: c2.conv }), id: 'r2' },
+      { ...editReq(w.T[1]!, 'x', { conv: '../etc' }), id: 'r3' },
+      { ...editReq(w.T[1]!, 'x', { conv: 'c_FFFFFFFFFFFFFFFF' }), id: 'r4' },
+      { ...editReq(w.T[1]!, 'x', { conv: undefined }), id: 'r5' },
+      { ...editReq(w.T[1]!, 'x', { conv: 'c_ffffffffffffffff' }), id: 'r6' },
+    ];
+    for (const r of refuse) expect(await w.window.request(r), r.id).toMatchObject({ id: r.id, type: 'error' });
+    expect(await w.window.request(refuse[0]!)).toEqual({ id: 'r1', type: 'error', message: CONVERSATION_CHANGED_MESSAGE });
+    expect(await w.window.request(refuse[4]!)).toEqual({ id: 'r5', type: 'error', message: 'conv must be a conversation id like c_0123456789abcdef' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(w.runner.runs).toHaveLength(2);
   });
 
   it('Send is refused while a command runs (the busy rule)', async () => {
