@@ -22,7 +22,7 @@
 //   FAKE_CLAUDE_TRANSCRIPT_DIR  write <dir>/<session id>.jsonl at system/init, like Claude Code's transcript
 // Serve instance (docs/REVIEW-7.md R7-1): when the --mcp-config gives serve `--instance <id>`, the serve child takes
 // `<folder of the config>/../run/serve-<id>.lock` like `stephen serve` (O_EXCL, 0600, its pid), and logs
-// {pid, claim: first|restarted} to $FAKE_CLAUDE_SERVE_LOG. Like Claude Code, a dead serve child is started again when
+// {pid, claim: first|restarted} to $FAKE_CLAUDE_SERVE_LOG (FAKE_CLAUDE_SERVE_LOG_DELAY_MS later: a slow machine). Like Claude Code, a dead serve child is started again when
 // the next message comes. FAKE_CLAUDE_SERVE_DIES=midturn-1: kill the serve and start a new one in the middle of
 // message 1. FAKE_CLAUDE_SERVE_LATE_TOOL=<name>: on SIGTERM the serve
 // waits 50 ms, appends that tool to the --tool-log, then exits (a tool of a cancelled command finishing late).
@@ -47,7 +47,9 @@ export async function runStream({ argv, at, mode, logTools }) {
   if (lock) {
     parts.push(
       `let claim='first';try{fs.mkdirSync(${JSON.stringify(dirname(lock))},{recursive:true,mode:0o700});const fd=fs.openSync(${JSON.stringify(lock)},'wx',0o600);fs.writeSync(fd,process.pid+'\\n');fs.closeSync(fd)}catch(e){claim=e.code==='EEXIST'?'restarted':'error'}`,
-      env.FAKE_CLAUDE_SERVE_LOG ? `fs.appendFileSync(${JSON.stringify(env.FAKE_CLAUDE_SERVE_LOG)},JSON.stringify({pid:process.pid,claim})+'\\n');` : '',
+      env.FAKE_CLAUDE_SERVE_LOG
+        ? `setTimeout(()=>fs.appendFileSync(${JSON.stringify(env.FAKE_CLAUDE_SERVE_LOG)},JSON.stringify({pid:process.pid,claim})+'\\n'),${Number(env.FAKE_CLAUDE_SERVE_LOG_DELAY_MS ?? 0)});`
+        : '',
     );
   }
   if (env.FAKE_CLAUDE_SERVE_WRITES) {
@@ -74,8 +76,14 @@ export async function runStream({ argv, at, mode, logTools }) {
       child.once('exit', () => r());
       child.kill('SIGKILL');
     });
+  /**
+   * The current serve child has finished its claim: it tried the lock and wrote its line to the serve log. The lock
+   * file alone is not enough: it exists before the log line, so a kill in between lost the line (#109).
+   */
+  const claimed = () =>
+    !lock || !env.FAKE_CLAUDE_SERVE_LOG || (existsSync(env.FAKE_CLAUDE_SERVE_LOG) && readFileSync(env.FAKE_CLAUDE_SERVE_LOG, 'utf8').includes(`{"pid":${child.pid},`));
   /** The lock is taken before "connected" (like stephen serve, which claims before it connects). */
-  const lockTaken = () => !lock || existsSync(lock);
+  const lockTaken = () => !lock || (existsSync(lock) && claimed());
   startServe();
   if (mode === 'hang-stubborn') process.on('SIGTERM', () => {});
   const personaPath = at('--append-system-prompt-file');
@@ -151,7 +159,7 @@ export async function runStream({ argv, at, mode, logTools }) {
     if (env.FAKE_CLAUDE_SERVE_DIES === `midturn-${messages}`) {
       await killServe();
       startServe(); // the next tool call of this turn goes to a new serve
-      await new Promise((r) => setTimeout(r, 100)); // it has taken (or found) the lock
+      while (!claimed()) await new Promise((r) => setTimeout(r, 5)); // it has taken (or found) the lock
     }
     if (duration > 0) await new Promise((r) => setTimeout(r, duration));
     if (env.FAKE_CLAUDE_STEPS) {
