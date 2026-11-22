@@ -412,17 +412,18 @@ final class AppModel: ObservableObject {
 
   /**
    * ADR-010, [DEV REVIEW]: Send (or Return) in a Conversations row's inline editor, and nothing else, calls this. It
-   * sends the owner's text with the old message's id and the hash of its stored text; the listener builds the earlier
+   * sends the owner's text with the old message's id, the hash of its stored text and the conversation of the version
+   * on screen; the listener builds the earlier
    * turns from its own store and runs it through the normal send path (every Allow asked again). false (nothing sent)
    * when the text is empty, the listener is offline or a command runs.
    */
   @discardableResult
-  func editMessage(_ old: HistoryEntry, text raw: String) -> Bool {
+  func editMessage(_ old: HistoryEntry, viewing conv: String, text raw: String) -> Bool {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty, connection == .online, !isWorking, !old.conv.isEmpty else { return false }
+    guard !trimmed.isEmpty, connection == .online, !isWorking, !conv.isEmpty else { return false }
     let text = trimmed.count > APP_CHAT_MAX_CHARS ? String(trimmed.prefix(APP_CHAT_MAX_CHARS)) : trimmed
     addBubble(.said, text, detail: "")
-    request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), text: text)) { [weak self] msg in
+    request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), conv: conv, text: text)) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "chat.accepted", let entryId = msg.entryId {
         self.awaitingReplies.insert(entryId)

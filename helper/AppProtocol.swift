@@ -142,7 +142,10 @@ struct AppRequest: Encodable {
   var effort: String? = nil
   /** replay.set: the replay recorder switch (Settings > Privacy and permissions, the owner's click only). */
   var enabled: Bool? = nil
-  /** chat.resume: the conversation id ("c_" + 16 hex) of the Conversations row whose Open in chat was clicked. */
+  /**
+   * chat.resume: the conversation id ("c_" + 16 hex) of the Conversations row whose Open in chat was clicked.
+   * chat.edit (ADR-010): the conversation of the version on screen; the listener refuses a line outside that branch.
+   */
   var conv: String? = nil
   /** chat.edit (ADR-010): the edited message's command id and the SHA-256 hex of its stored text. Nothing else. */
   var oldId: String? = nil
@@ -169,8 +172,8 @@ struct AppRequest: Encodable {
    * ADR-010, [DEV REVIEW]: only Send (or Return) in a Conversations row's inline editor sends this
    * (AppModel.editMessage). The text is what the owner typed or checked; the listener builds the rest from the store.
    */
-  static func chatEdit(_ id: String, oldId: String, oldHash: String, text: String) -> AppRequest {
-    return AppRequest(id: id, type: "chat.edit", text: text, oldId: oldId, oldHash: oldHash)
+  static func chatEdit(_ id: String, oldId: String, oldHash: String, conv: String, text: String) -> AppRequest {
+    return AppRequest(id: id, type: "chat.edit", text: text, conv: conv, oldId: oldId, oldHash: oldHash)
   }
   static func historyVersions(_ id: String, entryId: String) -> AppRequest { return AppRequest(id: id, type: "history.versions", entryId: entryId) }
   /** ADR-010: only the confirm alert of "Delete this version" sends this (AppModel.deleteVersion). */

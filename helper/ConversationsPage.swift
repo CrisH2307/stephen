@@ -161,7 +161,7 @@ struct ConversationsPage: View {
                                    versions: model.versions[row.entry.id], busy: model.isWorking,
                                    linesFor: { conversationLines(entry: $0, audit: model.audit, parse: model.parseDate) },
                                    continueVersion: { openInChat($0) },
-                                   send: { old, text in sendEdit(old, text) },
+                                   send: { old, conv, text in sendEdit(old, conv, text) },
                                    deleteVersion: { model.deleteVersion($0) })
                     .id(row.entry.id)
                 }
@@ -204,8 +204,8 @@ struct ConversationsPage: View {
 
   /// ADR-010, [DEV REVIEW]: the one entry point of an edit and resend: Send (or Return) in a row's inline editor.
   /// The owner's own text goes out through the normal send path; nothing else on this page sends anything.
-  private func sendEdit(_ old: HistoryEntry, _ text: String) {
-    model.editMessage(old, text: text)
+  private func sendEdit(_ old: HistoryEntry, _ conv: String, _ text: String) {
+    model.editMessage(old, viewing: conv, text: text)
   }
 
   private var searchField: some View {
@@ -247,8 +247,8 @@ private struct ConversationItem: View {
   let linesFor: (HistoryEntry) -> [DoneLine]
   /// Open in chat for the shown version (only the shown version can be continued).
   let continueVersion: (String) -> Void
-  /// Send in the editor: the shown version and the owner's text.
-  let send: (HistoryEntry, String) -> Void
+  /// Send in the editor: the shown version, the conversation on screen (that version's) and the owner's text.
+  let send: (HistoryEntry, String, String) -> Void
   let deleteVersion: (String) -> Void
 
   /// The version shown (its entry id); nil = the row's own entry.
@@ -377,7 +377,7 @@ private struct ConversationItem: View {
 
   private func sendDraft() {
     guard !busy, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-    send(shown, draft)
+    send(shown, shown.conv, draft)
     editing = false
   }
 }
