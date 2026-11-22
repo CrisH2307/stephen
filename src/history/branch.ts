@@ -122,3 +122,28 @@ export function editContext(entries: readonly HistoryEntry[], oldId: string, old
   if (versionsOf(entries, oldId).length >= MAX_VERSIONS) return { refused: TOO_MANY_VERSIONS_MESSAGE };
   return { editOf: { conv: old.conv, id: old.id, ts: Date.parse(old.ts) }, source: old.source, earlier: view.slice(0, at), replaced: view.slice(at) };
 }
+
+export const VERSION_GONE_MESSAGE = 'That message is no longer saved.';
+export const NOT_A_VERSION_MESSAGE = 'Only a message with more than one version can be deleted here.';
+export const VERSION_IN_USE_MESSAGE = 'Another version still uses these messages.';
+
+/**
+ * Why "Delete this version" of message `entryId` is refused, or null when it may go (ADR-010 Decision 4: nothing is
+ * deleted silently). Refused when the message is gone, has fewer than two versions, is not a version's own line (the
+ * original or a branch's first line), or when another branch still shows one of the lines it would delete (that
+ * message and the later lines of its conversation) as its earlier part. Refusing loses nothing; the owner can
+ * delete the branch that uses them first.
+ */
+export function deleteVersionRefusal(entries: readonly HistoryEntry[], entryId: string): string | null {
+  const line = entries.find((e) => e.id === entryId);
+  if (!line?.conv) return VERSION_GONE_MESSAGE;
+  const versions = versionsOf(entries, entryId);
+  if (versions.length < 2 || !versions.some((v) => v.id === entryId)) return NOT_A_VERSION_MESSAGE;
+  const fromMs = Date.parse(line.ts);
+  const gone = new Set(entries.filter((e) => e.conv === line.conv && (e.id === entryId || Date.parse(e.ts) > fromMs)).map((e) => e.id));
+  const others = new Set(entries.filter((e) => e.conv && e.conv !== line.conv && firstOfBranch(entries, e)).map((e) => e.conv!));
+  for (const conv of others) {
+    if (branchView(entries, conv).lines.some((e) => e.conv !== conv && gone.has(e.id))) return VERSION_IN_USE_MESSAGE;
+  }
+  return null;
+}

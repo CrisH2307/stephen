@@ -24,7 +24,7 @@ import { LineFramer } from '../helper/framing.js';
 import type { MediaKeyAction } from '../helper/protocol.js';
 import { listenPrivateSocket, type PrivateSocket } from '../lib/private-socket.js';
 import { MAX_REPLY_CHARS, MAX_SAID_CHARS, newHistoryId, type HistoryEntry, type HistoryStore } from '../history/store.js';
-import { branchView, editContext, versionsOf, type EditContext } from '../history/branch.js';
+import { VERSION_GONE_MESSAGE, branchView, deleteVersionRefusal, editContext, versionsOf, type EditContext } from '../history/branch.js';
 import { quotePrompt } from '../history/resume.js';
 import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/store.js';
 import type { ProposalStore } from '../memory/proposals.js';
@@ -68,7 +68,7 @@ export const MEMORY_OFF_MESSAGE = 'Memory is off (memory.enabled is false in con
 export const MEMORY_GONE_MESSAGE = "That memory doesn't exist any more.";
 export const PROPOSAL_GONE_MESSAGE = 'That suggestion is no longer waiting.';
 export const ONLY_WINDOW_EDITS_MESSAGE = 'Only the Stephen window can edit a message.';
-export const VERSION_GONE_MESSAGE = 'That message is no longer saved.';
+export { VERSION_GONE_MESSAGE };
 
 /** Where typed chat runs (Listener.submit + Assistant.command in `stephen listen`). */
 export interface AppCommandQueue {
@@ -466,15 +466,21 @@ export class AppServer {
     this.startChat(sock, req.id, text, req.text.trim(), edit);
   }
 
-  /** history.deleteVersion (ADR-010): the window's "Delete this version" click, behind a confirm in the helper. */
+  /**
+   * history.deleteVersion (ADR-010), [DEV REVIEW]: the window's "Delete this version" click, behind a confirm in the
+   * helper. Checked here, not trusted from the page: only a version's own line of a message with two or more versions,
+   * and never while another branch still shows a line it would delete (deleteVersionRefusal).
+   */
   private deleteVersion(sock: Socket, req: Extract<AppRequest, { type: 'history.deleteVersion' }>): AppMessage {
     if (!this.isWindow(sock)) return { id: req.id, type: 'error', message: 'Only the Stephen window can delete a version.' };
     const history = this.o.history;
     if (!history?.all || !history.deleteVersion) return { id: req.id, type: 'error', message: 'not available in this listener' };
     try {
-      const e = history.all().find((x) => x.id === req.entryId);
-      if (!e?.conv) return { id: req.id, type: 'error', message: VERSION_GONE_MESSAGE };
-      history.deleteVersion(e.conv, e.id);
+      const all = history.all();
+      const why = deleteVersionRefusal(all, req.entryId);
+      if (why !== null) return { id: req.id, type: 'error', message: why };
+      const e = all.find((x) => x.id === req.entryId)!;
+      history.deleteVersion(e.conv!, e.id);
       return { id: req.id, type: 'ok' };
     } catch (e) {
       return { id: req.id, type: 'error', message: (e as Error).message || 'could not delete that version' };
