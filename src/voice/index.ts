@@ -21,7 +21,8 @@ import { writeReplaySwitch } from '../app/replay-switch.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
 import { HistoryStore } from '../history/store.js';
-import { ResumeArm, conversationEntries, resumePrompt } from '../history/resume.js';
+import { ResumeArm, conversationEntries, quotePrompt } from '../history/resume.js';
+import { branchView } from '../history/branch.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
 import { buildNameList } from './names.js';
 import { MemoryStore } from '../memory/store.js';
@@ -658,12 +659,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     const server = new AppServer({
       home,
       // The window's next message after "Open in chat" takes the armed resume (ADR-007 v2). Stored turns go in only
-      // through resumePrompt's wrapper, under the content rule for that command's trust.
+      // through the one wrapper, under the content rule for that command's trust. An edited branch (ADR-010) sends
+      // its branch view: the earlier turns it points to, then its own lines.
       queue: listenerQueue(l, a, () => {
         const conv = resumeArm.take();
         if (!conv) return null;
-        const entries = () => conversationEntries((o) => history.list(o), conv);
-        return { saved: () => entries().length > 0, prompt: (m: string, trust: Trust) => resumePrompt(entries(), conv, trust, m) };
+        const turns = () => branchView(history.all(), conv).lines;
+        return { saved: () => turns().length > 0, prompt: (m: string, trust: Trust) => quotePrompt(turns(), trust, m) };
       }),
       resume: {
         arm: (conv: string) => {
