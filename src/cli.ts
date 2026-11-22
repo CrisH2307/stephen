@@ -237,7 +237,7 @@ async function doctor(network = false, json = false): Promise<number> {
     ok: nodeSupported(process.versions.node),
     label: `Node.js ${NODE_RANGE}`,
     detail: process.versions.node,
-    fix: 'Install Node 24 (the version CI uses): https://nodejs.org or `brew install node@24`. Older Node cannot run the tests.',
+    fix: 'Install Node 24 (the version CI uses): https://nodejs.org or `brew install node@24`. Node 21 is not supported.',
     blocking: true,
   });
 
