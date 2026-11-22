@@ -522,7 +522,12 @@ export class JobManager {
       // ADR-010: an edited code job's new branch is cut from the old job's branch; the old worktree is never used.
       const from = plan.edit?.fromBranch ? [`refs/heads/${plan.edit.fromBranch}`] : [];
       const r = await (this.o.git ?? defaultGit)(['-C', plan.repo.path, 'worktree', 'add', join(folder, 'repo'), '-b', plan.repo.branch, ...from]);
-      if (r.code !== 0) return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
+      if (r.code !== 0) {
+        // [DEV REVIEW] Nothing half-made stays behind: the claimed job folder and meta folder go, as for a failed copy.
+        rmSync(folder, { recursive: true, force: true });
+        rmSync(metaDir, { recursive: true, force: true });
+        return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
+      }
     } else if (plan.edit) {
       // ADR-010 [DEV REVIEW]: a copy of the old job's folder (shown in the dialog), checked against the caps again as it
       // copies. Over them, or anything failing: the new folders go and nothing is started. The old folder is only read.
