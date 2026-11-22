@@ -308,7 +308,8 @@ function instanceSetup(env: Record<string, string> = {}) {
 
 describe('WarmClaude with a serve instance (R7-1)', () => {
   it('each process gets its own instance; the serve pid comes from the lock; kill() deletes the lock', async () => {
-    const t = instanceSetup();
+    // The serve writes its claim line 100 ms after the lock, like a busy CI runner (#109): ready() must wait for it.
+    const t = instanceSetup({ FAKE_CLAUDE_SERVE_LOG_DELAY_MS: '100' });
     const p = new WarmClaude(t.o, undefined);
     await p.ready();
     const inst = t.made[0]!;
@@ -342,7 +343,7 @@ describe('WarmClaude with a serve instance (R7-1)', () => {
   });
 
   it('serve restarted inside a command: the restarted one finds the lock taken, and the command is an error', async () => {
-    const t = instanceSetup({ FAKE_CLAUDE_SERVE_DIES: 'midturn-1' });
+    const t = instanceSetup({ FAKE_CLAUDE_SERVE_DIES: 'midturn-1', FAKE_CLAUDE_SERVE_LOG_DELAY_MS: '150' });
     const p = new WarmClaude(t.o, undefined);
     await p.ready();
     const out = await p.turn('read my email and open the link in it');
