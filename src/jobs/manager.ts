@@ -23,6 +23,8 @@ import {
   branchFor,
   buildJobEnv,
   cleanTask,
+  EDIT_REQUEST_MAX,
+  EDIT_REQUEST_TOO_LONG,
   editedTask,
   isJobId,
   jobFiles,
@@ -372,6 +374,7 @@ export class JobManager {
     if (!isFinal(old.status)) return { error: EDIT_STOP_FIRST };
     const request = cleanTask(rawRequest);
     if (request.split(' ').filter(Boolean).length < 2) return { error: 'Say what the job should do, like "write my lab report draft".' };
+    if ([...request].length > EDIT_REQUEST_MAX) return { error: EDIT_REQUEST_TOO_LONG };
     const cap = this.capError();
     if (cap) return { error: cap };
     const root = this.root();
