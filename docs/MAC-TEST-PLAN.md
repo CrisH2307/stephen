@@ -768,6 +768,8 @@ phone.
   See: an error "This conversation changed. Open it again." (or "That conversation is no longer saved."). Nothing is sent to the model.
 - [ ] `[hands]` **21.9** Do: on the "Version 2 of 2" row, show version 2 and click "Delete this version". Click Cancel, then do it again and click Delete.
   See: `[DEV REVIEW]` a confirm alert "Delete this version?" comes first. Cancel keeps everything. Delete removes only the edited message and what followed it in that version. Version 1 and the earlier turns stay.
+- [ ] `[hands]` **21.9b** Do: edit a message again so it has two versions, show version 1 and click "Delete this version", then Delete. Open version 2 in chat and ask "what did I ask before this?".
+  See: version 1 and what followed it are gone. Version 2 shows no "earlier part has expired" line, and Stephen still knows the turns before the edited message.
 - [ ] `[hands]` **21.10** Do: show version 2 of a row and click "Open in chat", then type a follow-up on Home.
   See: Stephen continues version 2 (it knows "play jazz", not the old later turns). "Continuing an earlier chat" shows as in section 20.
 - [ ] `[hands]` **21.11** Do: edit the wake-word row's text and send it. Note `app.speakReplies` in config.json.
