@@ -68,6 +68,7 @@ struct JobsView: View {
         Text(verbatim: "Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it.")
           .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
         if let n = model.jobsNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
+        if let s = model.jobStarted { Text(verbatim: s).font(TypeScale.secondary).foregroundColor(t.ink2) }
         if model.jobs.isEmpty {
           Text(verbatim: "No jobs yet. Say \"start a job to find 5 internships\".").font(TypeScale.body).foregroundColor(t.ink2)
         }
@@ -159,6 +160,8 @@ private struct JobItem: View {
           Text(verbatim: bodyText).font(TypeScale.secondary).foregroundColor(t.ink).textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
           Text(verbatim: "\(job.turns) turns").font(TypeScale.secondary).foregroundColor(t.ink2)
+          // ADR-010: the job's real id (an edited job's -v<N>), shown once it exists; the dialog never names it.
+          Text(verbatim: "Job \(job.id)").font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)
           if !job.folder.isEmpty {
             QuietButton("Open output folder", symbol: "folder") {
               NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.folder)])
