@@ -30,7 +30,7 @@ release PR. Each section names the PRs it checks.
 | 12 | UI v3.2 | 11 | 0 |
 | 13 | Latency monitor and command id | 9 | 11 |
 | 14 | Week of 2026-11-12: fixes merged into qa | 33 | 5 |
-| 15 | Fixes of 2026-11-16 and 17 | 10 | 1 |
+| 15 | Fixes of 2026-11-16 and 17 | 11 | 1 |
 | 16 | Merges of 2026-11-17 | 17 | 0 |
 | 17 | UI v4 step c: Settings, sidebar resize | 8 | 0 |
 | 18 | UI v4 step d: Memory and Jobs | 9 | 0 |
@@ -566,6 +566,8 @@ At the end, remove your memory test items: `node dist/cli.js memory list`, then 
 ### 15.1 Questions do not save memory (PR #128, issue #122)
 - [ ] `[hands]` **15.1** Do: hold F5 and say "Can you remember my sister's name". Then hold F5 and say "Don't forget my keys". Then run `node dist/cli.js memory list`.
   See: Stephen answers both like normal questions. Nothing new is in the list. (R10b-1, R10b-3, #122, #128)
+- [ ] `[hands]` **15.1b** Do: type "remember that? I parked on level 3" in the Ask box and press Return. Then hold F5 and say the same line, with a question in your voice after "remember that". Then run `node dist/cli.js memory list`.
+  See: Stephen answers both like normal requests. Nothing new is in the list, typed or spoken. (#261) If the spoken words show no "?", say so in the issue.
 - [ ] `[hands]` **15.2** Do: say "Hey Stephen, remember that my gym is Goodlife" with the wake word. Then say "Hey Stephen, keep in mind that my bike is blue".
   See: the first one asks first, and the question says `You said "remember that …"`. Click Deny. The second one asks nothing and saves nothing. (R10b-4, #122, #128)
 
