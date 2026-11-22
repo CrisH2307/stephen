@@ -10,8 +10,12 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   CONVERSATION_CHANGED_MESSAGE,
   MAX_VERSIONS,
+  NOT_A_VERSION_MESSAGE,
   TOO_MANY_VERSIONS_MESSAGE,
+  VERSION_GONE_MESSAGE,
+  VERSION_IN_USE_MESSAGE,
   branchView,
+  deleteVersionRefusal,
   editContext,
   textHash,
   versionsOf,
@@ -147,6 +151,14 @@ describe('ADR-010 store and model', () => {
     expect(all.find((e) => e.id === future.id)).not.toHaveProperty('editOf');
     expect(w.store.list({ limit: 100 }).find((e) => e.id === old.id)).not.toHaveProperty('editOf');
     expect(branchView(all, old.conv!).lines.map((e) => e.said)).toEqual(['edited long ago']);
+    // It still reads as an edit whose earlier part expired, not as a conversation of its own.
+    expect(all.find((e) => e.id === old.id)?.editExpired).toBe(true);
+    expect(branchView(all, old.conv!).expired).toBe(true);
+    expect(branchView(all, future.conv!).expired).toBe(true);
+    expect(all.find((e) => e.id === x.id)).not.toHaveProperty('editExpired');
+    expect(branchView(all, x.conv!).expired).toBe(false);
+    // The marker is computed on read, never read from a stored line.
+    expect(parseHistoryEntry({ ...old, editExpired: true })).not.toHaveProperty('editExpired');
   });
 
   it('retention: an expired T1 is not shown and not sent; the page shows the "expired" line', () => {
@@ -205,6 +217,44 @@ describe('ADR-010 store and model', () => {
     w.store.clear();
     expect(w.store.all()).toEqual([]);
   });
+
+  it('Delete this version is refused for a single version and for a line that is not a version\'s own line', () => {
+    const w = world();
+    const x = w.edit(w.T[2]!, 'turn 3, v2');
+    const x2 = w.add('more in v2', { conv: x.conv! });
+    const all = w.store.all();
+    expect(deleteVersionRefusal(all, w.T[1]!.id)).toBe(NOT_A_VERSION_MESSAGE); // one version only
+    expect(deleteVersionRefusal(all, w.T[3]!.id)).toBe(NOT_A_VERSION_MESSAGE); // a later line of version 1
+    expect(deleteVersionRefusal(all, x2.id)).toBe(NOT_A_VERSION_MESSAGE); // a later line of version 2
+    expect(deleteVersionRefusal(all, 'h_ffffffffffffffff')).toBe(VERSION_GONE_MESSAGE);
+    expect(deleteVersionRefusal(all, x.id)).toBeNull();
+    expect(deleteVersionRefusal(all, w.T[2]!.id)).toBeNull();
+  });
+
+  it('Delete this version never cuts shared history another branch still needs', () => {
+    // C has T1 ... T5; T2 and T4 are both edited (C2, C3). Version 1 of T2 would delete T3 and T4, which C3 shows.
+    const w = world();
+    const t5 = w.add('turn 5', { conv: w.C });
+    const c2 = w.edit(w.T[1]!, 'turn 2, v2');
+    const c3 = w.edit(w.T[3]!, 'turn 4, v2');
+    let all = w.store.all();
+    expect(branchView(all, c3.conv!).lines.map((e) => e.said)).toEqual(['turn 1', 'turn 2', 'turn 3', 'turn 4, v2']);
+    expect(deleteVersionRefusal(all, w.T[1]!.id)).toBe(VERSION_IN_USE_MESSAGE);
+    // Version 1 of T4 cuts only T4 and T5, which no other branch needs; C2 and C3 stay whole.
+    expect(deleteVersionRefusal(all, w.T[3]!.id)).toBeNull();
+    // Version 2 of either message uses nothing of the other.
+    expect(deleteVersionRefusal(all, c2.id)).toBeNull();
+    expect(deleteVersionRefusal(all, c3.id)).toBeNull();
+    // Once C3 is gone, version 1 of T2 may go, and C2 keeps T1.
+    w.store.deleteVersion(c3.conv!, c3.id);
+    all = w.store.all();
+    expect(deleteVersionRefusal(all, w.T[1]!.id)).toBeNull();
+    w.store.deleteVersion(w.C, w.T[1]!.id);
+    all = w.store.all();
+    expect(all.map((e) => e.said)).toEqual(['turn 1', 'turn 2, v2']);
+    expect(branchView(all, c2.conv!).lines.map((e) => e.said)).toEqual(['turn 1', 'turn 2, v2']);
+    expect(all.some((e) => e.id === t5.id)).toBe(false);
+  });
 });
 
 describe('ADR-010 context', () => {
@@ -248,6 +298,17 @@ describe('ADR-010 context', () => {
     const r = quotePrompt(huge, 'trusted', 'next', ctx.replaced);
     expect(Buffer.byteLength(wrapper(r), 'utf8')).toBeLessThanOrEqual(RESUME_MAX_BYTES);
     expect(wrapper(r)).toContain('[cut to fit]');
+  });
+
+  it('a step line done for a wake-word or phone turn names its source, like the turn', () => {
+    const w = world();
+    const C = newConversationId();
+    const old = w.add('read my mail', { conv: C, source: 'voice-ptt', steps: [{ text: 'Used gmail_search', status: 'ok' }] });
+    w.add('play lofi', { conv: C, source: 'voice-wake', steps: [{ text: 'navigate youtube.com', status: 'ok' }] });
+    w.add('what time is it', { conv: C, source: 'phone', steps: [{ text: 'Used weather_now', status: 'ok' }] });
+    const ctx = ctxOf(w.store.all(), old);
+    const lines = wrapper(quotePrompt(ctx.earlier, 'trusted', 'read my mail again', ctx.replaced)).split('\n');
+    expect(lines.slice(lines.indexOf(EDIT_DONE_HEAD) + 1, -1)).toEqual(['- Used gmail_search', '- (wake word) navigate youtube.com', '- (phone) Used weather_now']);
   });
 
   it('the replaced turns Tk ... Tn and other branches are never in the prompt (only their step lines)', () => {
