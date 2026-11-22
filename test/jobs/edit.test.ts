@@ -6,13 +6,13 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { AppServer } from '../../src/app/server.js';
-import { COPY_MAX_FILES, COPY_TOO_BIG, EDIT_STOP_FIRST, copyJobFolder } from '../../src/jobs/manager.js';
+import { COPY_GONE, COPY_MAX_FILES, COPY_TOO_BIG, EDIT_STOP_FIRST, copyJobFolder, type GitFn } from '../../src/jobs/manager.js';
 import { JobRouter } from '../../src/jobs/router.js';
-import { EDIT_RECORD_HEAD, TASK_MAX, editedTask, requestOf } from '../../src/jobs/spec.js';
+import { EDIT_RECORD_HEAD, EDIT_REQUEST_MAX, EDIT_REQUEST_TOO_LONG, TASK_MAX, editedTask, requestOf } from '../../src/jobs/spec.js';
 import { parseJobState, readJobState, statePath, writeJobState, type JobState } from '../../src/jobs/state.js';
 import type { ConfirmPrompt } from '../../src/types.js';
 import { appJobs, jobVersions } from '../../src/voice/job-rows.js';
@@ -464,6 +464,124 @@ describe('code jobs: a NEW worktree branch cut from the old job\'s branch; the o
     const r = await new JobRouter({ jobs: h.manager, confirmer: d.confirmer }).editJob(old.id, 'fix the tests in myapp again');
     expect(r).toEqual({ refused: `The old job's branch ${old.repo!.branch} is gone. Start a new job instead.` });
     expect(d.shown).toEqual([]);
+  });
+});
+
+describe('review fixes: a symlink swap while the dialog is open, a failed worktree add, the edited text kept whole', () => {
+  /** A folder outside the job root with a secret, standing in for ~/.ssh. */
+  const secretDir = (name: string) => {
+    const d = join(tmp, name);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, 'id_ed25519'), 'SECRET KEY');
+    return d;
+  };
+  const anyFileHolds = (dir: string, text: string): boolean =>
+    readdirSync(dir, { recursive: true, withFileTypes: true }).some((e) => e.isFile() && readFileSync(join(e.parentPath, e.name), 'utf8').includes(text));
+
+  it('the top folder swapped for a symlink after planning: nothing is copied, the start fails closed, no new folders', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    writeFileSync(join(old.folder, 'draft.md'), 'draft');
+    const p = await h.manager.planEdit(old.id, 'write my lab report draft again');
+    if ('error' in p) throw new Error(p.error);
+    // While the dialog is open: the old folder becomes a symlink to the secret folder.
+    renameSync(old.folder, `${old.folder}.moved`);
+    symlinkSync(secretDir('ssh-top'), old.folder);
+    const root = readdirSync(h.root).sort();
+    const jobs = readdirSync(join(h.home, 'jobs')).sort();
+    expect(await h.manager.start(p, 'app')).toEqual({ refused: COPY_GONE });
+    expect(readdirSync(h.root).sort()).toEqual(root);
+    expect(readdirSync(join(h.home, 'jobs')).sort()).toEqual(jobs);
+    expect(existsSync(p.folder)).toBe(false);
+    expect(anyFileHolds(join(h.home, 'jobs'), 'SECRET KEY')).toBe(false);
+  });
+
+  it('a subfolder swapped for a symlink between the check and the read: the copy fails closed and copies nothing of it', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    mkdirSync(join(old.folder, 'notes'));
+    writeFileSync(join(old.folder, 'notes', 'a.txt'), 'note');
+    const dst = join(tmp, 'sub-swap-dst');
+    mkdirSync(dst);
+    const outside = secretDir('ssh-sub');
+    const swap = (dir: string) => {
+      if (dir !== join(old.folder, 'notes')) return;
+      renameSync(dir, `${dir}.moved`);
+      symlinkSync(outside, dir);
+    };
+    expect(copyJobFolder(old.folder, dst, swap)).toEqual({ error: COPY_GONE });
+    expect(anyFileHolds(dst, 'SECRET KEY')).toBe(false);
+  });
+
+  it('a subfolder swapped for a symlink after planning: the start copies the rest and never follows it', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    mkdirSync(join(old.folder, 'notes'));
+    writeFileSync(join(old.folder, 'notes', 'a.txt'), 'note');
+    const p = await h.manager.planEdit(old.id, 'write my lab report draft again');
+    if ('error' in p) throw new Error(p.error);
+    rmSync(join(old.folder, 'notes'), { recursive: true });
+    symlinkSync(secretDir('ssh-sub2'), join(old.folder, 'notes'));
+    const s = await h.manager.start(p, 'app');
+    if ('refused' in s) throw new Error(s.refused);
+    expect(existsSync(join(s.folder, 'notes'))).toBe(false);
+    expect(anyFileHolds(s.folder, 'SECRET KEY')).toBe(false);
+  });
+
+  it('a code job whose worktree add fails after approval: the claimed job folder and meta folder are removed', async () => {
+    const repo = join(tmp, 'edit-repo5', 'myapp');
+    mkdirSync(repo, { recursive: true });
+    const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+    git(repo, 'init', '-q', '-b', 'main');
+    writeFileSync(join(repo, 'README.md'), '# app\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-q', '-m', 'init');
+    let failWorktree = false;
+    const gitFn: GitFn = async (args) => {
+      if (failWorktree && args.includes('worktree')) return { code: 128, stdout: '', stderr: 'fatal: could not create work tree' };
+      try {
+        return { code: 0, stdout: execFileSync('git', args as string[], { encoding: 'utf8' }), stderr: '' };
+      } catch (e) {
+        return { code: 1, stdout: '', stderr: String((e as { stderr?: string }).stderr ?? '') };
+      }
+    };
+    const h = harness(tmp, { jobs: { repos: { myapp: repo } }, git: gitFn });
+    const old = await oldJob(h, 'fix the tests in myapp');
+    failWorktree = true;
+    const root = readdirSync(h.root).sort();
+    const jobs = readdirSync(join(h.home, 'jobs')).sort();
+    const r = await new JobRouter({ jobs: h.manager, confirmer: dialog('approved').confirmer }).editJob(old.id, 'fix the tests in myapp again');
+    expect(r).toEqual({ refused: expect.stringMatching(/couldn't make a git worktree of myapp \(fatal: could not create work tree\)/) });
+    expect(readdirSync(h.root).sort()).toEqual(root);
+    expect(readdirSync(join(h.home, 'jobs')).sort()).toEqual(jobs);
+    // A new (not edited) code job fails the same way, and leaves nothing either.
+    const p = await h.manager.plan('fix the lint in myapp');
+    if ('error' in p) throw new Error(p.error);
+    expect(await h.manager.start(p, 'voice-ptt')).toHaveProperty('refused');
+    expect(readdirSync(h.root).sort()).toEqual(root);
+    expect(readdirSync(join(h.home, 'jobs')).sort()).toEqual(jobs);
+  });
+
+  it(`an edited request of ${EDIT_REQUEST_MAX} characters is kept whole, even after a long old request; one more is refused`, async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, `write ${'my lab report draft '.repeat(30)}`.trim());
+    expect([...old.task].length).toBe(TASK_MAX); // the longest old request
+    const max = `write ${'x'.repeat(EDIT_REQUEST_MAX - 6)}`;
+    expect([...max].length).toBe(EDIT_REQUEST_MAX);
+    const d = dialog('approved');
+    const router = new JobRouter({ jobs: h.manager, confirmer: d.confirmer });
+    const r = await router.editJob(old.id, max);
+    if ('refused' in r) throw new Error(r.refused);
+    expect([...r.task].length).toBeLessThanOrEqual(TASK_MAX);
+    expect(r.task.endsWith(` Edited request: ${max}`)).toBe(true);
+    expect(requestOf(r.task)).toBe(max);
+    expect(d.shown[0]!.body).toContain(max);
+    // One character more: refused with the message, before any dialog.
+    writeJobState(h.home, { ...r, status: 'done', endedAt: NOW });
+    const before = d.shown.length;
+    expect(await router.editJob(r.id, `${max}y`)).toEqual({ refused: EDIT_REQUEST_TOO_LONG });
+    expect(EDIT_REQUEST_TOO_LONG).toBe(`The edited request is too long (at most ${EDIT_REQUEST_MAX} characters). Shorten it and try again.`);
+    expect(d.shown.length).toBe(before);
   });
 });
 
