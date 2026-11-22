@@ -49,8 +49,8 @@ import {
   zenLauncherAppPath,
 } from './zen-launcher.js';
 
-/** The Node lines Stephen supports: vitest 5's engines (rolldown needs util.styleText). Same as package.json engines. */
-export const NODE_RANGE = '^22.12.0 || ^24.0.0 || >=26.0.0';
+/** The Node versions Stephen supports (the dev lane's policy, #249). Same as package.json engines. */
+export const NODE_RANGE = '^20.19.0 || >=22.12.0';
 const MIN_CHROME = 144;
 
 const HELP = `stephen ${packageVersion()} — lets Claude use your Mac's browsers (Zen and Chrome), from Claude Code or by voice
@@ -191,10 +191,10 @@ interface Check {
   info?: boolean;
 }
 
-/** Is this Node version in NODE_RANGE? (22.12 or newer 22.x, any 24.x, 26 or newer; odd lines 23 and 25 are out.) */
+/** Is this Node version in NODE_RANGE? (20.19 or newer 20.x, or 22.12 and newer; all of 21 is out: no util.styleText.) */
 export function nodeSupported(v: string): boolean {
   const [maj = 0, minor = 0] = v.replace(/^v/, '').split('.').map(Number);
-  return (maj === 22 && minor >= 12) || maj === 24 || maj >= 26;
+  return (maj === 20 && minor >= 19) || (maj === 22 && minor >= 12) || maj > 22;
 }
 
 function majorOf(version: string | null): number | null {
