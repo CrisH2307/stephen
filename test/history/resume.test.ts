@@ -11,7 +11,7 @@ import {
   RESUME_WRAPPER_HEAD,
   ResumeArm,
   conversationEntries,
-  mayReplay,
+  mayQuote,
   resumePrompt,
   storedTrust,
 } from '../../src/history/resume.js';
@@ -109,7 +109,7 @@ describe('ADR-007 v2: the content rule', () => {
       it(`content rule: stored ${stored}, current ${current}: ${expected ? 'replayed' : 'not replayed'}`, () => {
         const said = `turn from ${stored}`;
         const p = resumePrompt([entry(said, 'reply', SOURCES[stored])], CONV, current, 'next');
-        expect(mayReplay(SOURCES[stored], current)).toBe(expected);
+        expect(mayQuote(SOURCES[stored], current)).toBe(expected);
         expect(p.includes(said)).toBe(expected);
         if (expected) expect(wrapper(p)).toContain(said);
       });
@@ -127,8 +127,8 @@ describe('ADR-007 v2: the content rule', () => {
   it('a line whose source is unknown is treated as phone', () => {
     expect(storedTrust('telegram')).toBe('phone');
     expect(storedTrust(undefined)).toBe('phone');
-    expect(mayReplay('telegram', 'wake')).toBe(true);
-    expect(mayReplay('telegram', 'phone')).toBe(true);
+    expect(mayQuote('telegram', 'wake')).toBe(true);
+    expect(mayQuote('telegram', 'phone')).toBe(true);
     // And labelled as one: never as the owner at the Mac.
     const odd = { ...entry('from somewhere new', 'reply'), source: 'telegram' as HistorySource };
     expect(wrapper(resumePrompt([odd], CONV, 'trusted', 'x'))).toContain('You (phone): from somewhere new');

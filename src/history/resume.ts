@@ -5,7 +5,7 @@
  *
  *  - Entry point: the owner's click on a Conversations row arms a resume (app.sock `chat.resume`, ResumeArm below).
  *    The owner's next message sent from the window is the new message. Any other command clears the arm.
- *  - Content rule (ADR-007 rule 5): a stored turn is replayed only if the new command's trust is at least that turn's
+ *  - Content rule (ADR-007 rule 5): a stored turn is quoted only if the new command's trust is at least that turn's
  *    trust (phone < wake < trusted, from its `source` through trustOf; a source this build does not know counts as
  *    phone).
  *  - At most RESUME_MAX_TURNS turns and RESUME_MAX_BYTES bytes, newest kept. Step lines are never sent.
@@ -36,8 +36,8 @@ export function storedTrust(source: unknown): Trust {
   return (HISTORY_SOURCES as readonly unknown[]).includes(source) ? trustOf(source as HistorySource) : 'phone';
 }
 
-/** The content rule: may a turn stored from `source` be replayed to a command of trust `current`? */
-export function mayReplay(source: unknown, current: Trust): boolean {
+/** The content rule: may a turn stored from `source` be quoted to a command of trust `current`? */
+export function mayQuote(source: unknown, current: Trust): boolean {
   return RANK[current] >= RANK[storedTrust(source)];
 }
 
@@ -52,13 +52,13 @@ function turnLines(e: HistoryEntry): string {
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
 
 /**
- * The first prompt of a resumed chat: the wrapper with the replayable turns of `conv` (oldest first; at most
- * RESUME_MAX_TURNS and RESUME_MAX_BYTES, newest kept), then the owner's new message. No replayable turn: the message
+ * The first prompt of a resumed chat: the wrapper with the quotable turns of `conv` (oldest first; at most
+ * RESUME_MAX_TURNS and RESUME_MAX_BYTES, newest kept), then the owner's new message. No quotable turn: the message
  * alone. `entries` may be in any order and hold other conversations.
  */
 export function resumePrompt(entries: readonly HistoryEntry[], conv: string, current: Trust, message: string): string {
   const turns = entries
-    .filter((e) => e.conv === conv && mayReplay(e.source, current))
+    .filter((e) => e.conv === conv && mayQuote(e.source, current))
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
   const kept: string[] = [];
   let size = bytes(RESUME_WRAPPER_HEAD) + bytes(RESUME_WRAPPER_END) + 2;
