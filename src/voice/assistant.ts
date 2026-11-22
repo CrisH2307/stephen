@@ -99,6 +99,18 @@ export interface ResumeRequest {
   /** The conversation still has stored turns. False: nothing is sent and the owner is told (RESUME_GONE_MESSAGE). */
   saved(): boolean;
   prompt(message: string, trust: Trust): string;
+  /**
+   * Edit and resend (ADR-010): the message this one is a new version of, and that message's source. Only the window's
+   * chat.edit sets it (src/app/server.ts listenerQueue). The history line gets editOf; the audit line names it.
+   */
+  edit?: EditedMessage;
+}
+
+/** The message an edit replaces (ADR-010): its conversation, its command id and its source. */
+export interface EditedMessage {
+  conv: string;
+  id: string;
+  source: CommandSource;
 }
 
 /** A resume whose conversation is gone: the owner's message is not sent anywhere; this is the reply. */
@@ -134,6 +146,8 @@ export interface CommandReport {
   silenceMs?: number;
   /** Conversation id (ADR-007): the same for every command of one conversation, a new one when a conversation starts. */
   conv?: string;
+  /** Edit and resend (ADR-010): the message this command is a new version of (ResumeRequest.edit). */
+  editOf?: EditedMessage;
 }
 
 export interface AssistantOptions {
@@ -229,10 +243,11 @@ export class Assistant {
     let replyAt = t0;
     let conv = this.conv ?? newConversationId();
     this.conv = conv;
-    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs' | 'conv'>): CommandReport => {
+    let editOf: EditedMessage | undefined;
+    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs' | 'conv' | 'editOf'>): CommandReport => {
       // A failed or cancelled Claude run ends the conversation (conversation.ts): the next command gets a new id.
       if (r.ranClaude && r.outcome !== 'ok') this.conv = null;
-      const full: CommandReport = { ...r, id, source, said, conv, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0), ...(this.silenceMs !== undefined ? { silenceMs: this.silenceMs } : {}) };
+      const full: CommandReport = { ...r, id, source, said, conv, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0), ...(editOf ? { editOf } : {}), ...(this.silenceMs !== undefined ? { silenceMs: this.silenceMs } : {}) };
       try {
         this.o.onDone?.(full);
       } catch (e) {
@@ -254,10 +269,11 @@ export class Assistant {
           await this.deliver(RESUME_GONE_MESSAGE, false, opts.speak, t0);
           return report({ result: 'error', outcome: 'error', reply: RESUME_GONE_MESSAGE, ranClaude: false, followUp: false, turns: 0 });
         }
-        // A resumed chat starts a new conversation: the old one ends first.
+        // A resumed chat (and an edit, ADR-010) starts a new conversation: the old one ends first.
         this.endConversation();
         conv = newConversationId();
         this.conv = conv;
+        editOf = opts.resume.edit;
       }
       let prefix = '';
       let prompt = text;
