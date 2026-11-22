@@ -70,17 +70,17 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | fixed in code | dev | #93, `fix/steps-other-command` |
-| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | fixed in code, Mac check pending | dev | #94, `fix/retry-trust-esc-deny` |
-| R10a-3 | R10a | Low | A failed tool call reads as done in the step list | fixed in code, Mac check pending | dev | `fix/review-10a-lows` |
+| R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | closed (#110); issue #93 still open | dev | #93, `fix/steps-other-command` |
+| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | fixed (#111 merged), Mac check pending; issue #94 still open | dev | #94, `fix/retry-trust-esc-deny` |
+| R10a-3 | R10a | Low | A failed tool call reads as done in the step list | fixed (#134 merged), Mac check pending | dev | `fix/review-10a-lows` |
 | R10a-4 | R10a | Low | Home Allow and Deny delay starts when the view appears, not when the window is shown | open | dev | none |
-| R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
-| R10a-6 | R10a | Low | `--effort` sent without a probe and saved to config; breaks every command on an old CLI | fixed in code | dev | none (overlaps #65, #67) |
-| R10a-7 | R10a | Low | Latency report mixes cancelled and failed commands into p50, p95 and OVER | fixed in code | dev | `feat/latency-gaps` |
-| R10a-8 | R10a | Low | At the 300-bubble cap new replies stop scrolling into view | fixed in code, Mac check pending | dev | `fix/review-10a-lows` |
-| R10a-9 | R10a | Low | `chat.done` waits for an unbounded audit read (up to 5 MB) after every command | fixed in code | dev | `fix/review-10a-lows` |
+| R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | fixed (#111 merged), Mac check pending | dev | `fix/retry-trust-esc-deny` |
+| R10a-6 | R10a | Low | `--effort` sent without a probe and saved to config; breaks every command on an old CLI | closed (#115) | dev | none (overlaps #65, #67) |
+| R10a-7 | R10a | Low | Latency report mixes cancelled and failed commands into p50, p95 and OVER | closed (#117) | dev | `feat/latency-gaps` |
+| R10a-8 | R10a | Low | At the 300-bubble cap new replies stop scrolling into view | fixed (#134 merged), Mac check pending | dev | `fix/review-10a-lows` |
+| R10a-9 | R10a | Low | `chat.done` waits for an unbounded audit read (up to 5 MB) after every command | closed (#134) | dev | `fix/review-10a-lows` |
 | R10a-10 | R10a | Info | Limits of "one id joins every log" (listener routes carry no `cmd`) | closed 2026-11-17: limit documented in `src/voice/command-log.ts` and `docs/VOICE.md` | review | #10 |
-| R10a-11 | R10a | Info | Swift notes: dead "N questions waiting" branch, scroll carry-over, tall question card | open, in #139 part 1 (card id per question, scrolling card, delete the dead branch at `helper/HomeView.swift:112`) | dev | #139 |
+| R10a-11 | R10a | Info | Swift notes: dead "N questions waiting" branch, scroll carry-over, tall question card | open, in #139 part 1 (card id per question, scrolling card, delete the dead branch); #252 stopped the card fading in on Home mid-chat | dev | #139 |
 
 ## E. Review of `fix/mic-stop-f5` (#86, comment of 2026-11-12)
 
