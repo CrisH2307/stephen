@@ -90,6 +90,19 @@ describe('stephen listen --text', () => {
     expect((JSON.parse(hist.split('\n')[0]!) as { id: string }).id).toBe(rows[0]!.id);
   });
 
+  it('ADR-007: the history line carries the steps chat.done gets (built from the audit before the append)', async () => {
+    const home = join(tmp, 'home-steps');
+    mkdirSync(home, { recursive: true });
+    const auditLogPath = join(home, 'audit.log');
+    writeFileSync(auditLogPath, `${JSON.stringify({ ts: new Date().toISOString(), tool: 'click', kind: 'click', element: 'button "Send"', outcome: 'denied', verdict: 'confirm' })}\n`);
+    const t = env({ claudePath: fakeClaudePath() }, { loadConfig: () => ({ home, voice: { claudePath: fakeClaudePath() }, auditLogPath }) }, home);
+    expect(await runListen(['--text', 'send the mail'], t.e)).toBe(0);
+    const hist = readdirSync(join(home, 'history')).map((f) => readFileSync(join(home, 'history', f), 'utf8')).join('');
+    const line = JSON.parse(hist.split('\n')[0]!) as { conv?: string; steps?: unknown };
+    expect(line.steps).toEqual([{ text: 'Refused: click button "Send". you did not allow it', status: 'refused' }]);
+    expect(line.conv).toMatch(/^c_[0-9a-f]{16}$/);
+  });
+
   it('shadow tier: "open youtube" is Tier 1 through the built-in site list (R10b-6)', async () => {
     const home = join(tmp, 'home-tier');
     const t = env({ claudePath: fakeClaudePath() }, {}, home);

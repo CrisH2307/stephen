@@ -5,6 +5,7 @@
  * Mac: it sends every request type, handles every response and push type, shows untrusted text verbatim, and is
  * reachable from the menu, `--open-window` and the helper.sock `open_window` command.
  */
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +57,7 @@ const RESPONSES: Record<string, string[]> = {
   'memory.keep': ['memory', 'error'],
   'memory.skip': ['suggestions', 'error'],
   'memory.usage': ['memory.usage', 'error'],
-  // Settings > Privacy and safety (issue #48 PR 2): the replay recorder switch and its Delete; only the owner's click.
+  // Settings > Privacy and permissions (issue #48 PR 2): the replay recorder switch and its Delete; only the owner's click.
   'replay.set': ['settings', 'error'],
   'replay.delete': ['ok', 'error'],
 };
@@ -182,7 +183,10 @@ describe('app.sock protocol v1 fixture', () => {
           break;
         case 'history':
           for (const e of msg.entries as Record<string, unknown>[]) {
-            expect(Object.keys(e).sort()).toEqual(['followUp', 'id', 'ms', 'outcome', 'reply', 'said', 'source', 'tools', 'ts', 'turns']);
+            // conv and steps (ADR-007) are optional: an older line has neither.
+            expect(Object.keys(e).filter((k) => k !== 'conv' && k !== 'steps').sort()).toEqual(['followUp', 'id', 'ms', 'outcome', 'reply', 'said', 'source', 'tools', 'ts', 'turns']);
+            if (e.conv !== undefined) expect(e.conv).toMatch(/^c_[0-9a-f]{16}$/);
+            for (const st of (e.steps ?? []) as Record<string, unknown>[]) expect(Object.keys(st).sort()).toEqual(['status', 'text']);
             expect(['voice-ptt', 'voice-wake', 'app', 'cli']).toContain(e.source);
             for (const t of e.tools as Record<string, unknown>[]) expect(Object.keys(t).sort()).toEqual(['isError', 'ms', 'tool']);
           }
@@ -311,8 +315,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   // The app.sock client, split into five files (no behaviour change): types, transport, model, Allow / Deny, control.
   const CLIENT_FILES = ['AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift'];
   const client = CLIENT_FILES.map(read).join('\n');
-  // The window's sources: frame and router, Home, and the older screens.
-  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift', 'MemoryPage.swift'].map(read).join('\n');
+  // The window's sources: frame and router, Home, the palette, Settings (Personal's parts since UI v4) and Memory.
+  const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'Palette.swift', 'SettingsPage.swift', 'MemoryPage.swift'].map(read).join('\n');
 
   it('AppClient sends every request type and handles every response and push type', () => {
     const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
@@ -323,13 +327,13 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('main.swift')).toContain('home + "/run/app.sock"');
   });
 
-  it('Settings > Speed: sends latency.get and shows the report text verbatim', () => {
+  it('Settings > About > Speed (UI v4 step c: an accordion): sends latency.get and shows the report text verbatim', () => {
     expect(client).toContain('type: "latency.get"');
     expect(client).toContain('msg.type == "latency"');
     const settings = read('SettingsPage.swift');
-    expect(settings).toContain('case .speed: SpeedSettingsPane(control: control)');
-    expect(settings).toMatch(/struct SpeedSettingsPane[\s\S]*control\.latency \{ report = latencyText\(\$0\) \}/);
-    expect(settings).toMatch(/struct SpeedSettingsPane[\s\S]*Text\(verbatim: report\)/);
+    expect(settings).toContain('Accordion("Speed, last 7 days", key: "acc.settings.about.speed") { SpeedSection(control: control) }');
+    expect(settings).toMatch(/struct SpeedSection[\s\S]*control\.latency \{ report = latencyText\(\$0\) \}/);
+    expect(settings).toMatch(/struct SpeedSection[\s\S]*Text\(verbatim: report\)/);
   });
 
   it('Ask box usage lines: sends usage.get and decodes the P2 shape (PR #18) without importing it', () => {
@@ -369,6 +373,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(returns.length).toBeGreaterThanOrEqual(5);
     for (const r of returns) expect(r, r).toMatch(/^"[^"]+"$/);
     for (const s of ['voice-ptt', 'voice-wake', 'phone', 'cli']) expect(label).toContain(`case "${s}":`);
+    // UI v4 step b (#142, [DEV REVIEW]): the source line in #142's words.
+    for (const [s, w] of [['voice-ptt', 'From: F5'], ['voice-wake', 'From: Hey Stephen'], ['phone', 'From: Phone']]) {
+      expect(label).toContain(`case "${s}": return "${w}"`);
+    }
     // Shown under the bubble (verbatim) and read by VoiceOver.
     expect(chat).toContain('if !bubble.detail.isEmpty {\n          Text(verbatim: bubble.detail)');
     expect(chat).toContain('"You, \\(bubble.detail): \\(bubble.text)"');
@@ -397,8 +405,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const chat = read('Components/ChatThread.swift');
     expect(chat).toMatch(/if let q = model\.confirms\.first \{[\s\S]*?Button\(""\) \{ model\.denyFirstConfirm\(\) \}\.keyboardShortcut\(\.cancelAction\)/);
     expect(chat.match(/\.cancelAction/g)).toHaveLength(1);
-    expect(read('HomeView.swift')).toContain('ChatThreadView(model: model)');
-    expect(box).toContain('ChatThreadView(model: model)');
+    // Same thread view in both (UI v4 step b adds navigation-only links after the model: ChatLinks).
+    expect(read('HomeView.swift')).toMatch(/ChatThreadView\(model: model(, links: ChatLinks\(|\))/);
+    expect(box).toMatch(/ChatThreadView\(model: model(, links: ChatLinks\(|\))/);
     // Nothing on the keyboard approves: Allow is only a click.
     for (const src of [chat, box, read('HomeView.swift')]) expect(src).not.toMatch(/approve: true|answer\(true\)[^\n]*keyboardShortcut/);
   });
@@ -454,8 +463,19 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('#147: Cmd+comma opens Settings on the last pane, one large title, captions over the choices', () => {
     const settings = read('SettingsPage.swift');
-    expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .talk');
-    expect(settings).toContain('Text(verbatim: "Settings").sectionLabelStyle(t)');
+    expect(settings).toContain('@AppStorage("settingsPane") private var item: SettingsItem = .voice');
+    // The toolbar and the palette read the same key, so all three agree on the pane.
+    for (const f of ['MainWindow.swift', 'Palette.swift']) expect(read(f)).toContain('@AppStorage("settingsPane") private var pane: SettingsItem = .voice');
+    // A pane stored before step c opens its new home (not the default).
+    const init = settings.match(/init\?\(rawValue: String\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(init).toContain('case "connected", "phone", "accounts", "browsers": self = .connected');
+    expect(init).toContain('case "voice", "talk", "wake": self = .voice');
+    expect(init).toContain('case "about", "speed": self = .about');
+    for (const c of ['aboutYou', 'privacy', 'routines', 'model', 'appearance']) expect(init).toContain(`case "${c}": self = .${c}`);
+    expect(init).toContain('default: return nil');
+    // UI v4 step c: the sub-list's labels are its group names (You, Stephen, App), not a second "Settings".
+    expect(settings).toContain('Text(verbatim: g.title).sectionLabelStyle(t)');
+    expect(settings).not.toContain('Text(verbatim: "Settings")');
     expect(settings).not.toMatch(/"Settings"\)\.font\(TypeScale\.pageTitle\)/);
     for (const label of ['Length', 'Tone', 'Model', 'Effort']) {
       expect(settings).toMatch(new RegExp(`Segmented\\("${label}",[^\\n]*caption: true\\)`));
@@ -464,6 +484,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const app = read('AppWindow.swift');
     expect(app).toContain('NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")');
     expect(app).toContain('@objc func settingsClicked(_ sender: Any?) { show(page: .settings) }');
+    // ⌘, only opens Settings: nothing on that path picks a pane, so the last one used shows (#147).
+    expect(app).not.toMatch(/settingsClicked[^\n]*(selectSettingsPane|settingsPane)/);
+    expect(settings.match(/selectSettingsPane\(/g)).toHaveLength(1);  // only its definition
   });
 
   it('#145 (now part): job and voice rows are real buttons; small controls have 24 pt targets', () => {
@@ -477,7 +500,9 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('Components/Controls.swift')).toMatch(/Image\(systemName: "mic"\)[^\n]*\n\s*\.frame\(width: 24, height: 24\)/);
     expect(read('Components/ChatThread.swift')).toContain('.foregroundColor(t.ink2).frame(minHeight: 24)');
     const memory = read('MemoryPage.swift');
-    expect(memory.match(/frame\(minHeight: 24\)|frame\(minWidth: 24, minHeight: 24\)/g)?.length).toBeGreaterThanOrEqual(3);
+    // The ⋯ menu and the Related links (the "‹ Personal" back link, the third one, went in UI v4 step d).
+    expect(memory).toContain('.menuStyle(.borderlessButton).fixedSize().frame(minWidth: 24, minHeight: 24)');
+    expect(memory).toMatch(/Text\(verbatim: r\.text\)[^\n]*\n\s*\.frame\(minHeight: 24\)/);
   });
 
   // Any write to the questions list: =, +=, subscript, or a mutating method. Any confirm.answer request, with or
@@ -519,37 +544,49 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     }
   });
 
-  it('Personal (accounts, personal.summary, memory) and Home\'s Today row are wired to the protocol', () => {
-    expect(window).toContain('case .personal: PersonalView(model: model, nav: nav)');
-    expect(window).toContain('model.refreshPersonal()');
+  it('Personal is gone (UI v4): its parts (personal.summary, accounts) are read-only Settings panes; Home\'s Next up line', () => {
+    expect(window).not.toContain('PersonalView');
+    const settings = read('SettingsPage.swift');
+    expect(settings).toContain('model.refreshPersonal()');
+    expect(settings).toContain('case .aboutYou: AboutYouSettingsPane(model: model)');
+    expect(settings).toContain('case .routines: RoutinesSettingsPane(model: model)');
+    expect(settings).toContain('case .connected: ConnectedSettingsPane(model: model, control: control)');
+    expect(settings).toMatch(/struct PrivacySettingsPane[\s\S]*?PermissionsSection\(model: model\)/);
     expect(client).toContain('AppRequest.personalSummary(newId())');
     expect(client).toContain('if type == "personal" { personal = try? PersonalSummary(from: decoder) }');
-    // View only: the one write on the page is Forget (owner default 3).
-    const personal = read('PersonalView.swift');
-    expect(personal.match(/model\.(add|update|clear|forget|stop|send)\w*\(/g)).toEqual(['model.forgetMemory(']);
-    expect(personal).toContain('PermissionTable(');
+    // View only: the moved parts never write.
+    const moved = settings.slice(settings.indexOf('// MARK: From Personal'));
+    expect(moved.length).toBeGreaterThan(100);
+    expect(moved).not.toMatch(/model\.(add|update|clear|forget|stop|send|save|delete)\w*\(/);
+    expect(moved).toContain('PermissionTable(');
     expect(window).toContain('model.refreshAccounts()');
-    expect(window).toContain('model.sendChat(APP_TODAY_PROMPT)');
-    // The card sends exactly what the tests (and the user) expect, through the ordinary chat request.
-    expect(client).toContain('let APP_TODAY_PROMPT = "what\'s my day?"');
+    // Home's Next up line (plan 6.1, R8) has no "What's my day?" link: Home sends only from its composer's Send.
+    const home = read('HomeView.swift');
+    expect(home).not.toContain('APP_TODAY_PROMPT');
+    expect(home.match(/sendChat\(/g)).toHaveLength(1);
+    expect(home).toContain('if model.sendChat(draft) { draft = "" }');
+    // "Next up:" only before a running job; with nothing running Home just says "Nothing waiting".
+    expect(home).toMatch(/if running > 0 \{\s*Text\(verbatim: "Next up:"\)/);
+    expect(home).toContain('Button { nav.page = .jobs }');
     expect(client).toContain('AppRequest.accountsStatus(newId())');
     // Only system colours.
     expect(window).not.toMatch(/Color\((red|green|blue|white|black):/);
   });
 
-  it('Memory page (UI-PLAN v3.1 section 7a): graph, list alternative, inspector, proposals, Tell Stephen', () => {
+  it('Memory page (UI-V4-IA-PLAN 6.3): intro, graph, list alternative, inspector, proposals, Tell Stephen', () => {
     const page = read('MemoryPage.swift');
-    expect(window).toContain('case .memory: MemoryPage(model: model, nav: nav)');
+    expect(window).toContain('case .memory: MemoryPage(model: model)');
     expect(page).toContain('model.refreshMemoryPage()');
+    expect(page).toContain('Text(verbatim: "Things Stephen remembers about you. It only saves what you tell it or keep.")');
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
-    // Header: back to Personal (also Esc), the usage chip only over 80%, search (⌘F), ⋯.
-    expect(page).toContain('nav.page = .personal');
-    expect(page).toContain('.onExitCommand');
+    // Search (⌘F), the usage chip only over 80% (R10: no usage line in the ⋯ menu), ⋯ with Forget all….
     expect(page).toContain('if let u = model.memoryUsage, u.warn');
+    expect(page).not.toContain('% of 8 KB per chat")');
+    expect(page).toContain('Button("Forget all…") { confirmClear = true }');
     expect(page).toContain('.keyboardShortcut("f", modifiers: .command)');
     expect(page).toContain('Segmented("Show memory as"');
     expect(page).toContain('.accessibilityLabel(nodeLabel(n))');
@@ -557,6 +594,56 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('third-party text');
     expect(client).toContain('func originLabel(_ origin: String) -> String');
     expect(client).toContain('if let o = item.origin');
+  });
+
+  it('Memory step d [DEV REVIEW]: New from your chats comes first, verbatim, Keep/Edit/Skip only on a click', () => {
+    const page = read('MemoryPage.swift');
+    const body = page.match(/struct MemoryPage: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
+    const order = ['if !model.suggestions.isEmpty { proposals }', 'header', 'chips', 'Segmented("Show memory as"', 'graphOrList', 'tellBox', 'aboutMemory'];
+    const at = order.map((s) => body.indexOf(s));
+    for (const i of at) expect(i).toBeGreaterThan(-1);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
+    // Selected beside the graph (wide) or under it (narrow, #148).
+    expect(body).toMatch(/ViewThatFits\(in: \.horizontal\) \{\s*HStack[\s\S]*?graphOrList\s*inspector[\s\S]*?VStack[\s\S]*?graphOrList\s*inspector/);
+    const block = page.slice(page.indexOf('  private var proposals: some View {'), page.indexOf('  // MARK: about'));
+    expect(block).toContain('Text(verbatim: p.text)');
+    expect(block).toContain('" · third-party text, check it"');
+    expect(block).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(p\.id\) \}/);
+    expect(block).toContain('QuietButton("Edit")');
+    expect(block).toContain('QuietButton("Skip") { model.skipProposal(p.id) }');
+    // Nothing saves on its own: no Return, appear or timer path in the block.
+    expect(block).not.toMatch(/onSubmit|onAppear|\.task|onChange|onReceive/);
+    // The inspector's edit field: Return never keeps a suggestion (n.new); Keep stays a click.
+    const mem = read('MemoryPage.swift');
+    expect(mem).toContain('.onSubmit { if !n.new { saveEdit(n) } }');
+    expect(mem.match(/\.onSubmit/g)).toHaveLength(1);
+    // Keep on an empty edit says so and keeps the field open; it never closes silently.
+    const keepEdited = mem.match(/private func keepEdited\(_ p: MemoryProposal\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(keepEdited).toContain('if text.isEmpty { emptyNote = "Empty, nothing kept."; return }');
+    expect(keepEdited.indexOf('if text.isEmpty')).toBeLessThan(keepEdited.indexOf('editingProposal = nil'));
+    expect(block).toContain('if let e = emptyNote { Text(verbatim: e)');
+    // The old place under the graph is gone: one proposals block, no "Nothing new" row.
+    expect(page.match(/GroupedList\("New from your chats"\)/g)).toHaveLength(1);
+    expect(page).not.toContain('"Nothing new"');
+    // About memory: closed accordion with what counts toward the 8 KB.
+    expect(page).toContain('Accordion("About memory", key: "acc.memory.about")');
+    expect(page).toMatch(/Accordion\("About memory"[\s\S]*?up to 8 KB/);
+  });
+
+  it('Personal routes are gone (UI v4 step d, [DEV REVIEW]): no back link, no Page.personal, Esc stays on Memory', () => {
+    const all = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift')).map(read).join('\n');
+    expect(all).not.toMatch(/[\s(=,\[]\.personal\b/);  // a page value; model.personal (Settings data) stays
+    expect(all).not.toContain('‹ Personal');
+    expect(all).not.toContain('Back to Personal');
+    const main = read('MainWindow.swift');
+    expect(main).toContain('case home, conversations, jobs, memory, settings\n');
+    const page = read('MemoryPage.swift');
+    expect(page).not.toContain('nav.');
+    expect(page).toContain('.onExitCommand { editing = false; editingProposal = nil }');
+    // An old stored "personal" page can't route anywhere: the window stores no page, and any future restore must fall
+    // back with `Page(rawValue:) ?? .<page>`.
+    expect(all).not.toMatch(/@AppStorage\("(page|lastPage|windowPage)"\)/);
+    for (const m of all.matchAll(/Page\(rawValue:[^\n]*/g)) expect(m[0]).toMatch(/\?\? \.\w+/);
   });
 
   it('Jobs page is wired to the protocol, shows job text verbatim', () => {
@@ -574,11 +661,45 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('Task.sleep(nanoseconds: 5_000_000_000)');
     // Stop only for a job that has not ended; status is a word (not color alone).
     expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop"/);
+    // Facts line: "Started 2:10 PM · 3 min · $0.12 spent".
+    expect(jobs).toContain('parts.append("Started " + ');
+    expect(jobs).toContain('return parts.joined(separator: " · ")');
+  });
+
+  it('Jobs step d (plan 6.4): caution intro, Running open, Failed open [DEV REVIEW], Earlier accordion, Stop on running only', () => {
+    const jobs = read('JobsPage.swift');
+    // R9: the caution once, in the intro; the summary keeps its label.
+    expect(jobs).toContain('Each summary is written by the job: check it before you rely on it.');
+    expect(jobs).not.toContain('The summary is written by the job itself');
+    expect(jobs).toContain('Text(verbatim: "Summary, written by the job")');
+    expect(jobs).toContain('Text(verbatim: job.task)');
+    const body = jobs.match(/struct JobsView: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}\n/)?.[1] ?? '';
+    expect(body).toContain('if !running.isEmpty { GroupedList("Running") { rows(running) } }');
+    // A failed job is never hidden: its group is open, and not inside any Accordion.
+    const failedLine = body.split('\n').find((l) => l.includes('GroupedList("Failed")')) ?? '';
+    expect(failedLine).toContain('if !failed.isEmpty { GroupedList("Failed") { rows(failed) } }');
+    expect(body.match(/Accordion\(/g)).toHaveLength(1);
+    const accordion = body.slice(body.indexOf('Accordion('));
+    expect(accordion).not.toContain('"Failed"');
+    expect(body.indexOf('GroupedList("Failed')).toBeLessThan(body.indexOf('Accordion('));
+    // Every failed job, however old, is in Failed; Earlier (a closed accordion) never holds one (#254 review).
+    expect(body).toContain('let failed = model.jobs.filter(jobFailed)');
+    expect(body).toContain('let earlier = model.jobs.filter { !$0.isRunning && !jobFailed($0) }');
+    expect(jobs).not.toContain('jobFailedRecently');
+    expect(jobs).not.toMatch(/24 \* 3600/);
+    expect(body).toContain('Accordion(jobsEarlierTitle(earlier), key: "acc.jobs.earlier") { GroupedList { rows(earlier) } }');
+    expect(jobs).toContain('func jobsEarlierTitle(_ jobs: [JobRow]) -> String { return "Earlier (\\(jobs.count))" }');
+    // Stop: exactly one, on running rows only.
+    expect(jobs.match(/QuietButton\("Stop"/g)).toHaveLength(1);
+    expect(jobs).toMatch(/if job\.isRunning \{ QuietButton\("Stop", destructive: true, action: stop\)/);
   });
 
   it('Conversations page replaces History and Audit: one list, joined by time, refusals in words, search', () => {
     const conv = read('ConversationsPage.swift');
-    expect(window).toContain('case .conversations: ConversationsPage(model: model)');
+    expect(window).toContain('case .conversations: ConversationsPage(model: model, nav: nav)');
+    // Clear all moved to the toolbar's ⋯ menu (UI v4); it still asks first, on the page.
+    expect(conv).toContain('.alert("Clear all conversations?", isPresented: $nav.confirmClearAll)');
+    expect(read('MainWindow.swift')).toContain('Button("Clear all…", role: .destructive) { nav.confirmClearAll = true }');
     expect(window).not.toContain('AuditView');
     expect(window).not.toContain('HistoryView');
     expect(conv).toContain('model.refreshHistory(); model.refreshAudit()');
@@ -587,16 +708,39 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Text(verbatim: entry.said)');
   });
 
-  it('main window (UI-PLAN v3.1 sections 4 and 6): sidebar pages, shortcuts, remembered collapse, Start/Stop, Home', () => {
+  it('ADR-007 recents v1 is view-only: history strings in Conversations are Text(verbatim:), no send, retry or resume', () => {
+    const conv = read('ConversationsPage.swift');
+    // Every Text in the view is verbatim (said, reply, facts and step lines are third-party-shaped text).
+    expect(conv.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    for (const s of ['entry.said', 'entry.reply', 'facts', 'l.text']) expect(conv).toContain(`Text(verbatim: ${s})`);
+    // Stored steps become the same step lines (shown by the verbatim ForEach above).
+    expect(conv).toContain('if !entry.steps.isEmpty { return entry.steps.map { DoneLine(text: $0.text, status: StepStatus($0.status)) } }');
+    // Only reads, Load older and Clear all: nothing sends stored text anywhere.
+    const calls = [...new Set(conv.match(/model\.\w+(?=\()/g) ?? [])].sort();
+    expect(calls).toEqual(['model.clearHistory', 'model.loadOlderHistory', 'model.refreshAudit', 'model.refreshHistory', 'model.sourceLabel', 'model.timeText']);
+    expect(conv).not.toMatch(/AppRequest|\.send\(|chatSend/);
+    expect(conv).not.toMatch(/(Button|QuietButton)\("(Send|Retry|Try again|Continue|Resume|Resend|Ask again)/i);
+    // The protocol decodes conv and steps, so the page can group by conversation later.
+    expect(read('AppProtocol.swift')).toContain('case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps }');
+  });
+
+  it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
     const main = read('MainWindow.swift');
-    expect(main).toContain('static let stephen: [Page] = [.home, .conversations, .jobs]');
-    expect(main).toContain('static let you: [Page] = [.personal, .settings]');
+    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let control: [Page] = [.memory, .settings]');
+    expect(main).toContain('SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }');
+    expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');
     expect(main).toContain('.keyboardShortcut(p.key!, modifiers: .command)');
     expect(main).toContain('.keyboardShortcut("\\\\", modifiers: .command)');
-    // #87: the sidebar's "Ask Stephen" row opens the Ask box (WindowActions.ask), it does not just focus Home's composer.
-    expect(main).toContain('Button(action: actions.ask) {');
+    // The state row sits at the bottom left (owner, 2026-11-21): after both groups and the spacer, the last view in the
+    // sidebar's column.
+    const sidebar = main.match(/private struct SidebarView: View \{[\s\S]*?\n  var body: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(sidebar).toMatch(/SidebarSection\("Control"[^\n]*\n\s*\}\n\s*Spacer\(minLength: 0\)\n\s*\/\/[^\n]*\n\s*StatusRow\(model: model, control: control, collapsed: collapsed\)\n    \}/);
+    expect(sidebar.match(/StatusRow\(/g)).toHaveLength(1);
+    // R2: the fake "Ask Stephen" field is gone. The Ask box stays one click away: the banner, the palette, the app menu.
+    expect(main).not.toContain('askField');
     expect(main).not.toContain('Button(action: nav.askHere)');
-    // ⌘K and the menu item open the Ask box too; the old "type in Home" path is gone.
+    // The Ask Stephen menu item still opens the Ask box, without ⌘K (⌘K is the palette since UI v4).
     expect(read('AppWindow.swift')).toContain('@objc func askClicked(_ sender: Any?) { actions.ask() }');
     expect(main).not.toContain('askHere');
     expect(read('main.swift')).toContain('WindowActions(ask: { askBox?.show(focus: true) }');
@@ -608,7 +752,187 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const home = read('HomeView.swift');
     // A waiting question makes the chat non-empty, so Home shows the card (#138 banner covers the other pages).
     expect(home).toContain('model.thread.isEmpty && model.confirms.isEmpty');
-    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) }');
+    expect(read('AskBox.swift')).toContain('reviewMemory: { [weak self] in self?.openWindow(.memory) }');
+  });
+
+  it('Recording on sign (UI v4, [DEV REVIEW]): solid, words unchanged, right next to the state row at the bottom left', () => {
+    const row = read('MainWindow.swift').match(/private struct StatusRow: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const sign = row.match(/if model\.recordingOn \{([\s\S]*?)\n      \}/)?.[1] ?? '';
+    expect(sign).toContain('Text(verbatim: "Recording on")');
+    expect(sign).toContain('Image(systemName: "waveform")');
+    // Solid in the glass sidebar: surface fill and a lineStrong outline, no material.
+    expect(sign).toContain('.background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))');
+    expect(sign).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))');
+    expect(sign).not.toMatch(/glass|Material|opacity/i);
+    expect(sign).toContain('.help("Your F5 commands are saved on this Mac for 30 days. Turn it off in Settings, Privacy and permissions.")');
+    expect(sign).toContain('.accessibilityLabel("Recording on. F5 commands are saved on this Mac for 30 days.")');
+    // Right next to the state row: the sign's block ends and the state row's HStack starts, nothing in between.
+    expect(row).toMatch(/if model\.recordingOn \{[\s\S]*?\n      \}\n      HStack\(spacing: Space\.s\) \{\n        StatusPill\(s\.word/);
+    // Not inside an accordion, and not hidden when the sidebar is collapsed (the waveform stays).
+    expect(row).not.toMatch(/Accordion|DisclosureGroup/);
+    expect(sign).not.toMatch(/if !collapsed \{[^\n]*waveform/);
+  });
+
+  it('Settings (UI v4 step c, plan 6.5): 8 panes in 3 labelled groups, each a grouped Form, rare things in accordions', () => {
+    const settings = read('SettingsPage.swift');
+    expect(settings).toContain('case aboutYou, connected, privacy, routines, voice, model, appearance, about');
+    expect(settings).toContain('("You", [.aboutYou, .connected, .privacy, .routines]),');
+    expect(settings).toContain('("Stephen", [.voice, .model]),');
+    expect(settings).toContain('("App", [.appearance, .about]),');
+    const titles = [...(settings.match(/var title: String \{([\s\S]*?)\n  \}/)?.[1] ?? '').matchAll(/case \.(\w+): return "([^"]+)"/g)].map((m) => m[2]);
+    expect(titles).toEqual(['About you', 'Connected', 'Privacy and permissions', 'Routines', 'Voice', 'Model and effort', 'Appearance', 'About']);
+    // The sub-list is built from the groups only.
+    expect(settings).toContain('ForEach(SettingsItem.groups, id: \\.title) { g in');
+    expect(settings).not.toContain('SettingsItem.allCases');
+    // Every pane is a grouped Form (S7): the 7 here plus Appearance; the pane is not wrapped in a ScrollView.
+    expect(settings).toContain('func settingsForm() -> some View { return formStyle(.grouped).scrollContentBackground(.hidden) }');
+    const appearance = read('AppearanceSettings.swift');
+    for (const pane of ['AboutYouSettingsPane', 'ConnectedSettingsPane', 'PrivacySettingsPane', 'RoutinesSettingsPane', 'VoiceSettingsPane', 'ModelSettingsPane', 'AboutSettingsPane']) {
+      const body = settings.match(new RegExp(`struct ${pane}: View \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+      expect(body, pane).toMatch(/\bForm \{/);
+      expect(body, pane).toContain('.settingsForm()');
+    }
+    expect(appearance).toMatch(/Form \{[\s\S]*\.settingsForm\(\)/);
+    expect(settings.match(/struct SettingsView: View \{([\s\S]*?)\n\}/)?.[1]).not.toMatch(/ScrollView \{/);
+    // A table goes straight into its section: the permission table has no box of its own.
+    const table = read('Components/Lists.swift').match(/struct PermissionTable: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(table).not.toMatch(/\.background\(|\.overlay\(RoundedRectangle/);
+    // The plan's accordions, closed by default (Accordion's AppStorage default), one key each.
+    for (const [title, key] of [
+      ['Where this comes from', 'acc.settings.aboutYou.source'], ['How to connect (Terminal)', 'acc.settings.connected.terminal'],
+      ['Where these rules come from', 'acc.settings.privacy.rules'], ['Voices and fallback order', 'acc.settings.voice.voices'],
+      ['Wake word and F5', 'acc.settings.voice.wake'], ['What the models cost and do', 'acc.settings.model.about'],
+      ['Speed, last 7 days', 'acc.settings.about.speed'],
+    ]) expect(settings).toContain(`Accordion("${title}", key: "${key}")`);
+    expect(settings).toContain('Accordion("Doctor", key: Self.doctorKey)');
+    // Connected: accounts, Zen and Chrome, and the phone link in one list, each with its state; one button each.
+    const connected = settings.match(/struct ConnectedSettingsPane: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(connected).toContain('ForEach(model.accounts, id: \\.id)');
+    expect(connected).toContain('FormRow("Zen and Chrome"');
+    expect(connected).toContain('FormRow("Phone link"');
+    expect(connected.match(/QuietButton\(/g)).toHaveLength(2);
+    expect(connected).toContain('if phoneOn { control.phoneOff(done) } else { control.phoneOn(done) }');
+    expect(read('StephenControl.swift')).toContain('func phoneLinkOn() -> Bool {');
+    // Offline (#144): Settings still shows Appearance, with no ScrollView around the Form.
+    const main = read('MainWindow.swift');
+    const offline = main.match(/if nav\.page == \.settings \{([\s\S]*?)\n      \} else \{/)?.[1] ?? '';
+    expect(offline).toContain('AppearanceSettings()');
+    expect(offline).not.toMatch(/ScrollView \{/);
+    // Personal is gone for good, and the old pane names with it.
+    for (const old of ['AccountsSettingsPane', 'BrowsersSettingsPane', 'PhoneSettingsPane', 'WakeSettingsPane', 'TalkSettingsPane', 'SpeedSettingsPane', '"Privacy and safety"', '"How Stephen talks"']) {
+      expect(window, old).not.toContain(old);
+    }
+  });
+
+  it('Settings > Privacy and permissions ([DEV REVIEW]): the table, then the recording switch with the same words and behaviour', () => {
+    const settings = read('SettingsPage.swift');
+    const pane = settings.match(/private struct PrivacySettingsPane: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    // Order: the read-only table, the switch, then the rules accordion.
+    const order = ['PermissionsSection(model: model)', 'FormRow(Self.label)', 'RulesSourceSection(model: model)'].map((x) => pane.indexOf(x));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The switch's words and behaviour are unchanged.
+    expect(pane).toContain('private static let label = "Save my F5 commands to measure mistakes"');
+    expect(pane).toContain('Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))');
+    expect(pane).toContain('.toggleStyle(StephenSwitch()).disabled(model.connection != .online)');
+    expect(pane).toContain('Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")');
+    expect(pane).toContain('if model.connection != .online { Note("Start Stephen to change this.") }');
+    expect(pane).toContain('.alert("Delete the saved recordings too?", isPresented: $askDelete)');
+    expect(pane).toContain('Button("Keep", role: .cancel) { done = "Kept. They are deleted after 30 days." }');
+    expect(pane).toMatch(/model\.saveReplay\(on\) \{ err in[\s\S]*?if err == nil && !on \{ askDelete = true \}/);
+    // Only this pane sends the switch's requests.
+    expect(window.match(/saveReplay\(/g)).toHaveLength(1);
+    expect(window.match(/deleteRecordings\b/g)).toHaveLength(1);
+    // The one honest sentence about the table (R5), and no "change them in Settings" claim.
+    expect(settings).toContain('Note("Read only. These come from Stephen\'s safety rules.")');
+    expect(settings).not.toMatch(/[Cc]hange them in Settings/);
+    // The "proposes, you keep" promise shows even with no permissions data: outside the `if let`, in its own Section.
+    const perms = settings.match(/private struct PermissionsSection: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const promise = 'Section { Note("Stephen never saves memory, sets timers or starts jobs on its own: it proposes, you keep.") }';
+    expect(perms).toContain(promise);
+    const ifBlock = perms.slice(perms.indexOf('if let p = model.personal?.permissions'), perms.indexOf('} else if let n = model.personalNotice'));
+    expect(ifBlock).not.toContain('it proposes, you keep');
+    expect(perms.indexOf(promise)).toBeGreaterThan(perms.indexOf('Section { Note(n) }'));
+    // Links to it use the new pane (the refusal's "See what Stephen may do").
+    expect(settings).toContain('case .privacy: return "Privacy and permissions"');
+  });
+
+  it('sidebar drag-to-resize (owner): clamped width kept in AppStorage, resize cursor, rail unchanged', () => {
+    const theme = read('Theme.swift');
+    const num = (name: string) => Number(theme.match(new RegExp(`static let ${name}: CGFloat = (\\d+)`))?.[1]);
+    expect(num('minWidth')).toBeLessThan(num('expanded'));
+    expect(num('expanded')).toBeLessThan(num('maxWidth'));
+    expect(num('rail')).toBe(40);
+    expect(theme).toContain('static func clamp(_ width: CGFloat) -> CGFloat { return width.isNaN ? expanded : min(max(width, minWidth), maxWidth) }');
+    // Collapsed is the rail whatever the stored width; expanded is always clamped.
+    expect(theme).toContain('static func content(_ collapsed: Bool, _ width: CGFloat = expanded) -> CGFloat { return collapsed ? rail : clamp(width) }');
+    const main = read('MainWindow.swift');
+    expect(main).toContain('@AppStorage("sidebarWidth") private var sidebarWidth = Double(SidebarMetrics.expanded)');
+    expect(main).toContain('let width = SidebarMetrics.clamp(CGFloat(sidebarWidth))');
+    expect(main).toContain('.frame(width: SidebarMetrics.column(collapsed, width), alignment: .leading).clipped()');
+    // The handle is on the divider, only when expanded; the drag clamps; the cursor is the system resize cursor.
+    expect(main).toContain('.overlay { if !collapsed { SidebarResizeHandle(width: $sidebarWidth) } }');
+    const handle = main.match(/private struct SidebarResizeHandle: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(handle).toContain('NSCursor.resizeLeftRight.push()');
+    expect(handle).toContain('width = Double(SidebarMetrics.clamp(CGFloat(from) + v.translation.width))');
+    // A stored width out of range (or NaN) must not make the first drag jump: it starts from the clamped width.
+    expect(handle).toContain('let from = start ?? Double(SidebarMetrics.clamp(CGFloat(width)))');
+    expect(handle).not.toContain('start ?? width');
+    expect(handle).toContain('DragGesture(');
+    // A wider sidebar widens the window's minimum, so pages keep their measured room (#154).
+    expect(main).toContain('.frame(minWidth: WindowMetrics.minContent.width + (collapsed ? 0 : max(0, width - SidebarMetrics.expanded)),');
+    // Every sidebar width reads the dragged width (no fixed-width call left).
+    for (const f of ['MainWindow.swift', 'Components/Sidebar.swift']) expect(read(f)).not.toMatch(/SidebarMetrics\.content\(collapsed\)/);
+  });
+
+  it('Home Recent (plan 6.1): an accordion of 3, status words, refusals named and counted, verbatim, only View all acts', () => {
+    const home = read('HomeView.swift');
+    expect(home).toContain('model.history.prefix(3)');
+    expect(home).toContain('Accordion(recentChatsTitle(rows.map { $0.word.word }), key: "acc.home.recent")');
+    expect(home).toContain('Text(verbatim: r.entry.said)');
+    // A refusal is the first word checked, so a refused chat is never "Done" or "Failed"; the title counts problems.
+    const word = home.match(/func recentChatWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const order = ['"Refused"', '"Failed"', '"Stopped"', '"Done"'].map((w) => word.indexOf(w));
+    expect(order.every((i) => i >= 0), word).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(home).toMatch(/func recentChatsTitle[\s\S]*?"\\\(refused\) refused"[\s\S]*?"\\\(failed\) failed"/);
+    // Refusals come from the same audit join as Conversations.
+    expect(home).toContain('conversationLines(entry: e, audit: model.audit, parse: model.parseDate)');
+    const recent = home.match(/private var recentChats: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(recent.match(/Button \{[^}]*\}/g)).toEqual(['Button { nav.page = .conversations }']);
+    expect(recent).not.toMatch(/sendChat|model\.\w+\(/);
+  });
+
+  it('Ask box strip (S9, R7): the state word with its dot; the chat title only in the ⋯ menu, verbatim', () => {
+    const box = read('AskBox.swift');
+    const strip = box.match(/private var topStrip: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(strip).toContain('StatusPill(s.word, kind: s.kind)');
+    expect(strip).not.toContain('threadTitle');
+    expect(box).toMatch(/Menu \{\s*\/\/[^\n]*\n\s*Text\(verbatim: model\.threadTitle\)/);
+    // R6: the menu opens the Memory page by its name.
+    expect(box).toContain('Button("Open Memory") { actions.reviewMemory() }');
+    expect(box).not.toContain('Review memory');
+    // Offline never claims more than the box knows; every state is a word.
+    const word = box.match(/func askBoxStateWord\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    for (const w of ['Offline', 'Connecting', 'Listening', 'Working', 'Speaking', 'Ready', 'Microphone off']) expect(word).toContain(`"${w}"`);
+  });
+
+  it('L1 ([DEV REVIEW]): a refused step shows "See what Stephen may do", outside the folded chain; it only navigates', () => {
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('private var refused: Bool { return bubble.steps.contains { StepStatus($0.status) == .refused } }');
+    // On replies and on problem messages, gated on a refusal; never inside ActionChain (folded by default).
+    expect(chat.match(/if refused, let open = links\.permissions \{ link\("See what Stephen may do", open\) \}/g)).toHaveLength(2);
+    const chain = chat.match(/struct ActionChain: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(chain).not.toContain('See what Stephen may do');
+    // The refusal label and the steps keep their place and look.
+    expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // The link button only runs its closure; the closures only navigate (no model call, no answer, no send).
+    expect(chat).toMatch(/private func link\(_ title: String, _ action: @escaping \(\) -> Void\) -> some View \{\s*Button\(action: action\)/);
+    expect(read('HomeView.swift')).toContain('ChatLinks(permissions: { selectSettingsPane(.privacy); nav.page = .settings }');
+    const box = read('AskBox.swift');
+    expect(box).toContain('ChatLinks(permissions: actions.openPermissions)');
+    expect(box).toContain('openPermissions: { [weak self] in selectSettingsPane(.privacy); self?.openWindow(.settings) }');
+    expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
   });
 
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
@@ -661,5 +985,219 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(window).toContain('setFrameAutosaveName');
     expect(window).toContain('isReleasedWhenClosed = false');
     expect(read('Core.swift')).toContain('case "open_window": return .openWindow');
+  });
+
+  // The palette's allow list (plan 7.3, review of #246). Any member of model or control (any spacing, line breaks,
+  // trailing closures), any free function call, raw requests and rebinding model or control to another name.
+  const PALETTE_MEMBERS = ['newChat', 'refreshHistory', 'refreshJobs', 'refreshMemoryPage', 'loadOlderHistory', 'runDoctor', 'confirms', 'configPath'];
+  // Step e's Conversations source reads the loaded history (both private(set) in AppModel) and formats it. Reads only:
+  // none sends a request or changes state (checked in the Conversations source test).
+  const PALETTE_READS = ['history', 'audit', 'parseDate', 'sourceLabel', 'timeText'];
+  const PALETTE_FREE_CALLS = ['openConfigFile', 'doctorText', 'conversationRows'];
+  function paletteCallProblems(src: string): string[] {
+    const code = src.replace(/\/\/[^\n]*/g, '');  // comments say "model" too
+    const bad: string[] = [];
+    const allowed = [...PALETTE_MEMBERS, ...PALETTE_READS];
+    for (const m of code.matchAll(/\b(model|control)\s*\.\s*(\w+)/g)) if (!allowed.includes(m[2] ?? '')) bad.push(`${m[1]}.${m[2]}`);
+    for (const m of code.matchAll(/(?<![.\w@])([a-z]\w*)\s*\(/g)) {
+      const name = m[1] ?? '';
+      const swiftOrLocal = ['if', 'for', 'switch', 'guard', 'return', 'init', 'min', 'max', 'move', 'run', 'close', 'items', 'filter', 'contains', 'lowercased', 'map', 'zip'];
+      if (PALETTE_FREE_CALLS.includes(name) || swiftOrLocal.includes(name)) continue;
+      if (new RegExp(`func ${name}\\b`).test(code)) continue;  // the palette's own private helpers
+      bad.push(`${name}(`);
+    }
+    for (const m of code.matchAll(/appRequestOnce|AppRequest\.|\brequest\(/g)) bad.push(m[0]);
+    for (const m of code.matchAll(/=\s*(model|control)\b(?!\s*\.)/g)) bad.push(`rebinds ${m[1]}`);
+    return bad;
+  }
+
+  it('review of #246: the two safety labels keep the old look; a held Return sends once', () => {
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('Text(verbatim: "Needs your OK").safetyLabelStyle(t)');
+    expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // UI v4 step b (#139, [DEV REVIEW]): the question card has a 1.5 pt warn outline all round, solid fill, no glass.
+    const card = chat.match(/struct ConfirmMessage: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(card).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))');
+    expect(card).toContain('.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))');
+    expect(card).not.toMatch(/glass|Material|shadow|stephenAnimation|withAnimation|transition/);
+    // #139: the question appears without animation: the Ask box card height, the scroll to it, and Home's glide.
+    const follow = read('AskBox.swift').match(/private func follow\(_ h: CGFloat\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(follow).toContain('if cardHeight == 0 || reduceMotion || !model.confirms.isEmpty { cardHeight = h; return }');
+    expect(follow.indexOf('!model.confirms.isEmpty')).toBeLessThan(follow.indexOf('withAnimation'));
+    expect(chat).toContain('.onChange(of: model.confirms.first?.id) { _ in proxy.scrollTo("end", anchor: .bottom) }');
+    const home = read('HomeView.swift');
+    expect(home).toContain('private var glide: Bool { return model.thread.isEmpty && !model.isWorking }');
+    // The glide never reads the questions, so a question arriving mid-chat cannot start an animation (review of #252).
+    expect(home.match(/private var glide: Bool \{([^\n]*)\}/)?.[1]).not.toContain('confirms');
+    expect(home).toContain('.stephenAnimation(Motion.bar, value: glide)');
+    expect(home).not.toContain('value: empty)');
+    expect(read('Theme.swift')).toContain('.font(Font.system(size: 11, weight: .medium)).tracking(0.88).textCase(.uppercase)');
+    const field = read('Components/Controls.swift').match(/struct AskField: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(field).toMatch(/onKeyPress\(keys: \[\.return\], phases: \.repeat\) \{ press in\s*press\.modifiers\.contains\(\.shift\) \? \.ignored : \.handled/);
+  });
+
+  it('⌘K palette allow-list test catches planted calls', () => {
+    for (const planted of [
+      'control.start { _ in }', 'control.phoneOn { _ in }', 'appRequestOnce(appSocketPath, .phoneOn("p")) { _ in }',
+      'model\n  .clearHistory()', 'let m = model; m.forgetMemory("x")', 'model . sendChat("x")', 'model.resumeConversation(r.entry.id)', 'model.editAndResend(q)', 'model.request(.confirmAnswer("a", confirmId: "b", approve: true)) { _ in }',
+    ]) expect(paletteCallProblems(`struct P { func go() { ${planted} } }`), planted).not.toEqual([]);
+    expect(paletteCallProblems('struct P { func go() { control.runDoctor { nav.doctor = doctorText($0) }; model.newChat() } }')).toEqual([]);
+  });
+
+  // UI v4 step a, docs/research/UI-V4-IA-PLAN.md section 7.5.6: the palette is an allow list, not a block list.
+  it('⌘K palette: only allow-listed calls, never an answer, no default button, rows verbatim', () => {
+    const pal = read('Palette.swift');
+    expect(paletteCallProblems(pal)).toEqual([]);
+    for (const m of pal.matchAll(/\bactions\.(\w+)/g)) expect(['ask'], m[0]).toContain(m[1]);
+    for (const m of pal.matchAll(/\bnav\.(\w+)\s*=[^=]/g)) expect(['page', 'draft', 'paletteOpen', 'doctor', 'conversationQuery', 'conversationOpen'], m[0]).toContain(m[1]);
+    for (const m of pal.matchAll(/ThemeStore\.shared\.(\w+)/g)) expect(['pick', 'setFollowMac'], m[0]).toContain(m[1]);
+    // No answer, no Allow (not even disabled), nothing sent to the model, no shortcut that could reach the card.
+    expect(pal).not.toMatch(/\bAllow\b|\bDeny\b|approve|answerConfirm|denyFirstConfirm|confirmAnswer|sendChat|confirms\.first|keyboardShortcut|\.defaultAction/);
+    // Results are data: every Text is Text(verbatim:).
+    expect(pal.match(/\bText\((?!verbatim:)/g)).toBeNull();
+    // Return runs only the selected row; Esc only closes the palette; a row closes the palette before it runs.
+    expect(pal).toContain('.onSubmit { run(items) }');
+    expect(pal).toContain('.onKeyPress(.escape) { close(); return .handled }');
+    expect(pal).toContain('private func close() { nav.paletteOpen = false }');
+    expect(pal).toMatch(/let item = items\[selected\]\s*close\(\)\s*item\.run\(\)/);
+    // The Ask row only fills Home's composer.
+    expect(pal).toContain('if !q.isEmpty { nav.draft = q }');
+  });
+
+  // UI v4 step e, plan 7.2 and 7.5.3 ([DEV REVIEW]): the palette's Conversations source.
+  it('⌘K palette Conversations source: the page\'s rows and search, at most 5, verbatim, navigate only', () => {
+    const pal = read('Palette.swift');
+    const conv = pal.match(/private func conversations\(_ q: String\) -> \[PaletteItem\] \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    // Only for typed words, local over the loaded history, the same rows and search as the page, never more than 5.
+    expect(conv).toContain('guard !q.isEmpty else { return [] }');
+    expect(conv).toContain('conversationRows(model.history, audit: model.audit, parse: model.parseDate, query: q).prefix(5)');
+    expect(conv.match(/prefix\(/g)).toHaveLength(1);
+    expect(pal).toContain('return list + matching(goTo, q) + conversations(q) + matching(appActions, q)');
+    // What you said, verbatim, one line; source · time under it.
+    expect(conv).toContain('title: r.entry.said');
+    expect(conv).toContain('detail: "\\(model.sourceLabel(r.entry.source)) · \\(model.timeText(r.entry.ts))"');
+    expect(pal).toContain('Text(verbatim: item.title).font(TypeScale.body).foregroundColor(t.ink).lineLimit(1).truncationMode(.tail)');
+    expect(pal).toContain('if let d = item.detail { Text(verbatim: d)');
+    // A result only navigates: the query, the open row, the page. Nothing else.
+    const run = conv.match(/\) \{\n([\s\S]*?)\n      \}/)?.[1] ?? '';
+    expect(run.split('\n').map((l) => l.trim())).toEqual([
+      'nav.conversationQuery = q', 'nav.conversationOpen = r.entry.id', 'nav.page = .conversations',
+    ]);
+    // The reads it uses send nothing and change nothing.
+    const appClient = read('AppClient.swift');
+    for (const sig of ['func parseDate(_ iso: String) -> Date? {', 'func timeText(_ iso: String) -> String {', 'func sourceLabel(_ source: String) -> String {']) {
+      const i = appClient.indexOf(sig);
+      expect(i, sig).toBeGreaterThanOrEqual(0);
+      expect(appClient.slice(i, appClient.indexOf('\n  }\n', i)), sig).not.toMatch(/request\(|assign\(|self\.\w+ =/);
+    }
+    for (const v of ['history', 'audit']) expect(appClient).toContain(`@Published private(set) var ${v}:`);
+    expect(read('MainWindow.swift')).toContain('@Published var conversationQuery = ""\n  @Published var conversationOpen: String? = nil');
+  });
+
+  // UI v4 step e, plan 6.2.
+  it('Conversations (step e): intro, chips on top of conversationMatches, S5 rows, verbatim, Load older', () => {
+    // The row's VoiceOver label is a String variable, never a literal with third-party text (LocalizedStringKey).
+    const convPage = read('ConversationsPage.swift');
+    expect(convPage).toContain('let spoken: String = "You said: \\(entry.said). \\(word.word). \\(facts)"');
+    expect(convPage).toContain('.accessibilityLabel(spoken)');
+    // Sidebar and ⌘2 clear the palette's query and open row; the palette jump sets them (#255 review).
+    expect(read('MainWindow.swift')).toContain('if p == .conversations { nav.conversationQuery = ""; nav.conversationOpen = nil }');
+    // What you said stays copyable: in full, selectable, in the open row.
+    expect(convPage).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\.textSelection\(\.enabled\)/);
+    expect(convPage).not.toMatch(/accessibilityLabel\("[^"]*\\\(entry\./);
+    // A memory command keeps its own word (it was "Memory" before step e), not "Done".
+    expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
+    const conv = read('ConversationsPage.swift');
+    expect(conv).toContain('Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")');
+    // Chips: All, Refused, Failed, drawn with Memory's Tag.
+    expect(conv).toMatch(/let CONVERSATION_FILTERS = \[\s*MemoryFilter\(id: "all", title: "All"\), MemoryFilter\(id: "refused", title: "Refused"\), MemoryFilter\(id: "failed", title: "Failed"\),\s*\]/);
+    expect(conv).toContain('ForEach(CONVERSATION_FILTERS) { f in Tag(f.title, selected: filter == f.id) { filter = f.id }.fixedSize() }');
+    // The filter is a pure filter on top of conversationMatches: the search runs first, for every row.
+    const rows = conv.match(/func conversationRows\([\s\S]*?\n\}/)?.[0] ?? '';
+    expect(rows).toMatch(/\.filter \{ r in\s*guard conversationMatches\(r\.entry, lines: r\.lines, query: query\) else \{ return false \}/);
+    expect(rows).toContain('case "refused": return r.lines.contains { $0.status == .refused }');
+    expect(rows).toContain('case "failed": return r.entry.outcome == "error" || r.lines.contains { $0.status == .failed }');
+    const page = conv.match(/struct ConversationsPage: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(page).toContain('conversationRows(day.entries, audit: model.audit, parse: model.parseDate, query: nav.conversationQuery,');
+    expect(page).not.toMatch(/\.filter \{/);
+    expect(page).toContain('TextField("Search conversations", text: $nav.conversationQuery)');
+    expect(page).toContain('QuietButton("Load older") { model.loadOlderHistory() }');
+    // S5 row: title verbatim, facts line in the chat's format, the status word with Home's words.
+    expect(conv).toContain('Text(verbatim: entry.said)');
+    expect(conv).toContain('Text(verbatim: entry.reply)');
+    expect(conv).toContain('Text(verbatim: l.text)');
+    expect(conv).toContain('let word = recentChatWord(entry, lines: lines)');
+    expect(conv).toContain('StatusPill(word.word, kind: word.kind)');
+    expect(conv).toContain('return parts.joined(separator: " · ")');
+    // All conversation text is data: no Markdown, no links.
+    expect(conv.match(/\bText\((?!verbatim:)/g)).toBeNull();
+    expect(conv).not.toMatch(/AttributedString|LocalizedStringKey|Link\(/);
+  });
+
+  it('Conversations (step e, [DEV REVIEW]): refused and failed lines sit outside the open or closed condition', () => {
+    const conv = read('ConversationsPage.swift');
+    const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    // Two conditions on the open state in the row: one holds only what you said (copyable), one only the reply.
+    expect(item.match(/if !?expanded/g)).toEqual(['if expanded', 'if expanded']);
+    expect(item).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\n[^\n]*\n\s*\}\n/);
+    expect(item).toMatch(/if expanded && !entry\.reply\.isEmpty \{\s*Text\(verbatim: entry\.reply\)[^\n]*\n[^\n]*\n\s*\}\n/);
+    // The step lines follow that block, not inside it. Only ok lines wait for the open row.
+    expect(item).toMatch(/\.fixedSize\(horizontal: false, vertical: true\)\n        \}\n(\s*\/\/[^\n]*\n)*\s*ForEach\(Array\(lines\.filter \{ expanded \|\| \$0\.status != \.ok \}\.enumerated\(\)\)/);
+    expect(item.match(/ForEach\(/g)).toHaveLength(1);
+    // The closed row's facts count the problems too, so a closed row never reads as fine.
+    expect(conv).toContain('if refused > 0 { parts.append("\\(refused) refused") }');
+    expect(conv).toContain('if failed > 0 { parts.append("\\(failed) failed") }');
+  });
+
+  it('⌘K palette: while open, the question card buttons and its Esc are off; the banner stays above it', () => {
+    const box = read('AskBox.swift');
+    const buttons = box.match(/struct ConfirmButtons: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(buttons).toContain('@Environment(\\.paletteOpen) var paletteOpen');
+    expect(buttons).toContain('.disabled(!live || paletteOpen)');
+    expect(buttons).toContain('try? await Task.sleep(nanoseconds: 750_000_000)');  // the 0.75 s delay is unchanged
+    expect(buttons).not.toContain('keyboardShortcut');
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('@Environment(\\.paletteOpen) var paletteOpen');
+    expect(chat).toContain('Button("") { model.denyFirstConfirm() }.keyboardShortcut(.cancelAction).disabled(paletteOpen)');
+    // Off by default (the Ask box never sets it); only the main window sets it, from nav.paletteOpen.
+    expect(read('Palette.swift')).toMatch(/struct PaletteOpenKey: EnvironmentKey \{\s*static let defaultValue = false/);
+    const setters = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'))
+      .filter((f) => read(f).includes('.environment(\\.paletteOpen'));
+    expect(setters).toEqual(['MainWindow.swift']);
+    const main = read('MainWindow.swift');
+    expect(main).toContain('.environment(\\.paletteOpen, nav.paletteOpen)');
+    // Layout: toolbar, banner, then the page with the palette in its overlay. The banner is not in the overlay.
+    expect(main).toMatch(/WindowToolbar\(model: model, nav: nav\)\s*if !model\.confirms\.isEmpty \{ questionBanner \}\s*detail\.frame/);
+    const overlay = main.match(/\.overlay\(alignment: \.top\) \{([\s\S]*?)\n          \}/)?.[1] ?? '';
+    expect(overlay).toContain('CommandPalette(');
+    expect(overlay).not.toContain('questionBanner');
+    // No view in the window gives the palette a default button.
+    for (const f of ['Palette.swift', 'MainWindow.swift', 'HomeView.swift']) expect(read(f), f).not.toContain('.defaultAction');
+    // App menu (plan 5.3): ⌘K is "Search and actions…", which brings the main window forward first. Ask Stephen stays.
+    const app = read('AppWindow.swift');
+    expect(app).toContain('NSMenuItem(title: "Search and actions…", action: #selector(paletteClicked(_:)), keyEquivalent: "k")');
+    expect(app).toContain('NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "")');
+    expect(app).toMatch(/func paletteClicked\(_ sender: Any\?\) \{\s*show\(\)\s*nav\.paletteOpen = true/);
+  });
+
+  it('glass (UI v4 section 8): sidebar, toolbar and palette only; tints and alphas are the checked ones; solid fallbacks', () => {
+    const script = join(helperSourceDir(), '..', 'docs', 'research', 'ui-v4-mock', 'glass-contrast.mjs');
+    execFileSync(process.execPath, [script], { stdio: 'pipe' });  // throws if any text pair is under 4.5:1
+    const src = readFileSync(script, 'utf8');
+    const theme = read('Theme.swift');
+    const alpha = src.match(/export const ALPHA = \{([^}]*)\}/)?.[1] ?? '';
+    const pairs = [...alpha.matchAll(/(\w+): \[([\d.]+), ([\d.]+)\]/g)];
+    expect(pairs.map((m) => m[1])).toEqual(['sidebar', 'toolbar', 'palette']);
+    for (const [, k, light, dark] of pairs) expect(theme).toContain(`case .${k}: return (${light}, ${dark})`);
+    for (const [name, sidebar, ground] of [...src.matchAll(/(\w+): \{ dark: \w+, sidebar: '(\w+)', ground: '(\w+)'/g)].map((m) => [m[1], m[2], m[3]])) {
+      expect(theme, name).toMatch(new RegExp(`case \\.${name}:[\\s\\S]*?ground: Color\\(hex: 0x${ground}\\)[\\s\\S]*?sidebar: Color\\(hex: 0x${sidebar}\\)`));
+    }
+    expect(theme).toContain('if reduceTransparency || contrast == .increased {');
+    const uses = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'))
+      .flatMap((f) => [...read(f).matchAll(/\.glassBackground\(\.(\w+)\)/g)].map((m) => `${f}:${m[1]}`));
+    expect(uses.sort()).toEqual(['MainWindow.swift:sidebar', 'MainWindow.swift:toolbar', 'Palette.swift:palette']);
+    // The question card, the banner and the Recording on sign stay solid.
+    expect(read('Components/ChatThread.swift')).not.toContain('glassBackground');
+    expect(read('AskBox.swift')).not.toContain('glassBackground');
   });
 });

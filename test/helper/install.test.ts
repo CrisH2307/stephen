@@ -13,6 +13,7 @@ import {
   HELPER_SOURCES,
   type InstallHelperDeps,
   codesignArgs,
+  fallbackSdks,
   findSwiftCompiler,
   helperSourceDir,
   installHelper,
@@ -50,6 +51,7 @@ const happy: Responder = (cmd, args) => {
   if (cmd === '/usr/bin/xcrun' && args[0] === '--find') return ok('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc\n');
   if (cmd === '/usr/bin/xcrun' && args.includes('--show-sdk-path')) return ok('/SDKs/MacOSX.sdk\n');
   if (cmd.endsWith('swiftc') && args[0] === '--version') return ok('Swift version 6.0\n');
+  if (cmd.endsWith('swiftc') && args[0] === '-typecheck') return ok();
   if (cmd.endsWith('swiftc')) {
     const out = args[args.indexOf('-o') + 1]!;
     writeFileSync(out, '#!/bin/sh\n');
@@ -89,7 +91,7 @@ describe('install-helper', () => {
       '-O', '-swift-version', '5', '-sdk', '/SDK', '-o', '/tmp/x/Stephen Helper',
       '/src/Core.swift', '/src/Theme.swift',
       '/src/Components/Sidebar.swift', '/src/Components/Controls.swift', '/src/Components/Lists.swift', '/src/Components/ChatThread.swift',
-      '/src/AppProtocol.swift', '/src/AppConnection.swift', '/src/AppClient.swift', '/src/AppConfirm.swift', '/src/StephenControl.swift', '/src/AppWindow.swift', '/src/AskBox.swift', '/src/MainWindow.swift', '/src/HomeView.swift', '/src/PersonalView.swift', '/src/MemoryPage.swift', '/src/ConversationsPage.swift', '/src/JobsPage.swift', '/src/AppearanceSettings.swift', '/src/SettingsPage.swift', '/src/main.swift',
+      '/src/AppProtocol.swift', '/src/AppConnection.swift', '/src/AppClient.swift', '/src/AppConfirm.swift', '/src/StephenControl.swift', '/src/AppWindow.swift', '/src/AskBox.swift', '/src/MainWindow.swift', '/src/HomeView.swift', '/src/Palette.swift', '/src/MemoryPage.swift', '/src/ConversationsPage.swift', '/src/JobsPage.swift', '/src/AppearanceSettings.swift', '/src/SettingsPage.swift', '/src/main.swift',
       '-framework', 'AppKit', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'SwiftUI',
     ]);
     expect(swiftcArgs('/src', '/o', null)).not.toContain('-sdk');
@@ -198,6 +200,48 @@ describe('install-helper', () => {
   });
 });
 
+/** swiftc's error on Command Line Tools for macOS 27.2 (#248). */
+const NO_MACROS = "ChatThread.swift:178:22: error: external macro implementation type 'SwiftUIMacros.StateMacro' could not be found for macro 'State()'; plugin for module 'SwiftUIMacros' not found";
+const sdkOf = (args: string[]) => args[args.indexOf('-sdk') + 1];
+
+describe('install-helper SDK fallback (#248)', () => {
+  it('lists the other SDKs newest first by version number, each real folder once, without the default', () => {
+    const links: Record<string, string> = { '/C/MacOSX.sdk': '/C/MacOSX27.2.sdk', '/C/MacOSX26.sdk': '/C/MacOSX26.5.sdk', '/C/MacOSX27.sdk': '/C/MacOSX27.2.sdk' };
+    const names = ['MacOSX.sdk', 'MacOSX15.sdk', 'MacOSX26.5.sdk', 'MacOSX26.sdk', 'MacOSX26.10.sdk', 'MacOSX27.2.sdk', 'MacOSX27.sdk', 'notes.txt'];
+    expect(fallbackSdks('/C', names, '/C/MacOSX.sdk', (p) => links[p] ?? p)).toEqual(['/C/MacOSX26.10.sdk', '/C/MacOSX26.5.sdk', '/C/MacOSX15.sdk']);
+  });
+
+  /** The default SDK fails with NO_MACROS; `broken` fails with another error; every other SDK builds. */
+  const fallback = (broken: string[]): Responder => (cmd, args) =>
+    cmd.endsWith('swiftc') && args[0] !== '--version' && (sdkOf(args) === '/SDKs/MacOSX.sdk' || broken.includes(sdkOf(args)!)) ? fail(sdkOf(args) === '/SDKs/MacOSX.sdk' ? NO_MACROS : 'error: other') : happy(cmd, args);
+  const compiled = (calls: { cmd: string; args: string[] }[]) => calls.filter((c) => c.cmd.endsWith('swiftc') && c.args[0] === '-O').map((c) => sdkOf(c.args));
+
+  it('the default SDK lacks SwiftUIMacros: tries the others newest first, uses the first that builds, prints it', async () => {
+    const f = fakeRun(fallback(['/C/MacOSX27.1.sdk']));
+    const d = deps(f.run, { fallbackSdks: () => ['/C/MacOSX27.1.sdk', '/C/MacOSX26.5.sdk', '/C/MacOSX15.sdk'] });
+    expect(await installHelper(plan(), {}, d.deps)).toBe(0);
+    expect(compiled(f.calls)).toEqual(['/SDKs/MacOSX.sdk', '/C/MacOSX27.1.sdk', '/C/MacOSX26.5.sdk']);
+    const text = d.out.join('\n');
+    expect(text).toContain('SDK: /C/MacOSX26.5.sdk');
+    expect(text).toContain('The default SDK (/SDKs/MacOSX.sdk) cannot build');
+    expect(existsSync(join(plan().appPath, 'Contents', 'MacOS', 'Stephen Helper'))).toBe(true);
+  });
+
+  it('no other SDK builds: exit 1 with what to install; another swiftc error never tries other SDKs', async () => {
+    const none = fakeRun(fallback(['/C/MacOSX26.5.sdk']));
+    const d = deps(none.run, { fallbackSdks: () => ['/C/MacOSX26.5.sdk'] });
+    expect(await installHelper(plan(), {}, d.deps)).toBe(1);
+    expect(d.out.join('\n')).toMatch(/SwiftUIMacros[\s\S]*tried \/C\/MacOSX26.5.sdk[\s\S]*Install an older macOS SDK/);
+    expect(existsSync(plan().appPath)).toBe(false);
+
+    const other = fakeRun((cmd, args) => (cmd.endsWith('swiftc') && args[0] === '-O' ? fail('main.swift:1:1: error: boom') : happy(cmd, args)));
+    let asked = false;
+    expect(await installHelper(plan(), {}, deps(other.run, { fallbackSdks: () => ((asked = true), ['/C/MacOSX26.5.sdk']) }).deps)).toBe(1);
+    expect(compiled(other.calls)).toEqual(['/SDKs/MacOSX.sdk']);
+    expect(asked).toBe(false);
+  });
+});
+
 describe('install-helper skip unchanged', () => {
   /** A private copy of the Swift sources so a test can edit one. */
   function ownPlan() {
@@ -288,6 +332,7 @@ describe('doctor: helper lines', () => {
       exists: (p) => files.has(p),
       run: fakeRun(happy).run,
       probe: async () => ({ running: false, reason: 'ECONNREFUSED' }),
+      fallbackSdks: () => [],
       ...over,
     };
   }
@@ -299,6 +344,7 @@ describe('doctor: helper lines', () => {
     expect(c.map((x) => [x.label.split(' (')[0], x.ok])).toEqual([
       ['Stephen Helper installed', false],
       ['Xcode command line tools', true],
+      ['macOS SDK that can build the helper', true],
     ]);
     expect(c[0]!.fix).toContain('stephen install-helper');
   });
@@ -308,6 +354,7 @@ describe('doctor: helper lines', () => {
     expect(c.map((x) => [x.label, x.ok])).toEqual([
       ['Stephen Helper installed (push-to-talk: hold F5 or Fn+Option)', true],
       ['Xcode command line tools (Swift compiler, to build the helper)', true],
+      ['macOS SDK that can build the helper', true],
       ['Stephen Helper running', true],
       ['Input Monitoring granted to Stephen Helper', true],
       ['Accessibility for Stephen Helper (media keys)', true],
@@ -325,6 +372,16 @@ describe('doctor: helper lines', () => {
     expect(denied.at(-2)).toMatchObject({ ok: false, fix: expect.stringContaining('Privacy & Security › Input Monitoring') });
     const stopped = await helperDoctorChecks('/h', doctorDeps({ files: [exe] }));
     expect(stopped.at(-1)).toMatchObject({ ok: true, info: true, label: 'Stephen Helper running' });
+  });
+
+  it('#248: the default SDK lacks SwiftUIMacros → names the SDK used instead, or what to install', async () => {
+    const probe = (works: string[]) =>
+      fakeRun((cmd, args) => (cmd.endsWith('swiftc') && args[0] === '-typecheck' ? (works.includes(sdkOf(args)!) ? ok() : fail(NO_MACROS)) : happy(cmd, args))).run;
+    const label = 'macOS SDK that can build the helper';
+    const used = (await helperDoctorChecks('/h', doctorDeps({ run: probe(['/C/MacOSX26.5.sdk']), fallbackSdks: () => ['/C/MacOSX27.1.sdk', '/C/MacOSX26.5.sdk'] }))).find((c) => c.label === label)!;
+    expect(used).toMatchObject({ ok: true, detail: expect.stringMatching(/default SDK \(\/SDKs\/MacOSX.sdk\) cannot build[\s\S]*uses \/C\/MacOSX26.5.sdk/) });
+    const none = (await helperDoctorChecks('/h', doctorDeps({ run: probe([]), fallbackSdks: () => ['/C/MacOSX27.1.sdk'] }))).find((c) => c.label === label)!;
+    expect(none).toMatchObject({ ok: false, detail: expect.stringContaining('no SwiftUIMacros plugin'), fix: expect.stringContaining('Install an older macOS SDK') });
   });
 
   it('missing Xcode tools → ✗ "xcode-select --install" (info only once the helper is built); non-macOS → one info line', async () => {

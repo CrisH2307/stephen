@@ -301,6 +301,15 @@ final class StephenControl: ObservableObject {
 
   func phoneOn(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .phoneOn("c-phone-on"), done) }
   func phoneOff(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .phoneOff("c-phone-off"), done) }
+  /** On when the phone marker (<home>/phone/.on, src/phone/setup.ts) names a live process: true however it was turned
+   *  on. The menu bar item and Settings > Connected read it. */
+  func phoneLinkOn() -> Bool {
+    guard let data = FileManager.default.contents(atPath: home + "/phone/.on"),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let pid = json["pid"] as? Int, pid > 0
+    else { return false }
+    return kill(pid_t(pid), 0) == 0
+  }
   func openZen(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .zenOpen("c-zen"), done) }
   func runDoctor(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .doctorRun("c-doctor"), done) }
   /** Settings > Speed: the latency report (ids and numbers only); quick, so a short timeout. */

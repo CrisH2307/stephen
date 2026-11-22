@@ -2,7 +2,7 @@
  * One command end to end after transcription: memory, timer and job routers → Claude → reply → `say` → chime. Shared by the mic,
  * `--text` and the Stephen app's typed chat (src/app/server.ts): call command(text, {source, raw}).
  */
-import { newHistoryId } from '../history/store.js';
+import { newConversationId, newHistoryId } from '../history/store.js';
 import type { ClaudeOutcome, ModelTimes } from './claude.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
@@ -108,6 +108,8 @@ export interface CommandReport {
   model?: ModelTimes;
   /** The spoken reply was cut short: ms from the cancel until the speech process ended (a number, for the latency log). */
   silenceMs?: number;
+  /** Conversation id (ADR-007): the same for every command of one conversation, a new one when a conversation starts. */
+  conv?: string;
 }
 
 export interface AssistantOptions {
@@ -147,6 +149,12 @@ export class Assistant {
   /** When a cancel hit a reply being spoken (assistant clock), and how long the speech took to end after it. */
   private silenceFrom: number | null = null;
   private silenceMs: number | undefined;
+  /**
+   * The open conversation's id (ADR-007), or null when none is open. A Claude run that is not a follow-up starts a new
+   * one; a command a local router answers joins the open one (ADR-007 open question 4).
+   * ponytail: a local command after the follow-up window ran out still joins the old id; ask the runner if that matters.
+   */
+  private conv: string | null = null;
   constructor(private readonly o: AssistantOptions) {}
 
   get phase(): Phase {
@@ -195,8 +203,12 @@ export class Assistant {
     let said = text;
     let via: CommandReport['route'] = 'model';
     let replyAt = t0;
-    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs'>): CommandReport => {
-      const full: CommandReport = { ...r, id, source, said, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0), ...(this.silenceMs !== undefined ? { silenceMs: this.silenceMs } : {}) };
+    let conv = this.conv ?? newConversationId();
+    this.conv = conv;
+    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs' | 'conv'>): CommandReport => {
+      // A failed or cancelled Claude run ends the conversation (conversation.ts): the next command gets a new id.
+      if (r.ranClaude && r.outcome !== 'ok') this.conv = null;
+      const full: CommandReport = { ...r, id, source, said, conv, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0), ...(this.silenceMs !== undefined ? { silenceMs: this.silenceMs } : {}) };
       try {
         this.o.onDone?.(full);
       } catch (e) {
@@ -226,7 +238,10 @@ export class Assistant {
         if (route.said !== undefined) said = route.said;
         // A memory change ends the conversation BEFORE anything else runs: a resumed session would keep the old
         // system prompt (claude's --system-prompt-snapshot), so the next command must start fresh.
-        if (route.changed) this.o.runner.endConversation?.();
+        if (route.changed) {
+          this.o.runner.endConversation?.();
+          this.conv = null; // this command keeps its id; the next one starts a new conversation
+        }
         if (this.cancelled) return report({ result: 'cancelled', outcome: 'cancelled', reply: '', ranClaude: false, followUp: false, turns: 0 });
         if (!route.rest) {
           await this.deliver(route.reply, true, opts.speak, t0);
@@ -249,6 +264,8 @@ export class Assistant {
       } catch {
         // run() reports it
       }
+      if (!followUp || this.conv === null) conv = newConversationId();
+      this.conv = conv;
       this.o.status(followUp ? 'Working… (follow-up)' : 'Working…');
       let out: ClaudeOutcome;
       try {
@@ -328,6 +345,7 @@ export class Assistant {
 
   /** End the follow-up conversation: the next command starts a fresh Claude session with a fresh gate. */
   endConversation(): void {
+    this.conv = null;
     this.o.runner.endConversation?.();
   }
 

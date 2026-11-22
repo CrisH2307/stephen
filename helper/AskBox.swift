@@ -2,8 +2,8 @@
 // opened by clicking the icon, by F5 (push-to-talk, shown while you talk) or by Cmd+K inside the app. It is a real
 // chat: the current conversation as a scrolling thread (ChatThreadView, the same one Home shows), with the input at the
 // bottom, all from AppModel (the same app.sock connection and chat as the Stephen window). Drag it by the strip on
-// top; it remembers where you left it. The ... button opens a normal pop-up menu over the box (New chat, pin, Reset
-// position, usage), so the chat stays in view.
+// top; it remembers where you left it. The strip shows Stephen's state as a word (S9). The ... button opens a normal
+// pop-up menu over the box (the chat title, New chat, pin, Reset position, usage), so the chat stays in view.
 //
 // Motion: the panel window never changes size. It is a fixed, transparent canvas; only the card inside it grows and
 // shrinks, one SwiftUI animation of its height (clicks on the transparent part go through to the app below). Resizing
@@ -44,6 +44,20 @@ enum AskBoxMode: Equatable {
   }
 }
 
+/// The Ask box strip's state word (S9): is Stephen ready, listening or busy, in words with a dot (never colour alone).
+/// The box can't tell a stopped listener from an unreachable one, so offline says only "Offline".
+func askBoxStateWord(connection: AppConnectionState, state: String, listening: Bool, working: Bool) -> (word: String, kind: StatusKind) {
+  switch connection {
+  case .offline: return ("Offline", .bad)
+  case .connecting: return ("Connecting", .warn)
+  case .online: break
+  }
+  if state == "recording" { return ("Listening", .ok) }
+  if working { return ("Working", .idle) }
+  if state == "speaking" { return ("Speaking", .idle) }
+  return listening ? ("Ready", .ok) : ("Microphone off", .warn)
+}
+
 struct AskBoxActions {
   var close: () -> Void
   var micDown: () -> Void
@@ -52,6 +66,8 @@ struct AskBoxActions {
   var micCancel: () -> Void
   var openApp: () -> Void
   var reviewMemory: () -> Void
+  /** A refusal's "See what Stephen may do": the window on Settings > Privacy and permissions (L1). */
+  var openPermissions: () -> Void
   var quit: () -> Void
   /** The owner let go of the drag strip: remember where the box is. */
   var dragEnded: () -> Void
@@ -69,6 +85,8 @@ struct ConfirmButtons: View {
   let question: PendingConfirm
   let waiting: Int
   let answer: (Bool) -> Void
+  /// The main window's ⌘K palette is open: both buttons are off until it closes (UI-V4-IA-PLAN 7.5.4).
+  @Environment(\.paletteOpen) var paletteOpen
   @State private var armed: String? = nil
 
   var body: some View {
@@ -80,7 +98,7 @@ struct ConfirmButtons: View {
       QuietButton("Deny") { answer(false) }
       PrimaryButton("Allow") { answer(true) }
     }
-    .disabled(!live).opacity(live ? 1 : 0.5)
+    .disabled(!live || paletteOpen).opacity(live ? 1 : 0.5)
     .task(id: question.id) {
       armed = nil
       try? await Task.sleep(nanoseconds: 750_000_000)
@@ -121,21 +139,25 @@ struct AskBoxView: View {
 
   private func follow(_ h: CGFloat) {
     guard h > 0, abs(h - cardHeight) > 0.5 else { return }
-    if cardHeight == 0 || reduceMotion { cardHeight = h; return }
+    // A waiting question appears at once, never with a height animation (#139).
+    if cardHeight == 0 || reduceMotion || !model.confirms.isEmpty { cardHeight = h; return }
     withAnimation(.easeInOut(duration: Motion.bar)) { cardHeight = h }
   }
 
-  /// Drag the title area to move the box. The ... button sits beside it, not on top: an AppKit drag view would take
-  /// its clicks (that was the "can't open the menu" bug).
+  /// Drag the strip to move the box. The ... button sits beside it, not on top: an AppKit drag view would take
+  /// its clicks (that was the "can't open the menu" bug). The state word sits next to ... (S9); the chat title is in
+  /// the ... menu (R7).
   private var topStrip: some View {
-    HStack(spacing: Space.xs) {
+    let s = askBoxStateWord(connection: model.connection, state: model.state, listening: model.listening, working: model.isWorking)
+    return HStack(spacing: Space.xs) {
       ZStack {
         DragStrip(onEnd: actions.dragEnded)
-        VStack(spacing: 2) {
-          Capsule().fill(t.line).frame(width: 36, height: 4).accessibilityHidden(true)
-          Text(verbatim: model.threadTitle).font(TypeScale.secondary.weight(.semibold)).foregroundColor(t.ink2).lineLimit(1)
+        Capsule().fill(t.line).frame(width: 36, height: 4).accessibilityHidden(true).allowsHitTesting(false)
+        HStack {
+          Spacer(minLength: 0)
+          StatusPill(s.word, kind: s.kind)
         }
-        .padding(.horizontal, Space.s).allowsHitTesting(false)
+        .padding(.leading, Space.xs).padding(.trailing, Space.s).allowsHitTesting(false)  // room before ⋯ and ✕
       }
       menu
       Button(action: actions.close) {
@@ -155,7 +177,7 @@ struct AskBoxView: View {
       if !model.thread.isEmpty || !model.confirms.isEmpty || model.isWorking {
         // Fixed height once the chat has started (owner, 2026-11-09): the box keeps one size and a long chat scrolls,
         // instead of growing with every message.
-        ChatThreadView(model: model).frame(height: 340)
+        ChatThreadView(model: model, links: ChatLinks(permissions: actions.openPermissions)).frame(height: 340)
       }
       AskField(text: $box.draft, onMic: actions.micDown, onSubmit: send)
     case .listening:
@@ -185,6 +207,9 @@ struct AskBoxView: View {
   /// hidden buttons below, so they also work with the menu closed.
   private var menu: some View {
     Menu {
+      // The chat's title (your first words, verbatim); a label, not a button.
+      Text(verbatim: model.threadTitle)
+      Divider()
       Button("New chat  ⌘N") { newChat() }
       Button("Open Stephen  ⌘O") { actions.openApp() }
       Toggle("Pin open", isOn: $box.pinned)
@@ -195,7 +220,7 @@ struct AskBoxView: View {
         if let m = model.usage?.context { Text(verbatim: usageLine("This chat", m.percent, m.warn, "context used")) }
         if let m = model.usage?.memory { Text(verbatim: usageLine("Memory", m.percent, m.warn, "full")) }
       }
-      Button("Review memory") { actions.reviewMemory() }
+      Button("Open Memory") { actions.reviewMemory() }
       Divider()
       Button("Quit  ⌘Q") { actions.quit() }
     } label: {
@@ -383,8 +408,9 @@ final class AskBoxController: NSObject {
       micDown: { [weak self] in self?.micDown() },
       micUp: { [weak self] in self?.micUp() },
       micCancel: { [weak self] in self?.box.micHeld = false; self?.cancelTalk() },
-      openApp: { [weak self] in self?.close(); self?.openWindow(nil) },
-      reviewMemory: { [weak self] in self?.close(); self?.openWindow(.memory) },
+      openApp: { [weak self] in self?.openWindow(nil) },
+      reviewMemory: { [weak self] in self?.openWindow(.memory) },
+      openPermissions: { [weak self] in selectSettingsPane(.privacy); self?.openWindow(.settings) },
       quit: { [weak self] in self?.quit() },
       dragEnded: { [weak self] in self?.savePosition() },
       resetPosition: { [weak self] in self?.resetPosition() },

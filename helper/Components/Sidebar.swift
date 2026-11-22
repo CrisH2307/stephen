@@ -2,9 +2,10 @@
 
 import SwiftUI
 
-/// "STEPHEN" / "YOU" label above a group of rows.
+/// "Talk" / "Control" label above a group of rows (sentence case, v4).
 struct SidebarSection<Content: View>: View {
   @Environment(\.stephenTheme) var t
+  @Environment(\.sidebarWidth) var sidebarWidth
   let title: String
   var collapsed: Bool = false
   let content: Content
@@ -16,7 +17,7 @@ struct SidebarSection<Content: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text(verbatim: title).sectionLabelStyle(t).padding(.horizontal, Space.s).opacity(collapsed ? 0 : 1)
-        .fixedSize().frame(width: SidebarMetrics.content(collapsed), alignment: .leading).clipped().accessibilityAddTraits(.isHeader)
+        .fixedSize().frame(width: SidebarMetrics.content(collapsed, sidebarWidth), alignment: .leading).clipped().accessibilityAddTraits(.isHeader)
       content
     }
   }
@@ -25,6 +26,7 @@ struct SidebarSection<Content: View>: View {
 /// One sidebar row. `collapsed` shows the icon only (60 pt rail) with a tooltip.
 struct SidebarRow: View {
   @Environment(\.stephenTheme) var t
+  @Environment(\.sidebarWidth) var sidebarWidth
   let title: String
   let symbol: String
   let selected: Bool
@@ -58,10 +60,10 @@ struct SidebarRow: View {
         if let shortcut = shortcut { Text(verbatim: shortcut).font(TypeScale.secondary).foregroundColor(t.ink2).opacity(collapsed ? 0 : 1) }
       }
       .padding(.horizontal, Space.s).padding(.vertical, 8)
-      .frame(width: width ?? SidebarMetrics.content(collapsed), alignment: .leading)
+      .frame(width: width ?? SidebarMetrics.content(collapsed, sidebarWidth), alignment: .leading)
       .background(
         ZStack(alignment: .leading) {
-          RoundedRectangle(cornerRadius: Corner.row).fill(t.accent.opacity(selected ? 0.12 : 0))
+          RoundedRectangle(cornerRadius: Corner.row).fill(selected ? t.selection : Color.clear)
           // The mark for "you are here": a small accent bar on the leading edge.
           Capsule().fill(t.accent).frame(width: 3, height: 18).padding(.leading, 2).opacity(selected ? 1 : 0)
         }

@@ -11,7 +11,11 @@ import {
   MAX_DAY_FILE_BYTES,
   MAX_REPLY_CHARS,
   MAX_SAID_CHARS,
+  MAX_CHAT_STEPS,
+  MAX_STEP_CHARS,
   localDate,
+  newConversationId,
+  parseHistoryEntry,
   type NewHistoryEntry,
 } from '../../src/history/store.js';
 
@@ -47,10 +51,10 @@ const entry = (said: string, over: Partial<NewHistoryEntry> = {}): NewHistoryEnt
 });
 
 describe('history config', () => {
-  it('defaults to 1 day; 0 to 30 allowed; strict', () => {
-    expect(parseHistoryConfig(undefined)).toEqual({ retentionDays: 1 });
-    expect(parseHistoryConfig({})).toEqual({ retentionDays: 1 });
-    expect(parseHistoryConfig({ retentionDays: null })).toEqual({ retentionDays: 1 });
+  it('defaults to 7 days; 0 to 30 allowed; strict', () => {
+    expect(parseHistoryConfig(undefined)).toEqual({ retentionDays: 7 });
+    expect(parseHistoryConfig({})).toEqual({ retentionDays: 7 });
+    expect(parseHistoryConfig({ retentionDays: null })).toEqual({ retentionDays: 7 });
     expect(parseHistoryConfig({ retentionDays: 0 })).toEqual({ retentionDays: 0 });
     expect(parseHistoryConfig({ retentionDays: 30 })).toEqual({ retentionDays: 30 });
     for (const bad of [{ retentionDays: 31 }, { retentionDays: -1 }, { retentionDays: 1.5 }, { retentionDays: '7' }, { keep: 1 }, [], 'x']) {
@@ -182,7 +186,7 @@ describe('HistoryStore', () => {
     expect(s3.list().map((e) => e.said)).toEqual(['oct 31', 'oct 30', 'oct 29']); // list hides expired days
     expect(s3.purge()).toBe(0); // list() already purged them (review 5, R5-6)
     expect(files()).toEqual(['2026-10-29.jsonl', '2026-10-30.jsonl', '2026-10-31.jsonl']);
-    // Default 1 day: append on Nov 1 deletes Oct 29 and Oct 30, keeps yesterday and today.
+    // 1 day: append on Nov 1 deletes Oct 29 and Oct 30, keeps yesterday and today.
     const s1 = new HistoryStore({ home, retentionDays: 1, now: c.now });
     s1.append(entry('nov 1'));
     expect(files()).toEqual(['2026-10-31.jsonl', '2026-11-01.jsonl']);
@@ -258,5 +262,54 @@ describe('HistoryStore', () => {
     expect(() => new HistoryStore({ home: freshHome(), retentionDays: 31 })).toThrow(HistoryError);
     const s = new HistoryStore({ home: freshHome(), retentionDays: 1 });
     expect(() => s.append({ ...entry('x'), source: 'web' as never })).toThrow(HistoryError);
+  });
+});
+
+describe('ADR-007 v1: conv and steps on the history line, 7-day rolling retention', () => {
+  it('retention is a rolling cutoff at the default 7 days: 7 d - 1 s is listed, 7 d + 1 s is purged', () => {
+    const home = freshHome();
+    const days = parseHistoryConfig({}).retentionDays;
+    expect(days).toBe(7);
+    const day = 24 * 3600_000;
+    const c = clock(2026, 11, 20);
+    const s = new HistoryStore({ home, retentionDays: days, now: c.now });
+    c.tick(-7 * day - 1000);
+    s.append(entry('7 days and 1 s ago'));
+    c.tick(2000);
+    s.append(entry('7 days less 1 s ago'));
+    c.tick(7 * day - 1000);
+    expect(s.list().map((e) => e.said)).toEqual(['7 days less 1 s ago']);
+    const file = join(home, 'history', '2026-11-13.jsonl');
+    expect(readFileSync(file, 'utf8')).not.toContain('7 days and 1 s ago'); // purged from disk, not only hidden
+  });
+
+  it('a line without conv or steps parses, with neither key', () => {
+    const e = parseHistoryEntry({ ...entry('old line'), id: 'h_0123456789abcdef', ts: '2026-11-20T12:00:00.000Z' });
+    expect(e).not.toBeNull();
+    expect(e).not.toHaveProperty('conv');
+    expect(e).not.toHaveProperty('steps');
+  });
+
+  it('oversized steps are cut to 40 lines of 160 characters; bad steps and a bad conv are dropped', () => {
+    const steps = [
+      { text: 'x', status: 'great' },
+      'nope',
+      ...Array.from({ length: MAX_CHAT_STEPS + 5 }, (_, i) => ({ text: `${i} ${'y'.repeat(300)}`, status: 'ok' })),
+    ];
+    const e = parseHistoryEntry({ ...entry('big'), id: 'h_1', ts: '2026-11-20T12:00:00.000Z', conv: 'c_short', steps });
+    expect(e!.steps).toHaveLength(MAX_CHAT_STEPS);
+    expect(e!.steps!.every((st) => [...st.text].length <= MAX_STEP_CHARS)).toBe(true);
+    expect(e!.steps![0]!.text.startsWith('0 ')).toBe(true);
+    expect(e).not.toHaveProperty('conv');
+  });
+
+  it('a line written with conv and steps reads back with them (the parser keeps both)', () => {
+    const home = freshHome();
+    const s = new HistoryStore({ home, retentionDays: 7, now: clock(2026, 11, 20).now });
+    const conv = newConversationId();
+    expect(conv).toMatch(/^c_[0-9a-f]{16}$/);
+    const steps = [{ text: 'Refused: click button Send. you did not allow it', status: 'refused' as const }, { text: 'Used gmail_search', status: 'ok' as const }];
+    s.append({ ...entry('with steps'), conv, steps });
+    expect(s.list()).toEqual([expect.objectContaining({ said: 'with steps', conv, steps })]);
   });
 });

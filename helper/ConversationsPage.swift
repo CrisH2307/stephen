@@ -1,7 +1,7 @@
-// Stephen Helper: Conversations (UI-PLAN v3.1 section 4). One list of what you asked, grouped by day, each with what
-// Stephen did (browser actions from the audit log that happened during the command, plus the other tools it used)
-// and refusals named in words. Replaces the old History / Audit switch. No new protocol: history.list + audit.recent
-// joined here by time.
+// Stephen Helper: Conversations (UI-V4-IA-PLAN section 6.2). Intro line, search and the All, Refused, Failed chips,
+// then day groups of rows: what you asked (verbatim), a facts line and the status word. A row opens to show the reply
+// and every step; refused and failed lines always show, open or closed. A line that stored its steps (ADR-007) shows
+// them as chat.done did; an older line joins history.list and audit.recent here by time.
 
 import SwiftUI
 
@@ -24,6 +24,7 @@ func auditActionText(_ a: AuditEntry) -> String {
  * as one line. ponytail: matching is by time only, the audit has no command id; two commands at once could swap lines.
  */
 func conversationLines(entry: HistoryEntry, audit: [AuditEntry], parse: (String) -> Date?) -> [DoneLine] {
+  if !entry.steps.isEmpty { return entry.steps.map { DoneLine(text: $0.text, status: StepStatus($0.status)) } }
   var lines: [DoneLine] = []
   var auditTools = Set<String>()
   if let end = parse(entry.ts) {
@@ -50,16 +51,6 @@ func conversationLines(entry: HistoryEntry, audit: [AuditEntry], parse: (String)
   return lines
 }
 
-/** The outcome in words, nil for a normal one. */
-func conversationOutcomeWord(_ outcome: String) -> (word: String, kind: StatusKind)? {
-  switch outcome {
-  case "error": return ("Failed", .bad)
-  case "cancelled": return ("Stopped", .idle)
-  case "memory": return ("Memory", .idle)
-  default: return nil
-  }
-}
-
 /** Search: case-insensitive match on what was said, the reply and the action lines. */
 func conversationMatches(_ entry: HistoryEntry, lines: [DoneLine], query: String) -> Bool {
   let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -68,58 +59,109 @@ func conversationMatches(_ entry: HistoryEntry, lines: [DoneLine], query: String
   return hay.contains(q)
 }
 
+/** Filter chips (plan 6.2). Refused and Failed keep a row with that kind of line; a row can be in both. */
+let CONVERSATION_FILTERS = [
+  MemoryFilter(id: "all", title: "All"), MemoryFilter(id: "refused", title: "Refused"), MemoryFilter(id: "failed", title: "Failed"),
+]
+
+/** One conversation row's data: the entry and its step lines. The page and the palette both use it. */
+struct ConversationRecord {
+  let entry: HistoryEntry
+  let lines: [DoneLine]
+}
+
+/**
+ * Rows that pass the search (conversationMatches) and the chip: a pure filter on top of it. `keep` is the row a
+ * palette result opened: it stays even when the chip would hide it, so "that row open" always holds.
+ */
+// ponytail: O(history x audit) per keystroke (lines rebuilt for every entry); cache lines per entry when history gets large.
+func conversationRows(_ entries: [HistoryEntry], audit: [AuditEntry], parse: (String) -> Date?, query: String,
+                      filter: String = "all", keep: String? = nil) -> [ConversationRecord] {
+  return entries.map { ConversationRecord(entry: $0, lines: conversationLines(entry: $0, audit: audit, parse: parse)) }
+    .filter { r in
+      guard conversationMatches(r.entry, lines: r.lines, query: query) else { return false }
+      if r.entry.id == keep { return true }
+      switch filter {
+      case "refused": return r.lines.contains { $0.status == .refused }
+      case "failed": return r.entry.outcome == "error" || r.lines.contains { $0.status == .failed }
+      default: return true
+      }
+    }
+}
+
+/** "Stephen app · 2:10 PM · 3 steps · 1 refused": the chat's format, never just "done". */
+func conversationFacts(_ entry: HistoryEntry, lines: [DoneLine], source: String, time: String) -> String {
+  var parts = [source + (entry.followUp ? ", follow-up" : ""), time]
+  if !lines.isEmpty { parts.append(lines.count == 1 ? "1 step" : "\(lines.count) steps") }
+  let refused = lines.filter { $0.status == .refused }.count, failed = lines.filter { $0.status == .failed }.count
+  if refused > 0 { parts.append("\(refused) refused") }
+  if failed > 0 { parts.append("\(failed) failed") }
+  return parts.joined(separator: " · ")
+}
+
 struct ConversationsPage: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
-  @State private var search = ""
-  @State private var confirmClear = false
+  /// The search text and the open row live in nav, so a palette result can set both. The toolbar's ⋯ menu sets
+  /// nav.confirmClearAll; the alert is here, next to the list it deletes.
+  @ObservedObject var nav: WindowNav
+  @State private var filter = "all"
 
-  /// Entries with their lines, grouped by day, after the search filter.
-  private var days: [(day: HistoryDay, rows: [(entry: HistoryEntry, lines: [DoneLine])])] {
+  /// Rows grouped by day, after the search and the chip.
+  private var days: [(day: HistoryDay, rows: [ConversationRecord])] {
     model.historyDays.compactMap { day in
-      let rows = day.entries.map { (entry: $0, lines: conversationLines(entry: $0, audit: model.audit, parse: model.parseDate)) }
-        .filter { conversationMatches($0.entry, lines: $0.lines, query: search) }
+      let rows = conversationRows(day.entries, audit: model.audit, parse: model.parseDate, query: nav.conversationQuery,
+                                  filter: filter, keep: nav.conversationOpen)
       return rows.isEmpty ? nil : (day: day, rows: rows)
     }
   }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: Space.xl) {
-        HStack {
-          Text(verbatim: "Conversations").font(TypeScale.pageTitle).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
-          Spacer(minLength: 0)
-          if !model.history.isEmpty { QuietButton("Clear all", destructive: true) { confirmClear = true } }
-        }
-        if let n = model.historyNotice ?? model.auditNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
-        if model.history.isEmpty {
-          Text(verbatim: "Nothing yet. What you ask Stephen, and what it does, is listed here.")
-            .font(TypeScale.body).foregroundColor(t.ink2)
-        } else {
-          searchField
-          let shown = days
-          if shown.isEmpty {
-            Text(verbatim: "Nothing matches \"\(search)\".").font(TypeScale.body).foregroundColor(t.ink2)
-          }
-          ForEach(shown, id: \.day.id) { group in
-            GroupedList(group.day.title) {
-              ForEach(Array(group.rows.enumerated()), id: \.element.entry.id) { i, row in
-                ConversationRow(entry: row.entry, lines: row.lines, time: model.timeText(row.entry.ts),
-                                source: model.sourceLabel(row.entry.source), first: i == 0)
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: Space.xl) {
+          // S4: one honest sentence.
+          Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")
+            .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+          if let n = model.historyNotice ?? model.auditNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
+          if model.history.isEmpty {
+            Text(verbatim: "Nothing yet. What you ask Stephen, and what it does, is listed here.")
+              .font(TypeScale.body).foregroundColor(t.ink2)
+          } else {
+            VStack(alignment: .leading, spacing: Space.m) {
+              searchField
+              chips
+            }
+            let shown = days
+            if shown.isEmpty {
+              Text(verbatim: nav.conversationQuery.isEmpty ? "Nothing here." : "Nothing matches \"\(nav.conversationQuery)\".")
+                .font(TypeScale.body).foregroundColor(t.ink2)
+            }
+            ForEach(shown, id: \.day.id) { group in
+              GroupedList(group.day.title) {
+                ForEach(Array(group.rows.enumerated()), id: \.element.entry.id) { i, row in
+                  ConversationItem(entry: row.entry, lines: row.lines, time: model.timeText(row.entry.ts),
+                                   source: model.sourceLabel(row.entry.source), first: i == 0,
+                                   expanded: nav.conversationOpen == row.entry.id,
+                                   toggle: { nav.conversationOpen = nav.conversationOpen == row.entry.id ? nil : row.entry.id })
+                    .id(row.entry.id)
+                }
               }
             }
-          }
-          if model.historyMayHaveMore {
-            QuietButton("Load older") { model.loadOlderHistory() }
+            if model.historyMayHaveMore {
+              QuietButton("Load older") { model.loadOlderHistory() }
+            }
           }
         }
+        .padding(Space.xxl)
+        .frame(maxWidth: 720, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .padding(Space.xxl)
-      .frame(maxWidth: 720, alignment: .leading)
-      .frame(maxWidth: .infinity, alignment: .leading)
+      // A palette result opened this page on a row: bring it into view.
+      .onAppear { if let id = nav.conversationOpen { proxy.scrollTo(id, anchor: .top) } }
     }
     .onAppear { model.refreshHistory(); model.refreshAudit() }
-    .alert("Clear all conversations?", isPresented: $confirmClear) {
+    .alert("Clear all conversations?", isPresented: $nav.confirmClearAll) {
       Button("Clear", role: .destructive) { model.clearHistory() }
       Button("Cancel", role: .cancel) {}
     } message: {
@@ -130,59 +172,84 @@ struct ConversationsPage: View {
   private var searchField: some View {
     HStack(spacing: Space.s) {
       Image(systemName: "magnifyingglass").foregroundColor(t.ink2).accessibilityHidden(true)
-      TextField("Search conversations", text: $search).textFieldStyle(.plain).font(TypeScale.body).foregroundColor(t.ink)
-        .accessibilityLabel("Search conversations")
+      TextField("Search conversations", text: $nav.conversationQuery).textFieldStyle(.plain).font(TypeScale.body)
+        .foregroundColor(t.ink).accessibilityLabel("Search conversations")
     }
     .padding(.horizontal, Space.m).padding(.vertical, 8)
     .background(RoundedRectangle(cornerRadius: Corner.row).fill(t.surface))
     .overlay(RoundedRectangle(cornerRadius: Corner.row).stroke(t.lineStrong, lineWidth: 1))
   }
+
+  /// The same chips as Memory.
+  private var chips: some View {
+    HStack(spacing: Space.s) {
+      ForEach(CONVERSATION_FILTERS) { f in Tag(f.title, selected: filter == f.id) { filter = f.id }.fixedSize() }
+    }
+    .accessibilityElement(children: .contain).accessibilityLabel("Filter")
+  }
 }
 
-private struct ConversationRow: View {
+/** One S5 row: title (what you asked, verbatim), facts line, status word. A click opens the reply and every step. */
+private struct ConversationItem: View {
   @Environment(\.stephenTheme) var t
   let entry: HistoryEntry
   let lines: [DoneLine]
   let time: String
   let source: String
   let first: Bool
+  let expanded: Bool
+  let toggle: () -> Void
 
   var body: some View {
+    let word = recentChatWord(entry, lines: lines)
+    let facts = conversationFacts(entry, lines: lines, source: source, time: time)
+    // A String, not a literal: a literal would treat third-party text as a localization key.
+    let spoken: String = "You said: \(entry.said). \(word.word). \(facts)"
     VStack(spacing: 0) {
       if !first { Rectangle().fill(t.line).frame(height: 1) }
       VStack(alignment: .leading, spacing: Space.s) {
-        HStack(spacing: Space.s) {
-          Text(verbatim: time).font(TypeScale.mono).foregroundColor(t.ink2)
-          Text(verbatim: source + (entry.followUp ? ", follow-up" : "")).font(TypeScale.secondary).foregroundColor(t.ink2)
-          Spacer(minLength: 0)
-          if let o = conversationOutcomeWord(entry.outcome) { StatusPill(o.word, kind: o.kind) }
+        // A real button (#145), like a job row: Tab reaches it and Space opens it.
+        Button(action: toggle) {
+          HStack(alignment: .top, spacing: Space.m) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(verbatim: entry.said).font(TypeScale.body).foregroundColor(t.ink).lineLimit(expanded ? 1 : 2)
+                .fixedSize(horizontal: false, vertical: true)
+              Text(verbatim: facts).font(TypeScale.secondary).foregroundColor(t.ink2)
+            }
+            Spacer(minLength: Space.m)
+            StatusPill(word.word, kind: word.kind)
+            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(t.ink2)
+              .rotationEffect(.degrees(expanded ? 90 : 0)).frame(width: 24, height: 24).accessibilityHidden(true)
+          }
+          .contentShape(Rectangle())
         }
-        Text(verbatim: entry.said).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
-          .fixedSize(horizontal: false, vertical: true)
-        if !entry.reply.isEmpty {
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+        .accessibilityHint(expanded ? "Hides the reply and the steps" : "Shows the reply and the steps")
+        .accessibilityAddTraits(.isButton)
+        // Open: what you said in full, copyable (a Button label can't be selected).
+        if expanded {
+          Text(verbatim: entry.said).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        if expanded && !entry.reply.isEmpty {
           Text(verbatim: entry.reply).font(TypeScale.body).foregroundColor(t.ink2).textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
         }
-        ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
+        // [DEV REVIEW] Safety: steps and refusals are a truthful record. A refused or failed line shows open or
+        // closed (only ok lines wait for the open row), in order, in its own words.
+        ForEach(Array(lines.filter { expanded || $0.status != .ok }.enumerated()), id: \.offset) { _, l in
           HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             StepMark(status: l.status)
             Text(verbatim: l.text).font(TypeScale.secondary).foregroundColor(l.status == .ok ? t.ink2 : t.ink)
-              .fixedSize(horizontal: false, vertical: true)
+              .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
           }
         }
       }
       .padding(.horizontal, Space.l).padding(.vertical, Space.m)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(label)
-  }
-
-  private var label: String {
-    var s = "\(time), \(source). You said: \(entry.said)."
-    if !entry.reply.isEmpty { s += " Stephen replied: \(entry.reply)." }
-    if let o = conversationOutcomeWord(entry.outcome) { s += " \(o.word)." }
-    for l in lines { s += " \(l.text)." }
-    return s
+    .accessibilityElement(children: .contain)
   }
 }

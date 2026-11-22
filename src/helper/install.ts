@@ -5,13 +5,13 @@
  */
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config.js';
 import { packageVersion } from '../server/index.js';
-import { type RunFn, defaultRun, shellQuote } from '../zen-launcher.js';
+import { type RunFn, type RunResult, defaultRun, shellQuote } from '../zen-launcher.js';
 import { HelperClient, openHelperArgv } from './client.js';
 import { HELPER_APP_NAME, HELPER_BUNDLE_ID, HELPER_EXECUTABLE, MAX_SOCKET_PATH_BYTES, helperAppPath, helperLogPath, helperSocketPath } from './paths.js';
 
@@ -20,7 +20,7 @@ export const INSTALL_HELPER_USAGE = 'stephen install-helper [--dry-run] [--force
 export const HELPER_SOURCES = [
   'Core.swift', 'Theme.swift',
   'Components/Sidebar.swift', 'Components/Controls.swift', 'Components/Lists.swift', 'Components/ChatThread.swift',
-  'AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift', 'AppWindow.swift', 'AskBox.swift', 'MainWindow.swift', 'HomeView.swift', 'PersonalView.swift', 'MemoryPage.swift', 'ConversationsPage.swift', 'JobsPage.swift', 'AppearanceSettings.swift', 'SettingsPage.swift', 'main.swift',
+  'AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift', 'AppWindow.swift', 'AskBox.swift', 'MainWindow.swift', 'HomeView.swift', 'Palette.swift', 'MemoryPage.swift', 'ConversationsPage.swift', 'JobsPage.swift', 'AppearanceSettings.swift', 'SettingsPage.swift', 'main.swift',
 ] as const;
 export const HELPER_FRAMEWORKS = ['AppKit', 'CoreAudio', 'CoreGraphics', 'SwiftUI'] as const;
 export const XCODE_TOOLS_FIX = 'Install Apple\'s command line tools: run `xcode-select --install` (or install Xcode), then run `stephen install-helper` again.';
@@ -54,6 +54,105 @@ export async function findSwiftCompiler(run: RunFn): Promise<{ ok: true; compile
   if (v.code === 0) return { ok: true, compiler: { swiftc: 'swiftc', sdkPath: null, via: 'PATH' } };
   const why = firstLine(x.stderr || x.stdout) || `xcrun exit code ${x.code}`;
   return { ok: false, reason: `No Swift compiler found (xcrun --find swiftc: ${why}; no swiftc on PATH).` };
+}
+
+/** Command Line Tools keeps its macOS SDKs here; the fallback SDKs come from this folder (#248). */
+export const CLT_SDKS_DIR = '/Library/Developer/CommandLineTools/SDKs';
+/** swiftc's error when the SDK's SwiftUI needs a macro plugin this toolchain lacks (Command Line Tools on macOS 27.2, #248). */
+export const SWIFTUI_MACROS_MISSING = /plugin for module 'SwiftUIMacros' not found/;
+/** What to do when no SDK can build the helper's SwiftUI (only the older SDK was verified, on macOS 27.2.1). */
+export const SDK_FIX =
+  'Install an older macOS SDK next to the default one in ' + CLT_SDKS_DIR + ' (a Command Line Tools package that ships ' +
+  'MacOSX26.x.sdk), or install the full Xcode for this macOS and select it: `sudo xcode-select -s /Applications/Xcode.app`.';
+
+/**
+ * The other macOS SDKs to try, newest first: `MacOSX<version>.sdk` entries of `names`, each real folder once (MacOSX26.sdk
+ * is a link to MacOSX26.5.sdk), without the default SDK. Pure: `real` resolves links. Picks nothing by itself: every
+ * candidate must still build (buildWithSdkFallback).
+ */
+export function fallbackSdks(dir: string, names: readonly string[], defaultSdk: string | null, real: (p: string) => string | null): string[] {
+  const version = (n: string) => /^MacOSX(\d+(?:\.\d+)*)\.sdk$/.exec(n)?.[1]?.split('.').map(Number) ?? null;
+  const skip = defaultSdk ? real(defaultSdk) : null;
+  const byReal = new Map<string, number[]>();
+  for (const n of names) {
+    const v = version(n);
+    const r = v ? real(join(dir, n)) : null;
+    if (!v || !r || r === skip) continue;
+    const had = byReal.get(r);
+    if (!had || v.length > had.length) byReal.set(r, v); // keep the most precise name of a folder
+  }
+  const cmp = (a: number[], b: number[]) => {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (b[i] ?? 0) - (a[i] ?? 0);
+    return 0;
+  };
+  return [...byReal.entries()].sort((a, b) => cmp(a[1], b[1])).map(([r]) => r);
+}
+
+/** fallbackSdks over the real Command Line Tools folder. */
+export function listFallbackSdks(defaultSdk: string | null): string[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(CLT_SDKS_DIR);
+  } catch {
+    return [];
+  }
+  const real = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return null;
+    }
+  };
+  return fallbackSdks(CLT_SDKS_DIR, names, defaultSdk, real);
+}
+
+export interface SdkBuildResult {
+  ok: boolean;
+  /** The SDK of the successful build, else of the first (default) try. */
+  sdkPath: string | null;
+  /** The default SDK, when a fallback SDK was used instead. */
+  fallbackFrom: string | null;
+  /** The result of the successful build, else of the first try (its error is the one to show). */
+  result: RunResult;
+  /** Every SDK tried, in order (null = swiftc's own default). */
+  tried: (string | null)[];
+}
+
+/**
+ * Build with the default SDK. Only when that fails with the SwiftUIMacros plugin error, try the other SDKs newest first
+ * and keep the first one that builds (#248). `build` returns code 0 only for a real, complete build.
+ */
+export async function buildWithSdkFallback(defaultSdk: string | null, build: (sdk: string | null) => Promise<RunResult>, others: () => string[]): Promise<SdkBuildResult> {
+  const first = await build(defaultSdk);
+  const tried: (string | null)[] = [defaultSdk];
+  if (first.code === 0) return { ok: true, sdkPath: defaultSdk, fallbackFrom: null, result: first, tried };
+  if (!SWIFTUI_MACROS_MISSING.test(first.stderr + first.stdout)) return { ok: false, sdkPath: defaultSdk, fallbackFrom: null, result: first, tried };
+  for (const sdk of others()) {
+    tried.push(sdk);
+    const r = await build(sdk);
+    if (r.code === 0) return { ok: true, sdkPath: sdk, fallbackFrom: defaultSdk ?? 'swiftc default', result: r, tried };
+  }
+  return { ok: false, sdkPath: defaultSdk, fallbackFrom: null, result: first, tried };
+}
+
+/** One line about a fallback build: which SDK could not build and which one was used. */
+export function sdkFallbackNote(b: SdkBuildResult): string {
+  return `The default SDK (${b.fallbackFrom}) cannot build SwiftUI's @State with these command line tools (no SwiftUIMacros plugin), so the helper uses ${b.sdkPath}.`;
+}
+
+/** A tiny SwiftUI view with @State. Typechecking it takes about a second and fails like the full build when the SDK needs the missing plugin. */
+const STATE_PROBE = 'import SwiftUI\nstruct StephenSdkProbe: View { @State var n = 0; var body: some View { Text("\\(n)") } }\n';
+
+/** For doctor: the same SDK choice as install-helper, by typechecking STATE_PROBE instead of building the whole helper (#248). */
+export async function probeHelperSdk(c: SwiftCompiler, run: RunFn, others: (defaultSdk: string | null) => string[] = listFallbackSdks): Promise<SdkBuildResult> {
+  const dir = await mkdtemp(join(tmpdir(), 'stephen-sdk-'));
+  try {
+    const file = join(dir, 'probe.swift');
+    await writeFile(file, STATE_PROBE, 'utf8');
+    return await buildWithSdkFallback(c.sdkPath, (sdk) => run(c.swiftc, ['-typecheck', '-swift-version', '5', ...(sdk ? ['-sdk', sdk] : []), file], 60_000), () => others(c.sdkPath));
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 /** The swiftc argv (after the program). */
@@ -130,6 +229,8 @@ export interface InstallHelperDeps {
   quitRunning: (stephenHome: string) => Promise<boolean>;
   /** Open the app once at the end (default true). */
   openAfter: boolean;
+  /** Other macOS SDKs to try when the default one lacks SwiftUIMacros (#248). Default: listFallbackSdks. */
+  fallbackSdks?: (defaultSdk: string | null) => string[];
 }
 
 export async function quitRunningHelper(stephenHome: string): Promise<boolean> {
@@ -262,14 +363,25 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
   try {
     const out = join(tmp, HELPER_EXECUTABLE);
     log(`Compiling Stephen Helper with ${swiftc} (this takes a minute)…`);
-    const args = swiftcArgs(plan.sourceDir, out, sdkPath);
-    const r = await deps.run(swiftc, args, 600_000);
-    if (r.code !== 0 || !deps.exists(out)) {
+    const b = await buildWithSdkFallback(
+      sdkPath,
+      async (sdk) => {
+        const r = await deps.run(swiftc, swiftcArgs(plan.sourceDir, out, sdk), 600_000);
+        return r.code === 0 && !deps.exists(out) ? { ...r, code: 1 } : r;
+      },
+      () => (deps.fallbackSdks ?? listFallbackSdks)(sdkPath),
+    );
+    if (!b.ok) {
+      const r = b.result;
       const text = (r.stderr || r.stdout).trim().split('\n').slice(0, 40).join('\n');
-      log(`✗ swiftc failed (exit code ${r.code}):\n${text}\n\nCommand: ${display(swiftc, args)}`);
-      if (/xcrun: error|invalid active developer path|unable to find sdk|no such module/i.test(text)) log(XCODE_TOOLS_FIX);
+      log(`✗ swiftc failed (exit code ${r.code}):\n${text}\n\nCommand: ${display(swiftc, swiftcArgs(plan.sourceDir, out, sdkPath))}`);
+      if (b.tried.length > 1) log(`The default SDK has no SwiftUIMacros plugin, and no other SDK built it either (tried ${b.tried.slice(1).join(', ')}). ${SDK_FIX}`);
+      else if (SWIFTUI_MACROS_MISSING.test(text)) log(`The default SDK has no SwiftUIMacros plugin, and there is no other SDK in ${CLT_SDKS_DIR}. ${SDK_FIX}`);
+      else if (/xcrun: error|invalid active developer path|unable to find sdk|no such module/i.test(text)) log(XCODE_TOOLS_FIX);
       return 1;
     }
+    log(`SDK: ${b.sdkPath ?? 'swiftc default'}`);
+    if (b.fallbackFrom) log(sdkFallbackNote(b));
 
     const template = await readFile(join(plan.sourceDir, 'Info.plist'), 'utf8');
     await rm(staging, { recursive: true, force: true });

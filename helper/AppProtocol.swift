@@ -18,8 +18,6 @@ let APP_MEMORY_MAX_ITEMS = 30
 let APP_REQUEST_TIMEOUT_SECONDS = 15.0
 /** While someone (window or Ask box) wants the connection and Stephen isn't reachable, the first retry waits this long. */
 let APP_RETRY_SECONDS = 3.0
-/** What the Today card on the Chat tab submits, exactly as if it were typed (test/helper/app-protocol.test.ts). */
-let APP_TODAY_PROMPT = "what's my day?"
 /** Chat bubbles kept in the window. */
 let APP_MAX_BUBBLES = 300
 
@@ -142,7 +140,7 @@ struct AppRequest: Encodable {
   /** model.set: a model alias or name ("haiku", "default") and/or an effort level ("low"..."max", "default"). */
   var model: String? = nil
   var effort: String? = nil
-  /** replay.set: the replay recorder switch (Settings > Privacy and safety, the owner's click only). */
+  /** replay.set: the replay recorder switch (Settings > Privacy and permissions, the owner's click only). */
   var enabled: Bool? = nil
 
   static func hello(_ id: String) -> AppRequest {
@@ -178,7 +176,7 @@ struct AppRequest: Encodable {
   static func modelSet(_ id: String, model: String?, effort: String?) -> AppRequest {
     return AppRequest(id: id, type: "model.set", model: model, effort: effort)
   }
-  /** Settings > Privacy and safety (issue #48): the owner's switch and its Delete. Nothing else sends these. */
+  /** Settings > Privacy and permissions (issue #48): the owner's switch and its Delete. Nothing else sends these. */
   static func replaySet(_ id: String, enabled: Bool) -> AppRequest {
     return AppRequest(id: id, type: "replay.set", enabled: enabled)
   }
@@ -415,8 +413,12 @@ struct HistoryEntry: Decodable, Identifiable, Equatable {
   var tools: [HistoryTool] = []
   var followUp: Bool = false
   var ms: Double = 0
+  /// Conversation id (ADR-007), "" on older lines. Kept for grouping later; nothing acts on it.
+  var conv: String = ""
+  /// The steps chat.done showed for this command (ADR-007), [] on older lines. Shown with Text(verbatim:).
+  var steps: [ChatStep] = []
 
-  enum CodingKeys: String, CodingKey { case id, ts, source, said, reply, outcome, tools, followUp, ms }
+  enum CodingKeys: String, CodingKey { case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -429,6 +431,8 @@ struct HistoryEntry: Decodable, Identifiable, Equatable {
     tools = (try? c.decodeIfPresent([HistoryTool].self, forKey: .tools)) ?? []
     followUp = (try? c.decodeIfPresent(Bool.self, forKey: .followUp)) ?? false
     ms = (try? c.decodeIfPresent(Double.self, forKey: .ms)) ?? 0
+    conv = (try? c.decodeIfPresent(String.self, forKey: .conv)) ?? ""
+    steps = (try? c.decodeIfPresent([ChatStep].self, forKey: .steps)) ?? []
   }
 }
 

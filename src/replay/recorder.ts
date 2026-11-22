@@ -382,7 +382,7 @@ export const REPLAY_USAGE = `Usage:
   stephen replay delete --all     Delete every saved F5 recording
   stephen replay delete <id>      Delete one recording (its id looks like h_0123456789abcdef)
 
-Recordings are saved only while the switch in Settings, Privacy and safety is on ("voice": {"replay": {"enabled": true}}
+Recordings are saved only while the switch in Settings, Privacy and permissions is on ("voice": {"replay": {"enabled": true}}
 in config.json). Deleting works either way.`;
 
 /** `stephen replay …` (owner CLI). */

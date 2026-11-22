@@ -29,9 +29,8 @@ import type { ProposalStore } from '../memory/proposals.js';
 import { memoryGraph } from './memory-graph.js';
 import type { ModelChanges } from './model.js';
 import { truncate } from '../safety/text.js';
-import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
-import { commandSteps } from './steps.js';
+import type { ChatStep } from './steps.js';
 import type { CommandReport } from '../voice/assistant.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 import {
@@ -52,11 +51,6 @@ import { APP_JOBS_MAX, type AppJobs } from './jobs-status.js';
 import type { AppControl } from './control.js';
 import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
-
-/** Audit entries read to build one command's steps (newest first; a command makes far fewer). */
-const STEPS_AUDIT_LIMIT = 100;
-/** chat.done waits at most this long for the audit read; after that it goes out without steps (R10a-9). */
-export const STEPS_AUDIT_WAIT_MS = 400;
 
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
@@ -105,7 +99,7 @@ export interface AppServerOptions {
   /** model.set (Settings > Model): validated changes in; applies from the next command. Absent = read-only. */
   setModel?: (changes: ModelChanges) => void;
   /**
-   * replay.set / replay.delete (Settings > Privacy and safety, issue #48 PR 2): `set` writes voice.replay.enabled to
+   * replay.set / replay.delete (Settings > Privacy and permissions, issue #48 PR 2): `set` writes voice.replay.enabled to
    * config.json, `deleteAll` is `stephen replay delete --all` (behind any queued write). Absent = not available.
    */
   replay?: { set: (enabled: boolean) => void; deleteAll: () => Promise<number>; on: () => boolean };
@@ -237,15 +231,22 @@ export class AppServer {
   }
 
   /**
-   * A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run); `calls`:
-   * the same calls with their error flag, for the action chain. With an audit log, chat.done waits for one audit read
-   * to add `steps`; a failed or slow (STEPS_AUDIT_WAIT_MS) read just leaves them out.
+   * A command just ended: if memory changed while it ran, end the conversation again now. finishCommand calls it at
+   * once, before the audit read, so the next command can't resume in the meantime. Safe to call twice.
    */
-  commandDone(r: CommandReport, tools: string[], calls: ToolCallRecord[] = []): void {
+  commandEnding(): void {
     if (this.endAfterCommand) {
       this.endAfterCommand = false;
       this.o.endConversation();
     }
+  }
+
+  /**
+   * A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run); `steps`:
+   * the action chain readCommandSteps built, the same list the history line stores (ADR-007 point 6).
+   */
+  commandDone(r: CommandReport, tools: string[], steps?: ChatStep[]): void {
+    this.commandEnding();
     const msg = {
       type: 'chat.done' as const,
       entryId: r.id,
@@ -254,19 +255,7 @@ export class AppServer {
       tools: [...new Set(tools)],
       ms: r.ms,
     };
-    const end = Date.now();
-    const audit = this.o.audit;
-    let sent = false;
-    const send = (entries: AuditEntry[] | null) => {
-      if (sent) return; // a late read, after the timeout already sent chat.done
-      sent = true;
-      if (entries === null) return this.broadcast(msg); // too slow: no steps
-      const steps = commandSteps(entries, calls, end - r.ms, end, r.id);
-      this.broadcast(steps.length > 0 ? { ...msg, steps } : msg);
-    };
-    if (!audit || r.ms <= 0) return send([]);
-    const timer = setTimeout(() => send(null), STEPS_AUDIT_WAIT_MS);
-    audit.recent(STEPS_AUDIT_LIMIT).then(send, () => send([])).finally(() => clearTimeout(timer));
+    this.broadcast(steps && steps.length > 0 ? { ...msg, steps } : msg);
   }
 
   // ───────────────────────────── connections ─────────────────────────────

@@ -223,8 +223,6 @@ only open the card; they never show the question's text and never answer it.
 
 ```
 Stephen                          (wordmark)
-● Listening            [Stop]    (state row, moved from the bottom)
-〰 Recording on                   (solid sign, only when on)  [DEV REVIEW]
 
 Talk
   Home              ⌘1   (badge: waiting questions)
@@ -233,7 +231,16 @@ Talk
 Control
   Memory            ⌘4
   Settings          ⌘5   (also ⌘,)
+
+        (free space)
+
+〰 Recording on                   (solid sign, only when on)  [DEV REVIEW]
+● Listening            [Stop]    (state row, bottom left)
 ```
+
+- The state row and the "Recording on" sign sit together at the bottom left (owner, 2026-11-21; step a had them at
+  the top). The sign is always right above the state row and stays solid: `surface` fill and `lineStrong` outline,
+  even in the glass sidebar. Its words, tooltip and VoiceOver label do not change. `[DEV REVIEW]`
 
 - 5 rows, 2 groups, no hidden page. Was: 5 rows plus a hidden Memory page, plus 10 Settings rows.
 - ⌘1 to ⌘3 and ⌘5 keep their pages. ⌘4 moves from Personal (gone) to Memory. UI-V4-DIRECTION had Memory at ⌘6;
@@ -477,6 +484,7 @@ The mock follows the same rules with `prefers-reduced-transparency` and `prefers
 | Change | Step | Stories | `[DEV REVIEW]` |
 |---|---|---|---|
 | Sidebar: 2 groups, 5 rows, Memory ⌘4, state row at the top, no Ask field | a | S6, #57 | Recording on sign moves to the top |
+| Sidebar: state row and Recording on sign move together to the bottom left (owner, 2026-11-21) | b | | Recording on sign position |
 | Toolbar with page title, page actions, Search ⌘K | a | new | |
 | ⌘K palette: Waiting, Ask, Go to, Actions | a | new | Rules 7.5.1, 7.5.4, 7.5.6 |
 | Glass on sidebar, toolbar, palette; fallbacks; tint tokens | a | new, S2 | |

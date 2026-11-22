@@ -142,7 +142,7 @@ Write "Mac click check: done" in the PR (or what failed). If a step fails, do no
   See: rows for Canvas, Calendar, Notion, Weather, Gmail. Each says connected or not set, and where it was found. No secret value is shown.
 - [ ] `[hands]` **5.3** Do: quit `stephen listen`. Look at the window. Then start listen again and press Retry.
   See: the window says "Can't reach Stephen" with a Retry button. Retry works after you restart listen.
-- [ ] `[hands]` **5.4** Do: open Memory, History and Audit while they are empty. Then turn on dark mode.
+- [ ] `[hands]` **5.4** Do: open Memory and Conversations while they are empty. Then turn on dark mode.
   See: the empty texts read well. Dark mode looks right.
 - [ ] `[hands]` **5.5** Do: hold F5 and say "play lofi", then "pause it". Open History.
   See: the second entry lists only `media_control`.
@@ -274,8 +274,8 @@ Setup: run `npm run build`. Restart `node dist/cli.js listen`.
 - [ ] `[hands]` **10.2 Play after a private read.** Do: hold F5 and say "what's my day". Then (F5 or the phone) say "play Sarà perché ti amo".
   Then, right after a list, say "play the first one".
   See: it plays. There is no confirmation dialog. Nothing is declined. "play the first one" follows on from the list.
-- [ ] `[hands]` **10.3 Stephen window, Accounts.** Do: open the Accounts tab. Then run `phone on` and look again.
-  See: a "Phone link" row says Off · Signed in until …. With `phone on` running it says On.
+- [ ] `[hands]` **10.3 Stephen window, Connected.** Do: open Settings, Connected. Then run `phone on` and look again.
+  See: a "Phone link" row says Off. With `phone on` running it says On (open the pane again to refresh it).
 - [ ] `[hands]` **10.4 Secrets out of the repo.** Do: run `node dist/cli.js doctor`. For each line in the repo `.env`, run
   `node dist/cli.js accounts set canvas-token` (then `notion-token`, and so on) and paste the value when asked (it is hidden).
   Run `node dist/cli.js accounts`. Then delete the repo `.env` and run `doctor` again.
@@ -359,18 +359,18 @@ and allow the microphone for Stephen Helper once. Quit any Terminal listener.
   See: the pages switch. ⌘\ collapses the sidebar and the choice survives a restart. The status row has Start/Stop.
 - [ ] `[hands]` **11.6.2** Do: open Home. Press Send. Click a chip.
   See: "Morning/Afternoon, Cris." and the date, and the Today list. Send shows the reply in the Ask box. Chips fill the box.
-- [ ] `[hands]` **11.6.3** Do: open Personal (⌘4).
-  See: About you, the permission table (Send or submit: Asks you / Asks you / Never), Connected, Routines.
-- [ ] `[hands]` **11.6.4** Do: open Memory, then Personal, See all, to see the graph. Tell Stephen "I moved to Fit4Less". Press Keep. Run `node dist/cli.js memory list`
+- [ ] `[hands]` **11.6.3** Do: open Settings (⌘5) and click each pane in the "You" group.
+  See: About you, Connected, Privacy and permissions (the permission table: Send or submit: Asks you / Asks you / Never), Routines. There is no Personal page, and no "‹ Personal" link on Memory.
+- [ ] `[hands]` **11.6.4** Do: open Memory (⌘4) to see the graph. Tell Stephen "I moved to Fit4Less". Press Keep. Run `node dist/cli.js memory list`
   before and after. Switch between Graph and List (try VoiceOver).
-  See: a dashed amber node under Places and a row in "New from your chats". `memory list` does not show it yet. After Keep: a solid node, the inspector says
+  See: a dashed amber node under Places and a row in "New from your chats" at the top of the page. `memory list` does not show it yet. After Keep: a solid node, the inspector says
   "You told Stephen · you kept it", and `memory list` shows it. The Graph / List switch works with VoiceOver.
-- [ ] `[hands]` **11.6.5** Do: open Settings, How Stephen talks. Choose Detailed + Formal + Explain steps. Press Save. Then turn Speak off. Then set macOS voice.
+- [ ] `[hands]` **11.6.5** Do: open Settings, Voice. Choose Detailed + Formal + Explain steps. Press Save. Then turn Speak off. Then set macOS voice.
   See: "Saved". `~/.browser-hub/config.json` has the keys under `voice`. The next reply changes. With Speak off, the next reply is silent. macOS voice uses `say`.
 - [ ] `[hands]` **11.6.6** Do: open Settings, Appearance. Try Navy, Rose, Sun, Dark, Light, Follow the Mac.
   See: the window and the Ask box change together.
 - [ ] `[hands]` **11.6.7** Do: open Conversations (⌘2), search, and read a chat. Open Jobs (⌘3), start a job, press Stop, press Open output folder.
-  See: Conversations is one list by day, with actions under each reply and "Refused: …" lines. In Jobs, Stop moves the job to Earlier as Stopped. Open output folder opens it.
+  See: Conversations is one list by day. A click on a row shows the reply and its actions; "Refused: …" lines show even on a closed row. In Jobs, Stop moves the job to Earlier as Stopped. Open output folder opens it.
 
 ## 12. UI v3.2 (chat thread, Home chat, sidebar motion, spacing)
 Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
@@ -471,14 +471,14 @@ The full acceptance is 20 holds and 10 of each stop. If you have little time, do
   See: the `outcomes:` line has no `aborted`. (#86, #108)
 
 ### 14.2 The action list and Try again (PRs #110, #111)
-- [ ] `[hands]` **14.7** Do: ask for a gated action (for example a click on a sign-in page) and click Deny. Right after, ask "what time is it". In the Stephen window, open Conversations and open the steps of the second command (the line like "1 step").
+- [ ] `[hands]` **14.7** Do: ask for a gated action (for example a click on a sign-in page) and click Deny. Right after, ask "what time is it". In the Stephen window, open Conversations and click the second command's row (its facts line says "1 step").
   See: the refused step of the first command is not under the second command. (R10a-1, #93, #110)
 - [ ] `[scripted]` **14.8** Do: run `npx vitest run test/app/steps.test.ts`.
   See: all tests pass. (R10a-1, #93, #110)
 - [ ] `[hands]` **14.9** Do: turn Wi-Fi off. Say "Hey Stephen, what's my day". Turn Wi-Fi on again.
-  See: the problem shows. Under your words it says "Heard by wake word". There is no "Try again" button. (R10a-2, #94, #111; the way to make it fail is not in the PR, so this is a guess: if no problem shows, note it in the issue)
+  See: the problem shows. Under your words it says "From: Hey Stephen". There is no "Try again" button. (R10a-2, #94, #111; the way to make it fail is not in the PR, so this is a guess: if no problem shows, note it in the issue)
 - [ ] `[hands]` **14.10** Do: only if you use the phone page: send a command from the phone while Wi-Fi is off. Otherwise skip.
-  See: the problem shows, under your words it says "From your phone", and there is no "Try again" button. Skip if you do not use the phone. (R10a-2, #94, #111)
+  See: the problem shows, under your words it says "From: Phone", and there is no "Try again" button. Skip if you do not use the phone. (R10a-2, #94, #111)
 - [ ] `[hands]` **14.11** Do: turn Wi-Fi off. Open the Ask box and type "what time is it", then press Return. Turn Wi-Fi on. Click "Try again".
   See: the problem shows with a "Try again" button. After the click, the same words are sent again and a reply shows. (R10a-2, #94, #111)
 - [ ] `[hands]` **14.12** Do: ask for a gated action in the Ask box. When the question shows, click in the text field so the cursor is there. Press Esc.
@@ -621,13 +621,13 @@ At the end, remove your memory test items: `node dist/cli.js memory list`, then 
   See: the refused step has a hand. If the message is a problem message, the label says "Refused", never "Didn't work". (#140, #160)
 - [ ] `[hands]` **16.8** Do: ask "what time is it" and open its steps.
   See: a done step has a check mark. The three shapes (check, hand, x) look different even without colour. (#140, #160)
-- [ ] `[hands]` **16.9** Do: open Conversations in the Sun theme, then in the Navy theme (Settings, Appearance). Open the steps of the three commands above.
+- [ ] `[hands]` **16.9** Do: open Conversations in the Sun theme, then in the Navy theme (Settings, Appearance). Click the rows of the three commands above to open them.
   See: the same steps show the same shapes and the same words as in Home. Each tool is on its own line ("Used …" or "Tried …, it failed"), not one line like "Used a, b (failed)". Easy to see in both themes. (#140, #160)
 
 ### 16.4 Contrast (PR #161, issue #146)
 - [ ] `[hands]` **16.10** Do: in each theme (Light, Dark, Navy, Rose, Sun), look at the Ask box, the search field in Conversations, the search field in Memory, and a Forget button.
   See: each has an outline you can see clearly. Lists and cards keep the soft line. (#146, #161)
-- [ ] `[hands]` **16.11** Do: open Settings, "How Stephen talks". Look at the selected choice in each theme.
+- [ ] `[hands]` **16.11** Do: open Settings, "Voice". Look at the selected choice in each theme.
   See: the selected choice is easy to tell from the others, in every theme. (#146, #161)
 - [ ] `[hands]` **16.12** Do: in the Sun theme, open Memory and select a filter chip.
   See: the text of the selected chip is easy to read (the accent is darker than before). (#146, #161)
@@ -646,5 +646,74 @@ Voice only. Typed text works as before.
 ### 16.6 The web page (PR #158, issue #151)
 - [ ] `[hands]` **16.17** Do: open `docs/site/index.html` and `docs/site/plain.html` in Safari (double-click, or File, Open File). On each page click the Light and Dark button. Then turn on Reduce Motion (System Settings, Accessibility, Display) and reload `index.html`. Turn it off after.
   See: both pages work in light and dark, with no sideways scroll. With Reduce Motion on, `index.html` has no motion and every step shows. `index.html` starts dark and does not follow the Mac setting. `plain.html` follows the Mac setting. Each page links to the other. (#151, #158)
+
+Send back: any box you could not tick, with its id.
+
+## 17. UI v4 step c: Settings in 3 groups, sidebar resize (branch `feat/ui-v4-settings`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen.
+- [ ] `[hands]` **17.1** Do: open Settings (⌘5). Read the left list.
+  See: three labels, You, Stephen and App, and 8 panes: About you, Connected, Privacy and permissions, Routines; Voice, Model and effort; Appearance, About. Each pane looks like System Settings (grouped rows). No table sits in a box inside another box.
+- [ ] `[hands]` **17.2** Do: open Privacy and permissions. Turn "Save my F5 commands to measure mistakes" on, then off.
+  See: the table first, then the switch with the same words as before, then a closed "Where these rules come from". On shows "Recording on" in the sidebar. Off asks "Delete the saved recordings too?". The note says "Read only. These come from Stephen's safety rules."
+- [ ] `[hands]` **17.3** Do: open Connected. Click "Open Zen for Stephen". Click "Turn on" on the Phone link row, then "Turn off".
+  See: one list with the accounts, Zen and Chrome, and Phone link, each with its state. Zen shows Ready (or Not ready and why). The phone row says On after Turn on and Off after Turn off. "How to connect (Terminal)" is closed.
+- [ ] `[hands]` **17.4** Do: open Voice, then About.
+  See: Voice has Length, Tone, the two switches, Preview and Save; voices and "Wake word and F5" are closed accordions. About has the config file and Open; "Speed, last 7 days" and "Doctor" are closed accordions.
+- [ ] `[hands]` **17.5** Do: open Settings, Model and effort. Go to Home. Press ⌘,.
+  See: Settings opens on Model and effort (the last pane used). (#147)
+- [ ] `[hands]` **17.6** Do: in a Stephen answer that was refused, click "See what Stephen may do".
+  See: Settings opens on Privacy and permissions.
+- [ ] `[hands]` **17.7** Do: choose Stop Stephen. Open Settings. Pick another theme.
+  See: the offline message and the Appearance pane. The theme changes. (#144)
+- [ ] `[hands]` **17.8** Do: point at the line between the sidebar and the page, and drag it right, then left, as far as it goes. Quit and reopen the window. Then press ⌘\ twice.
+  See: the cursor is the left-right resize arrow. The sidebar gets wider and narrower but stops at a minimum and a maximum. The width is the same after reopening. ⌘\ still collapses to the icon rail and back to your width; the rail cannot be dragged.
+
+Send back: any box you could not tick, with its id.
+
+## 18. UI v4 step d: Memory and Jobs (branch `feat/ui-v4-memory-jobs`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Have at least one kept memory item.
+- [ ] `[hands]` **18.1** Do: open Memory (⌘4). Read the page from the top. Press Esc.
+  See: under the toolbar title, the line "Things Stephen remembers about you. It only saves what you tell it or keep." No "‹ Personal" link and no big "Memory" title in the page. Esc does nothing: you stay on Memory.
+- [ ] `[hands]` **18.2** Do: with nothing waiting to keep, look at the top. Then type "I moved to Fit4Less" in "Tell Stephen" and press Return.
+  See: no "New from your chats" box at first. After Return it appears at the top, above the search field, with Keep, Edit and Skip. Nothing is in `node dist/cli.js memory list` yet.
+- [ ] `[hands]` **18.3** Do: on that row press Edit, change the words, press Return, then Keep. Tell Stephen something else and press Skip.
+  See: Return in the edit field does not keep it; only the Keep click does. After Keep the edited words are in `memory list`. After Skip the row goes and nothing is saved.
+- [ ] `[hands]` **18.4** Do: if you have a suggestion from an email or a page (third-party text), look at its row.
+  See: its words are shown exactly, and the line under them says "third-party text, check it" in amber.
+- [ ] `[hands]` **18.5** Do: press ⌘F, type a word. Click a node. Make the window as wide as it goes, then as narrow as it goes.
+  See: ⌘F puts the cursor in "Search memory". Wide: the Selected card sits beside the graph. Narrow: it moves under the graph. Nothing is cut off. (#148)
+- [ ] `[hands]` **18.6** Do: scroll to the bottom. Open "About memory". Open the ⋯ menu.
+  See: "About memory" is closed at first and says what counts toward the 8 KB per chat (kept items, at most 30, 200 characters each; suggestions don't count). The ⋯ menu has Refresh and "Forget all…" and no "% of 8 KB" line. The "% full" chip shows only from 80%.
+- [ ] `[hands]` **18.7** Do: say "start a job to find 5 internships". Open Jobs (⌘3) while it runs.
+  See: the intro "Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it." The job is under Running (open), with a line like "Started 2:10 PM · 3 min · $0.12 spent", the word Running and a Stop button.
+- [ ] `[hands]` **18.8** Do: press Stop. Then open the row.
+  See: the job moves into the closed "Earlier (N)" accordion; open it and the row says Stopped with no Stop button. The open row shows "Summary, written by the job" (when there is one), the turns and "Open output folder". There is no separate footer line.
+- [ ] `[hands]` **18.9** Do: start a job that fails (for example stop the network, or wait for a timeout). Open Jobs.
+  See: a "Failed" group, open, above Earlier, with the word Failed (or "Failed, timed out"). It is never inside the accordion. No Stop button on it.
+
+Send back: any box you could not tick, with its id.
+
+## 19. UI v4 step e: Conversations and the palette's Conversations source (branch `feat/ui-v4-conversations`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Ask three things first: "what time is it",
+a gated action you Deny (for example a click on a sign-in page), and one that fails (for example "open the page
+http://localhost:1").
+- [ ] `[hands]` **19.1** Do: open Conversations (⌘2). Read the page from the top.
+  See: the line "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.", the search field, then the chips All, Refused and Failed. Day groups of rows: what you said as the title, a line like "Stephen app · 2:10 PM · 3 steps · 1 refused", and a status word (Done, Refused, Failed or Stopped).
+- [ ] `[hands]` **19.2** Do: look at the denied command's row and the failed command's row without clicking them.
+  See: `[DEV REVIEW]` closed, each still shows its "Refused: …" or "Tried …, it failed" lines, in the same words as before. The plain "what time is it" row shows no step lines while closed.
+- [ ] `[hands]` **19.3** Do: click a row. Click it again. Then press Tab until a row is focused and press Space.
+  See: the row opens and shows the reply and every step, in order; the chevron turns. The second click closes it. Space opens the focused row.
+- [ ] `[hands]` **19.4** Do: click Refused, then Failed, then All. Then type a word from one reply in the search field.
+  See: Refused shows only rows with a refused step; Failed only rows that failed or have a failed step; All shows every row. The search keeps only matching rows, with any chip.
+- [ ] `[hands]` **19.5** Do: scroll to the bottom (with more than one page of history). Click Load older. Open the toolbar ⋯ menu.
+  See: older rows are added. The ⋯ menu has "Clear all…"; it asks "Clear all conversations?" before it deletes anything (press Cancel).
+- [ ] `[hands]` **19.6** Do: press ⌘K and type a word you said in one of the three commands.
+  See: `[DEV REVIEW]` a "Conversations" section with at most 5 rows. Each row shows what you said, exactly, on one line (cut with "…" when long), and "source · time" under it. Nothing is sent to Stephen while you type (the Ask box and Home stay as they were).
+- [ ] `[hands]` **19.7** Do: with that word typed, press Down until a conversation row is selected and press Return. Then do the same and click a row instead.
+  See: Conversations opens with your word in the search field and that row open (its reply and steps showing). Nothing else happens: no message is sent, nothing is allowed.
+- [ ] `[hands]` **19.8** Do: while a question waits for your OK (the banner shows), press ⌘K, type a word, and press Return on a conversation row. Then press ⌘K again and press Esc.
+  See: Return only opens Conversations; the question still waits (open the Ask box and it is there). Esc only closes the palette. The question card has no Allow from the palette.
+- [ ] `[hands]` **19.9** Do: say a command with words like `**bold**` or a link like `https://example.com`. Find it in Conversations and in the palette.
+  See: the words show exactly as said, with the stars, and the link is plain text you cannot click.
 
 Send back: any box you could not tick, with its id.
