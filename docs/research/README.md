@@ -24,3 +24,5 @@
 **Ponytail audit (2026-11-18).** `PONYTAIL-AUDIT-2026-11.md`: where the code can be simpler, smaller or faster, with file:line, risk and the test for each finding. Proposals only; each fix needs the dev lane's OK, and SEC items need a security review.
 
 **UI v4 structure plan (2026-11-18).** `UI-V4-IA-PLAN.md`: inventory of every helper page, one hierarchy and data map, redundancy fixes, per-page order and accordions, the 5-row sidebar, the ⌘K palette and its safety rules, glass with contrast numbers and fallbacks, and the 5-step build mapping. Builds on `UI-V4-DIRECTION.md`. Mock in `ui-v4-mock/`; glass check `ui-v4-mock/glass-contrast.mjs`. A plan only: the dev lane approves before any build.
+
+`PLATFORM-MACOS-WINDOWS.md` is research on macOS versions (14 is the minimum) and a possible Windows version: what is Mac-only, what carries over, what a Windows helper would need, and the market.
