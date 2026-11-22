@@ -174,9 +174,18 @@ describe('D4 Chrome real mode and big sessions', () => {
     tc = makeTestConfig();
     mkdirSync(tc.cfg.chrome.userDataDir, { recursive: true });
     writeFileSync(join(tc.cfg.chrome.userDataDir, 'DevToolsActivePort'), '9333\n/devtools/browser/real\n');
-    const driver = new ChromeDriver(tc.cfg, { connect: () => new Promise(() => undefined) });
+    // Wait until the driver really calls connect (it reads DevToolsActivePort first). A fixed sleep
+    // lost that race on a busy macOS runner and saw 'Not connected.' (#263).
+    let calledConnect!: () => void;
+    const waiting = new Promise<void>((r) => (calledConnect = r));
+    const driver = new ChromeDriver(tc.cfg, {
+      connect: () => {
+        calledConnect();
+        return new Promise(() => undefined);
+      },
+    });
     void driver.connect('real').catch(() => undefined);
-    await new Promise((r) => setTimeout(r, 5));
+    await waiting;
     expect(driver.status().detail).toMatch(/up to 60 s/);
   });
 
