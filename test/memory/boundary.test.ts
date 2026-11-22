@@ -28,6 +28,9 @@ const BOUNDARIES: readonly Boundary[] = [
   { target: 'src/connect/', importers: CLAUDE_REACHABLE },
   // Background jobs (docs/ADR-004 rule 1): the model never starts one, so nothing it can reach may load src/jobs.
   { target: 'src/jobs/', importers: CLAUDE_REACHABLE },
+  // Resume (ADR-007 v2) sends stored turns back to the model: only the owner's click may start it (covered by
+  // src/history/ above too; named so a move out of src/history keeps the rule).
+  { target: 'src/history/resume.ts', importers: CLAUDE_REACHABLE },
 ];
 
 /**
@@ -170,5 +173,54 @@ describe('MCP tool surface', () => {
     expect(voiceNames).toContain('announce');
 
     for (const n of [...names, ...voiceNames]) expect(n, n).not.toMatch(MEMORY_TOOL_RE);
+    // ADR-007 v2: no model tool can resume or continue a stored chat.
+    for (const n of [...names, ...voiceNames]) expect(n, n).not.toMatch(/resume|continue|conversation/i);
+  });
+});
+
+/**
+ * ADR-007 v2 (resume, [DEV REVIEW]): one entry point, the owner's "Open in chat" click in the window. The helper side
+ * is checked in test/helper/app-protocol.test.ts; this is the Node side, by source.
+ */
+describe('resume has one entry point: an owner click in the window', () => {
+  const refs = scanSrc();
+  const src = (f: string) => readFileSync(join(REPO_ROOT, f), 'utf8');
+  const files = listTsFiles().map((abs) => relative(REPO_ROOT, abs).split(sep).join('/'));
+
+  it('src/history/resume.ts is loaded only by the listener (src/voice/index.ts), and nothing model-reachable imports it', () => {
+    const from = [...new Set(refs.filter((r) => r.resolved === 'src/history/resume.ts').map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`))];
+    expect(from).toEqual(['src/voice/index.ts']);
+    const b: Boundary = { target: 'src/history/resume.ts', importers: CLAUDE_REACHABLE };
+    expect(transitiveViolations(b, refs).map((c) => c.join(' -> '))).toEqual([]);
+    expect([...staticReach('src/cli.ts')]).not.toContain('src/history/resume.ts');
+  });
+
+  it('chat.resume is an app.sock request only: no serve, gate, tool or other code names it', () => {
+    expect(files.filter((f) => /['"]chat\.resume/.test(src(f))).sort()).toEqual(['src/app/protocol.ts', 'src/app/server.ts']);
+    // The gate's own app.sock client (the only serve code that talks to app.sock) sends confirm.ask and nothing else.
+    expect(src('src/safety/app-confirm.ts')).not.toMatch(/resume/i);
+    for (const f of files.filter((f) => CLAUDE_REACHABLE.some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p)))) {
+      expect(src(f), f).not.toMatch(/chat\.resume|ResumeArm|resumePrompt|ResumeRequest/);
+    }
+  });
+
+  it('only a window command can carry a resume: no voice phrase, phone command or --text path reaches it', () => {
+    // HandleOptions.resume is set in one place: listenerQueue (app chat.send), from the arm the click set.
+    expect(files.filter((f) => /\bResumeRequest\b/.test(src(f))).sort()).toEqual(['src/app/server.ts', 'src/voice/assistant.ts']);
+    const server = src('src/app/server.ts');
+    expect(server).toMatch(/const resume = o\.window \? \(takeResume\?\.\(\) \?\? null\) : null;\s*return assistant\.command\(text, \{ source: 'app',[^}]*\.\.\.\(resume \? \{ resume \} : \{\}\) \}\);/);
+    // The listener: the arm is taken only in the app queue; every command start clears it unless it came from the window.
+    const index = src('src/voice/index.ts');
+    expect(index.match(/resumeArm\.take\(\)/g)).toHaveLength(1);
+    expect(index).toMatch(/queue: listenerQueue\(l, a, \(\) => \{\s*const conv = resumeArm\.take\(\);/);
+    expect(index).toMatch(/const onStart = \(c: [^)]*\) => \{\s*resumeArm\.commandStarted\(c\.source\);/);
+    expect(index.match(/resumeArm\.arm\(/g)).toHaveLength(1); // inside the app server's resume.arm (chat.resume)
+    // The phone and --text paths call the Assistant without a resume.
+    expect(index).toMatch(/a\.command\(text, \{ source: 'phone', raw: text, speak: false \}\)/);
+    expect(index).toMatch(/assistant\.handle\(text, \{ source: 'cli', raw: text \}\)/);
+    // No voice router or phone code knows about resume.
+    for (const f of files.filter((f) => (f.startsWith('src/voice/') || f.startsWith('src/phone/')) && !['src/voice/index.ts', 'src/voice/assistant.ts', 'src/voice/conversation.ts', 'src/voice/claude.ts', 'src/voice/warm-claude.ts', 'src/voice/command-log.ts'].includes(f))) {
+      expect(src(f), f).not.toMatch(/ResumeArm|ResumeRequest|resumePrompt|chat\.resume|assumePrivateRead|history\/resume/);
+    }
   });
 });

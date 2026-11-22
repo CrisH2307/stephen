@@ -98,3 +98,12 @@
 {"from":"node","kind":"response","msg":{"id":"a43","type":"settings","config":{"voice":{"model":"haiku"},"replay":{"enabled":true}},"configPath":"/Users/cris/.stephen/config.json"}}
 {"from":"app","kind":"request","msg":{"id":"a44","type":"replay.delete"}}
 {"from":"node","kind":"response","msg":{"id":"a44","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a45","type":"hello","version":"1","confirms":true}}
+{"from":"node","kind":"response","msg":{"id":"a45","type":"hello","version":"1","listening":true,"model":"sonnet","confirms":true}}
+{"from":"node","kind":"push","msg":{"type":"resume","armed":false}}
+{"from":"app","kind":"request","msg":{"id":"a46","type":"chat.resume","conv":"c_0123456789abcdef"}}
+{"from":"node","kind":"push","msg":{"type":"resume","armed":true}}
+{"from":"node","kind":"response","msg":{"id":"a46","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a47","type":"chat.resume.cancel"}}
+{"from":"node","kind":"push","msg":{"type":"resume","armed":false}}
+{"from":"node","kind":"response","msg":{"id":"a47","type":"ok"}}

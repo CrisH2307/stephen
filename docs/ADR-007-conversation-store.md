@@ -1,7 +1,8 @@
 # ADR-007: Conversation store and the replay rule: keep 7 days, show first, resume later under a fixed rule
 
 **Status:** Proposed. Paper only; no code ships with this ADR. Recents v1 (view-only) may be built after the owner
-accepts it. Resume (v2) needs its own PR and an independent review (Review 10b) first.
+accepts it. Resume (v2) needs its own PR and an independent review (Review 10b) first. Resume (v2) is built in
+branch `feat/conv-resume-v2`, waiting for that review.
 **Date:** 2026-11-12
 **Deciders:** Cris (owner), Claude (designer)
 **Reviewed:** 2026-11-12, one independent read-only design review; its findings are folded in (rules 5 and 6,

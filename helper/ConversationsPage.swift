@@ -143,7 +143,8 @@ struct ConversationsPage: View {
                   ConversationItem(entry: row.entry, lines: row.lines, time: model.timeText(row.entry.ts),
                                    source: model.sourceLabel(row.entry.source), first: i == 0,
                                    expanded: nav.conversationOpen == row.entry.id,
-                                   toggle: { nav.conversationOpen = nav.conversationOpen == row.entry.id ? nil : row.entry.id })
+                                   toggle: { nav.conversationOpen = nav.conversationOpen == row.entry.id ? nil : row.entry.id },
+                                   openInChat: row.entry.conv.isEmpty ? nil : { openInChat(row.entry.conv) })
                     .id(row.entry.id)
                 }
               }
@@ -167,6 +168,13 @@ struct ConversationsPage: View {
     } message: {
       Text(verbatim: "Every saved command and reply is deleted. Memory is not affected.")
     }
+  }
+
+  /// ADR-007 v2, [DEV REVIEW]: the one entry point of a resume. It arms it and opens Home; nothing goes to the model
+  /// until the owner sends the next message from the window.
+  private func openInChat(_ conv: String) {
+    model.resumeConversation(conv)
+    nav.page = .home
   }
 
   private var searchField: some View {
@@ -199,6 +207,8 @@ private struct ConversationItem: View {
   let first: Bool
   let expanded: Bool
   let toggle: () -> Void
+  /// Only for a row that has a conversation id (ADR-007 v2); shown in the open row.
+  let openInChat: (() -> Void)?
 
   var body: some View {
     let word = recentChatWord(entry, lines: lines)
@@ -245,6 +255,10 @@ private struct ConversationItem: View {
             Text(verbatim: l.text).font(TypeScale.secondary).foregroundColor(l.status == .ok ? t.ink2 : t.ink)
               .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
           }
+        }
+        if let open = openInChat, expanded {
+          QuietButton("Open in chat", symbol: "bubble.left", action: open)
+            .accessibilityHint("Your next message on Home continues this chat. Nothing is sent until you send it.")
         }
       }
       .padding(.horizontal, Space.l).padding(.vertical, Space.m)

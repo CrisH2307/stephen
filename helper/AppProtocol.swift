@@ -142,6 +142,8 @@ struct AppRequest: Encodable {
   var effort: String? = nil
   /** replay.set: the replay recorder switch (Settings > Privacy and permissions, the owner's click only). */
   var enabled: Bool? = nil
+  /** chat.resume: the conversation id ("c_" + 16 hex) of the Conversations row whose Open in chat was clicked. */
+  var conv: String? = nil
 
   static func hello(_ id: String) -> AppRequest {
     return AppRequest(id: id, type: "hello", version: APP_PROTOCOL_VERSION, confirms: true)
@@ -154,6 +156,10 @@ struct AppRequest: Encodable {
     return AppRequest(id: id, type: "chat.send", text: text)
   }
   static func chatStop(_ id: String) -> AppRequest { return AppRequest(id: id, type: "chat.stop") }
+  /** ADR-007 v2: only the Open in chat button on a Conversations row sends this (AppModel.resumeConversation). It arms; it sends nothing to the model. */
+  static func chatResume(_ id: String, conv: String) -> AppRequest { return AppRequest(id: id, type: "chat.resume", conv: conv) }
+  /** Cancel on Home and New chat: drop the armed resume. */
+  static func chatResumeCancel(_ id: String) -> AppRequest { return AppRequest(id: id, type: "chat.resume.cancel") }
   static func historyList(_ id: String, before: String?, limit: Int) -> AppRequest {
     return AppRequest(id: id, type: "history.list", before: before, limit: limit)
   }
@@ -501,6 +507,8 @@ struct AppMessage: Decodable {
   var job: JobRow? = nil
   // phone (on, lines) / zen (ok, message) / doctor (checks, problems, blocking)
   var on: Bool? = nil
+  /** The `resume` push (ADR-007 v2): a resume is armed for the window's next message. */
+  var armed: Bool? = nil
   var lines: [String]? = nil
   var ok: Bool? = nil
   var checks: [DoctorCheck]? = nil
@@ -527,7 +535,7 @@ struct AppMessage: Decodable {
   enum CodingKeys: String, CodingKey {
     case id, type, version, listening, model, entryId, reply, outcome, tools, ms, steps, message, entries, items, config,
       configPath, state, text, source, accounts, note, jobs, job, on, lines, ok, checks, problems, blocking, context, memory,
-      confirmId, title, body, suggestions, nodes, links
+      confirmId, title, body, suggestions, nodes, links, armed
   }
 
   init(localError: String, id: String?) {
@@ -564,6 +572,7 @@ struct AppMessage: Decodable {
     jobs = try? c.decodeIfPresent([JobRow].self, forKey: .jobs)
     job = try? c.decodeIfPresent(JobRow.self, forKey: .job)
     on = try? c.decodeIfPresent(Bool.self, forKey: .on)
+    armed = try? c.decodeIfPresent(Bool.self, forKey: .armed)
     lines = try? c.decodeIfPresent([String].self, forKey: .lines)
     ok = try? c.decodeIfPresent(Bool.self, forKey: .ok)
     checks = try? c.decodeIfPresent([DoctorCheck].self, forKey: .checks)

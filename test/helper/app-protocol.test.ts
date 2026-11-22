@@ -60,6 +60,9 @@ const RESPONSES: Record<string, string[]> = {
   // Settings > Privacy and permissions (issue #48 PR 2): the replay recorder switch and its Delete; only the owner's click.
   'replay.set': ['settings', 'error'],
   'replay.delete': ['ok', 'error'],
+  // ADR-007 v2 resume: Open in chat on a Conversations row arms; Cancel on Home and New chat drop it. Window only.
+  'chat.resume': ['ok', 'error'],
+  'chat.resume.cancel': ['ok', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -68,7 +71,8 @@ const CLI_ONLY_REQUESTS = ['window.open', 'confirm.ask'];
 const GATE_ONLY_RESPONSES = ['confirm.result'];
 const RESPONSE_TYPES = [...new Set(Object.values(RESPONSES).flat())];
 // replay (#208): the "Recording on" sign follows the listener's push, not a cached settings answer.
-const PUSH_TYPES = ['state', 'heard', 'chat.done', 'confirm', 'confirm.end', 'replay'];
+// resume (ADR-007 v2): the "Continuing an earlier chat" line follows the listener's arm.
+const PUSH_TYPES = ['state', 'heard', 'chat.done', 'confirm', 'confirm.end', 'replay', 'resume'];
 const STATES = ['idle', 'listening', 'recording', 'working', 'speaking'];
 /** Where a proposal (and a kept item) came from; email, canvas and web are third-party text. */
 const ORIGINS = ['you', 'chat', 'email', 'canvas', 'web'];
@@ -708,20 +712,59 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Text(verbatim: entry.said)');
   });
 
-  it('ADR-007 recents v1 is view-only: history strings in Conversations are Text(verbatim:), no send, retry or resume', () => {
+  it('ADR-007 recents: history strings in Conversations are Text(verbatim:); no send or retry; v2 adds only Open in chat', () => {
     const conv = read('ConversationsPage.swift');
     // Every Text in the view is verbatim (said, reply, facts and step lines are third-party-shaped text).
     expect(conv.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
     for (const s of ['entry.said', 'entry.reply', 'facts', 'l.text']) expect(conv).toContain(`Text(verbatim: ${s})`);
     // Stored steps become the same step lines (shown by the verbatim ForEach above).
     expect(conv).toContain('if !entry.steps.isEmpty { return entry.steps.map { DoneLine(text: $0.text, status: StepStatus($0.status)) } }');
-    // Only reads, Load older and Clear all: nothing sends stored text anywhere.
+    // Only reads, Load older, Clear all and (ADR-007 v2) the resume arm: nothing sends stored text anywhere.
     const calls = [...new Set(conv.match(/model\.\w+(?=\()/g) ?? [])].sort();
-    expect(calls).toEqual(['model.clearHistory', 'model.loadOlderHistory', 'model.refreshAudit', 'model.refreshHistory', 'model.sourceLabel', 'model.timeText']);
+    expect(calls).toEqual(['model.clearHistory', 'model.loadOlderHistory', 'model.refreshAudit', 'model.refreshHistory', 'model.resumeConversation', 'model.sourceLabel', 'model.timeText']);
     expect(conv).not.toMatch(/AppRequest|\.send\(|chatSend/);
     expect(conv).not.toMatch(/(Button|QuietButton)\("(Send|Retry|Try again|Continue|Resume|Resend|Ask again)/i);
     // The protocol decodes conv and steps, so the page can group by conversation later.
     expect(read('AppProtocol.swift')).toContain('case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps }');
+  });
+
+  // ADR-007 v2 ([DEV REVIEW]): resume has one entry point, the Open in chat button on an open Conversations row.
+  it('ADR-007 v2: the helper sends chat.resume only from the Conversations row button; the palette cannot', () => {
+    const all = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'));
+    const uses = (re: RegExp) => all.flatMap((f) => (read(f).match(re) ?? []).map(() => f));
+    // The wire type is built in one place, and that builder is called in one place: resumeConversation.
+    expect(uses(/"chat\.resume"/g)).toEqual(['AppProtocol.swift']);
+    expect(uses(/AppRequest\.chatResume\(/g)).toEqual(['AppClient.swift']);
+    const app = read('AppClient.swift');
+    const fn = app.match(/func resumeConversation\(_ conv: String\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(fn).toContain('request(AppRequest.chatResume(newId(), conv: conv))');
+    // It only arms: no chat.send in it, and sendChat never sends chat.resume.
+    expect(fn).not.toMatch(/chatSend|sendChat/);
+    expect(app.match(/func sendChat\([\s\S]*?\n  \}/)?.[0] ?? '').not.toMatch(/chatResume|resume/i);
+    // resumeConversation is called once in the whole helper: the page's openInChat, which the row button runs.
+    expect(uses(/\bresumeConversation\(/g).sort()).toEqual(['AppClient.swift', 'ConversationsPage.swift']);
+    const conv = read('ConversationsPage.swift');
+    expect(conv.match(/\bresumeConversation\(/g)).toHaveLength(1);
+    expect(conv).toMatch(/private func openInChat\(_ conv: String\) \{\s*model\.resumeConversation\(conv\)\s*nav\.page = \.home\s*\}/);
+    expect(conv).toContain('openInChat: row.entry.conv.isEmpty ? nil : { openInChat(row.entry.conv) })');
+    const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(item).toMatch(/if let open = openInChat, expanded \{\s*QuietButton\("Open in chat", symbol: "bubble\.left", action: open\)/);
+    expect(item.replace(/\/\/[^\n]*/g, '').match(/\bopen\b(?!InChat)/g)).toHaveLength(2); // bound once, used once: only the button runs it
+    // Cancel: Home's line and New chat send chat.resume.cancel; the line is verbatim.
+    expect(uses(/AppRequest\.chatResumeCancel\(/g)).toEqual(['AppClient.swift']);
+    expect(app).toMatch(/func newChat\(\) \{\s*chatSince = chat\.last\?\.id \?\? 0\s*if resumeArmed \{ cancelResume\(\) \}\s*\}/);
+    const home = read('HomeView.swift');
+    expect(home).toContain('if model.resumeArmed { resumeLine }');
+    expect(home).toContain('Text(verbatim: "Continuing an earlier chat. Your next message goes with it.")');
+    expect(home).toContain('QuietButton("Cancel") { model.cancelResume() }');
+    expect(read('AskBox.swift')).toContain('if model.resumeArmed { Text(verbatim: "Continuing an earlier chat")');
+    // The arm follows the listener's push only.
+    expect(app).toContain('case "resume":\n      resumeArmed = msg.armed ?? false');
+    // The palette never reaches it: not in its source, and its allow list stays as it is (checked by the tests below).
+    const pal = read('Palette.swift');
+    expect(pal).not.toMatch(/resume|chatResume/i);
+    expect(PALETTE_MEMBERS).not.toContain('resumeConversation');
+    expect(PALETTE_MEMBERS).not.toContain('cancelResume');
   });
 
   it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {

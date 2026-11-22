@@ -157,6 +157,7 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     personal: async () =>
       personalSummary({ aboutMe: { name: 'Cris' }, accounts: await accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }), jobsOn: true, timeZone: 'America/Toronto' }),
     newId: () => `h_test${++ids}`,
+    resume: { arm: () => null, cancel: () => {}, armed: () => false },
     ...o,
   });
   await server.start();
@@ -205,8 +206,15 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
     const expected = new Map(lines.filter((l) => l.kind === 'response').map((l) => [l.msg.id!, l.msg]));
     const requests = lines.filter((l) => l.kind === 'request').map((l) => l.msg);
     expect(requests.length).toBeGreaterThan(15);
+    // The fixture's client also sent confirm.ask (a gate), so the window's resume requests go on a window connection
+    // (opened only then: an earlier Ask box would take the fixture's confirm.ask).
+    let win: TestClient | null = null;
     for (const req of requests) {
-      const got = await h.client.request(req);
+      if (req.type.startsWith('chat.resume') && !win) {
+        win = await h.connect();
+        await win.request({ id: 'w0', type: 'hello', version: '1', confirms: true });
+      }
+      const got = await (req.type.startsWith('chat.resume') ? win! : h.client).request(req);
       const want = expected.get(req.id!)!;
       expect({ id: got.id, type: got.type }, JSON.stringify(req)).toEqual({ id: want.id, type: want.type });
       if (want.type === 'error' && ['busy', MEMORY_MESSAGES.secret, MEMORY_GONE_MESSAGE].includes(want.message as string)) {
@@ -340,7 +348,7 @@ describe('chat', () => {
     const h = await harness();
     const accepted = await h.client.request({ id: 'c1', type: 'chat.send', text: "  what's the weather\u0007 in Toronto  " });
     expect(accepted).toEqual({ id: 'c1', type: 'chat.accepted', entryId: expect.stringMatching(/^h_test\d+$/) });
-    expect(h.queue.started).toEqual([{ text: "what's the weather in Toronto", opts: { id: accepted.entryId, raw: "what's the weather\u0007 in Toronto", speak: false } }]);
+    expect(h.queue.started).toEqual([{ text: "what's the weather in Toronto", opts: { id: accepted.entryId, raw: "what's the weather\u0007 in Toronto", speak: false, window: false } }]);
     h.queue.finish(h.server, { reply: "It's 8 degrees and cloudy." }, ['web_search', 'read_page', 'web_search']);
     const done = await h.client.waitFor((m) => m.type === 'chat.done');
     expect(done).toEqual({ type: 'chat.done', entryId: accepted.entryId, reply: "It's 8 degrees and cloudy.", outcome: 'ok', tools: ['web_search', 'read_page'], ms: 1234 });

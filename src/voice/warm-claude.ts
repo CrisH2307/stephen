@@ -73,6 +73,8 @@ export interface WarmProcess {
   readonly memoryKey: string | undefined;
   /** The conversation's trust (R7-2): only commands of this trust go to it; `wake` = its serve has `--trust wake`. */
   readonly trust: Trust;
+  /** Its serve started with `--assume-private-read` (a resumed chat, ADR-007 v2). */
+  readonly assumePrivateRead?: boolean;
   /** It has exited (or never started). */
   readonly exited: boolean;
   /** Claude Code's session id, from the first line that carried one (null before that). */
@@ -162,6 +164,7 @@ export class WarmClaude implements WarmProcess {
     readonly memoryKey: string | undefined,
     memory: readonly string[] = [],
     readonly trust: Trust = 'wake',
+    readonly assumePrivateRead = false,
   ) {
     this.spawnedAt = this.now();
     let init!: { resolve: () => void; reject: (e: Error) => void };
@@ -222,9 +225,13 @@ export class WarmClaude implements WarmProcess {
   }
 
   private async start(memory: readonly string[]): Promise<void> {
+    if (this.assumePrivateRead && !this.o.serveInstance) {
+      this.onClosed();
+      throw new Error('A resumed chat needs a fresh serve instance.');
+    }
     if (this.o.serveInstance) {
       try {
-        this.inst = await this.o.serveInstance(this.trust);
+        this.inst = await this.o.serveInstance(this.trust, this.assumePrivateRead);
       } catch (e) {
         this.onClosed();
         throw new Error(`Could not write the MCP config (${(e as Error).message}).`);

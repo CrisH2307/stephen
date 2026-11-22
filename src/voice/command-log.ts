@@ -50,7 +50,7 @@ export class ToolLogRunner implements CommandRunner {
       this.commandId(hooks.id);
     };
     try {
-      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), beforeSend });
+      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), ...(hooks.assumePrivateRead ? { assumePrivateRead: true } : {}), beforeSend });
     } finally {
       this.calls = readToolLog(this.path);
     }

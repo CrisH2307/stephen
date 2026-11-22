@@ -61,6 +61,11 @@ export interface RunHooks {
    * The one-shot runner calls it right before it starts Claude, without that guarantee.
    */
   beforeSend?: () => void;
+  /**
+   * A resumed chat (ADR-007 v2): the conversation starts fresh (never `--resume`, never a live process) and its serve
+   * starts with `--assume-private-read`. It can only make the gate stricter.
+   */
+  assumePrivateRead?: boolean;
 }
 
 /** A deterministic router that runs before Claude (timers, jobs): a reply, or null when the text isn't its command. */
@@ -80,7 +85,26 @@ export interface HandleOptions {
   speak?: boolean;
   /** History entry id for this command (the app hands it out in chat.accepted). Default: a fresh newHistoryId(). */
   id?: string;
+  /**
+   * A resumed chat (ADR-007 v2): only the window's next message after the owner's "Open in chat" click carries it
+   * (src/app/server.ts listenerQueue). The current conversation ends, a new one starts, and if Claude runs, its prompt
+   * is prompt(message, trust) (the wrapper with the old turns, then the message) and its serve gets
+   * `--assume-private-read`. Local routers and the history line see only the owner's message.
+   */
+  resume?: ResumeRequest;
 }
+
+/** What HandleOptions.resume needs: builds the first prompt from the owner's message (src/history/resume.ts). */
+export interface ResumeRequest {
+  /** The conversation still has stored turns. False: nothing is sent and the owner is told (RESUME_GONE_MESSAGE). */
+  saved(): boolean;
+  prompt(message: string, trust: Trust): string;
+}
+
+/** A resume whose conversation is gone: the owner's message is not sent anywhere; this is the reply. */
+export const RESUME_GONE_MESSAGE = 'That conversation is no longer saved.';
+/** A resumed message a local router answered (timer, memory, job): the earlier chat was not used. */
+export const RESUME_NOT_USED_MESSAGE = 'The earlier chat was not used for this.';
 
 /** What happened to one command (onDone, and the return value of command()). */
 export interface CommandReport {
@@ -217,6 +241,24 @@ export class Assistant {
       return full;
     };
     try {
+      if (opts.resume) {
+        // Never resume silently: a conversation with no stored turns sends nothing, not even the owner's message.
+        let saved = false;
+        try {
+          saved = opts.resume.saved();
+        } catch {
+          saved = false;
+        }
+        if (!saved) {
+          replyAt = now();
+          await this.deliver(RESUME_GONE_MESSAGE, false, opts.speak, t0);
+          return report({ result: 'error', outcome: 'error', reply: RESUME_GONE_MESSAGE, ranClaude: false, followUp: false, turns: 0 });
+        }
+        // A resumed chat starts a new conversation: the old one ends first.
+        this.endConversation();
+        conv = newConversationId();
+        this.conv = conv;
+      }
       let prefix = '';
       let prompt = text;
       const local = { source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) };
@@ -244,8 +286,10 @@ export class Assistant {
         }
         if (this.cancelled) return report({ result: 'cancelled', outcome: 'cancelled', reply: '', ranClaude: false, followUp: false, turns: 0 });
         if (!route.rest) {
-          await this.deliver(route.reply, true, opts.speak, t0);
-          return report({ result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', reply: route.reply, ranClaude: false, followUp: false, turns: 0 });
+          // An armed resume answered locally: say the earlier chat was not used, never drop it silently.
+          const reply = opts.resume ? `${route.reply} ${RESUME_NOT_USED_MESSAGE}` : route.reply;
+          await this.deliver(reply, true, opts.speak, t0);
+          return report({ result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', reply, ranClaude: false, followUp: false, turns: 0 });
         }
         this.o.status(`Stephen: ${route.reply}`);
         prefix = route.reply;
@@ -253,7 +297,7 @@ export class Assistant {
       }
       let followUp = false;
       try {
-        followUp = this.o.runner.followUp?.(trust) ?? false;
+        followUp = opts.resume ? false : (this.o.runner.followUp?.(trust) ?? false);
         // "Play <something>" starts a fresh conversation (docs/PLAN-WORK-SPLIT.md §13): a conversation that read
         // private data (Canvas, email…) must confirm before opening YouTube with a query, which the phone and an
         // empty room can't answer. A new conversation has read nothing private, so the normal gate lets it through.
@@ -269,7 +313,10 @@ export class Assistant {
       this.o.status(followUp ? 'Working… (follow-up)' : 'Working…');
       let out: ClaudeOutcome;
       try {
-        out = await this.o.runner.run(prompt, { trust, id });
+        // A resumed chat: the old turns go in only inside the wrapper, and the serve assumes a private read.
+        out = opts.resume
+          ? await this.o.runner.run(opts.resume.prompt(prompt, trust), { trust, id, assumePrivateRead: true })
+          : await this.o.runner.run(prompt, { trust, id });
       } catch (e) {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }

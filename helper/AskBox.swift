@@ -121,6 +121,8 @@ struct AskBoxView: View {
     let mode = AskBoxMode.of(model, box)
     VStack(alignment: .leading, spacing: Space.s) {
       topStrip
+      // ADR-007 v2: a send from here also continues the armed earlier chat; Cancel is on Home.
+      if model.resumeArmed { Text(verbatim: "Continuing an earlier chat").font(TypeScale.secondary).foregroundColor(t.ink2) }
       content(mode)
     }
     .padding(.horizontal, Space.l).padding(.bottom, Space.l).padding(.top, Space.xs)

@@ -255,13 +255,16 @@ export class ConversationRunner implements CommandRunner {
   /** A run never resumes a conversation of another trust (R7-2): begin() resets it and the run starts fresh. */
   async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     const trust = hooks.trust ?? DEFAULT_TRUST;
-    const resume = this.plan !== undefined && this.planTrust === trust ? this.plan : this.conversation.begin(trust);
+    const apr = hooks.assumePrivateRead === true;
+    // A resumed chat (ADR-007 v2) always starts fresh: reset first (throws if that fails, and then nothing runs).
+    if (apr) this.conversation.reset();
+    const resume = apr ? null : this.plan !== undefined && this.planTrust === trust ? this.plan : this.conversation.begin(trust);
     this.plan = undefined;
     const memory = this.conversation.currentMemoryKey();
     let out: ClaudeOutcome;
     try {
       hooks.beforeSend?.();
-      out = await this.inner.run(prompt, resume ? { resume, trust } : { trust });
+      out = await this.inner.run(prompt, { ...(resume ? { resume } : {}), trust, ...(apr ? { assumePrivateRead: true } : {}) });
     } catch (e) {
       this.conversation.end();
       throw e;
@@ -297,9 +300,10 @@ export interface WarmRunnerOptions {
   conversation: Conversation;
   /**
    * Start one warm process whose persona is built with the memory as it is now (`memoryKey` = its key), for a
-   * conversation of this trust (`wake`: its serve runs with `--trust wake`).
+   * conversation of this trust (`wake`: its serve runs with `--trust wake`). `assumePrivateRead`: a resumed chat
+   * (ADR-007 v2), its serve runs with `--assume-private-read`.
    */
-  start: (memoryKey: string | undefined, trust: Trust) => WarmProcess;
+  start: (memoryKey: string | undefined, trust: Trust, assumePrivateRead: boolean) => WarmProcess;
   /** Called after every OK command with where the time went. */
   onTiming?: (t: ClaudeTiming) => void;
   now?: () => number;
@@ -346,10 +350,14 @@ export class WarmConversationRunner implements CommandRunner {
     return this.o.conversation;
   }
 
-  /** May the live process take the next command, of this trust? Pure: nothing is killed or reset here. */
-  private reusable(trust: Trust): boolean {
+  /**
+   * May the live process take the next command, of this trust? Pure: nothing is killed or reset here. A command that
+   * needs `--assume-private-read` (a resumed chat) never goes to a process whose serve started without it.
+   */
+  private reusable(trust: Trust, assumePrivateRead = false): boolean {
     const p = this.proc;
     if (!p || p.exited || p.trust !== trust) return false;
+    if (assumePrivateRead && !p.assumePrivateRead) return false;
     const key = this.conversation.currentMemoryKey();
     if (key === 'unreadable' || key !== p.memoryKey) return false;
     const age = this.now() - p.spawnedAt;
@@ -386,6 +394,7 @@ export class WarmConversationRunner implements CommandRunner {
   async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     if (this.busy) throw new Error('a command is already running');
     const trust = hooks.trust ?? DEFAULT_TRUST;
+    const apr = hooks.assumePrivateRead === true;
     this.busy = true;
     this.cancelRequested = false;
     this.clearTimers();
@@ -397,9 +406,9 @@ export class WarmConversationRunner implements CommandRunner {
         await this.ending;
         if (this.cancelRequested) return CANCELLED;
         // Another trust, the window ran out, memory changed or a cap: this process can't take it (kill, wait, reset).
-        if (this.proc && !this.reusable(trust)) await this.endProcess();
+        if (this.proc && !this.reusable(trust, apr)) await this.endProcess();
         if (this.cancelRequested) return CANCELLED;
-        const next = this.proc ?? this.spawn(trust);
+        const next = this.proc ?? this.spawn(trust, apr);
         try {
           await next.ready();
         } catch (e) {
@@ -408,7 +417,7 @@ export class WarmConversationRunner implements CommandRunner {
           return { kind: 'error', message: (e as Error).message, sessionId: null };
         }
         if (this.cancelRequested || this.proc !== next) return CANCELLED;
-        if (this.reusable(trust)) p = next;
+        if (this.reusable(trust, apr)) p = next;
       }
       if (!p) {
         void this.endProcess();
@@ -485,9 +494,9 @@ export class WarmConversationRunner implements CommandRunner {
     return this.proc;
   }
 
-  private spawn(trust: Trust): WarmProcess {
+  private spawn(trust: Trust, assumePrivateRead = false): WarmProcess {
     this.conversation.reset(); // fresh gate, no session id; throws if that fails, and then nothing runs
-    const p = this.o.start(this.conversation.currentMemoryKey(), trust);
+    const p = this.o.start(this.conversation.currentMemoryKey(), trust, assumePrivateRead);
     this.proc = p;
     this.commands = 0;
     this.sessionId = null;
