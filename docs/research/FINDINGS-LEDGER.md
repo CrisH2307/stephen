@@ -89,13 +89,13 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | fixed in code by #108, Mac check pending (checked 2026-11-17, see #10) | dev | #86, `fix/mic-stop-f5` |
 | R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed (#152 merged), Mac check pending | dev | #106, #152 |
 | R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | fixed (#129 merged; owner chose cancel, 2026-11-16), Mac check pending | dev | #107, #129 |
-| R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed in code, Mac check pending | dev | `fix/retry-trust-esc-deny` |
+| R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed (#111 merged), Mac check pending | dev | `fix/retry-trust-esc-deny` |
 
 ## E2. Issues filed 2026-11-12 to 17 with no row before (added by the handoff of 2026-11-16)
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| I-109 | tracker #10 | Low | Full test suite flaky under CPU load (fixed sleeps in the clicks eval; two suites at once) | fixed in code, 10 green full runs pending | dev | #109, #131 |
+| I-109 | tracker #10 | Low | Full test suite flaky under CPU load (fixed sleeps in the clicks eval; two suites at once) | in progress: #131, #178, #242, #247 and #262 fixed races; macOS CI had 10 green runs (#195); a new macOS flake on 2026-11-22 is #263 (row I-263) | dev | #109, #131 |
 | I-121 | Linux run for #112 | Low | Linux: `ps` start time reads 1 s early; a job's first-second process may be left running | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121, #132 |
 | I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | fixed (#162 merged), Mac check pending. Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
 
