@@ -4,6 +4,7 @@
  * text and the wake word alike. A spoken "yes" never counts; Deny, a timeout or no dialog at all means nothing is
  * created. After the wake word, stopping asks too and the list is a count only (same trust split as timers).
  */
+import { dirname } from 'node:path';
 import { quoteUntrusted } from '../safety/confirm.js';
 import { clean } from '../safety/text.js';
 import type { ConfirmPrompt, Confirmer } from '../types.js';
@@ -41,12 +42,14 @@ const said = (task: string) => `"${clean(task, 60)}"`;
 export function startPrompt(plan: JobPlan, source: string): ConfirmPrompt {
   const lines = [
     `Task: ${quoteUntrusted(plan.task, TASK_MAX)}`,
-    ...(plan.edit ? [`Edited job: a new job, version ${plan.edit.version}, from the job ${plan.edit.of}. The old job, its folder and its result are not changed. Nothing from it is reused except what this dialog shows.`] : []),
-    `Folder: ${plan.folder}`,
+    // ADR-010: an edited job's version (and so its folder and branch name) is fixed only when it starts (a race moves
+    // it to the next free one), so the dialog names none of them: only what stays true.
+    ...(plan.edit ? [`Edited job, from ${plan.edit.of}. A new job: the old job, its folder and its result are not changed. Nothing from it is reused except what this dialog shows.`] : []),
+    plan.edit ? `Folder: a new folder in ${dirname(plan.folder)}, next to the old one. Its name is shown when the job starts.` : `Folder: ${plan.folder}`,
     ...(plan.repo
       ? [
           plan.edit?.fromBranch
-            ? `Code: a new git worktree of "${plan.repo.name}" (${plan.repo.path}) on a new branch ${plan.repo.branch}, cut from the old job's branch ${plan.edit.fromBranch}. The old worktree is not used. Nothing is pushed.`
+            ? `Code: a new git worktree of "${plan.repo.name}" (${plan.repo.path}) on a new branch, cut from the old job's branch ${plan.edit.fromBranch}. Its name is shown when the job starts. The old worktree is not used. Nothing is pushed.`
             : `Code: a new git worktree of "${plan.repo.name}" (${plan.repo.path}) on branch ${plan.repo.branch}. Nothing is pushed.`,
         ]
       : []),
