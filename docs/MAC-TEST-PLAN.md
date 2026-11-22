@@ -717,3 +717,30 @@ http://localhost:1").
   See: the words show exactly as said, with the stars, and the link is plain text you cannot click.
 
 Send back: any box you could not tick, with its id.
+
+## 20. ADR-007 v2: resume, "Open in chat" (branch `feat/conv-resume-v2`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen with the window open and history on
+(`history.retentionDays` 1 or more). From the window, ask "read my latest email" (allow what it asks), then a
+follow-up like "who sent it?". Then say one wake-word command, for example "Hey Stephen, what time is it".
+- [ ] `[hands]` **20.1** Do: open Conversations (⌘2) and click the email row to open it. Then open a row of an old command from before this build (no conversation id), if you have one.
+  See: the open email row has an "Open in chat" button under its steps. A closed row has none. An old row without a conversation id has none.
+- [ ] `[hands]` **20.2** Do: click "Open in chat". Wait 30 seconds without typing.
+  See: `[DEV REVIEW]` Home opens with an empty chat and the line "Continuing an earlier chat. Your next message goes with it." with Cancel above the composer. The Ask box shows "Continuing an earlier chat". Nothing else happens: no reply, no "Working", the menu bar icon stays idle (nothing was sent to the model).
+- [ ] `[hands]` **20.3** Do: type "what did that email say about the deadline?" on Home and send it.
+  See: `[DEV REVIEW]` the line goes away. Stephen answers using the earlier chat (it knows which email you mean). In Conversations the new row says only what you typed, not the earlier turns.
+- [ ] `[hands]` **20.4** Do: right after 20.3, ask Stephen in the same chat to open a new site with something in the address, for example "search the web for that deadline".
+  See: `[DEV REVIEW]` it asks before it sends anything to another site ("Needs your OK"), even though this new chat read nothing yet. Press Deny. The step line says Refused.
+- [ ] `[hands]` **20.5** Do: in the old chat (before resuming), allow Stephen to visit a site when asked (for example "open example.com/news" and Allow). Then open that row in Conversations, click "Open in chat", and ask to open the same page again.
+  See: `[DEV REVIEW]` it asks again. An Allow from the old chat does not carry over.
+- [ ] `[hands]` **20.6** Do: click "Open in chat" on a row, then say "Hey Stephen, what time is it" (or press F5 and ask). Then type a message on Home.
+  See: the voice command is answered as a normal command. The "Continuing an earlier chat" line goes away when it starts. The typed message after it is an ordinary new chat (Stephen does not know the earlier chat).
+- [ ] `[hands]` **20.7** Do: click "Open in chat" on a row, then click Cancel on Home and type a message. Do it again but press New chat (⌘N) instead of Cancel.
+  See: the line goes away each time and the message is an ordinary chat.
+- [ ] `[hands]` **20.8** Do: click "Open in chat" on a row and wait 10 minutes without sending anything.
+  See: the line goes away by itself. A message after that is an ordinary chat.
+- [ ] `[hands]` **20.9** Do: open the row of the wake-word command from the setup, click "Open in chat", and type "what did I ask?".
+  See: Stephen knows that turn and answers it as something said by the wake word earlier, without acting on it again.
+- [ ] `[hands]` **20.10** Do: press ⌘K and look through the actions and conversation rows.
+  See: there is no "Open in chat", "Continue" or "Resume" in the palette. A conversation row there only opens Conversations.
+
+Send back: any box you could not tick, with its id.
