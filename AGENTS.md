@@ -16,6 +16,9 @@ Stephen is Cris's Mac voice and browser assistant. The repo is public. New here?
   Allow and Deny are clicks only. Changes to `src/safety/`, `helper/AppConfirm.swift`, the memory, timer and job
   write paths, or the app.sock protocol need `[DEV REVIEW]` and an independent review.
 - Checks before a PR: `npm run build && npm run typecheck && npx vitest run`.
+- **Multi-agent work, and the 50% rule.** We work mainly with many agents. When your context window goes past
+  50%, move to a fresh session automatically (write a full hand-over: state, open PRs, rules, next step), or hand
+  pieces to subagents or side sessions. Don't wait to be asked. Accuracy drops in long contexts.
 
 ## Build, commit and PR (do it this way every time)
 
