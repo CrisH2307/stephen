@@ -1,7 +1,7 @@
-# Mac test plan (items 1 to 4 + review 7 fixes)
+# Mac test plan
 
-Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suite green (2771 passed, 13 skipped) (the real-Chromium timing test
-`review2.int #15` is flaky under load and passes alone), real-model eval 59/60 (`mis-lofi` borderline).
+Updated: 2026-11-22, for the qa to main release. Build from `qa` (section 0). The full suite and CI results are in the
+release PR. Each section names the PRs it checks.
 
 ## How to use this plan
 1. Build first (docs/BRANCHING.md, step 3). In a terminal, in the repo folder, run:
@@ -30,6 +30,14 @@ Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suit
 | 12 | UI v3.2 | 11 | 0 |
 | 13 | Latency monitor and command id | 9 | 11 |
 | 14 | Week of 2026-11-12: fixes merged into qa | 33 | 5 |
+| 15 | Fixes of 2026-11-16 and 17 | 10 | 1 |
+| 16 | Merges of 2026-11-17 | 17 | 0 |
+| 17 | UI v4 step c: Settings, sidebar resize | 8 | 0 |
+| 18 | UI v4 step d: Memory and Jobs | 9 | 0 |
+| 19 | UI v4 step e: Conversations | 9 | 0 |
+| 20 | ADR-007 v2: resume, "Open in chat" | 10 | 0 |
+| 21 | ADR-010 part a: edit and resend | 14 | 0 |
+| 22 | ADR-010 part b: Edit request on a job | 11 | 0 |
 
 ## Two-minute click check (every PR that changes helper/)
 
