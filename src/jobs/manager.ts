@@ -36,7 +36,7 @@ import {
   wantsWeb,
   type JobSpec,
 } from './spec.js';
-import { isFinal, jobsDir, listJobStates, listJobStatesAsync, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
+import { isFinal, jobVersions, jobsDir, listJobStates, listJobStatesAsync, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
 
 export type GitFn = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -102,7 +102,7 @@ export interface JobPlan {
    * ADR-010: an edited job. The dialog shows all of it: the old job, the version, and either the old folder that is
    * copied (with its counts) or, for a code job, the old branch the new worktree branch is cut from.
    */
-  edit?: { of: string; version: number; copyFrom?: string; files?: number; bytes?: number; fromBranch?: string };
+  edit?: { of: string; version: number; base: string; copyFrom?: string; files?: number; bytes?: number; fromBranch?: string };
 }
 
 /** ADR-010: Edit request is off while a job is queued or running (threat E9). */
@@ -348,7 +348,6 @@ export class JobManager {
     const realRoot = existsSync(root) ? realpathSync(root) : '';
     if (!realRoot) return { error: COPY_GONE };
     const git = this.o.git ?? defaultGit;
-    const version = (old.editVersion ?? 1) + 1;
     let repo: { name: string; path: string } | undefined;
     let edit: NonNullable<JobPlan['edit']>;
     if (old.repo) {
@@ -361,24 +360,21 @@ export class JobManager {
       const from = old.repo.branch;
       const has = /^stephen\/job-[a-z0-9][a-z0-9-]*$/.test(from) ? await git(['-C', repo.path, 'rev-parse', '--verify', '--quiet', `refs/heads/${from}`]) : { code: 1 };
       if (has.code !== 0) return { error: `The old job's branch ${from} is gone. Start a new job instead.` };
-      edit = { of: old.id, version, fromBranch: from };
+      edit = { of: old.id, version: 0, base: '', fromBranch: from };
     } else {
       // The old folder must still be a plain folder in the job root (it came from Stephen's own state file).
       const st = old.folder ? lstatSync(old.folder, { throwIfNoEntry: false }) : undefined;
       if (!st || st.isSymbolicLink() || !st.isDirectory() || realpathSync(old.folder) !== old.folder || dirname(old.folder) !== realRoot) return { error: COPY_GONE };
       const scan = copyJobFolder(old.folder, null);
       if ('error' in scan) return scan;
-      edit = { of: old.id, version, copyFrom: old.folder, ...scan };
+      edit = { of: old.id, version: 0, base: '', copyFrom: old.folder, ...scan };
     }
-    const suffix = `-v${version}`;
-    const base = (old.editOf ? slugOf(old.id).replace(/-v\d+(?:-\d+)?$/, '') : slugOf(old.id)).slice(0, SLUG_MAX - suffix.length - 3).replace(/-+$/, '') || 'job';
-    const day = this.today();
-    for (let n = 1; n <= 50; n++) {
-      const id = jobIdFor(day, `${base}${suffix}`, n);
-      const folder = join(realRoot, id);
-      if (existsSync(folder) || existsSync(metaDirOf(this.o.home, id))) continue;
-      const branch = branchFor(slugOf(id));
-      if (repo && (await git(['-C', repo.path, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0) continue;
+    // The old job's name without its `-v<N>`, with room for a version of up to four digits.
+    const base = (old.editOf ? slugOf(old.id).replace(/-v\d+$/, '') : slugOf(old.id)).slice(0, SLUG_MAX - 6).replace(/-+$/, '') || 'job';
+    const t = await this.editTarget(old.id, base, realRoot, repo?.path, 2);
+    if (t) {
+      const { id, folder, branch } = t;
+      edit = { ...edit, version: t.version, base };
       const picked = this.o.modelPrefs?.();
       return {
         id,
@@ -396,6 +392,25 @@ export class JobManager {
       };
     }
     return { error: 'Too many jobs with that name today.' };
+  }
+
+  /**
+   * ADR-010: the id of an edited job: today, the old name, `-v<version>`, where the version is the highest in the job's
+   * family (the jobs linked by editOf) + 1, at least `min`, and the next one while that folder, meta folder or branch
+   * exists. Two edits of version 1 get versions 2 and 3. Only a lookup: the start claims the id (exclusive mkdir).
+   */
+  private async editTarget(of: string, base: string, realRoot: string, repoPath: string | undefined, min: number): Promise<{ id: string; folder: string; branch: string; version: number } | null> {
+    const top = jobVersions(this.list()).get(of)?.versions ?? 1;
+    const day = this.today();
+    for (let v = Math.max(min, top + 1), n = 0; n < 50; v++, n++) {
+      const id = jobIdFor(day, `${base}-v${v}`);
+      const folder = join(realRoot, id);
+      if (existsSync(folder) || existsSync(metaDirOf(this.o.home, id))) continue;
+      const branch = branchFor(slugOf(id));
+      if (repoPath && (await (this.o.git ?? defaultGit)(['-C', repoPath, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0) continue;
+      return { id, folder, branch, version: v };
+    }
+    return null;
   }
 
   /** Make the job folder `<root>/<id>`: fresh, 0700, a real folder whose realpath is exactly where we meant. */
