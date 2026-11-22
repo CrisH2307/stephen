@@ -60,7 +60,7 @@ import {
   resolvePersonaFile,
   EFFORT_FLAG,
 } from './claude.js';
-import { ToolLogRunner, finishCommand, historyRecorder } from './command-log.js';
+import { ToolLogRunner, editResendAudit, finishCommand, historyRecorder } from './command-log.js';
 import { Conversation, ConversationRunner, WarmConversationRunner, memoryKey } from './conversation.js';
 import { WarmClaude, probeWarmProtocol, type WarmClaudeOptions } from './warm-claude.js';
 import { ReplayRecorder } from '../replay/recorder.js';
@@ -546,7 +546,11 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
       ...(heard && lastTts() ? { tts: lastTts()! } : {}),
     });
-    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end });
+    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end }).then(() => {
+      // ADR-010: one audit line per edit and resend (ids and the old source, no text), after the steps were read.
+      const line = editResendAudit(r);
+      if (line && audit) return audit.append(line).catch((e: unknown) => err(`Note: could not audit the edit (${(e as Error).message}).`));
+    });
   };
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
   // Tests inject env.speaker. The speaker is rebuilt when the voice setting changes, and silent when speak is off.
