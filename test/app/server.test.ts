@@ -146,8 +146,9 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
       list: () => [],
       stop: async (id) => {
         if (id !== '2026-11-05-write-my-lab-report') return { refused: `There's no job ${id}.` };
-        return { id, task: 'write my lab report draft', status: 'stopped', folder: `/Users/cris/Stephen Jobs/${id}`, createdAt: 1, startedAt: 2, endedAt: 3, turns: 9, costUsd: 0.25, summary: '', error: 'Stopped by the owner.' };
+        return { id, task: 'write my lab report draft', status: 'stopped', folder: `/Users/cris/Stephen Jobs/${id}`, createdAt: 1, startedAt: 2, endedAt: 3, turns: 9, costUsd: 0.25, summary: '', error: 'Stopped by the owner.', request: 'write my lab report draft', version: 1, versions: 1 };
       },
+      edit: async () => ({ refused: 'Stop the job first to change its request.' }),
     },
     speakReplies: false,
     openWindow: () => (calls.opens++, null),

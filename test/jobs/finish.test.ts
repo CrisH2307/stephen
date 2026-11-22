@@ -192,7 +192,7 @@ describe('jobs.list / jobs.stop over app.sock', () => {
       history: null,
       audit: null,
       settings: () => ({ config: {}, configPath: '/x/config.json' }),
-      ...(h ? { jobs: appJobs(h.manager, 100) } : {}),
+      ...(h ? { jobs: appJobs(h.manager, new JobRouter({ jobs: h.manager, confirmer: { kind: 'deny', confirm: async () => 'declined' } }), 100) } : {}),
       speakReplies: false,
       openWindow: () => null,
     });
@@ -218,7 +218,7 @@ describe('jobs.list / jobs.stop over app.sock', () => {
     expect(wire).not.toContain('ghp_');
     expect(wire).not.toContain('sess-secret-1');
     expect(wire).not.toContain('"pid"');
-    expect(Object.keys(jobRow(finished('2026-11-05-a'))).sort()).toEqual(['costUsd', 'createdAt', 'endedAt', 'error', 'folder', 'id', 'startedAt', 'status', 'summary', 'task', 'turns']);
+    expect(Object.keys(jobRow(finished('2026-11-05-a'))).sort()).toEqual(['costUsd', 'createdAt', 'endedAt', 'error', 'folder', 'id', 'request', 'startedAt', 'status', 'summary', 'task', 'turns', 'version', 'versions']);
   });
 
   it('the window and the jobs module agree on what a job id is', async () => {

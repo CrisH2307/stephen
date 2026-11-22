@@ -93,7 +93,7 @@ describe('parseAppRequest', () => {
 
   it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'latency.get', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage', 'replay.set', 'replay.delete', 'media.key', 'chat.resume', 'chat.resume.cancel', 'chat.edit', 'history.versions', 'history.deleteVersion'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'latency.get', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage', 'replay.set', 'replay.delete', 'media.key', 'chat.resume', 'chat.resume.cancel', 'chat.edit', 'history.versions', 'history.deleteVersion', 'jobs.edit'].sort(),
     );
   });
 
