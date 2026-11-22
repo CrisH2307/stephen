@@ -131,7 +131,7 @@ export function historyRecorder(
         turns: r.turns,
         ...(r.conv ? { conv: r.conv } : {}),
         ...(steps ? { steps } : {}),
-        ...(r.editOf ? { editOf: { conv: r.editOf.conv, id: r.editOf.id } } : {}),
+        ...(r.editOf ? { editOf: { conv: r.editOf.conv, id: r.editOf.id, ts: r.editOf.ts } } : {}),
       });
     } catch (e) {
       log(`Note: could not write the command history (${(e as Error).message}).`);

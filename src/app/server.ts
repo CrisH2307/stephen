@@ -460,7 +460,7 @@ export class AppServer {
         return ctx !== null;
       },
       prompt: (message, trust) => (ctx ? quotePrompt(ctx.earlier, trust, message, ctx.replaced) : message),
-      edit: { conv: first.editOf.conv, id: first.editOf.id, source: first.source },
+      edit: { ...first.editOf, source: first.source },
     };
     this.startChat(sock, req.id, text, req.text.trim(), edit);
   }

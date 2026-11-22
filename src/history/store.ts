@@ -9,8 +9,9 @@
  *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 40 steps of 160 chars, 5 MB per day file (a full day
  *    drops new entries).
  *  - Optional `conv` (conversation id) and `steps` (what chat.done showed), ADR-007. Old lines without them still read.
- *  - Optional `editOf` (ADR-010): only on the first line of an edited branch, the conversation and command id of the
- *    message that was edited. Parsed field by field; a bad one is dropped, never trusted.
+ *  - Optional `editOf` (ADR-010): only on the first line of an edited branch, the conversation, command id and time of
+ *    the message that was edited. Parsed field by field; a bad one is dropped, never trusted, and so is one whose time
+ *    is outside the retention window when read.
  *    Stored text is data for the owner to look at, never instructions: nothing reads it to decide anything.
  *  - Malformed lines are skipped when reading.
  */
@@ -67,17 +68,20 @@ export interface HistoryEntry {
   editOf?: EditOf;
 }
 
-/** The message a branch is an edit of (ADR-010): its conversation and its command id. */
+/** The message a branch is an edit of (ADR-010): its conversation, its command id and its time (epoch ms). */
 export interface EditOf {
   conv: string;
   id: string;
+  /** The edited line's time: the branch view cuts the earlier conversation here, even after that line is deleted. */
+  ts: number;
 }
 
 /** A valid editOf from parsed JSON, or null (a bad one is dropped, never trusted). */
 export function parseEditOf(v: unknown): EditOf | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
-  const { conv, id } = v as Record<string, unknown>;
-  return typeof conv === 'string' && CONV_RE.test(conv) && typeof id === 'string' && ID_RE.test(id) ? { conv, id } : null;
+  const { conv, id, ts } = v as Record<string, unknown>;
+  if (typeof ts !== 'number' || !Number.isFinite(ts) || ts < 0) return null;
+  return typeof conv === 'string' && CONV_RE.test(conv) && typeof id === 'string' && ID_RE.test(id) ? { conv, id, ts } : null;
 }
 
 /** What callers pass to append: id and ts are filled in when absent. */
@@ -268,7 +272,7 @@ export class HistoryStore {
           e = null;
         }
         if (!e || Date.parse(e.ts) < oldestMs || (before !== null && Date.parse(e.ts) >= before)) continue;
-        out.push(e);
+        out.push(this.inWindow(e, oldestMs));
         if (out.length >= limit) return out;
       }
     }
@@ -287,7 +291,7 @@ export class HistoryStore {
     for (const name of this.dayFiles().sort()) {
       for (const l of this.readDayFile(join(this.dir, name))) {
         const e = parseLine(l);
-        if (e && Date.parse(e.ts) >= oldestMs) out.push(e);
+        if (e && Date.parse(e.ts) >= oldestMs) out.push(this.inWindow(e, oldestMs));
       }
     }
     return out;
@@ -321,6 +325,13 @@ export class HistoryStore {
       }
     }
     return n;
+  }
+
+  /** The entry without its editOf when that time is outside the retention window (older than kept, or in the future). */
+  private inWindow(e: HistoryEntry, oldestMs: number): HistoryEntry {
+    if (!e.editOf || (e.editOf.ts >= oldestMs && e.editOf.ts <= this.now().getTime())) return e;
+    const { editOf: _dropped, ...rest } = e;
+    return rest;
   }
 
   /** Delete every day file. Returns how many were deleted. */

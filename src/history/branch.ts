@@ -62,7 +62,7 @@ function firstOfBranch(entries: readonly HistoryEntry[], e: HistoryEntry): boole
   return !!e.editOf && !!e.conv && own(entries, e.conv)[0]?.id === e.id;
 }
 
-const key = (e: EditOf) => `${e.conv}/${e.id}`;
+const key = (e: Pick<EditOf, 'conv' | 'id'>) => `${e.conv}/${e.id}`;
 
 /** The message a line is a version of: up through edited first lines to the original (`conv/id`). */
 function slotOf(entries: readonly HistoryEntry[], line: HistoryEntry): string {
@@ -113,5 +113,5 @@ export function editContext(entries: readonly HistoryEntry[], oldId: string, old
   if (versionsOf(entries, oldId).length >= MAX_VERSIONS) return { refused: TOO_MANY_VERSIONS_MESSAGE };
   const view = branchView(entries, old.conv).lines;
   const at = view.findIndex((e) => e.id === oldId);
-  return { editOf: { conv: old.conv, id: old.id }, source: old.source, earlier: view.slice(0, at), replaced: view.slice(at) };
+  return { editOf: { conv: old.conv, id: old.id, ts: Date.parse(old.ts) }, source: old.source, earlier: view.slice(0, at), replaced: view.slice(at) };
 }

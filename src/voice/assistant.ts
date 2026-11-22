@@ -110,6 +110,8 @@ export interface ResumeRequest {
 export interface EditedMessage {
   conv: string;
   id: string;
+  /** The edited line's time (epoch ms): the new branch cuts the earlier conversation here. */
+  ts: number;
   source: CommandSource;
 }
 
