@@ -15,7 +15,7 @@ Everything stays on your Mac: Stephen only talks to browsers on `127.0.0.1` and 
 
 | | |
 |---|---|
-| macOS | Apple silicon or Intel |
+| macOS | **14 (Sonoma) or newer**, Apple silicon or Intel |
 | Node.js | **20.19 or newer** (`node --version`; install from [nodejs.org](https://nodejs.org) or `brew install node`) |
 | Claude Code | installed and working (`claude --version`) |
 | Google Chrome | **144 or newer** for real-profile mode (Chrome menu → *Help → About Google Chrome*) |

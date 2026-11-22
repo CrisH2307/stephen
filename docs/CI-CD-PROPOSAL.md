@@ -71,6 +71,8 @@ process is running, which never happens on a runner.
 - **`macos`** on `macos-15` (arm64, 3 vCPU, 7 GB, free for a public repo, at most 5 macOS jobs at once on the Free
   plan): the same steps, plus a check that `swiftc` exists, so the Swift tests can never skip silently. This is the
   machine the product runs on, and the only place the full Swift app compiles.
+- **`macos-14`** on `macos-14`: the same steps on the oldest macOS Stephen supports (macOS 14, the helper's
+  `LSMinimumSystemVersion`), so code that needs a newer macOS fails here first.
 
 Why the full suite on both instead of "unit on Linux, integration on macOS": the suite is 5 minutes, both runners are
 free for a public repo, and splitting would leave each platform's half untested on the other. If macOS queue time
