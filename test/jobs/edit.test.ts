@@ -125,10 +125,12 @@ describe('Edit request: a NEW job, only after the owner approves the job dialog 
     expect(d.shown).toHaveLength(1);
     const body = d.shown[0]!.body;
     expect(d.shown[0]!.title).toBe('Stephen: start a background job?');
-    expect(body).toContain(`Edited job: a new job, version 2, from the job ${old.id}.`);
+    expect(body).toContain(`Edited job, from ${old.id}.`);
     expect(body).toContain('Task: ');
     expect(body).toContain('Earlier request (a record)');
-    expect(body).toContain(`Folder: ${r.folder}`);
+    expect(body).toContain(`Folder: a new folder in ${h.root}, next to the old one. Its name is shown when the job starts.`);
+    expect(body).not.toMatch(/-v\d/);
+    expect(body).not.toMatch(/version/i);
     expect(body).toContain(`Input files: a copy of the old job folder ${old.folder} (2 files, 0.0 MB; symlinks are skipped). The inbox is not used.`);
     expect(body).toMatch(/Budgets: up to 45 minutes, 150 turns, \$5\./);
     expect(body).toContain('Web: off.');
@@ -194,6 +196,7 @@ describe('Edit request: a NEW job, only after the owner approves the job dialog 
     if ('refused' in r2) throw new Error(r2.refused);
     expect(r2.web).toBe(true);
     expect(d.shown[1]!.body).toMatch(/Web: ON\./);
+    expect(d.shown[1]!.body).not.toContain('-v3'); // the old id (a -v2 job) is named; the new version never is
   });
 
   it('an edit of an edit is version 3 with the same name; versions show as "Version N of M"', async () => {
@@ -248,7 +251,13 @@ describe('versions and ids: the family\'s top version + 1, claimed atomically; t
     const router = new JobRouter({ jobs: h.manager, confirmer });
     const [a, b] = await Promise.all([router.editJob(old.id, 'write my lab report draft longer'), router.editJob(old.id, 'write my lab report draft shorter')]);
     if ('refused' in a || 'refused' in b) throw new Error('refused');
-    expect(shown.map((p) => p.body.match(/Folder: .*-v(\d+)/)?.[1])).toEqual(['2', '2']);
+    // Neither dialog named a version, a -v<N> folder or a -v<N> branch: what they showed stays true after the retry.
+    expect(shown).toHaveLength(2);
+    for (const p of shown) {
+      expect(p.body).not.toMatch(/-v\d/);
+      expect(p.body).not.toMatch(/version/i);
+      expect(p.body).toContain(`Folder: a new folder in ${h.root}, next to the old one.`);
+    }
     expect(new Set([a.id, b.id]).size).toBe(2);
     expect([a.editVersion, b.editVersion].sort()).toEqual([2, 3]);
     for (const j of [a, b]) {
@@ -394,7 +403,8 @@ describe('code jobs: a NEW worktree branch cut from the old job\'s branch; the o
     expect(readFileSync(join(r.cwd, 'fix.txt'), 'utf8')).toBe('fixed\n');
     expect(git(repo, 'rev-parse', `refs/heads/${old.repo!.branch}`).trim()).toBe(oldHead);
     expect(snapshot(oldTree)).toEqual(oldSnap);
-    expect(d.shown[0]!.body).toContain(`on a new branch ${r.repo!.branch}, cut from the old job's branch ${old.repo!.branch}. The old worktree is not used. Nothing is pushed.`);
+    expect(d.shown[0]!.body).toContain(`on a new branch, cut from the old job's branch ${old.repo!.branch}. Its name is shown when the job starts. The old worktree is not used. Nothing is pushed.`);
+    expect(d.shown[0]!.body).not.toMatch(/-v\d/);
   });
 
   const repoAt = (dir: string) => {
