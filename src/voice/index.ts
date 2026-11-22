@@ -687,7 +687,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get(), replay: rec.on() }),
       accounts: allAccounts,
       personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
-      ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
+      ...(jobManager && jobRouter ? { jobs: appJobs(jobManager, jobRouter) } : {}),
       speakReplies: loaded.app.speakReplies,
       setTalk: (c) => void talk.set(c),
       setModel: (c) => void modelStore.set(c),
