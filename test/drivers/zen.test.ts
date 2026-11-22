@@ -156,7 +156,9 @@ function harness(opts: HarnessOpts = {}): Harness {
       h.children.push(child);
       const stdio = spawnOpts.stdio as unknown[];
       if (line !== null) writeSync(stdio[2] as number, `1730000000\tRemoteAgent\tINFO\t${line}\n`);
-      if (exitCode !== undefined) setTimeout(() => child.emit('exit', exitCode, null), 5);
+      // nextTick: the exit lands while #launch still awaits log.close(), the race behind #109.
+      // A driver that watches the child only after that await misses it and times out.
+      if (exitCode !== undefined) process.nextTick(() => child.emit('exit', exitCode, null));
       return child as unknown as SpawnedProcess;
     },
     connect: async (o) => {
@@ -375,8 +377,7 @@ describe('ZenDriver agent mode', () => {
 
   it('reports an early exit', async () => {
     tc = makeTestConfig();
-    // The exit comes after 5 ms; a long listen timeout keeps a loaded machine from timing out first (macOS CI).
-    const h = harness({ line: 'something else', exitCode: 1, listenTimeoutMs: 10_000 });
+    const h = harness({ line: 'something else', exitCode: 1 });
     await expectHubError(h.driver.connect('agent'), 'NOT_CONNECTED', /exited right after launch \(exit code 1\)/);
   });
 
@@ -695,8 +696,7 @@ describe('ZenDriver.inspect / launchForClaude (zen-launch)', () => {
   it('launchForClaude reports a Zen that exits at once (profile in use) as NEEDS_USER and kills nothing', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const dir = realProfile();
-    // listenTimeoutMs: see 'reports an early exit' (macOS CI run 44537229890 timed out at 300 ms before the exit).
-    const h = harness({ resolveRealProfile: async () => dir, line: 'Zen is already running, but is not responding', exitCode: 0, listenTimeoutMs: 10_000 });
+    const h = harness({ resolveRealProfile: async () => dir, line: 'Zen is already running, but is not responding', exitCode: 0 });
     await expectHubError(h.driver.launchForClaude(), 'NEEDS_USER', /another Zen is probably using profile/);
     expect(h.children).toHaveLength(1);
     expect(h.children[0]!.killed).toBe(false);
