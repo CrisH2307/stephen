@@ -2,8 +2,8 @@
  * Edit and resend (ADR-010), the store side: branches and versions read from history lines. Owner-only like the rest
  * of src/history: nothing Claude can reach may import it (test/memory/boundary.test.ts).
  *
- *  - An edit is a NEW conversation C2 whose first line carries `editOf: { conv: C, id: Tk }`. C2 does not copy
- *    T1 ... Tk-1: its branch view is the view of C up to Tk (not included), then C2's own lines.
+ *  - An edit is a NEW conversation C2 whose first line carries `editOf: { conv: C, id: Tk, ts: Tk's time }`. C2 does
+ *    not copy T1 ... Tk-1: its branch view is the view of C before Tk's time, then C2's own lines.
  *  - Versions of a message: the message itself (version 1), then every branch first line that is an edit of it, or
  *    an edit of such an edit, oldest first. At most MAX_VERSIONS.
  *  - The context of a resend is built here FROM THE STORE: the app sends only the old command id, the old text's hash
@@ -42,7 +42,9 @@ export interface BranchView {
 
 /**
  * The branch view of `conv`: for an edited branch, the view of the conversation it was edited from, up to the edited
- * message (not included), then its own lines. An expired or deleted earlier line is never shown: `expired` says so.
+ * message's time (editOf.ts, not included), then its own lines. The cut holds after the edited message itself was
+ * deleted ("Delete this version" on version 1). An expired or deleted earlier line is never shown; `expired` says
+ * when the start of the record is gone.
  * ponytail: a partly expired start is seen only when the first line left is a follow-up (a conversation starts with a
  * fresh run); a local command left first after the cut hides it.
  */
@@ -52,9 +54,8 @@ export function branchView(entries: readonly HistoryEntry[], conv: string, depth
   if (!first) return { lines: [], expired: false };
   if (!first.editOf || depth >= MAX_DEPTH) return { lines: mine, expired: first.followUp };
   const parent = branchView(entries, first.editOf.conv, depth + 1);
-  const at = parent.lines.findIndex((e) => e.id === first.editOf!.id);
-  if (at < 0) return { lines: mine, expired: true };
-  return { lines: [...parent.lines.slice(0, at), ...mine], expired: parent.expired };
+  const cut = first.editOf.ts;
+  return { lines: [...parent.lines.filter((e) => Date.parse(e.ts) < cut), ...mine], expired: parent.expired };
 }
 
 /** An edited branch's first line: it carries editOf and starts its conversation. */
