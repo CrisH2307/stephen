@@ -9,6 +9,9 @@
  *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 40 steps of 160 chars, 5 MB per day file (a full day
  *    drops new entries).
  *  - Optional `conv` (conversation id) and `steps` (what chat.done showed), ADR-007. Old lines without them still read.
+ *  - Optional `editOf` (ADR-010): only on the first line of an edited branch, the conversation, command id and time of
+ *    the message that was edited. Parsed field by field; a bad one is dropped, never trusted, and so is one whose time
+ *    is outside the retention window when read.
  *    Stored text is data for the owner to look at, never instructions: nothing reads it to decide anything.
  *  - Malformed lines are skipped when reading.
  */
@@ -61,6 +64,29 @@ export interface HistoryEntry {
   conv?: string;
   /** The steps chat.done carried for this command (ADR-007 point 6). Absent when there were none or the audit read failed. */
   steps?: ChatStep[];
+  /** ADR-010: on the first line of an edited branch only, the message it is a new version of. */
+  editOf?: EditOf;
+  /**
+   * Set on read only, never stored: this line was an edit whose editOf fell outside the retention window and was
+   * dropped. Its fields are not kept or trusted; it only makes the branch show "The earlier part ... has expired."
+   */
+  editExpired?: true;
+}
+
+/** The message a branch is an edit of (ADR-010): its conversation, its command id and its time (epoch ms). */
+export interface EditOf {
+  conv: string;
+  id: string;
+  /** The edited line's time: the branch view cuts the earlier conversation here, even after that line is deleted. */
+  ts: number;
+}
+
+/** A valid editOf from parsed JSON, or null (a bad one is dropped, never trusted). */
+export function parseEditOf(v: unknown): EditOf | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const { conv, id, ts } = v as Record<string, unknown>;
+  if (typeof ts !== 'number' || !Number.isFinite(ts) || ts < 0) return null;
+  return typeof conv === 'string' && CONV_RE.test(conv) && typeof id === 'string' && ID_RE.test(id) ? { conv, id, ts } : null;
 }
 
 /** What callers pass to append: id and ts are filled in when absent. */
@@ -148,6 +174,7 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
   if (!Array.isArray(o.tools)) return null;
   const tools = o.tools.map(parseToolCallRecord).filter((t): t is ToolCallRecord => t !== null);
   const steps = parseSteps(o.steps);
+  const editOf = parseEditOf(o.editOf);
   return {
     id: o.id,
     ts: o.ts,
@@ -161,7 +188,17 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
     turns: nonNegInt(o.turns),
     ...(typeof o.conv === 'string' && CONV_RE.test(o.conv) ? { conv: o.conv } : {}),
     ...(steps.length > 0 ? { steps } : {}),
+    ...(editOf ? { editOf } : {}),
   };
+}
+
+/** One stored line, or null when it is not a valid entry. */
+function parseLine(l: string): HistoryEntry | null {
+  try {
+    return parseHistoryEntry(JSON.parse(l));
+  } catch {
+    return null;
+  }
 }
 
 export class HistoryStore {
@@ -240,11 +277,66 @@ export class HistoryStore {
           e = null;
         }
         if (!e || Date.parse(e.ts) < oldestMs || (before !== null && Date.parse(e.ts) >= before)) continue;
-        out.push(e);
+        out.push(this.inWindow(e, oldestMs));
         if (out.length >= limit) return out;
       }
     }
     return out;
+  }
+
+  /**
+   * Every stored entry inside retention, oldest first (file order). For the branch view and versions (ADR-010).
+   * ponytail: reads every day file (7 days, 5 MB each at most) per call; index by conv if edits get slow.
+   */
+  all(): HistoryEntry[] {
+    this.purge();
+    if (!this.enabled) return [];
+    const oldestMs = this.cutoffMs();
+    const out: HistoryEntry[] = [];
+    for (const name of this.dayFiles().sort()) {
+      for (const l of this.readDayFile(join(this.dir, name))) {
+        const e = parseLine(l);
+        if (e && Date.parse(e.ts) >= oldestMs) out.push(this.inWindow(e, oldestMs));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * "Delete this version" (ADR-010), the owner's click behind a confirm: deletes the lines of conversation `conv`
+   * from its line `fromId` on (that line and every later one of the same conversation). Nothing of another
+   * conversation, and no earlier line, is touched. Returns how many lines were deleted (0 when `fromId` is not a line
+   * of `conv`).
+   */
+  deleteVersion(conv: string, fromId: string): number {
+    const from = this.all().find((e) => e.id === fromId && e.conv === conv);
+    if (!from) return 0;
+    const fromMs = Date.parse(from.ts);
+    let n = 0;
+    for (const name of this.dayFiles()) {
+      const file = join(this.dir, name);
+      const lines = this.readDayFile(file);
+      const keep = lines.filter((l) => {
+        const e = parseLine(l);
+        return !(e && e.conv === conv && (e.id === fromId || Date.parse(e.ts) > fromMs));
+      });
+      if (keep.length === lines.length) continue;
+      n += lines.length - keep.length;
+      try {
+        if (keep.length) writePrivateFileAtomicSync(file, keep.map((l) => `${l}\n`).join(''));
+        else unlinkSync(file);
+      } catch (e) {
+        throw new HistoryError((e as Error).message);
+      }
+    }
+    return n;
+  }
+
+  /** The entry without its editOf when that time is outside the retention window (older than kept, or in the future). */
+  private inWindow(e: HistoryEntry, oldestMs: number): HistoryEntry {
+    if (!e.editOf || (e.editOf.ts >= oldestMs && e.editOf.ts <= this.now().getTime())) return e;
+    const { editOf: _dropped, ...rest } = e;
+    return { ...rest, editExpired: true };
   }
 
   /** Delete every day file. Returns how many were deleted. */

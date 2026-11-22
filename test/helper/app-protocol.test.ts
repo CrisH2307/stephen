@@ -63,6 +63,10 @@ const RESPONSES: Record<string, string[]> = {
   // ADR-007 v2 resume: Open in chat on a Conversations row arms; Cancel on Home and New chat drop it. Window only.
   'chat.resume': ['ok', 'error'],
   'chat.resume.cancel': ['ok', 'error'],
+  // ADR-010 edit and resend: Send in a row's inline editor; the versions switch (read only); Delete this version. Window only.
+  'chat.edit': ['chat.accepted', 'error'],
+  'history.versions': ['versions', 'error'],
+  'history.deleteVersion': ['ok', 'error'],
 };
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
@@ -716,16 +720,19 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const conv = read('ConversationsPage.swift');
     // Every Text in the view is verbatim (said, reply, facts and step lines are third-party-shaped text).
     expect(conv.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
-    for (const s of ['entry.said', 'entry.reply', 'facts', 'l.text']) expect(conv).toContain(`Text(verbatim: ${s})`);
+    for (const s of ['entry.said', 'shown.said', 'shown.reply', 'facts', 'l.text']) expect(conv).toContain(`Text(verbatim: ${s})`);
     // Stored steps become the same step lines (shown by the verbatim ForEach above).
     expect(conv).toContain('if !entry.steps.isEmpty { return entry.steps.map { DoneLine(text: $0.text, status: StepStatus($0.status)) } }');
     // Only reads, Load older, Clear all and (ADR-007 v2) the resume arm: nothing sends stored text anywhere.
     const calls = [...new Set(conv.match(/model\.\w+(?=\()/g) ?? [])].sort();
-    expect(calls).toEqual(['model.clearHistory', 'model.loadOlderHistory', 'model.refreshAudit', 'model.refreshHistory', 'model.resumeConversation', 'model.sourceLabel', 'model.timeText']);
+    // ADR-010 adds the edit (editMessage, behind the editor's Send), the versions read and Delete this version.
+    expect(calls).toEqual(['model.clearHistory', 'model.deleteVersion', 'model.editMessage', 'model.loadOlderHistory', 'model.loadVersions', 'model.refreshAudit', 'model.refreshHistory', 'model.resumeConversation', 'model.sourceLabel', 'model.timeText']);
     expect(conv).not.toMatch(/AppRequest|\.send\(|chatSend/);
-    expect(conv).not.toMatch(/(Button|QuietButton)\("(Send|Retry|Try again|Continue|Resume|Resend|Ask again)/i);
-    // The protocol decodes conv and steps, so the page can group by conversation later.
-    expect(read('AppProtocol.swift')).toContain('case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps }');
+    expect(conv).not.toMatch(/(Button|QuietButton)\("(Retry|Try again|Continue|Resume|Resend|Ask again)/i);
+    // The one Send is the inline editor's (ADR-010, checked below).
+    expect(conv.match(/(Button|QuietButton)\("Send"/g)).toHaveLength(1);
+    // The protocol decodes conv, steps and (ADR-010) editOf.
+    expect(read('AppProtocol.swift')).toContain('case id, ts, source, said, reply, outcome, tools, followUp, ms, conv, steps, editOf }');
   });
 
   // ADR-007 v2 ([DEV REVIEW]): resume has one entry point, the Open in chat button on an open Conversations row.
@@ -746,9 +753,12 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const conv = read('ConversationsPage.swift');
     expect(conv.match(/\bresumeConversation\(/g)).toHaveLength(1);
     expect(conv).toMatch(/private func openInChat\(_ conv: String\) \{\s*model\.resumeConversation\(conv\)\s*nav\.page = \.home\s*\}/);
-    expect(conv).toContain('openInChat: row.entry.conv.isEmpty ? nil : { openInChat(row.entry.conv) })');
+    expect(conv).toContain('openInChat: row.entry.conv.isEmpty ? nil : { openInChat(row.entry.conv) },');
+    // ADR-010: the shown version's own conversation is the only other thing Open in chat continues.
+    expect(conv).toContain('continueVersion: { openInChat($0) },');
     const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    expect(item).toMatch(/if let open = openInChat, expanded \{\s*QuietButton\("Open in chat", symbol: "bubble\.left", action: open\)/);
+    // ADR-010: the row's own entry continues its conversation; another shown version continues its own branch.
+    expect(item).toMatch(/if let open = openInChat, expanded \{\s*HStack\(spacing: Space\.s\) \{\s*(\/\/[^\n]*\n\s*)*QuietButton\("Open in chat", symbol: "bubble\.left", action: shown\.id == entry\.id \? open : \{ continueVersion\(shown\.conv\) \}\)/);
     expect(item.replace(/\/\/[^\n]*/g, '').match(/\bopen\b(?!InChat)/g)).toHaveLength(2); // bound once, used once: only the button runs it
     // Cancel: Home's line and New chat send chat.resume.cancel; the line is verbatim.
     expect(uses(/AppRequest\.chatResumeCancel\(/g)).toEqual(['AppClient.swift']);
@@ -765,6 +775,80 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(pal).not.toMatch(/resume|chatResume/i);
     expect(PALETTE_MEMBERS).not.toContain('resumeConversation');
     expect(PALETTE_MEMBERS).not.toContain('cancelResume');
+  });
+
+  // ADR-010 ([DEV REVIEW]): edit and resend has one entry point, Send (or Return) in an open Conversations row's editor.
+  it('ADR-010 page: Edit only on the owner\'s messages; the voice-source lines; the plain line; the version switch; Text(verbatim:)', () => {
+    const conv = read('ConversationsPage.swift');
+    const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}\n?$/)?.[1] ?? '';
+    expect(item.length).toBeGreaterThan(1000);
+    // Edit: one button, next to what the owner said (shown.said), in the open row, with the accessibility label.
+    expect(item.match(/QuietButton\("Edit"/g)).toHaveLength(1);
+    expect(item).toMatch(/Text\(verbatim: shown\.said\)[\s\S]{0,400}QuietButton\("Edit", symbol: "pencil"\) \{ draft = shown\.said; editing = true \}\s*\.accessibilityLabel\("Edit this message"\)/);
+    // Stephen's reply has none: nothing follows the reply's Text but the steps and the row's buttons.
+    const afterReply = item.slice(item.indexOf('Text(verbatim: shown.reply)'));
+    expect(afterReply).not.toContain('QuietButton("Edit"');
+    // The voice-source line, word for word (ADR-010, "When the edited message was spoken by voice").
+    expect(conv).toContain('case "voice-ptt": return "You said this with F5. Check the words before you send."');
+    expect(conv).toContain('case "voice-wake": return "Heard by the wake word. It may not have been you. Check the words before you send."');
+    expect(conv).toContain('case "phone": return "Sent from your phone. Check the words before you send."');
+    expect(item).toMatch(/if let line = editSourceLine\(shown\.source\) \{\s*Text\(verbatim: line\)/);
+    // The editor: prefilled, Send and Cancel, Send off while a command runs; Return in the field sends.
+    expect(item).toMatch(/TextField\("Edit this message", text: \$draft\)[\s\S]*?\.onSubmit \{ sendDraft\(\) \}/);
+    expect(item).toMatch(/QuietButton\("Send", symbol: "paperplane"\) \{ sendDraft\(\) \}\s*\.disabled\(busy \|\|/);
+    expect(item).toContain('QuietButton("Cancel") { editing = false }');
+    expect(item).toMatch(/private func sendDraft\(\) \{\s*guard !busy, [^\n]*\n\s*send\(shown, shown\.conv, draft\)/);
+    expect(conv).toContain('versions: model.versions[row.entry.id], busy: model.isWorking,');
+    // After Send: the Edited tag, the plain line once above the new reply, Version N of M with arrows.
+    expect(item).toContain('if shown.editOf != nil { Text(verbatim: "Edited")');
+    expect(item.match(/Actions from the old reply already happened\./g)).toHaveLength(1);
+    expect(item.indexOf('Actions from the old reply already happened.')).toBeLessThan(item.indexOf('Text(verbatim: shown.reply)'));
+    expect(item).toContain('Text(verbatim: "Version \\(i + 1) of \\(all.count)")');
+    expect(item).toContain('.accessibilityLabel("Previous version")');
+    expect(item).toContain('.accessibilityLabel("Next version")');
+    expect(item).toContain('Text(verbatim: "The earlier part of this conversation has expired.")');
+    // Only the shown version can be continued.
+    expect(item).toContain('QuietButton("Open in chat", symbol: "bubble.left", action: shown.id == entry.id ? open : { continueVersion(shown.conv) })');
+    // Delete this version: behind a confirm alert, and only that alert's button deletes.
+    expect(item).toContain('QuietButton("Delete this version", destructive: true) { confirmDelete = true }');
+    expect(item).toMatch(/\.alert\("Delete this version\?", isPresented: \$confirmDelete\) \{\s*Button\("Delete", role: \.destructive\) \{ deleteVersion\(shown\.id\)/);
+    expect(item.match(/deleteVersion\(/g)).toHaveLength(1);
+    // All stored text stays verbatim.
+    expect(conv.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+  });
+
+  it('ADR-010: the helper sends chat.edit only from the editor\'s Send; opening, searching or switching never sends; the palette cannot', () => {
+    const all = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'));
+    const uses = (re: RegExp) => all.flatMap((f) => (read(f).match(re) ?? []).map(() => f));
+    expect(uses(/"chat\.edit"/g)).toEqual(['AppProtocol.swift']);
+    expect(uses(/AppRequest\.chatEdit\(/g)).toEqual(['AppClient.swift']);
+    expect(uses(/AppRequest\.historyDeleteVersion\(/g)).toEqual(['AppClient.swift']);
+    // editMessage is called once, by the page's sendEdit, which only the editor's sendDraft reaches (through `send`).
+    expect(uses(/\beditMessage\(/g).sort()).toEqual(['AppClient.swift', 'ConversationsPage.swift']);
+    const conv = read('ConversationsPage.swift');
+    expect(conv).toMatch(/private func sendEdit\(_ old: HistoryEntry, _ conv: String, _ text: String\) \{\s*model\.editMessage\(old, viewing: conv, text: text\)\s*\}/);
+    expect(conv.match(/\bsendEdit\(/g)).toHaveLength(2); // defined once, passed once as the row's `send`
+    expect(conv).toContain('send: { old, conv, text in sendEdit(old, conv, text) },');
+    const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}\n?$/)?.[1] ?? '';
+    expect(item.replace(/\/\/[^\n]*/g, '').match(/\bsend\(/g)).toHaveLength(1); // only in sendDraft
+    expect(item.match(/\bsendDraft\(\)/g)).toHaveLength(3); // the field's Return, the Send button, its definition
+    // Toggle, search and the version switch read only.
+    expect(conv).toMatch(/private func toggle\(_ id: String\) \{[^}]*model\.loadVersions\(id\)\s*\}/);
+    expect(item).toMatch(/private var versionSwitch: some View \{[\s\S]*?\n  \}/);
+    expect(item.match(/private var versionSwitch: some View \{([\s\S]*?)\n  \}/)?.[1]).not.toMatch(/send|edit\(|delete/i);
+    // The app model: the text, the old id and the hash of the stored text, nothing else; refused while working.
+    const app = read('AppClient.swift');
+    const fn = app.match(/func editMessage\(_ old: HistoryEntry, viewing conv: String, text raw: String\) -> Bool \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+    expect(fn).toContain('guard !trimmed.isEmpty, connection == .online, !isWorking, !conv.isEmpty else { return false }');
+    // ADR-010 review: it also names the conversation of the version on screen.
+    expect(fn).toContain('request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), conv: conv, text: text))');
+    expect(app).toContain('return SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()');
+    expect(app.match(/func sendChat\([\s\S]*?\n  \}/)?.[0] ?? '').not.toMatch(/chatEdit/);
+    // The palette never reaches it, and its allow list stays as it is.
+    const pal = read('Palette.swift');
+    expect(pal).not.toMatch(/editMessage|chatEdit|deleteVersion|loadVersions|versions/);
+    for (const m of ['editMessage', 'deleteVersion', 'loadVersions', 'versions']) expect(PALETTE_MEMBERS).not.toContain(m);
+    for (const m of ['editMessage', 'deleteVersion', 'loadVersions', 'versions']) expect(PALETTE_READS).not.toContain(m);
   });
 
   it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
@@ -1146,7 +1230,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // Sidebar and ⌘2 clear the palette's query and open row; the palette jump sets them (#255 review).
     expect(read('MainWindow.swift')).toContain('if p == .conversations { nav.conversationQuery = ""; nav.conversationOpen = nil }');
     // What you said stays copyable: in full, selectable, in the open row.
-    expect(convPage).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\.textSelection\(\.enabled\)/);
+    expect(convPage).toMatch(/if expanded \{\n\s*HStack\([^\n]*\n\s*Text\(verbatim: shown\.said\)[^\n]*\.textSelection\(\.enabled\)/);
     expect(convPage).not.toMatch(/accessibilityLabel\("[^"]*\\\(entry\./);
     // A memory command keeps its own word (it was "Memory" before step e), not "Done".
     expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
@@ -1167,7 +1251,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('QuietButton("Load older") { model.loadOlderHistory() }');
     // S5 row: title verbatim, facts line in the chat's format, the status word with Home's words.
     expect(conv).toContain('Text(verbatim: entry.said)');
-    expect(conv).toContain('Text(verbatim: entry.reply)');
+    expect(conv).toContain('Text(verbatim: shown.reply)');
     expect(conv).toContain('Text(verbatim: l.text)');
     expect(conv).toContain('let word = recentChatWord(entry, lines: lines)');
     expect(conv).toContain('StatusPill(word.word, kind: word.kind)');
@@ -1180,12 +1264,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   it('Conversations (step e, [DEV REVIEW]): refused and failed lines sit outside the open or closed condition', () => {
     const conv = read('ConversationsPage.swift');
     const item = conv.match(/private struct ConversationItem: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    // Two conditions on the open state in the row: one holds only what you said (copyable), one only the reply.
-    expect(item.match(/if !?expanded/g)).toEqual(['if expanded', 'if expanded']);
-    expect(item).toMatch(/if expanded \{\n\s*Text\(verbatim: entry\.said\)[^\n]*\n[^\n]*\n\s*\}\n/);
-    expect(item).toMatch(/if expanded && !entry\.reply\.isEmpty \{\s*Text\(verbatim: entry\.reply\)[^\n]*\n[^\n]*\n\s*\}\n/);
+    // Conditions on the open state in the row (ADR-010 adds the expired line, the version switch and the plain line):
+    // none of them holds a step line.
+    expect(item.match(/if !?expanded/g)).toEqual(['if expanded', 'if expanded', 'if expanded', 'if expanded', 'if expanded']);
+    const said = item.match(/\n        if expanded \{\n([\s\S]*?)\n        \}\n/)?.[1] ?? '';
+    expect(said).toContain('Text(verbatim: shown.said)');
+    expect(said).not.toContain('ForEach');
+    expect(item).toMatch(/if expanded && !shown\.reply\.isEmpty \{\s*Text\(verbatim: shown\.reply\)[^\n]*\n[^\n]*\n\s*\}\n/);
     // The step lines follow that block, not inside it. Only ok lines wait for the open row.
-    expect(item).toMatch(/\.fixedSize\(horizontal: false, vertical: true\)\n        \}\n(\s*\/\/[^\n]*\n)*\s*ForEach\(Array\(lines\.filter \{ expanded \|\| \$0\.status != \.ok \}\.enumerated\(\)\)/);
+    expect(item).toMatch(/\.fixedSize\(horizontal: false, vertical: true\)\n        \}\n(\s*\/\/[^\n]*\n)*\s*ForEach\(Array\(\(expanded \? shownLines : lines\)\.filter \{ expanded \|\| \$0\.status != \.ok \}\.enumerated\(\)\)/);
     expect(item.match(/ForEach\(/g)).toHaveLength(1);
     // The closed row's facts count the problems too, so a closed row never reads as fine.
     expect(conv).toContain('if refused > 0 { parts.append("\\(refused) refused") }');

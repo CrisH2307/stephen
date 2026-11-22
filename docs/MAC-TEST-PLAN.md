@@ -744,3 +744,39 @@ follow-up like "who sent it?". Then say one wake-word command, for example "Hey 
   See: there is no "Open in chat", "Continue" or "Resume" in the palette. A conversation row there only opens Conversations.
 
 Send back: any box you could not tick, with its id.
+
+## 21. ADR-010 part a: edit and resend a message (branch `feat/edit-resend`)
+Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen with the window open and history on.
+From the window, ask "play lofi beats on YouTube" (allow what it asks), then "turn it up". Press F5 and say one
+command, say one wake-word command ("Hey Stephen, what time is it"), and if the phone bridge is on, send one from the
+phone.
+- [ ] `[hands]` **21.1** Do: open Conversations (⌘2) and open the "play lofi beats" row. Then look at the reply text.
+  See: an Edit button sits next to what you said (VoiceOver reads "Edit this message"). The reply has no Edit. A closed row shows no Edit. A row from before conversation ids has no Edit.
+- [ ] `[hands]` **21.2** Do: click Edit, then Cancel. Search for "lofi", open and close rows, switch filters.
+  See: `[DEV REVIEW]` the editor opens prefilled with your words, with Send and Cancel. Cancel closes it. Nothing is sent by opening, searching or cancelling: no reply, no "Working", the menu bar icon stays idle.
+- [ ] `[hands]` **21.3** Do: click Edit on the F5 row, the wake-word row and the phone row in turn.
+  See: above the box, word for word: "You said this with F5. Check the words before you send." / "Heard by the wake word. It may not have been you. Check the words before you send." / "Sent from your phone. Check the words before you send." A typed row shows no such line.
+- [ ] `[hands]` **21.4** Do: on the "play lofi beats" row, click Edit, change it to "play jazz on YouTube" and press Return in the field.
+  See: `[DEV REVIEW]` it sends (Return in the field you are typing in is your Send). Stephen answers in a new chat. In Conversations the new row shows "play jazz on YouTube" with a small "Edited" tag, and above its reply, once: "Actions from the old reply already happened."
+- [ ] `[hands]` **21.5** Do: open the new row (and the old one).
+  See: "Version 2 of 2" with previous and next arrows. The previous arrow shows "play lofi beats" with its own reply and steps ("Version 1 of 2"). Switching sends nothing. The old row and its "turn it up" row are still there.
+- [ ] `[hands]` **21.6** Do: right after 21.4, ask in the same chat to open a site with something in the address, for example "search the web for that song".
+  See: `[DEV REVIEW]` it asks first ("Needs your OK"), even if you allowed that site in the old chat. Press Deny; the step says Refused.
+- [ ] `[hands]` **21.7** Do: start a long command (for example "find three lofi playlists and compare them"), and while it runs open a row and click Edit.
+  See: Send is off while the command runs, and Return in the field does nothing. When it ends, Send works.
+- [ ] `[hands]` **21.8** Do: open a row, then from Terminal run `stephen history clear` (or delete that day in another way), then press Send in the open editor.
+  See: an error "This conversation changed. Open it again." (or "That conversation is no longer saved."). Nothing is sent to the model.
+- [ ] `[hands]` **21.9** Do: on the "Version 2 of 2" row, show version 2 and click "Delete this version". Click Cancel, then do it again and click Delete.
+  See: `[DEV REVIEW]` a confirm alert "Delete this version?" comes first. Cancel keeps everything. Delete removes only the edited message and what followed it in that version. Version 1 and the earlier turns stay.
+- [ ] `[hands]` **21.9b** Do: edit a message again so it has two versions, show version 1 and click "Delete this version", then Delete. Open version 2 in chat and ask "what did I ask before this?".
+  See: version 1 and what followed it are gone. Version 2 shows no "earlier part has expired" line, and Stephen still knows the turns before the edited message.
+- [ ] `[hands]` **21.10** Do: show version 2 of a row and click "Open in chat", then type a follow-up on Home.
+  See: Stephen continues version 2 (it knows "play jazz", not the old later turns). "Continuing an earlier chat" shows as in section 20.
+- [ ] `[hands]` **21.11** Do: edit the wake-word row's text and send it. Note `app.speakReplies` in config.json.
+  See: the reply is spoken only if typed window replies are spoken; it never speaks where a typed command would not.
+- [ ] `[hands]` **21.12** Do: press ⌘K and look through the actions and conversation rows. Say "Hey Stephen, edit my last message" by voice.
+  See: there is no Edit, Resend, Version or Delete this version in the palette. The voice phrase is an ordinary command; nothing is edited.
+- [ ] `[hands]` **21.13** Do: after 21.4, open the audit log (`auditLogPath` in config.json) and find the `edit_resend` line.
+  See: it has the old command id, the old and new conversation ids and the old source. It has no message text.
+
+Send back: any box you could not tick, with its id.

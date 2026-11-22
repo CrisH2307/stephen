@@ -11,6 +11,7 @@
 // macOS only (Foundation + Darwin). It reuses LineFramer and Locked from Core.swift.
 
 import Combine
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -91,6 +92,10 @@ final class AppModel: ObservableObject {
   @Published private(set) var memoryNotice: String? = nil
 
   @Published private(set) var history: [HistoryEntry] = []
+  /** ADR-010: history.versions answers by the entry id a row asked for (versions oldest first, and the expired flag). */
+  @Published private(set) var versions: [String: HistoryVersions] = [:]
+  /** The entry ids of edits this window sent: their chat.done refreshes Conversations. */
+  private var editsInFlight: Set<String> = []
   @Published private(set) var historyMayHaveMore = false
   @Published private(set) var historyNotice: String? = nil
 
@@ -405,6 +410,58 @@ final class AppModel: ObservableObject {
     }
   }
 
+  /**
+   * ADR-010, [DEV REVIEW]: Send (or Return) in a Conversations row's inline editor, and nothing else, calls this. It
+   * sends the owner's text with the old message's id, the hash of its stored text and the conversation of the version
+   * on screen; the listener builds the earlier
+   * turns from its own store and runs it through the normal send path (every Allow asked again). false (nothing sent)
+   * when the text is empty, the listener is offline or a command runs.
+   */
+  @discardableResult
+  func editMessage(_ old: HistoryEntry, viewing conv: String, text raw: String) -> Bool {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, connection == .online, !isWorking, !conv.isEmpty else { return false }
+    let text = trimmed.count > APP_CHAT_MAX_CHARS ? String(trimmed.prefix(APP_CHAT_MAX_CHARS)) : trimmed
+    addBubble(.said, text, detail: "")
+    request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), conv: conv, text: text)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "chat.accepted", let entryId = msg.entryId {
+        self.awaitingReplies.insert(entryId)
+        self.editsInFlight.insert(entryId)
+      } else if msg.type == "error" {
+        let m = msg.message ?? "error"
+        if m == "busy" {
+          self.addBubble(.info, "Stephen is busy with another command. Try again when it's done.", detail: "")
+        } else {
+          self.addBubble(.problem, m, detail: "")
+          self.historyNotice = m
+        }
+      }
+    }
+    return true
+  }
+
+  /** ADR-010: the versions of one message (read only), for the row's "Version N of M" switch. */
+  func loadVersions(_ entryId: String) {
+    request(AppRequest.historyVersions(newId(), entryId: entryId)) { [weak self] msg in
+      guard let self = self, msg.type == "versions" else { return }
+      self.versions[entryId] = HistoryVersions(entries: msg.historyEntries ?? [], expired: msg.expired ?? false)
+    }
+  }
+
+  /** ADR-010: "Delete this version", after its confirm alert. Deletes that version's own lines in the listener. */
+  func deleteVersion(_ entryId: String) {
+    request(AppRequest.historyDeleteVersion(newId(), entryId: entryId)) { [weak self] msg in
+      guard let self = self else { return }
+      if msg.type == "ok" {
+        self.versions = [:]
+        self.refreshHistory()
+      } else {
+        self.historyNotice = msg.message ?? "error"
+      }
+    }
+  }
+
   /** Cancel on Home (and New chat): the next message starts an ordinary chat. */
   func cancelResume() {
     resumeArmed = false
@@ -419,6 +476,10 @@ final class AppModel: ObservableObject {
 
   private func chatDone(_ msg: AppMessage) {
     if let entryId = msg.entryId { awaitingReplies.remove(entryId) }
+    if let entryId = msg.entryId, editsInFlight.remove(entryId) != nil {
+      versions = [:]
+      refreshHistory()
+    }
     let outcome = msg.outcome ?? "ok"
     var reply = msg.reply ?? ""
     if reply.isEmpty && outcome == "cancelled" { reply = "Stopped." }
@@ -774,4 +835,15 @@ final class AppModel: ObservableObject {
     default: return source
     }
   }
+}
+
+/** ADR-010: the versions of one message, oldest first, and whether the earlier part of its branch has expired. */
+struct HistoryVersions: Equatable {
+  var entries: [HistoryEntry]
+  var expired: Bool
+}
+
+/** chat.edit's oldHash: SHA-256 of the stored text, lowercase hex (textHash in src/history/branch.ts). */
+func textHash(_ s: String) -> String {
+  return SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()
 }
