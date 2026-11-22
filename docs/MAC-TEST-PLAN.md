@@ -799,7 +799,8 @@ finish. Start a second job, "start a job to write a long story about snow", and 
 - [ ] `[hands]` **22.2** Do: click Stop on the running job. When it says Stopped, look at its row again.
   See: "Edit request" is on now, and the "Stop the job first" line is gone.
 - [ ] `[hands]` **22.3** Do: on the finished poem job, click "Edit request".
-  See: an editor opens with the old request prefilled ("write a short poem about rain"), a line that this starts a new job and that nothing starts until you allow it, and Continue and Cancel. Cancel closes it. Nothing is sent.
+  See: an editor opens with the old request prefilled ("write a short poem about rain"), a line that this starts a new job and that nothing starts until you allow it, and Continue and Cancel. Under the field, a counter "N of 440 characters". Cancel closes it. Nothing is sent.
+  Then paste a long text (more than 440 characters) into the field. See: the counter turns red and Continue is off. Delete text until the counter is 440 or less: Continue is on again. (#269)
 - [ ] `[hands]` **22.4** Do: click "Edit request" again, change it to "write a short poem about rain in French" and click Continue. Read the dialog, then click Deny.
   See: `[DEV REVIEW]` the same "Stephen: start a background job?" dialog as a new job, with every field: "Edited job, from <old job id>.", the Task (it quotes "Earlier request (a record)" and then your edit), "Folder: a new folder in <your jobs folder>, next to the old one. Its name is shown when the job starts.", "Input files: a copy of the old job folder ... symlinks are skipped", Budgets, Web: off, Model. After Deny: a note "Okay, I didn't start it." No new row, no new folder in Stephen Jobs. The dialog names no version and nothing ending in `-v2`.
 - [ ] `[hands]` **22.5** Do: do 22.4 again and click Allow this time.
