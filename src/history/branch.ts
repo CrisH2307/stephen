@@ -97,22 +97,25 @@ export interface EditContext {
   editOf: EditOf;
   /** The edited message's source (the audit line names it). */
   source: HistorySource;
-  /** T1 ... Tk-1 of the edited message's branch, oldest first. */
+  /** T1 ... Tk-1 of the branch the owner is looking at, oldest first. */
   earlier: HistoryEntry[];
-  /** Tk ... Tn: the edited message and what followed it in its branch. Only their step lines may be sent. */
+  /** Tk ... Tn: the edited message and what followed it in that branch. Only their step lines may be sent. */
   replaced: HistoryEntry[];
 }
 
 /**
- * The context of an edit of message `oldId`, or why it is refused: the message is gone, it has no conversation id,
- * or the old text's hash does not match (a stale page, or a forged request): CONVERSATION_CHANGED_MESSAGE. The
- * MAX_VERSIONS-th version already exists: TOO_MANY_VERSIONS_MESSAGE.
+ * The context of an edit of message `oldId` seen in branch `viewConv` (the version on the owner's screen), or why it
+ * is refused (CONVERSATION_CHANGED_MESSAGE): the message is gone, it has no conversation id, the old text's hash does
+ * not match (a stale page, or a forged request), or the message is not in that branch's view (its own lines or the
+ * T1 ... Tk-1 it points to). The MAX_VERSIONS-th version already exists: TOO_MANY_VERSIONS_MESSAGE. The earlier turns
+ * and the replaced step lines follow `viewConv`'s branch.
  */
-export function editContext(entries: readonly HistoryEntry[], oldId: string, oldHash: string): EditContext | { refused: string } {
+export function editContext(entries: readonly HistoryEntry[], oldId: string, oldHash: string, viewConv: string): EditContext | { refused: string } {
   const old = entries.find((e) => e.id === oldId);
   if (!old || !old.conv || textHash(old.said) !== oldHash) return { refused: CONVERSATION_CHANGED_MESSAGE };
-  if (versionsOf(entries, oldId).length >= MAX_VERSIONS) return { refused: TOO_MANY_VERSIONS_MESSAGE };
-  const view = branchView(entries, old.conv).lines;
+  const view = branchView(entries, viewConv).lines;
   const at = view.findIndex((e) => e.id === oldId);
+  if (at < 0) return { refused: CONVERSATION_CHANGED_MESSAGE };
+  if (versionsOf(entries, oldId).length >= MAX_VERSIONS) return { refused: TOO_MANY_VERSIONS_MESSAGE };
   return { editOf: { conv: old.conv, id: old.id, ts: Date.parse(old.ts) }, source: old.source, earlier: view.slice(0, at), replaced: view.slice(at) };
 }

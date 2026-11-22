@@ -67,8 +67,8 @@
  *  - `{id, type:"chat.resume.cancel"}` (Cancel on Home, New chat) → `{id, type:"ok"}`.
  *  - push `{type:"resume", armed}`: after hello and whenever the arm changes, for the "Continuing an earlier chat" line.
  * Additive (ADR-010, edit and resend), sent only by the window, the owner's own clicks; refused from any other connection:
- *  - `{id, type:"chat.edit", oldId, oldHash, text}` (Send in a Conversations row's inline editor, or Return in its
- *    field) → `chat.accepted` then a `chat.done` push, like chat.send; or an error: "busy", "This conversation
+ *  - `{id, type:"chat.edit", oldId, oldHash, conv, text}` (Send in a Conversations row's inline editor, or Return in
+ *    its field; `conv` is the version on screen, and the old line must be in that branch's view) → `chat.accepted` then a `chat.done` push, like chat.send; or an error: "busy", "This conversation
  *    changed. Open it again." (the old line is gone or `oldHash`, SHA-256 hex of its stored text, does not match),
  *    "Too many versions of this message. Start a new conversation instead.". Nothing else is taken from the app: the
  *    listener builds the earlier turns from the store and sends them through the resume path (src/history/branch.ts).
@@ -157,7 +157,7 @@ export type AppRequest =
   | { id: string; type: 'replay.delete' }
   | { id: string; type: 'chat.resume'; conv: string }
   | { id: string; type: 'chat.resume.cancel' }
-  | { id: string; type: 'chat.edit'; oldId: string; oldHash: string; text: string }
+  | { id: string; type: 'chat.edit'; oldId: string; oldHash: string; conv: string; text: string }
   | { id: string; type: 'history.versions'; entryId: string }
   | { id: string; type: 'history.deleteVersion'; entryId: string };
 
@@ -371,7 +371,9 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
       ? bad('oldId must be a history entry id')
       : typeof o.oldHash !== 'string' || !APP_HASH_RE.test(o.oldHash)
         ? bad('oldHash must be the SHA-256 of the old text, in hex')
-        : text(o, 'text', APP_CHAT_MAX_CHARS, 'text'),
+        : typeof o.conv !== 'string' || !APP_CONV_RE.test(o.conv)
+          ? bad('conv must be a conversation id like c_0123456789abcdef')
+          : text(o, 'text', APP_CHAT_MAX_CHARS, 'text'),
   'history.versions': entryId,
   'history.deleteVersion': entryId,
 };
@@ -417,7 +419,7 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
     case 'chat.resume':
       return { id, type, conv: o.conv as string };
     case 'chat.edit':
-      return { id, type, oldId: o.oldId as string, oldHash: o.oldHash as string, text: o.text as string };
+      return { id, type, oldId: o.oldId as string, oldHash: o.oldHash as string, conv: o.conv as string, text: o.text as string };
     case 'history.versions':
     case 'history.deleteVersion':
       return { id, type, entryId: o.entryId as string };

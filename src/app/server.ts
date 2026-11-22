@@ -422,7 +422,8 @@ export class AppServer {
 
   /**
    * chat.edit (ADR-010), [DEV REVIEW]: only from the window, never while a command runs. The request gives only the
-   * old command id, the old text's hash and the new text; the earlier turns and the replaced turns' step lines come
+   * old command id, the old text's hash, the conversation on screen and the new text; a line outside that branch is
+   * refused; the earlier turns and the replaced turns' step lines come
    * from the store (editContext), and the command goes the resume path: a new conversation, a new process with
    * `--assume-private-read`, window trust, source `app`. Like chat.send: chat.accepted, then chat.done.
    */
@@ -446,7 +447,7 @@ export class AppServer {
       return;
     }
     const all = history.all.bind(history);
-    const first = editContext(all(), req.oldId, req.oldHash);
+    const first = editContext(all(), req.oldId, req.oldHash, req.conv);
     if ('refused' in first) {
       this.send(sock, { id: req.id, type: 'error', message: first.refused });
       return;
@@ -455,7 +456,7 @@ export class AppServer {
     let ctx: EditContext | null = null;
     const edit: ResumeRequest = {
       saved: () => {
-        const c = editContext(all(), req.oldId, req.oldHash);
+        const c = editContext(all(), req.oldId, req.oldHash, req.conv);
         ctx = 'refused' in c ? null : c;
         return ctx !== null;
       },
