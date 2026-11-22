@@ -183,6 +183,15 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
   };
 }
 
+/** One stored line, or null when it is not a valid entry. */
+function parseLine(l: string): HistoryEntry | null {
+  try {
+    return parseHistoryEntry(JSON.parse(l));
+  } catch {
+    return null;
+  }
+}
+
 export class HistoryStore {
   readonly dir: string;
   readonly retentionDays: number;
@@ -264,6 +273,54 @@ export class HistoryStore {
       }
     }
     return out;
+  }
+
+  /**
+   * Every stored entry inside retention, oldest first (file order). For the branch view and versions (ADR-010).
+   * ponytail: reads every day file (7 days, 5 MB each at most) per call; index by conv if edits get slow.
+   */
+  all(): HistoryEntry[] {
+    this.purge();
+    if (!this.enabled) return [];
+    const oldestMs = this.cutoffMs();
+    const out: HistoryEntry[] = [];
+    for (const name of this.dayFiles().sort()) {
+      for (const l of this.readDayFile(join(this.dir, name))) {
+        const e = parseLine(l);
+        if (e && Date.parse(e.ts) >= oldestMs) out.push(e);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * "Delete this version" (ADR-010), the owner's click behind a confirm: deletes the lines of conversation `conv`
+   * from its line `fromId` on (that line and every later one of the same conversation). Nothing of another
+   * conversation, and no earlier line, is touched. Returns how many lines were deleted (0 when `fromId` is not a line
+   * of `conv`).
+   */
+  deleteVersion(conv: string, fromId: string): number {
+    const from = this.all().find((e) => e.id === fromId && e.conv === conv);
+    if (!from) return 0;
+    const fromMs = Date.parse(from.ts);
+    let n = 0;
+    for (const name of this.dayFiles()) {
+      const file = join(this.dir, name);
+      const lines = this.readDayFile(file);
+      const keep = lines.filter((l) => {
+        const e = parseLine(l);
+        return !(e && e.conv === conv && (e.id === fromId || Date.parse(e.ts) > fromMs));
+      });
+      if (keep.length === lines.length) continue;
+      n += lines.length - keep.length;
+      try {
+        if (keep.length) writePrivateFileAtomicSync(file, keep.map((l) => `${l}\n`).join(''));
+        else unlinkSync(file);
+      } catch (e) {
+        throw new HistoryError((e as Error).message);
+      }
+    }
+    return n;
   }
 
   /** Delete every day file. Returns how many were deleted. */
