@@ -72,7 +72,7 @@ Write "Mac click check: done" in the PR (or what failed). If a step fails, do no
   See: all tests pass.
 - [ ] `[scripted]` **0.5** Do: run `node dist/cli.js mac-checks`.
   See: the line "the key listener is on" says PASS. If it says FAIL, do the four steps of 0.2 again. (F5 and Esc do
-  nothing without this. It is what broke the test of 2026-11-11. The line needs the key listener check PR merged.)
+  nothing without this. It is what broke the test of 2026-11-11.)
 
 ## 1. Accounts, one real call each
 - [ ] `[scripted]` **1.1** Do: run `node dist/cli.js accounts`.
@@ -409,8 +409,7 @@ Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
 Build from `qa` (section 0) and start Stephen. Then give about 10 real commands: 3 with "Hey Stephen", 3 with F5, 1 typed in
 the Ask box, 1 timer ("set a timer for one minute"), and 2 that use the browser ("open YouTube").
 
-**The scripted checks in 13.1 and 13.3 need PR #98 merged** (branch `feat/mac-checks`). It adds `node dist/cli.js mac-checks`.
-Before that PR is merged, the command does not exist and those checks cannot be run.
+The scripted checks in 13.1 and 13.3 use `node dist/cli.js mac-checks`.
 
 ### 13.1 The log is written and private (scripted)
 Do: give one browser command ("open YouTube"). Then run `node dist/cli.js mac-checks`.
