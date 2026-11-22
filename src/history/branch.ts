@@ -52,6 +52,8 @@ export function branchView(entries: readonly HistoryEntry[], conv: string, depth
   const mine = own(entries, conv);
   const first = mine[0];
   if (!first) return { lines: [], expired: false };
+  // An edit whose editOf expired (the store dropped it): only its own lines are left, and the branch says so.
+  if (first.editExpired) return { lines: mine, expired: true };
   if (!first.editOf || depth >= MAX_DEPTH) return { lines: mine, expired: first.followUp };
   const parent = branchView(entries, first.editOf.conv, depth + 1);
   // At the edited message while it is stored (exact, also for lines of the same millisecond); by its time once deleted.

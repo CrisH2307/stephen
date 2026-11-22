@@ -66,6 +66,11 @@ export interface HistoryEntry {
   steps?: ChatStep[];
   /** ADR-010: on the first line of an edited branch only, the message it is a new version of. */
   editOf?: EditOf;
+  /**
+   * Set on read only, never stored: this line was an edit whose editOf fell outside the retention window and was
+   * dropped. Its fields are not kept or trusted; it only makes the branch show "The earlier part ... has expired."
+   */
+  editExpired?: true;
 }
 
 /** The message a branch is an edit of (ADR-010): its conversation, its command id and its time (epoch ms). */
@@ -331,7 +336,7 @@ export class HistoryStore {
   private inWindow(e: HistoryEntry, oldestMs: number): HistoryEntry {
     if (!e.editOf || (e.editOf.ts >= oldestMs && e.editOf.ts <= this.now().getTime())) return e;
     const { editOf: _dropped, ...rest } = e;
-    return rest;
+    return { ...rest, editExpired: true };
   }
 
   /** Delete every day file. Returns how many were deleted. */
