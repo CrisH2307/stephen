@@ -595,15 +595,19 @@ export class ZenDriver extends DriverBase {
     const logPath = this.#logPath(mode);
     const log = await open(logPath, 'w', 0o600);
     let child: SpawnedProcess;
+    let watch: ReturnType<typeof watchLaunch>;
     try {
       child = this.#deps.spawn(exe, buildZenArgs(profileDir, this.#cfg.zen.extraArgs), {
         detached: true,
         stdio: ['ignore', log.fd, log.fd],
       });
+      // Watch before any await: a Zen that exits at once (profile in use) can emit 'exit' while
+      // log.close() is pending, and a listener added after that never sees it (#109).
+      watch = watchLaunch(child);
     } finally {
       await log.close();
     }
-    const { launch, stop } = watchLaunch(child);
+    const { launch, stop } = watch;
     child.unref();
     try {
       if (child.pid === undefined) {
