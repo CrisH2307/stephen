@@ -67,7 +67,7 @@ describe('ADR-010: the serve of a resend', () => {
     expect(runs[1]!.argv).not.toContain('--resume');
     const p = flagValue(runs[1]!.argv, '-p')!;
     expect(p.startsWith(RESUME_WRAPPER_HEAD)).toBe(true);
-    expect(p).toContain(`${EDIT_DONE_HEAD}\n- navigate youtube.com`);
+    expect(p).toContain(`${EDIT_DONE_HEAD}\n- (wake word) navigate youtube.com`);
     expect(p.endsWith('\n\nplay sara')).toBe(true);
     // The report: source app, a new conversation, and the message it is a version of.
     expect(reports[1]).toMatchObject({ source: 'app', said: 'play sara', editOf: { conv: CONV, id: REPLACED[0]!.id, ts: Date.parse(REPLACED[0]!.ts), source: 'voice-wake' } });

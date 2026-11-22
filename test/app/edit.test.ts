@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { AppServer, ONLY_WINDOW_EDITS_MESSAGE, listenerQueue } from '../../src/app/server.js';
 import type { AppSettings } from '../../src/app/settings.js';
-import { CONVERSATION_CHANGED_MESSAGE, MAX_VERSIONS, TOO_MANY_VERSIONS_MESSAGE, textHash } from '../../src/history/branch.js';
+import { CONVERSATION_CHANGED_MESSAGE, MAX_VERSIONS, NOT_A_VERSION_MESSAGE, TOO_MANY_VERSIONS_MESSAGE, textHash } from '../../src/history/branch.js';
 import { EDIT_DONE_HEAD, RESUME_WRAPPER_END, RESUME_WRAPPER_HEAD, ResumeArm, conversationEntries, resumePrompt } from '../../src/history/resume.js';
 import { HistoryStore, newConversationId, type HistoryEntry } from '../../src/history/store.js';
 import type { AuditEntry } from '../../src/types.js';
@@ -136,7 +136,7 @@ describe('ADR-010 edit and resend through app.sock', () => {
     const { prompt, hooks } = w.runner.runs[0]!;
     expect(hooks).toMatchObject({ trust: 'trusted', assumePrivateRead: true });
     expect(w.runner.ends).toBe(1); // the open conversation ended first
-    expect(prompt.startsWith(`${RESUME_WRAPPER_HEAD}\nYou: read my email from Dr Patel\nStephen: The exam moved to Friday.\n${EDIT_DONE_HEAD}\n- navigate youtube.com\n- Used volume\n${RESUME_WRAPPER_END}`)).toBe(true);
+    expect(prompt.startsWith(`${RESUME_WRAPPER_HEAD}\nYou: read my email from Dr Patel\nStephen: The exam moved to Friday.\n${EDIT_DONE_HEAD}\n- (wake word) navigate youtube.com\n- Used volume\n${RESUME_WRAPPER_END}`)).toBe(true);
     expect(prompt.endsWith(`${RESUME_WRAPPER_END}\n\nplay sara`)).toBe(true);
     // The replaced turns' words are not sent.
     expect(prompt).not.toContain('play sarah');
@@ -250,6 +250,10 @@ describe('ADR-010 edit and resend through app.sock', () => {
     expect(await w.window.request({ id: 'd1', type: 'history.deleteVersion', entryId: accepted.entryId })).toEqual({ id: 'd1', type: 'ok' });
     expect(w.history.all().map((e) => e.said)).toEqual(['read my email from Dr Patel', 'play sarah', 'turn it up']);
     expect(await w.window.request({ id: 'd2', type: 'history.deleteVersion', entryId: accepted.entryId })).toEqual({ id: 'd2', type: 'error', message: 'That message is no longer saved.' });
+    // The listener checks, not the page: a single version, or a line that is not a version's own line, deletes nothing.
+    expect(await w.window.request({ id: 'd3', type: 'history.deleteVersion', entryId: w.T[1]!.id })).toEqual({ id: 'd3', type: 'error', message: NOT_A_VERSION_MESSAGE });
+    expect(await w.window.request({ id: 'd4', type: 'history.deleteVersion', entryId: w.T[2]!.id })).toEqual({ id: 'd4', type: 'error', message: NOT_A_VERSION_MESSAGE });
+    expect(w.history.all()).toHaveLength(3);
   });
 
   it("whether the reply is spoken follows the window's normal setting; an edit clears an armed resume", async () => {
