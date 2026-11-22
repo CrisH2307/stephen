@@ -12,16 +12,16 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| RV-1 | review 0.1 | Finding | Reliable trigger has no P0 task; F5 works about 1 in 10, mic cannot be stopped | fixed (#108 merged), Mac check pending | dev | #86, `fix/mic-stop-f5` |
-| RV-2 | review 0.2 | Finding | Tier 1 targets need endpointing; about 2.8 s on the wake path with zero model time | open | dev | #73, `fix/wake-endpoint` |
-| RV-3 | review 0.3 | Finding | A2 mostly done on `qa`; `tier` always null, Esc and chime not recorded; only #44 on `main` | open | dev | #43, `feat/latency-gaps` |
+| RV-1 | review 0.1 | Finding | Reliable trigger has no P0 task; F5 works about 1 in 10, mic cannot be stopped | fixed (#108 merged; issue #86 closed 2026-11-18), Mac check pending (test plan 14.1) | dev | #86, `fix/mic-stop-f5` |
+| RV-2 | review 0.2 | Finding | Tier 1 targets need endpointing; about 2.8 s on the wake path with zero model time | open: #240 (Ponytail P1) stops counting the VAD hangover as speech; the 800 ms target is not measured yet | dev | #73, `fix/wake-endpoint` |
+| RV-3 | review 0.3 | Finding | A2 mostly done on `qa`; `tier` always null, Esc and chime not recorded; only #44 on `main` | fixed (#117 merged), Mac check pending; issue #43 still open | dev | #43, `feat/latency-gaps` |
 | RV-4 | review 0.4 | Finding | "Parakeet expected winner" contradicts `docs/VOICE.md`; 300 ms rule excludes whisper-small | open | owner | #61 |
-| RV-5 | review 0.5 | Finding | Several plan tasks already built or smaller than stated (see plan corrections) | in progress | review | `docs/plan-reconcile` |
-| RV-6 | review 0.6 | Finding | B1 overstated: non-owner memory origins exist only in the type | fixed in code | dev | #53, `fix/memory-origin-you` |
-| RV-7 | review 0.7 | Finding | Review timing: #32 to #41 and A2 unreviewed; Review 10 too late | in review | review | `docs/review-10a`, PR #95 |
-| RV-8 | review 0.8 | Finding | E1 "same gate" has no code path; needs an ADR before code | open | review | #60, `docs/adr-008-fast-path` |
-| RV-9 | review 0.9 | Finding | Prompt-size baseline stale: 39 tools, 42.4 KB, not 29 and 27 KB | in progress | review | `docs/plan-reconcile` |
-| RV-10 | review 0.10 | Finding | Accuracy baseline cannot finish in a week; start the recorder, add "that was wrong" | in progress: recorder PR 1 merged (#166), fixes #170 and the #169 follow-up; PR 2 Settings switch merged (#206), PR 3 label and "that was wrong" mark to come | dev | #48, `feat/replay-recorder` |
+| RV-5 | review 0.5 | Finding | Several plan tasks already built or smaller than stated (see plan corrections) | closed (#97) | review | `docs/plan-reconcile` |
+| RV-6 | review 0.6 | Finding | B1 overstated: non-owner memory origins exist only in the type | closed (#113) | dev | #53, `fix/memory-origin-you` |
+| RV-7 | review 0.7 | Finding | Review timing: #32 to #41 and A2 unreviewed; Review 10 too late | closed (#95, Review 10a; Review 10b #124) | review | `docs/review-10a`, PR #95 |
+| RV-8 | review 0.8 | Finding | E1 "same gate" has no code path; needs an ADR before code | closed (#101, ADR-008 written); the E1 code is still open on #60 | review | #60, `docs/adr-008-fast-path` |
+| RV-9 | review 0.9 | Finding | Prompt-size baseline stale: 39 tools, 42.4 KB, not 29 and 27 KB | closed (#97) | review | `docs/plan-reconcile` |
+| RV-10 | review 0.10 | Finding | Accuracy baseline cannot finish in a week; start the recorder, add "that was wrong" | in progress: recorder PR 1 merged (#166), fixes #170, #173 and #238 (#208); PR 2 Settings switch merged (#206); PR 3 label and "that was wrong" mark not started | dev | #48, `feat/replay-recorder` |
 
 ## B. Review section 4 items (two-week plan)
 
