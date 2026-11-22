@@ -131,10 +131,26 @@ export function historyRecorder(
         turns: r.turns,
         ...(r.conv ? { conv: r.conv } : {}),
         ...(steps ? { steps } : {}),
+        ...(r.editOf ? { editOf: { conv: r.editOf.conv, id: r.editOf.id } } : {}),
       });
     } catch (e) {
       log(`Note: could not write the command history (${(e as Error).message}).`);
     }
+  };
+}
+
+/**
+ * The audit line of an edit and resend (ADR-010): the old command id, the old and new conversation ids and the old
+ * message's source. Never any message text. null for a command that is not an edit. Labelled with the new command's
+ * id (`cmd`) so it is never shown as a step of another command.
+ */
+export function editResendAudit(r: CommandReport): Omit<AuditEntry, 'ts'> | null {
+  if (!r.editOf) return null;
+  return {
+    tool: 'edit_resend',
+    outcome: 'ok',
+    cmd: r.id,
+    args: { oldId: r.editOf.id, oldConv: r.editOf.conv, ...(r.conv ? { newConv: r.conv } : {}), oldSource: r.editOf.source },
   };
 }
 
