@@ -52,16 +52,16 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| PL-1 | plan 1, review fact 5 | P0 | open_url redirect: a site's own 302 on the `open -a` path cannot be seen by a URL check | accepted | review | #51, `docs/open-url-residual`, PR #96 |
+| PL-1 | plan 1, review fact 5 | P0 | open_url redirect: a site's own 302 on the `open -a` path cannot be seen by a URL check | closed (#96, accepted residual) | review | #51, `docs/open-url-residual`, PR #96 |
 | PL-2 | plan 1, review fact 6 | P0 | YouTube `accounts.google.com` frame counted as a private read (`src/safety/domains.ts:291`) | open | dev | #50, `fix/youtube-account-frame` |
-| PL-3 | review fact 39 | Low | VERIFY-2 N4 (shown text arms taint): fixed in code (`docs/DESIGN.md:196`), not recorded as closed | fixed in code | review | none |
-| PL-4 | review fact 39 | Low | R7-1 (`serve --instance` lock): fixed in code (`src/serve-args.ts:25-29`), not recorded as closed | fixed in code | review | none |
+| PL-3 | review fact 39 | Low | VERIFY-2 N4 (shown text arms taint): fixed in code (`docs/DESIGN.md:196`), not recorded as closed | closed (fixed in code before this ledger; `docs/DESIGN.md:196`, no PR of its own) | review | none |
+| PL-4 | review fact 39 | Low | R7-1 (`serve --instance` lock): fixed in code (`src/serve-args.ts:25-29`), not recorded as closed | closed (fixed in code before this ledger; `src/serve-args.ts:25-27`, no PR of its own) | review | none |
 | PL-5 | review fact 40, plan B3 | P1 | ElevenLabs key was pasted in chat; rotate it | open | owner | #69 |
-| PL-6 | review fact 9 | P0 | `src/jobs/runner.ts:192` checks tty `??`, a Mac-only literal | open | dev | #52 |
+| PL-6 | review fact 9 | P0 | `src/jobs/runner.ts:192` checks tty `??`, a Mac-only literal | closed (#112) | dev | #52 |
 | PL-7 | review 3.2 | P1 | `ui/chat-title` (F1) deferred to phase 3 | open | dev | #77 |
-| PL-8 | review 3.2 | P1 | C2 UI items wait for C5: live steps, section pages, Connected and Permissions, recents | open | dev | #57 |
-| PL-9 | plan C1 | P0 | Persist conversations and steps by command id (blocked on ADR-007) | open | dev | #55 |
-| PL-10 | plan C4 | P0 | Review 10b and release | open | review | #58 |
+| PL-8 | review 3.2 | P1 | C2 UI items wait for C5: live steps, section pages, Connected and Permissions, recents | open: unblocked by #241 (C5); parts landed in UI v4 (#246, #252 to #255); the issue needs a check of what is left | dev | #57 |
+| PL-9 | plan C1 | P0 | Persist conversations and steps by command id (blocked on ADR-007) | closed (#257 v1 store, #258 v2 resume; #258 Mac check done before merge) | dev | #55 |
+| PL-10 | plan C4 | P0 | Review 10b and release | in progress: Review 10b done (#124), release prepared 2026-11-21 | review | #58 |
 | PL-11 | plan C6 | P1 | helper.sock nonce (peer user check already exists, review fact 35) | open | dev | #70 |
 | PL-12 | plan B4 | P2 | Memory full: already built (review fact 33); close the issue after a check | fixed in code | dev | #79 |
 | PL-13 | issue | P2 | Ask box: multi-line input and longer limit | fixed (#167 merged), Mac check pending | dev | #88 |
