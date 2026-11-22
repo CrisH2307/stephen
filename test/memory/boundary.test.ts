@@ -187,9 +187,9 @@ describe('resume has one entry point: an owner click in the window', () => {
   const src = (f: string) => readFileSync(join(REPO_ROOT, f), 'utf8');
   const files = listTsFiles().map((abs) => relative(REPO_ROOT, abs).split(sep).join('/'));
 
-  it('src/history/resume.ts is loaded only by the listener (src/voice/index.ts), and nothing model-reachable imports it', () => {
-    const from = [...new Set(refs.filter((r) => r.resolved === 'src/history/resume.ts').map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`))];
-    expect(from).toEqual(['src/voice/index.ts']);
+  it('src/history/resume.ts is loaded only by the listener (src/voice/index.ts, and app.sock for edit and resend), and nothing model-reachable imports it', () => {
+    const from = [...new Set(refs.filter((r) => r.resolved === 'src/history/resume.ts').map((r) => `${r.from}${r.dynamic ? ' (dynamic)' : ''}`))].sort();
+    expect(from).toEqual(['src/app/server.ts', 'src/voice/index.ts']);
     const b: Boundary = { target: 'src/history/resume.ts', importers: CLAUDE_REACHABLE };
     expect(transitiveViolations(b, refs).map((c) => c.join(' -> '))).toEqual([]);
     expect([...staticReach('src/cli.ts')]).not.toContain('src/history/resume.ts');
@@ -208,7 +208,8 @@ describe('resume has one entry point: an owner click in the window', () => {
     // HandleOptions.resume is set in one place: listenerQueue (app chat.send), from the arm the click set.
     expect(files.filter((f) => /\bResumeRequest\b/.test(src(f))).sort()).toEqual(['src/app/server.ts', 'src/voice/assistant.ts']);
     const server = src('src/app/server.ts');
-    expect(server).toMatch(/const resume = o\.window \? \(takeResume\?\.\(\) \?\? null\) : null;\s*return assistant\.command\(text, \{ source: 'app',[^}]*\.\.\.\(resume \? \{ resume \} : \{\}\) \}\);/);
+    // An edit (ADR-010) rides the same option, from the window only.
+    expect(server).toMatch(/const armed = o\.window \? \(takeResume\?\.\(\) \?\? null\) : null;\s*const resume = o\.window && o\.edit \? o\.edit : armed;\s*return assistant\.command\(text, \{ source: 'app',[^}]*\.\.\.\(resume \? \{ resume \} : \{\}\) \}\);/);
     // The listener: the arm is taken only in the app queue; every command start clears it unless it came from the window.
     const index = src('src/voice/index.ts');
     expect(index.match(/resumeArm\.take\(\)/g)).toHaveLength(1);
