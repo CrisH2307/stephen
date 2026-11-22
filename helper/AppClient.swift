@@ -303,7 +303,7 @@ final class AppModel: ObservableObject {
   }
 
   /** Send a request; `handler` gets the response, or a local error ("not connected", "timed out"). */
-  func request(_ req: AppRequest, then handler: @escaping (AppMessage) -> Void) {  // internal for AppConfirm.swift
+  func request(_ req: AppRequest, timeout: Double = APP_REQUEST_TIMEOUT_SECONDS, then handler: @escaping (AppMessage) -> Void) {  // internal for AppConfirm.swift
     guard let data = try? encoder.encode(req) else {
       handler(AppMessage(localError: "could not encode the request", id: req.id))
       return
@@ -316,7 +316,7 @@ final class AppModel: ObservableObject {
       return
     }
     let id = req.id
-    DispatchQueue.main.asyncAfter(deadline: .now() + APP_REQUEST_TIMEOUT_SECONDS) { [weak self] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
       guard let self = self, let h = self.pending.removeValue(forKey: id) else { return }
       h(AppMessage(localError: "timed out", id: id))
     }
@@ -798,6 +798,19 @@ final class AppModel: ObservableObject {
       } else {
         self.jobsNotice = msg.message ?? "error"
       }
+      self.refreshJobs()
+    }
+  }
+
+  /**
+   * ADR-010 Edit request ([DEV REVIEW]): the owner's Continue in a stopped, finished or failed job's editor. The
+   * listener plans a NEW job and shows the job dialog with every field; nothing starts until the owner allows it. The
+   * answer waits for that dialog (up to two minutes), so this request gets the control timeout.
+   */
+  func editJob(_ jobId: String, request text: String) {
+    request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS) { [weak self] msg in
+      guard let self = self else { return }
+      self.jobsNotice = msg.type == "job" ? nil : (msg.message ?? "error")
       self.refreshJobs()
     }
   }
