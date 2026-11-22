@@ -67,8 +67,8 @@ describe('ADR-007 v2: the serve of a resumed conversation', () => {
     const runs = readFakeLog(log);
     // A fresh start: the resumed run never reopens the old session; the wrapper is its prompt.
     expect(runs[1]!.argv).not.toContain('--resume');
-    expect(flagValue(runs[1]!.argv, '-p').startsWith(RESUME_WRAPPER_HEAD)).toBe(true);
-    expect(flagValue(runs[1]!.argv, '-p').endsWith('\n\nwhat did the second one say')).toBe(true);
+    expect(flagValue(runs[1]!.argv, '-p')!.startsWith(RESUME_WRAPPER_HEAD)).toBe(true);
+    expect(flagValue(runs[1]!.argv, '-p')!.endsWith('\n\nwhat did the second one say')).toBe(true);
     // The next command continues the resumed conversation (not the old one).
     expect(flagValue(runs[2]!.argv, '--resume')).toBe('sess-2');
 
