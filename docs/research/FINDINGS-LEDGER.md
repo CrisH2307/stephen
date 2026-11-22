@@ -114,7 +114,7 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | fixed (#128 merged), Mac check pending | dev | #122 |
-| R10b-2 | R10b | Medium | `mac-checks` 13.1d false FAIL on the latency fields added by #117 | fixed, in review | review | `fix/mac-checks-latency-fields` |
+| R10b-2 | R10b | Medium | `mac-checks` 13.1d false FAIL on the latency fields added by #117 | closed (#125) | review | `fix/mac-checks-latency-fields` |
 | R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | fixed (#128 merged), Mac check pending | dev | #122 |
 | R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | fixed (#128 merged), Mac check pending | dev | #122 |
 | R10b-5 | R10b | Low | `doctor` problem mark for any Claude Code newer than 2.1.319 | fixed (#130 merged), Mac check pending | dev | #123 |
@@ -122,9 +122,9 @@ Status below is as of 2026-11-12 from the review and open GitHub issues. Nothing
 | LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121 |
 | MJ-1 | manager job 1 | P0 | Recorder plan review | done: plan accepted with 8 points (#10, 2026-11-17); PR #166 reviewed | review | #166 |
 | I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in #170. Smaller points fixed in the follow-up PR: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Still open: Desktop and Documents in iCloud (needs a check whether that iCloud option is on); Fn+Option in the PR 2 switch text | dev | #169 |
-| MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | resume settled; #107 waits for the owner | review, owner | `docs/adr-007-resume`, #107 |
-| MJ-6 | manager job 6 | P1 | Flaky suite research | in progress | review | #109 |
+| MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | closed (#119 resume; #129, owner chose cancel) | review, owner | `docs/adr-007-resume`, #107 |
+| MJ-6 | manager job 6 | P1 | Flaky suite research | in progress: #131, #242, #247, #262 merged; #109 and #263 open | review | #109 |
 | UI-149 | #136, UI review P12 | P2 | Home: New chat button, composer focused, shortcut hints | closed (#196 merged), Mac check pending | dev | #149 |
 | UI-147 | #136, UI review P10 | P2 | Settings: Cmd+comma on the last pane, one title, captions | closed (#200 merged), Mac check pending | dev | #147 |
 | UI-145 | #136, UI review P8 | P2 | Keyboard, VoiceOver, hit targets, text size | in progress: buttons and 24 pt targets merged (#204); VoiceOver announcements, text size, Esc to stop to do | dev | #145 |
-| PA-202 | Ponytail audit | Low | Simplify and speed up: dead code, perf, tests | in progress: DEAD, A1, A2, B1, B2, B3, T4, T5 and C6, T1 merged (#209 to #211, #217 to #227, #229 to #233); P1, C1, C2, C7, C8, T2 open | dev | #202 |
+| PA-202 | Ponytail audit | Low | Simplify and speed up: dead code, perf, tests | in progress: DEAD, A1, A2, B1, B2, B3, T4, T5, C6, T1 merged (#209 to #211, #217 to #227, #229 to #233); then P1 (#240), H3 (#239), C7 (#243), C1 (#244), C2 (#245); T2 and C8 open | dev | #202 |
