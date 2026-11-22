@@ -9,7 +9,7 @@
  */
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync } from 'node:fs';
+import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, realpathSync, renameSync, rmSync, writeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { expandPath } from '../config.js';
@@ -96,6 +96,76 @@ export interface JobPlan {
   repo?: { name: string; path: string; branch: string };
   /** Files in `<root>/inbox/` that start() moves into the job's input/ (plain jobs only), shown in the dialog. */
   inputs?: string[];
+  /**
+   * ADR-010: an edited job. The dialog shows all of it: the old job, the version, and either the old folder that is
+   * copied (with its counts) or, for a code job, the old branch the new worktree branch is cut from.
+   */
+  edit?: { of: string; version: number; copyFrom?: string; files?: number; bytes?: number; fromBranch?: string };
+}
+
+/** ADR-010: Edit request is off while a job is queued or running (threat E9). */
+export const EDIT_STOP_FIRST = 'Stop the job first to change its request.';
+/** ADR-010 copy caps for an edited job's folder (threat E10). */
+export const COPY_MAX_BYTES = 500 * 1024 * 1024;
+export const COPY_MAX_FILES = 10_000;
+export const COPY_TOO_BIG = 'The old job folder is too big to copy. Start a new job instead.';
+export const COPY_GONE = "The old job folder isn't there any more (or isn't a plain folder in your jobs folder). Start a new job instead.";
+
+/**
+ * Walk the old job folder `src` without following any symlink: regular files and folders only (symlinks, sockets and
+ * the rest are skipped). Over COPY_MAX_FILES entries (files and folders) or COPY_MAX_BYTES → COPY_TOO_BIG. With `dst`
+ * (a fresh empty folder), each file is copied there: opened O_NOFOLLOW (a file swapped for a link since the walk is
+ * skipped), written O_CREAT|O_EXCL|O_NOFOLLOW 0600, bytes counted as copied. `src` is only ever read.
+ */
+export function copyJobFolder(src: string, dst: string | null): { files: number; bytes: number } | { error: string } {
+  let entries = 0;
+  let files = 0;
+  let bytes = 0;
+  const buf = Buffer.allocUnsafe(1024 * 1024);
+  const copyFile = (from: string, to: string): boolean => {
+    let fd: number;
+    try {
+      fd = openSync(from, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch {
+      return true; // a link or gone since the walk: skipped
+    }
+    try {
+      if (!fstatSync(fd).isFile()) return true;
+      const out = openSync(to, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      try {
+        for (let n = readSync(fd, buf); n > 0; n = readSync(fd, buf)) {
+          bytes += n;
+          if (bytes > COPY_MAX_BYTES) return false;
+          writeSync(out, buf, 0, n);
+        }
+      } finally {
+        closeSync(out);
+      }
+      return true;
+    } finally {
+      closeSync(fd);
+    }
+  };
+  const walk = (from: string, to: string | null): boolean => {
+    for (const n of readdirSync(from).sort()) {
+      const a = join(from, n);
+      const st = lstatSync(a, { throwIfNoEntry: false });
+      if (!st || !(st.isDirectory() || st.isFile())) continue;
+      if (++entries > COPY_MAX_FILES) return false;
+      if (st.isDirectory()) {
+        if (to) mkdirSync(join(to, n), { mode: 0o700 });
+        if (!walk(a, to && join(to, n))) return false;
+        continue;
+      }
+      files++;
+      if (!to) {
+        bytes += st.size;
+        if (bytes > COPY_MAX_BYTES) return false;
+      } else if (!copyFile(a, join(to, n))) return false;
+    }
+    return true;
+  };
+  return walk(src, dst) ? { files, bytes } : { error: COPY_TOO_BIG };
 }
 
 /** The owner's drop folder for job inputs (owner, 2026-11-05): `<jobs root>/inbox/`. */
