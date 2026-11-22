@@ -71,6 +71,9 @@ process is running, which never happens on a runner.
 - **`macos`** on `macos-15` (arm64, 3 vCPU, 7 GB, free for a public repo, at most 5 macOS jobs at once on the Free
   plan): the same steps, plus a check that `swiftc` exists, so the Swift tests can never skip silently. This is the
   machine the product runs on, and the only place the full Swift app compiles.
+  It also builds the helper for the oldest macOS Stephen supports (`-target arm64-apple-macos14`, from the helper's
+  `LSMinimumSystemVersion`; `scripts/helper-min-macos.mjs`), so an API newer than that, used without `#available`,
+  fails here. GitHub retired its macOS 14 runner, so running on macOS 14 itself needs a self-hosted Mac or a manual check.
 
 Why the full suite on both instead of "unit on Linux, integration on macOS": the suite is 5 minutes, both runners are
 free for a public repo, and splitting would leave each platform's half untested on the other. If macOS queue time

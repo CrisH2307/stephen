@@ -24,7 +24,7 @@
 	<key>CFBundleVersion</key>
 	<string>__VERSION__</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
+	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<!-- `stephen listen` started from the app (ROADMAP P2) records and plays through this app's permissions. -->

@@ -57,6 +57,11 @@ jobs:
           key: voice-models-${{ runner.os }}-${{ hashFiles('src/voice/models.ts', 'src/voice/tts/kokoro.ts') }}
       - run: npm ci
       - run: npm run build
+      # macOS 14 is the minimum, and GitHub has no macOS 14 runner any more: build the helper for that target here, so an
+      # API newer than macOS 14 used without #available fails CI. Runtime on macOS 14 is checked by hand.
+      - name: Helper builds for the minimum macOS
+        if: matrix.os == 'macos'
+        run: node scripts/helper-min-macos.mjs
       - run: npm run typecheck
       # The github-actions reporter writes passed, failed and skipped counts to the job summary.
       - name: Tests
