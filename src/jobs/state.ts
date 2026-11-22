@@ -58,6 +58,13 @@ export interface JobState {
   summary: string;
   /** Why it failed or stopped, in Stephen's words (plus at most a cleaned line from Claude Code). */
   error: string;
+  /**
+   * ADR-010: an edited job (a new job the owner approved through the job dialog) names the job it was edited from and
+   * its version (the old version + 1). Absent on a job that was never edited (version 1). `version` above is the
+   * state file's format, so the edit's version is `editVersion`.
+   */
+  editOf?: string;
+  editVersion?: number;
 }
 
 export const jobsDir = (home: string): string => join(home, 'jobs');
@@ -104,6 +111,8 @@ export function parseJobState(raw: unknown, id: string): JobState | null {
     denials: num(r.denials, 0)!,
     summary: str(r.summary, SUMMARY_MAX),
     error: str(r.error, 400),
+    // ADR-010: field by field; a bad value is dropped, never trusted.
+    ...(isJobId(r.editOf) && r.editOf !== id && Number.isInteger(r.editVersion) && r.editVersion! >= 2 && r.editVersion! <= 1000 ? { editOf: r.editOf, editVersion: r.editVersion! } : {}),
   };
 }
 
