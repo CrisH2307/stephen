@@ -39,6 +39,11 @@ func jobsEarlierTitle(_ jobs: [JobRow]) -> String { return "Earlier (\(jobs.coun
 
 /** ADR-010: off while a job is queued or running; the line said next to the button then. */
 let JOB_EDIT_STOP_FIRST = "Stop the job first to change its request."
+/** ADR-010: the longest edited request (src/jobs/spec.ts EDIT_REQUEST_MAX; a test keeps them equal), so it is never cut. */
+let JOB_EDIT_MAX = 440
+
+/** Characters as the listener counts them (code points), for the editor's counter. */
+func jobEditCount(_ text: String) -> Int { return text.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count }
 
 /** ADR-010: "Version 2 of 3" on the job card; nil for a job that was never edited and has no edits. */
 func jobVersionText(_ job: JobRow) -> String? {
@@ -182,16 +187,18 @@ private struct JobItem: View {
         .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
       TextField("Edit the request", text: $draft).textFieldStyle(.roundedBorder).font(TypeScale.body)
         .accessibilityLabel("Edit the request")
+      Text(verbatim: "\(jobEditCount(draft)) of \(JOB_EDIT_MAX) characters")
+        .font(TypeScale.secondary).foregroundColor(jobEditCount(draft) > JOB_EDIT_MAX ? t.bad : t.ink2)
       HStack(spacing: Space.s) {
         QuietButton("Continue", symbol: "arrow.right") { sendDraft() }
-          .disabled(job.isRunning || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .disabled(job.isRunning || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || jobEditCount(draft) > JOB_EDIT_MAX)
         QuietButton("Cancel") { editing = false }
       }
     }
   }
 
   private func sendDraft() {
-    guard !job.isRunning, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    guard !job.isRunning, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, jobEditCount(draft) <= JOB_EDIT_MAX else { return }
     edit(draft)
     editing = false
   }
