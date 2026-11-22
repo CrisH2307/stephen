@@ -52,6 +52,36 @@ export function cleanTask(task: string): string {
   return truncate(stripUnsafe(String(task).normalize('NFKC')).replace(/\s+/g, ' ').trim(), TASK_MAX);
 }
 
+/** ADR-010: an edited job's task quotes the old request as a record, then the edited request (the owner's words). */
+export const EDIT_RECORD_HEAD = 'Earlier request (a record): ';
+/**
+ * The longest edited request (code points, after cleanTask): with the two heads, the quotes and a short quote of the
+ * old request it still fits in TASK_MAX, so editedTask never cuts it. The window's editor and the manager's edit plan enforce it.
+ */
+export const EDIT_REQUEST_MAX = 440;
+export const EDIT_REQUEST_TOO_LONG = `The edited request is too long (at most ${EDIT_REQUEST_MAX} characters). Shorten it and try again.`;
+export const EDIT_REQUEST_HEAD = ' Edited request: ';
+
+/**
+ * The task of an edited job, within TASK_MAX: the edited request (at most EDIT_REQUEST_MAX, checked by the manager) is
+ * kept whole, and the quoted old request is shortened to fit. `oldTask` may itself be an edited job's task: only its own request is quoted.
+ */
+export function editedTask(oldTask: string, edited: string): string {
+  const now = cleanTask(edited);
+  // - 4: the two quotes, and cleanTask (NFKC) turns the ellipsis of a shortened quote into three dots.
+  const room = TASK_MAX - [...EDIT_RECORD_HEAD].length - [...EDIT_REQUEST_HEAD].length - [...now].length - 4;
+  const old = truncate(requestOf(oldTask), Math.max(1, room));
+  return cleanTask(`${EDIT_RECORD_HEAD}"${old}"${EDIT_REQUEST_HEAD}${now}`);
+}
+
+/** The owner's own request in a task: after the last EDIT_REQUEST_HEAD of an edited job's task, else all of it. */
+export function requestOf(task: string): string {
+  const t = cleanTask(task);
+  if (!t.startsWith(EDIT_RECORD_HEAD)) return t;
+  const at = t.lastIndexOf(EDIT_REQUEST_HEAD);
+  return at < 0 ? t : t.slice(at + EDIT_REQUEST_HEAD.length);
+}
+
 /** "Write my SOFE 3980 lab report draft!" → "write-my-sofe-3980-lab-report-draft" (whole words, ≤ 40). Never empty. */
 export function jobSlug(task: string): string {
   const words = String(task).normalize('NFKD').toLowerCase().replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter(Boolean);

@@ -215,6 +215,10 @@ struct AppRequest: Encodable {
   static func jobsStop(_ id: String, jobId: String) -> AppRequest {
     return AppRequest(id: id, type: "jobs.stop", jobId: jobId)
   }
+  /** ADR-010 Edit request: the old job's id and the owner's edited request. The listener shows the job dialog. */
+  static func jobsEdit(_ id: String, jobId: String, text: String) -> AppRequest {
+    return AppRequest(id: id, type: "jobs.edit", text: text, jobId: jobId)
+  }
   // ROADMAP P2 control (src/app/control.ts); sent by StephenControl below.
   static func phoneOn(_ id: String) -> AppRequest { return AppRequest(id: id, type: "phone.on") }
   static func phoneOff(_ id: String) -> AppRequest { return AppRequest(id: id, type: "phone.off") }
@@ -342,11 +346,15 @@ struct JobRow: Decodable, Identifiable, Equatable {
   var folder: String = ""
   var summary: String = ""
   var error: String = ""
+  /** ADR-010: the owner's own request (prefilled in Edit request), and "Version N of M". */
+  var request: String = ""
+  var version: Int = 1
+  var versions: Int = 1
 
   var isRunning: Bool { return status == "queued" || status == "running" }
 
   enum CodingKeys: String, CodingKey {
-    case id, task, status, createdAt, startedAt, endedAt, turns, costUsd, folder, summary, error
+    case id, task, status, createdAt, startedAt, endedAt, turns, costUsd, folder, summary, error, request, version, versions
   }
 
   init(from decoder: Decoder) throws {
@@ -362,6 +370,9 @@ struct JobRow: Decodable, Identifiable, Equatable {
     folder = (try? c.decodeIfPresent(String.self, forKey: .folder)) ?? ""
     summary = (try? c.decodeIfPresent(String.self, forKey: .summary)) ?? ""
     error = (try? c.decodeIfPresent(String.self, forKey: .error)) ?? ""
+    request = (try? c.decodeIfPresent(String.self, forKey: .request)) ?? ""
+    version = max(1, (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1)
+    versions = max(version, (try? c.decodeIfPresent(Int.self, forKey: .versions)) ?? 1)
   }
 }
 

@@ -37,6 +37,19 @@ func jobFailed(_ job: JobRow) -> Bool { return !job.isRunning && jobStatusWord(j
 /** "Earlier (5)": finished and stopped jobs only. Failed jobs are never in it (Accordion rule in Controls.swift). */
 func jobsEarlierTitle(_ jobs: [JobRow]) -> String { return "Earlier (\(jobs.count))" }
 
+/** ADR-010: off while a job is queued or running; the line said next to the button then. */
+let JOB_EDIT_STOP_FIRST = "Stop the job first to change its request."
+/** ADR-010: the longest edited request (src/jobs/spec.ts EDIT_REQUEST_MAX; a test keeps them equal), so it is never cut. */
+let JOB_EDIT_MAX = 440
+
+/** Characters as the listener counts them (code points), for the editor's counter. */
+func jobEditCount(_ text: String) -> Int { return text.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count }
+
+/** ADR-010: "Version 2 of 3" on the job card; nil for a job that was never edited and has no edits. */
+func jobVersionText(_ job: JobRow) -> String? {
+  return job.versions > 1 ? "Version \(job.version) of \(job.versions)" : nil
+}
+
 /** "3 min", "1 h 05 min": whole minutes between two epoch-millisecond times. */
 func jobDurationText(from: Double, to: Double) -> String {
   let minutes = max(0, Int((to - from) / 60000.0))
@@ -60,6 +73,7 @@ struct JobsView: View {
         Text(verbatim: "Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it.")
           .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
         if let n = model.jobsNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
+        if let s = model.jobStarted { Text(verbatim: s).font(TypeScale.secondary).foregroundColor(t.ink2) }
         if model.jobs.isEmpty {
           Text(verbatim: "No jobs yet. Say \"start a job to find 5 internships\".").font(TypeScale.body).foregroundColor(t.ink2)
         }
@@ -91,7 +105,8 @@ struct JobsView: View {
   private func rows(_ jobs: [JobRow]) -> some View {
     ForEach(Array(jobs.enumerated()), id: \.element.id) { i, job in
       JobItem(job: job, first: i == 0, expanded: openId == job.id,
-              toggle: { openId = openId == job.id ? nil : job.id }, stop: { model.stopJob(job.id) })
+              toggle: { openId = openId == job.id ? nil : job.id }, stop: { model.stopJob(job.id) },
+              edit: { model.editJob(job.id, request: $0) })
     }
   }
 }
@@ -103,6 +118,10 @@ private struct JobItem: View {
   let expanded: Bool
   let toggle: () -> Void
   let stop: () -> Void
+  /** ADR-010 Edit request: the edited text goes to the listener, which shows the job dialog again. */
+  let edit: (String) -> Void
+  @State private var editing = false
+  @State private var draft = ""
 
   var body: some View {
     let s = jobStatusWord(job.status)
@@ -119,6 +138,7 @@ private struct JobItem: View {
                 Text(verbatim: job.task).font(TypeScale.body).foregroundColor(t.ink).lineLimit(expanded ? nil : 2)
                   .fixedSize(horizontal: false, vertical: true)
                 if !used.isEmpty { Text(verbatim: used).font(TypeScale.secondary).foregroundColor(t.ink2) }
+                if let v = jobVersionText(job) { Text(verbatim: v).font(TypeScale.secondary).foregroundColor(t.ink2) }
               }
               Spacer(minLength: Space.m)
               StatusPill(s.word, kind: s.kind)
@@ -133,12 +153,20 @@ private struct JobItem: View {
           .accessibilityHint(expanded ? "Hides the summary" : "Shows the summary")
           .accessibilityAddTraits(.isButton)
           if job.isRunning { QuietButton("Stop", destructive: true, action: stop).accessibilityLabel("Stop job: \(job.task)") }
+          // [DEV REVIEW] ADR-010: Edit request is off while the job is queued or running (Stop is next to it).
+          QuietButton("Edit request", symbol: "pencil") { draft = job.request; editing = true }
+            .disabled(job.isRunning)
+            .accessibilityLabel("Edit the request of job: \(job.task)")
         }
+        if job.isRunning { Text(verbatim: JOB_EDIT_STOP_FIRST).font(TypeScale.secondary).foregroundColor(t.ink2) }
+        if editing && !job.isRunning { editor }
         if expanded {
           if !job.summary.isEmpty { Text(verbatim: "Summary, written by the job").sectionLabelStyle(t) }
           Text(verbatim: bodyText).font(TypeScale.secondary).foregroundColor(t.ink).textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
           Text(verbatim: "\(job.turns) turns").font(TypeScale.secondary).foregroundColor(t.ink2)
+          // ADR-010: the job's real id (an edited job's -v<N>), shown once it exists; the dialog never names it.
+          Text(verbatim: "Job \(job.id)").font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)
           if !job.folder.isEmpty {
             QuietButton("Open output folder", symbol: "folder") {
               NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.folder)])
@@ -149,6 +177,30 @@ private struct JobItem: View {
       .padding(.horizontal, Space.l).padding(.vertical, Space.m)
     }
     .accessibilityElement(children: .contain)
+  }
+
+  /// The Edit request editor (ADR-010): the old request prefilled, Continue and Cancel. Continue only sends the text;
+  /// the listener shows the same job dialog as any new job, with every field, and nothing starts until it is allowed.
+  private var editor: some View {
+    VStack(alignment: .leading, spacing: Space.s) {
+      Text(verbatim: "This starts a new job. Stephen shows the job dialog again (folder, web, budgets), and nothing starts until you allow it. The old job stays as it is.")
+        .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+      TextField("Edit the request", text: $draft).textFieldStyle(.roundedBorder).font(TypeScale.body)
+        .accessibilityLabel("Edit the request")
+      Text(verbatim: "\(jobEditCount(draft)) of \(JOB_EDIT_MAX) characters")
+        .font(TypeScale.secondary).foregroundColor(jobEditCount(draft) > JOB_EDIT_MAX ? t.bad : t.ink2)
+      HStack(spacing: Space.s) {
+        QuietButton("Continue", symbol: "arrow.right") { sendDraft() }
+          .disabled(job.isRunning || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || jobEditCount(draft) > JOB_EDIT_MAX)
+        QuietButton("Cancel") { editing = false }
+      }
+    }
+  }
+
+  private func sendDraft() {
+    guard !job.isRunning, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, jobEditCount(draft) <= JOB_EDIT_MAX else { return }
+    edit(draft)
+    editing = false
   }
 
   private var bodyText: String {

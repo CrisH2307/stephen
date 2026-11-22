@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { helperSourceDir } from '../../src/helper/install.js';
+import { EDIT_REQUEST_MAX } from '../../src/jobs/spec.js';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'app-protocol-v1.jsonl');
 const MAX_LINE_BYTES = 256 * 1024;
@@ -672,6 +673,60 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // Facts line: "Started 2:10 PM · 3 min · $0.12 spent".
     expect(jobs).toContain('parts.append("Started " + ');
     expect(jobs).toContain('return parts.joined(separator: " · ")');
+  });
+
+  // ADR-010 Edit request ([DEV REVIEW]): off while queued or running (with the line), the editor only sends the text,
+  // the listener shows the job dialog; "Version N of M"; all verbatim; the palette never reaches it.
+  it('ADR-010 Jobs: Edit request button and its disabled line, the editor, the version label, Text(verbatim:), not in the palette', () => {
+    const jobs = read('JobsPage.swift');
+    const item = jobs.match(/private struct JobItem: View \{([\s\S]*?)\n\}\n/)?.[1] ?? '';
+    expect(item.length).toBeGreaterThan(1000);
+    // One button, off while the job is queued or running; Stop stays next to it (running rows only).
+    expect(item.match(/QuietButton\("Edit request"/g)).toHaveLength(1);
+    expect(item).toMatch(/if job\.isRunning \{ QuietButton\("Stop"[^\n]*\n(\s*\/\/[^\n]*\n)?\s*QuietButton\("Edit request", symbol: "pencil"\) \{ draft = job\.request; editing = true \}\s*\.disabled\(job\.isRunning\)/);
+    expect(jobs).toContain('let JOB_EDIT_STOP_FIRST = "Stop the job first to change its request."');
+    expect(item).toContain('if job.isRunning { Text(verbatim: JOB_EDIT_STOP_FIRST)');
+    expect(item).toContain('if editing && !job.isRunning { editor }');
+    // The editor: prefilled with the old request; Continue (off while running or empty) and Cancel; it only sends.
+    expect(item).toMatch(/TextField\("Edit the request", text: \$draft\)/);
+    expect(item).toMatch(/QuietButton\("Continue", symbol: "arrow\.right"\) \{ sendDraft\(\) \}\s*\.disabled\(job\.isRunning \|\|/);
+    expect(item).toContain('QuietButton("Cancel") { editing = false }');
+    expect(item).toMatch(/private func sendDraft\(\) \{\s*guard !job\.isRunning, [^\n]*\n\s*edit\(draft\)\s*editing = false\s*\}/);
+    expect(item).toContain('nothing starts until you allow it');
+    // Wired once: the row's edit goes to model.editJob, which sends jobs.edit with the control timeout (the dialog).
+    expect(jobs.match(/model\.editJob\(/g)).toHaveLength(1);
+    expect(jobs).toContain('edit: { model.editJob(job.id, request: $0) })');
+    const all = readdirSync(helperSourceDir(), { recursive: true }).map(String).filter((f) => f.endsWith('.swift'));
+    const uses = (re: RegExp) => all.flatMap((f) => (read(f).match(re) ?? []).map(() => f));
+    expect(uses(/"jobs\.edit"/g)).toEqual(['AppProtocol.swift']);
+    expect(uses(/AppRequest\.jobsEdit\(/g)).toEqual(['AppClient.swift']);
+    expect(uses(/\beditJob\(/g).sort()).toEqual(['AppClient.swift', 'JobsPage.swift']);
+    expect(client).toContain('request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS)');
+    // The edited request is capped as the listener caps it (EDIT_REQUEST_MAX), with a counter; Continue is off over it.
+    expect(jobs).toContain(`let JOB_EDIT_MAX = ${EDIT_REQUEST_MAX}\n`);
+    expect(item).toContain('Text(verbatim: "\\(jobEditCount(draft)) of \\(JOB_EDIT_MAX) characters")');
+    expect(item).toMatch(/QuietButton\("Continue"[^\n]*\n\s*\.disabled\([^\n]*\|\| jobEditCount\(draft\) > JOB_EDIT_MAX\)/);
+    expect(item).toMatch(/guard [^\n]*jobEditCount\(draft\) <= JOB_EDIT_MAX else \{ return \}/);
+    // The real id (an edited job's -v<N>) shows only once the job started: the started line and the open row.
+    expect(client).toContain('if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \\(row.id)" }');
+    expect(jobs).toContain('if let s = model.jobStarted { Text(verbatim: s)');
+    expect(item).toContain('Text(verbatim: "Job \\(job.id)")');
+    // Version N of M, verbatim, only when there is more than one version.
+    expect(jobs).toContain('return job.versions > 1 ? "Version \\(job.version) of \\(job.versions)" : nil');
+    expect(item).toContain('if let v = jobVersionText(job) { Text(verbatim: v)');
+    expect(read('AppProtocol.swift')).toContain('case id, task, status, createdAt, startedAt, endedAt, turns, costUsd, folder, summary, error, request, version, versions');
+    // All text on the page stays verbatim.
+    expect(jobs.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    // Cancel in the editor sends nothing: it only closes the editor. The row's edit (jobs.edit) runs only in sendDraft,
+    // which only Continue reaches; opening the editor sends nothing either.
+    expect(item.match(/\bedit\(/g)).toHaveLength(1);
+    expect(item.match(/\bsendDraft\(\)/g)).toHaveLength(2); // called by Continue, defined once
+    expect(item).not.toMatch(/onSubmit/);
+    expect(item.match(/QuietButton\("Cancel"\) \{([^}]*)\}/)?.[1]?.trim()).toBe('editing = false');
+    expect(item.match(/QuietButton\("Edit request", symbol: "pencil"\) \{([^}]*)\}/)?.[1]?.trim()).toBe('draft = job.request; editing = true');
+    // The palette never reaches it.
+    expect(read('Palette.swift')).not.toMatch(/editJob|jobsEdit|jobs\.edit|Edit request/);
+    expect(PALETTE_MEMBERS).not.toContain('editJob');
   });
 
   it('Jobs step d (plan 6.4): caution intro, Running open, Failed open [DEV REVIEW], Earlier accordion, Stop on running only', () => {

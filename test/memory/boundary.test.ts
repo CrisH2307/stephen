@@ -293,3 +293,44 @@ describe('edit and resend has one entry point: the window', () => {
     expect(seen[1]).toMatchObject({ source: 'app', resume: edit });
   });
 });
+
+/**
+ * ADR-010 Edit request ([DEV REVIEW], threats E4 and E9): one entry point, the window's jobs.edit (Continue in a job
+ * row's editor), behind the same isWindow check as chat.edit. The model never creates or edits a job: no MCP tool,
+ * voice route, phone route, job or CLI path reaches planEdit or editJob.
+ */
+describe('job Edit request has one entry point: the window', () => {
+  const src = (f: string) => readFileSync(join(REPO_ROOT, f), 'utf8');
+  const files = listTsFiles().map((abs) => relative(REPO_ROOT, abs).split(sep).join('/'));
+  const users = (re: RegExp) => files.filter((f) => re.test(src(f))).sort();
+
+  it('jobs.edit is an app.sock request only, answered behind the window check', () => {
+    expect(users(/['"]jobs\.edit['"]/)).toEqual(['src/app/protocol.ts', 'src/app/server.ts']);
+    const server = src('src/app/server.ts');
+    expect(server).toMatch(/if \(req\.type === 'jobs\.edit'\) \{\s*void this\.jobEdit\(sock, req\)/);
+    expect(server).toMatch(/private async jobEdit\(sock: Socket, req: [^)]*\): Promise<AppMessage> \{\s*if \(!this\.isWindow\(sock\)\) return \{ id: req\.id, type: 'error', message: ONLY_WINDOW_JOB_EDITS_MESSAGE \};/);
+    expect(server.match(/\.jobs\.edit\(/g)).toHaveLength(1);
+    expect(src('src/safety/app-confirm.ts')).not.toMatch(/jobs\.edit|editJob/);
+  });
+
+  it('planEdit is called only by JobRouter.editJob, and editJob only by the window rows (job-rows.ts)', () => {
+    expect(users(/\.planEdit\(/)).toEqual(['src/jobs/router.ts']);
+    expect(users(/\.editJob\(/)).toEqual(['src/voice/job-rows.ts']);
+    // editJob is never part of route(): no spoken, typed, phone or model command reaches it.
+    const router = src('src/jobs/router.ts');
+    const route = router.match(/async route\([\s\S]*?\n  \}\n/)?.[0] ?? '';
+    expect(route.length).toBeGreaterThan(200);
+    expect(route).not.toMatch(/edit/i);
+    expect(src('src/jobs/intent.ts')).not.toMatch(/editJob|planEdit|kind: 'edit'/);
+  });
+
+  it('no MCP tool, voice route, phone route, job runner or CLI path names it', () => {
+    const re = /planEdit|editJob|jobs\.edit|jobEdit/;
+    const owners = ['src/app/protocol.ts', 'src/app/server.ts', 'src/app/jobs-status.ts', 'src/jobs/manager.ts', 'src/jobs/router.ts', 'src/voice/job-rows.ts'];
+    expect(files.filter((f) => re.test(src(f)) && !owners.includes(f))).toEqual([]);
+    const reach = (f: string, p: string) => (p.endsWith('/') ? f.startsWith(p) : f === p);
+    for (const f of files.filter((f) => CLAUDE_REACHABLE.some((p) => reach(f, p)) || f.startsWith('src/phone/') || ['src/jobs/runner.ts', 'src/jobs/cli.ts', 'src/jobs/finish.ts'].includes(f))) {
+      expect(src(f), f).not.toMatch(re);
+    }
+  });
+});

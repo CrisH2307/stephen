@@ -58,6 +58,13 @@ export interface JobState {
   summary: string;
   /** Why it failed or stopped, in Stephen's words (plus at most a cleaned line from Claude Code). */
   error: string;
+  /**
+   * ADR-010: an edited job (a new job the owner approved through the job dialog) names the job it was edited from and
+   * its version (the old version + 1). Absent on a job that was never edited (version 1). `version` above is the
+   * state file's format, so the edit's version is `editVersion`.
+   */
+  editOf?: string;
+  editVersion?: number;
 }
 
 export const jobsDir = (home: string): string => join(home, 'jobs');
@@ -104,7 +111,26 @@ export function parseJobState(raw: unknown, id: string): JobState | null {
     denials: num(r.denials, 0)!,
     summary: str(r.summary, SUMMARY_MAX),
     error: str(r.error, 400),
+    // ADR-010: field by field; a bad value is dropped, never trusted.
+    ...(isJobId(r.editOf) && r.editOf !== id && Number.isInteger(r.editVersion) && r.editVersion! >= 2 && r.editVersion! <= 1000 ? { editOf: r.editOf, editVersion: r.editVersion! } : {}),
   };
+}
+
+/** ADR-010: a job's version and the highest version of its family (the jobs linked to it by editOf). */
+export function jobVersions(all: readonly JobState[]): Map<string, { version: number; versions: number }> {
+  const byId = new Map(all.map((j) => [j.id, j]));
+  const rootOf = (j: JobState): string => {
+    const seen = new Set<string>();
+    while (j.editOf && byId.has(j.editOf) && !seen.has(j.id)) {
+      seen.add(j.id);
+      j = byId.get(j.editOf)!;
+    }
+    return j.id;
+  };
+  const top = new Map<string, number>();
+  const roots = new Map(all.map((j) => [j.id, rootOf(j)]));
+  for (const j of all) top.set(roots.get(j.id)!, Math.max(top.get(roots.get(j.id)!) ?? 1, j.editVersion ?? 1));
+  return new Map(all.map((j) => [j.id, { version: j.editVersion ?? 1, versions: top.get(roots.get(j.id)!)! }]));
 }
 
 /** Read one job's state (null: missing, not ours, or unreadable). */

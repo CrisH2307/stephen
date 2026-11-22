@@ -12,6 +12,9 @@
  * Additive: `{id, type:"jobs.list"}` → `{id, type:"jobs", jobs:[JobRow]}` (newest first, summaries cleaned and capped) and
  * `{id, type:"jobs.stop", jobId}` → `{id, type:"job", job:JobRow}` or an error (unknown job, jobs are off). Stopping
  * from the window is the owner's own click, so it needs no dialog.
+ * Additive (ADR-010 Edit request, [DEV REVIEW]): `{id, type:"jobs.edit", jobId, text}` → `{id, type:"job", job:JobRow}`
+ * (the NEW job) or an error. Only the window socket may send it; the old job must be stopped, finished or failed;
+ * nothing starts until the owner approves the job dialog (ADR-004), so the answer can take up to two minutes.
  * Additive (ROADMAP P2, src/app/control.ts), the owner's own clicks, so no dialog:
  *   `{id, type:"phone.on"}` / `{id, type:"phone.off"}` → `{id, type:"phone", on, lines}` (what `stephen phone on|off`
  *   printed; same checks and kill switch), `{id, type:"zen.open"}` → `{id, type:"zen", ok, message}`,
@@ -90,7 +93,7 @@ import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
 import { checkTalkChanges, type TalkState } from '../voice/talk.js';
 import { checkModelChange, type ModelChanges } from './model.js';
-import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
+import { APP_JOB_ID_RE, APP_JOB_REQUEST_MAX, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
 /** Longest line in bytes, without its newline (both directions; AppProtocol.swift APP_MAX_LINE_BYTES). */
@@ -136,6 +139,7 @@ export type AppRequest =
   | { id: string; type: 'accounts.status' }
   | { id: string; type: 'jobs.list' }
   | { id: string; type: 'jobs.stop'; jobId: string }
+  | { id: string; type: 'jobs.edit'; jobId: string; text: string }
   | { id: string; type: 'window.open' }
   | { id: string; type: 'media.key'; action: MediaKeyAction }
   | { id: string; type: 'confirm.ask'; title: string; body: string; timeoutMs: number }
@@ -181,6 +185,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'accounts.status',
   'jobs.list',
   'jobs.stop',
+  'jobs.edit',
   'window.open',
   'media.key',
   'confirm.ask',
@@ -327,6 +332,7 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'accounts.status': () => ok,
   'jobs.list': () => ok,
   'jobs.stop': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? ok : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
+  'jobs.edit': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? text(o, 'text', APP_JOB_REQUEST_MAX, 'text') : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
   'window.open': () => ok,
   'media.key': (o) => (typeof o.action === 'string' && (MEDIA_KEY_ACTIONS as readonly string[]).includes(o.action) ? ok : bad('action must be play, pause, toggle, next or previous')),
   'confirm.ask': (o) => {
@@ -404,6 +410,8 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, memId: o.memId as string, text: o.text as string };
     case 'jobs.stop':
       return { id, type, jobId: o.jobId as string };
+    case 'jobs.edit':
+      return { id, type, jobId: o.jobId as string, text: o.text as string };
     case 'media.key':
       return { id, type, action: o.action as MediaKeyAction };
     case 'memory.forget':
