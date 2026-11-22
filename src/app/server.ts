@@ -69,8 +69,11 @@ export const PROPOSAL_GONE_MESSAGE = 'That suggestion is no longer waiting.';
 export interface AppCommandQueue {
   /** A command is running or being spoken, or the user is talking. */
   busy(): boolean;
-  /** Start a typed command now; null (nothing started) when busy. `text` is cleaned, `raw` as typed. */
-  start(text: string, opts: { id: string; raw: string; speak: boolean }): Promise<CommandReport> | null;
+  /**
+   * Start a typed command now; null (nothing started) when busy. `text` is cleaned, `raw` as typed. `window`: it came
+   * from the Stephen window (a client that said hello with confirms), the only sender that may take an armed resume.
+   */
+  start(text: string, opts: { id: string; raw: string; speak: boolean; window?: boolean }): Promise<CommandReport> | null;
   /** Same as Esc: cancel what is running and end the follow-up conversation. */
   stop(): void;
 }
@@ -382,7 +385,7 @@ export class AppServer {
       this.broadcast({ type: 'chat.done', entryId, reply: message, outcome: 'error', tools: [], ms: 0 });
     let run: Promise<CommandReport> | null;
     try {
-      run = this.o.queue.start(text, { id: entryId, raw: req.text.trim(), speak: this.o.speakReplies });
+      run = this.o.queue.start(text, { id: entryId, raw: req.text.trim(), speak: this.o.speakReplies, window: this.askBoxes.has(sock) && !this.gates.has(sock) });
     } catch (e) {
       run = Promise.reject(e);
     }
@@ -681,7 +684,8 @@ export function listenerQueue(listener: QueueListener, assistant: QueueAssistant
     busy: () => !listener.idle || assistant.busy,
     start: (text, o) =>
       listener.submit(() => {
-        const resume = takeResume?.() ?? null;
+        // Only the window's own message takes the arm (ADR-007 v2): another app.sock client never does.
+        const resume = o.window ? (takeResume?.() ?? null) : null;
         return assistant.command(text, { source: 'app', raw: o.raw, speak: o.speak, id: o.id, ...(resume ? { resume } : {}) });
       }),
     stop: () => void listener.cancel('app'),

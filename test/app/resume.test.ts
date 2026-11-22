@@ -148,6 +148,19 @@ describe('ADR-007 v2 resume through app.sock', () => {
     expect(w.runner.runs[0]!.prompt).toBe('hello');
   });
 
+  it('a chat.send from a non-window socket does not take the arm', async () => {
+    const w = await world();
+    await w.window.request({ id: 'r1', type: 'chat.resume', conv: CONV });
+    const other = await w.connect(false); // no hello with confirms: not the window
+    await other.request({ id: 'o1', type: 'chat.send', text: 'what was that about' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(w.runner.runs[0]).toEqual({ prompt: 'what was that about', hooks: expect.not.objectContaining({ assumePrivateRead: true }) });
+    expect(w.arm.armed).toBe(true); // still waiting for the window
+    await w.window.request({ id: 's1', type: 'chat.send', text: 'and the exam?' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(w.runner.runs[1]!.hooks.assumePrivateRead).toBe(true);
+  });
+
   it('only the window may arm: refused from a connection without hello confirms and from a gate (serve) connection', async () => {
     const w = await world();
     const plain = await w.connect(false);

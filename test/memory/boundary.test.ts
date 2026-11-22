@@ -208,7 +208,7 @@ describe('resume has one entry point: an owner click in the window', () => {
     // HandleOptions.resume is set in one place: listenerQueue (app chat.send), from the arm the click set.
     expect(files.filter((f) => /\bResumeRequest\b/.test(src(f))).sort()).toEqual(['src/app/server.ts', 'src/voice/assistant.ts']);
     const server = src('src/app/server.ts');
-    expect(server).toMatch(/const resume = takeResume\?\.\(\) \?\? null;\s*return assistant\.command\(text, \{ source: 'app',[^}]*\.\.\.\(resume \? \{ resume \} : \{\}\) \}\);/);
+    expect(server).toMatch(/const resume = o\.window \? \(takeResume\?\.\(\) \?\? null\) : null;\s*return assistant\.command\(text, \{ source: 'app',[^}]*\.\.\.\(resume \? \{ resume \} : \{\}\) \}\);/);
     // The listener: the arm is taken only in the app queue; every command start clears it unless it came from the window.
     const index = src('src/voice/index.ts');
     expect(index.match(/resumeArm\.take\(\)/g)).toHaveLength(1);
