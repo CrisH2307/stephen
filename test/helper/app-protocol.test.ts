@@ -701,6 +701,10 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(uses(/AppRequest\.jobsEdit\(/g)).toEqual(['AppClient.swift']);
     expect(uses(/\beditJob\(/g).sort()).toEqual(['AppClient.swift', 'JobsPage.swift']);
     expect(client).toContain('request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS)');
+    // The real id (an edited job's -v<N>) shows only once the job started: the started line and the open row.
+    expect(client).toContain('if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \\(row.id)" }');
+    expect(jobs).toContain('if let s = model.jobStarted { Text(verbatim: s)');
+    expect(item).toContain('Text(verbatim: "Job \\(job.id)")');
     // Version N of M, verbatim, only when there is more than one version.
     expect(jobs).toContain('return job.versions > 1 ? "Version \\(job.version) of \\(job.versions)" : nil');
     expect(item).toContain('if let v = jobVersionText(job) { Text(verbatim: v)');
