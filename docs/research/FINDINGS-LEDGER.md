@@ -157,3 +157,6 @@ Severity "not rated" means the review named the problem but gave no level.
 | I-207 | CI #195 | Low | A click after typing is lost when the Chrome window is not painting (macOS CI) | open; CI uses headless Chrome on macOS as the workaround (#195) | dev | #207 |
 | I-208 | review of #206 | Medium | Recording on sign can lag after a hand edit of config.json; a clip can land after off or Delete | closed (#238) | dev | #208 |
 | DEC-261 | dev lane decision | Low | A "?" anywhere blocks a typed memory save too, not only a spoken one | closed (#261) | dev | #261 |
+| I-205 | issue | not rated | Voice: stop music while it plays (duck on wake, pause by media key) | closed (#216 voice side, #228 Mac media key; release #279) | dev | #205 |
+| I-270 | CI on qa | Low | CI failed on qa (warm-claude flake, #109) | closed (#267: the fake serve counts as connected only after its claim line is logged; release #279) | dev | #270, #109 |
+| I-278 | review of #169 | Low | Recorder leftovers from #169: Desktop and Documents in iCloud, Fn+Option in the switch text | open | dev | #278 |
