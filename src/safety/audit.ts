@@ -163,7 +163,7 @@ export class AuditLog implements IAuditLog {
 
   private async write(line: string, retry = true): Promise<void> {
     const bytes = Buffer.byteLength(line);
-    let appended = false;
+    let writing = false; // set once the line may be (partly) on disk: a failure after that is never retried
     try {
       let size = await this.knownSize();
       if (size > 0 && size + bytes > this.maxBytes) {
@@ -181,8 +181,8 @@ export class AuditLog implements IAuditLog {
       try {
         const st = await fh.stat();
         if ((st.mode & 0o777) !== 0o600) await fh.chmod(0o600);
+        writing = true;
         await fh.appendFile(line);
-        appended = true;
         size = st.size;
       } finally {
         await fh.close();
@@ -191,7 +191,7 @@ export class AuditLog implements IAuditLog {
     } catch (e) {
       this.size = undefined;
       // A stale size or a removed dir must not lose the entry: stat again and try once more.
-      if (retry && !appended) return this.write(line, false);
+      if (retry && !writing) return this.write(line, false);
       throw e;
     }
   }
