@@ -351,3 +351,7 @@ npm run test:int       # integration tests with a real headless Chromium (CDP an
 ```
 
 Design notes: [`docs/STEPHEN.md`](docs/STEPHEN.md) (Stephen phase 1), [`docs/DESIGN.md`](docs/DESIGN.md) and [`docs/ADR-001-browser-control-stack.md`](docs/ADR-001-browser-control-stack.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Cris Huynh. Dependencies and downloaded voice models keep their own licenses.
