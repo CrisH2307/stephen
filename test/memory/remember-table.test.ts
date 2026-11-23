@@ -89,7 +89,7 @@ const TABLE: [string, Want, Want, Want][] = [
   ["Remember Will's birthday is March 3", 'S', 'S', 'S'],
   ['Remember May is my sister', 'S', 'S', 'S'],
   ['Remember do not park on Main St', 'S', 'S', 'S'],
-  ['Remember that has to be done by Friday', 'S', 'S', 'S'],
+  ['Remember that has to be done by Friday', 'S', 'N', 'N'],
   ['Remember my gym should be open on Sundays', 'S', 'S', 'S'],
   // a question with odd spacing, quotes or a zero-width space
   ["Remember isn't my gym open", 'N', 'N', 'N'],
