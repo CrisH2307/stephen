@@ -159,7 +159,7 @@ describe.each(PROTOCOLS)('out-of-process iframes over %s', (protocol) => {
     expect(s.text).not.toContain('(unreadable)');
     const link = refIn(s.text, /link "Cross link"/);
     expect((await pe.find(page, TAB, 'cross link', 1))[0]?.ref).toBe(link);
-    await pe.click(page, link);
+    expect(await pe.click(page, link)).toBeUndefined(); // confirmed, or a note naming why not (#109)
     // The iframe runs in another renderer process, so its text can update a little after the click returns
     // (CI run 44315329108 read it empty). Wait for it first, then check it is in the cross-site frame.
     await pe.waitFor(page, { text: 'cross clicked', timeoutMs: 3000 });
