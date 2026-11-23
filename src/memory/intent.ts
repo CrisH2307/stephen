@@ -96,8 +96,10 @@ const VOICE_FACT_VERBS = new Set([
 const SUBJECT_WORDS = new Set(['i', 'we', 'you', 'they', 'he', 'she', 'it']);
 function voiceFactShape(body: string): boolean {
   // A to-do ("i need to pay the rent") or a shared memory ("that time we went to the lake") is not a fact.
-  // First person only: "that has to be done by Friday" or "my gym should be open" are facts, not to-dos.
-  if (/^(?:i|we)\b/.test(body) && /\b(?:need|needs|have|has|got) to\b|\b(?:should|must)\b|\bsupposed to\b/.test(body)) return false;
+  // "has to" is a to-do for every subject (when in doubt, do not save). should/must/supposed to only for I or we, so
+  // "my gym should be open on Sundays" is a fact.
+  if (/\b(?:need|needs|have|has|got) to\b/.test(body)) return false;
+  if (/^(?:i|we)\b/.test(body) && /\b(?:should|must)\b|\bsupposed to\b/.test(body)) return false;
   if (/^(?:the )?(?:last |one |first |good old )?(?:time|times|night|day|days|summer)\b/.test(body)) return false;
   const w = body.split(' ');
   // "i teach grade five", "we live downtown": a first-person statement.
