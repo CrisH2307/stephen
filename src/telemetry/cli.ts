@@ -116,6 +116,8 @@ export interface LatencyReport {
   silence: SpanStats | null;
   groups: LatencyGroup[];
   slowest: { id: string; ts: string; trigger: string; route: string; outcome: string; ms: number }[];
+  /** Cost per day, USD, newest day first. */
+  costPerDay: { day: string; costUsd: number }[];
 }
 
 const stats = (v: number[]): SpanStats => ({ n: v.length, p50: percentile(v, 50), p95: percentile(v, 95) });
@@ -127,6 +129,7 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
   const tiers: Record<string, number> = {};
   const reasons: Record<string, number> = {};
   const byGroup = new Map<string, LatencyRecord[]>();
+  const costByDay = new Map<string, number>();
   for (const r of records) {
     bump(outcomes, r.outcome);
     if (r.outcome === 'wake_ignored') bump(ignored, r.ignored ?? 'unknown');
@@ -134,6 +137,10 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
     if (r.reason) bump(reasons, r.reason);
     const key = `${r.trigger}/${r.route ?? 'none'}`;
     byGroup.set(key, [...(byGroup.get(key) ?? []), r]);
+    if (r.costUsd !== undefined && r.costUsd > 0) {
+      const day = r.ts.slice(0, 10); // YYYY-MM-DD
+      costByDay.set(day, (costByDay.get(day) ?? 0) + r.costUsd);
+    }
   }
   const groups = [...byGroup.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -176,7 +183,11 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
     })
     .sort((a, b) => b.ms - a.ms)
     .slice(0, SLOWEST);
-  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest };
+  // costPerDay: newest day first
+  const costPerDay = [...costByDay.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([day, costUsd]) => ({ day, costUsd: Math.round(costUsd * 1_000_000) / 1_000_000 }));
+  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest, costPerDay };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -200,6 +211,10 @@ export function formatReport(r: LatencyReport): string {
     `tier (shadow): ${counts(r.tiers)}${Object.keys(r.reasons).length ? `; tier 2 reasons: ${counts(r.reasons)}` : ''}`,
   ];
   if (r.silence) lines.push(`Esc to silence (n=${r.silence.n}): p50 ${r.silence.p50} ms, p95 ${r.silence.p95} ms`);
+  if (r.costPerDay.length) {
+    const total = r.costPerDay.reduce((sum, d) => sum + d.costUsd, 0);
+    lines.push(`cost: $${total.toFixed(6)} total (${r.costPerDay.map((d) => `${d.day} $${d.costUsd.toFixed(6)}`).join(', ')})`);
+  }
   for (const g of r.groups) {
     const other = Object.entries(g.outcomes).filter(([k]) => k !== 'ok');
     lines.push('', `${g.trigger} / ${g.route}  (n=${g.n}, ok ${g.outcomes.ok ?? 0}${other.length ? `; not timed: ${other.map(([k, n]) => `${k} ${n}`).join(', ')}` : ''})${g.over.length ? `  OVER: ${g.over.join('; ')}` : ''}`);

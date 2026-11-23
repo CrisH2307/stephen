@@ -93,7 +93,7 @@ describe('stephen latency', () => {
 
   it('no records, a bad option, help', async () => {
     expect(await run(['--days', '1'], monitor(false))).toMatchObject({ code: 0, out: 'No latency records in the last day.' });
-    expect(JSON.parse((await run(['--json'], monitor(false))).out)).toEqual({ days: 7, triggers: 0, outcomes: {}, ignored: {}, tiers: {}, reasons: {}, silence: null, groups: [], slowest: [] });
+    expect(JSON.parse((await run(['--json'], monitor(false))).out)).toEqual({ days: 7, triggers: 0, outcomes: {}, ignored: {}, tiers: {}, reasons: {}, silence: null, groups: [], slowest: [], costPerDay: [] });
     const bad = await run(['--days', '3']);
     expect(bad).toMatchObject({ code: 2, out: '' });
     expect(bad.err).toContain('--days must be 1, 7 or 30');

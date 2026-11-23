@@ -543,6 +543,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       turns: r.turns,
       ...(r.model ? { model: r.model } : {}),
       ...(r.ranClaude ? { start: r.model || r.followUp ? 'warm' : 'cold' } : {}),
+      ...(r.costUsd !== undefined ? { costUsd: r.costUsd } : {}),
       ...(calls.length ? { tools: calls.map((t) => ({ name: t.tool, ms: t.ms })) } : {}),
       ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
       ...(heard && lastTts() ? { tts: lastTts()! } : {}),

@@ -214,4 +214,29 @@ describe('new fields: closed lists, numbers only', () => {
     expect(real.size).toBeGreaterThan(25);
     for (const n of real) expect(LATENCY_TOOLS as readonly string[], n).toContain(n);
   });
+
+  describe('costUsd', () => {
+    const base = { v: 1, id: 'h_x', ts: '2026-11-10T15:00:00.000Z', trigger: 'ptt', route: 'model', outcome: 'ok', followUp: false, turns: 1, stages: { speechEnd: 0, done: 1000 } } as const;
+
+    it('accepts a valid costUsd (0 to 100, rounded to 6 dp)', () => {
+      expect(parseLatencyRecord({ ...base, costUsd: 0 })!.costUsd).toBe(0);
+      expect(parseLatencyRecord({ ...base, costUsd: 0.000001 })!.costUsd).toBe(0.000001);
+      expect(parseLatencyRecord({ ...base, costUsd: 1.23456789 })!.costUsd).toBe(1.234568); // rounded to 6 dp
+      expect(parseLatencyRecord({ ...base, costUsd: 99.999999 })!.costUsd).toBe(99.999999);
+      expect(parseLatencyRecord({ ...base, costUsd: 100 })!.costUsd).toBe(100);
+    });
+
+    it('rejects out-of-range costUsd', () => {
+      expect(parseLatencyRecord({ ...base, costUsd: -0.000001 })).toBeNull();
+      expect(parseLatencyRecord({ ...base, costUsd: 100.000001 })).toBeNull();
+      expect(parseLatencyRecord({ ...base, costUsd: NaN })).toBeNull();
+      expect(parseLatencyRecord({ ...base, costUsd: Infinity })).toBeNull();
+    });
+
+    it('rejects non-number costUsd', () => {
+      expect(parseLatencyRecord({ ...base, costUsd: '0.001' })).toBeNull();
+      expect(parseLatencyRecord({ ...base, costUsd: null })).not.toHaveProperty('costUsd');
+      expect(parseLatencyRecord({ ...base })).not.toHaveProperty('costUsd');
+    });
+  });
 });

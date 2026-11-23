@@ -79,6 +79,8 @@ export interface LatencyRecord {
   reason?: LatencyReason;
   /** wake_ignored only: why. */
   ignored?: (typeof LATENCY_IGNORED)[number];
+  /** Cost of the model run, USD (rounded to 6 decimal places, 0 to 100). */
+  costUsd?: number;
   /** 1 = the replay recorder was on for this F5 command (issue #48). Never anything about the clip itself. */
   replay?: 0 | 1;
   /** Which Stephen tools ran and how long each took, in call order. Names only, never arguments or results. */
@@ -196,6 +198,19 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
     }
     if (tools.length) extra.tools = tools;
   }
+  // costUsd: validation rules
+  // - missing or null → valid, don't add to record
+  // - non-number (string, object, etc.) → reject record (return null)
+  // - number: must be 0-100 range and finite (NaN/Infinity rejected) → valid, round to 6 dp
+  if ('costUsd' in o) {
+    if (o.costUsd === null || o.costUsd === undefined) {
+      // valid, don't add
+    } else if (typeof o.costUsd !== 'number' || !Number.isFinite(o.costUsd) || o.costUsd < 0 || o.costUsd > 100) {
+      return null;
+    } else {
+      extra.costUsd = Math.round(o.costUsd * 1_000_000) / 1_000_000;
+    }
+  }
   return {
     v: 1,
     id: o.id,
@@ -225,7 +240,7 @@ export interface LatencyTrace {
   note(id: string, note: LatencyNote): void;
 }
 
-export type LatencyEnd = { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes } & LatencyNote;
+export type LatencyEnd = { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes; costUsd?: number } & LatencyNote;
 
 export interface LatencyMonitorOptions {
   home: string;
