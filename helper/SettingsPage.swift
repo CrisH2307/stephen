@@ -218,8 +218,8 @@ private struct VoiceSettingsPane: View {
             }
             .labelsHidden().pickerStyle(.segmented)
           }
-          FormRow("Speak replies out loud") { switchView("Speak replies out loud", bind(\.speak)) }
-          FormRow("Explain steps as you go") { switchView("Explain steps as you go", bind(\.explain)) }
+          Toggle("Speak replies out loud", isOn: bind(\.speak)).tint(t.accent)
+          Toggle("Explain steps as you go", isOn: bind(\.explain)).tint(t.accent)
         }
         Section {
           Text(verbatim: draft.preview).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
@@ -268,10 +268,6 @@ private struct VoiceSettingsPane: View {
 
   private func bind<V>(_ path: WritableKeyPath<TalkSettings, V>) -> Binding<V> {
     return Binding(get: { draft[keyPath: path] }, set: { draft[keyPath: path] = $0; saved = false })
-  }
-
-  private func switchView(_ label: String, _ on: Binding<Bool>) -> some View {
-    return Toggle(label, isOn: on).labelsHidden().toggleStyle(StephenSwitch())
   }
 
   private func save() {
@@ -448,10 +444,8 @@ private struct PrivacySettingsPane: View {
     Form {
       PermissionsSection(model: model)
       Section {
-        FormRow(Self.label) {
-          Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))
-            .toggleStyle(StephenSwitch()).disabled(model.connection != .online)
-        }
+        Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))
+          .tint(t.accent).disabled(model.connection != .online)
         if let d = done { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ok) }
         if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
       } footer: {
