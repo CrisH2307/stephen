@@ -110,6 +110,8 @@ function voiceFactShape(body: string): boolean {
   );
 }
 
+/** Questions without a "?": aux/modal/wh opener. Names and to-dos ("Will's birthday", "has to", "do not") save. */
+const QUESTION_OPENER_RE = /^(?:(?:is|are|am|were|shall)(?:n't)?|whose|which|whether)\b|^(?:(?:was|do|does|did|have|has|had|can|could|will|would|should|may|might|must)(?:n't)?) (?:i|you|we|they|he|she|it|my|your|our|their|his|her|the|this|that|these|those|there|any|anyone|someone|somebody|how|what|where|when|why|who)\b/;
 /** "forget it" and friends are everyday speech, not a memory command. */
 const FORGET_NOT_A_QUERY = new Set(['it', 'about it', 'this', 'them', 'him', 'her', 'everything else', 'that one', 'all that', 'it all']);
 const TRAILING_POLITE_RE = /(?: (?:please|thanks|thank you|for me))+$/;
@@ -194,7 +196,8 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
   if (body !== null) {
     // "remember to call mom" is a reminder, not a fact; "remember when …" is a question. An auxiliary, modal or
     // wh-word opener ("remember is my gym open today", "remember whose car is that") is a question too, on every source.
-    if (/^(?:to|when|what|where|who|how|why|if|me|is|are|was|were|am|do|does|did|have|has|had|can|could|will|would|should|shall|may|might|must|whose|which|whether)\b/.test(body)) return null;
+    const question = QUESTION_OPENER_RE.test(body);
+    if (/^(?:to|when|what|where|who|how|why|if|me)\b/.test(body)) return null;
     const split = splitRememberTail(body);
     const rest = split?.rest;
     if (split) body = split.text;
@@ -202,6 +205,7 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
     // One word ("remember that one", "remember goodlife") is too little to be a fact worth saving.
     // But a single word with a digit looks like a code: refuse it here instead of sending it to Claude (review 5, R5-4).
     if (body.split(' ').length < 2) return /\d/.test(body) ? { intent: { kind: 'remember-code' } } : null;
+    if (question) return null;
     if (voice && !voiceFactShape(body)) return null;
     return { intent: rest ? { kind: 'remember', text: body, rest } : { kind: 'remember', text: body }, opener };
   }
