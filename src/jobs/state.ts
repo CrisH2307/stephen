@@ -225,7 +225,9 @@ export async function reconcileAsync(home: string, s: JobState, o: ReconcileOpti
   const claudePid = s.claudePid;
   if (claudePid !== null && now <= deadline && (o.alive || s.sessionId)) {
     // Fresh check, then the kill at once: no cache, no other await in between (R8-5).
-    if ((await runsAsync(claudePid, o.alive, (cmd) => cmd.includes(`--session-id ${s.sessionId}`))) === true) (o.kill ?? killGroup)(claudePid, 'SIGKILL');
+    const claude = await runsAsync(claudePid, o.alive, (cmd) => cmd.includes(`--session-id ${s.sessionId}`));
+    if (claude === null) return s; // ps did not answer: Claude may still run, so look again next poll
+    if (claude) (o.kill ?? killGroup)(claudePid, 'SIGKILL');
   }
   // The supervisor may have written its final state while ps ran: that state wins.
   const cur = readJobState(home, s.id);
