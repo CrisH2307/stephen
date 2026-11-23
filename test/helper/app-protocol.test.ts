@@ -1291,6 +1291,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
     const conv = read('ConversationsPage.swift');
     expect(conv).toContain('Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")');
+    expect(conv).toContain('Text(verbatim: "Nothing yet. Ask Stephen something and it shows here.")');
     // Chips: All, Refused, Failed, drawn with Memory's Tag.
     expect(conv).toMatch(/let CONVERSATION_FILTERS = \[\s*MemoryFilter\(id: "all", title: "All"\), MemoryFilter\(id: "refused", title: "Refused"\), MemoryFilter\(id: "failed", title: "Failed"\),\s*\]/);
     expect(conv).toContain('ForEach(CONVERSATION_FILTERS) { f in Tag(f.title, selected: filter == f.id) { filter = f.id }.fixedSize() }');
