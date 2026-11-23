@@ -96,7 +96,10 @@ const VOICE_FACT_VERBS = new Set([
 const SUBJECT_WORDS = new Set(['i', 'we', 'you', 'they', 'he', 'she', 'it']);
 function voiceFactShape(body: string): boolean {
   // A to-do ("i need to pay the rent") or a shared memory ("that time we went to the lake") is not a fact.
+  // "has to" is a to-do for every subject (when in doubt, do not save). should/must/supposed to only for I or we, so
+  // "my gym should be open on Sundays" is a fact.
   if (/\b(?:need|needs|have|has|got) to\b/.test(body)) return false;
+  if (/^(?:i|we)\b/.test(body) && /\b(?:should|must)\b|\bsupposed to\b/.test(body)) return false;
   if (/^(?:the )?(?:last |one |first |good old )?(?:time|times|night|day|days|summer)\b/.test(body)) return false;
   const w = body.split(' ');
   // "i teach grade five", "we live downtown": a first-person statement.
@@ -110,6 +113,8 @@ function voiceFactShape(body: string): boolean {
   );
 }
 
+/** Questions without a "?": aux/modal/wh opener. Names and to-dos ("Will's birthday", "has to", "do not") save. */
+const QUESTION_OPENER_RE = /^(?:(?:is|are|am|were|shall)(?:n't)?|whose|which|whether)\b|^(?:(?:was|do|does|did|have|has|had|can|could|will|would|should|may|might|must)(?:n't)?) (?:i|you|we|they|he|she|it|my|your|our|their|his|her|the|this|that|these|those|there|any|anyone|someone|somebody|how|what|where|when|why|who)\b/;
 /** "forget it" and friends are everyday speech, not a memory command. */
 const FORGET_NOT_A_QUERY = new Set(['it', 'about it', 'this', 'them', 'him', 'her', 'everything else', 'that one', 'all that', 'it all']);
 const TRAILING_POLITE_RE = /(?: (?:please|thanks|thank you|for me))+$/;
@@ -176,7 +181,7 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
   if (QUESTION_RE.test(command) || (opts.raw !== undefined && QUESTION_RE.test(opts.raw))) return null;
   // A "?" anywhere ("remember that? that was crazy", a curly quote after it, a full-width one) is a question too,
   // typed or spoken (dev lane, 2026-11-21).
-  if (/[?？¿]/.test(opts.raw ?? command)) return null;
+  if (/[?？¿❓❔﹖⁇⁈‽⸮]/.test(opts.raw ?? command)) return null;
   let body: string | null = null;
   let opener = '';
   for (const [i, re] of REMEMBER_RES.entries()) {
@@ -192,7 +197,9 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
     }
   }
   if (body !== null) {
-    // "remember to call mom" is a reminder, not a fact; "remember when …" is a question.
+    // "remember to call mom" is a reminder, not a fact; "remember when …" is a question. An auxiliary, modal or
+    // wh-word opener ("remember is my gym open today", "remember whose car is that") is a question too, on every source.
+    const question = QUESTION_OPENER_RE.test(body);
     if (/^(?:to|when|what|where|who|how|why|if|me)\b/.test(body)) return null;
     const split = splitRememberTail(body);
     const rest = split?.rest;
@@ -201,6 +208,7 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
     // One word ("remember that one", "remember goodlife") is too little to be a fact worth saving.
     // But a single word with a digit looks like a code: refuse it here instead of sending it to Claude (review 5, R5-4).
     if (body.split(' ').length < 2) return /\d/.test(body) ? { intent: { kind: 'remember-code' } } : null;
+    if (question) return null;
     if (voice && !voiceFactShape(body)) return null;
     return { intent: rest ? { kind: 'remember', text: body, rest } : { kind: 'remember', text: body }, opener };
   }
