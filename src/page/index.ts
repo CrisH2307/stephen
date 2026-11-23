@@ -730,7 +730,7 @@ async function clickTarget(
   ref: Ref,
   d: Deadline,
   opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' },
-): Promise<void> {
+): Promise<string | undefined> {
   const button = opts?.button ?? 'left';
   const count = opts?.double ? 2 : 1;
   let pt = await pointFor(frame, n, ref);
@@ -748,10 +748,13 @@ async function clickTarget(
     await page.mouse.click(pt.x, pt.y, { button, count });
     return;
   }
-  // Target in a child frame. Chrome may route the very first input to a freshly loaded
-  // out-of-process iframe to the parent's <iframe> element instead (its hit-test data is not
-  // ready yet): the click is silently lost. Detect exactly that case and retry once.
+  // Target in a child frame. Chrome routes input into an out-of-process iframe with hit-test data
+  // that the frames send with their painted frames; until then the click can land on the parent's
+  // <iframe> element or nowhere (#109). So wait for a painted frame before each try, retry once
+  // only when it provably landed on the <iframe>, and say so when the click was not confirmed.
   for (let attempt = 0; ; attempt++) {
+    await painted([frame, ...pt.chain.map((c) => c.parent)]);
+    d.check();
     await rt(frame, 'probe', { n, arm: true });
     for (const c of pt.chain) await rt(c.parent, 'probe', { n: c.n, arm: true });
     await page.mouse.click(pt.x, pt.y, { button, count });
@@ -760,8 +763,9 @@ async function clickTarget(
     for (const c of pt.chain) {
       if (await rt(c.parent, 'probe', { n: c.n, arm: false }).catch(() => false)) lostInParent = true;
     }
-    if (reached || !lostInParent || attempt >= 1) return;
-    await new Promise((r) => setTimeout(r, 150));
+    if (reached) return;
+    if (!lostInParent) return NOWHERE_NOTE;
+    if (attempt >= 1) return IN_PARENT_NOTE;
     d.check();
     const again = await pointFor(frame, n, ref);
     if (again === 'nobox') return;
@@ -770,11 +774,32 @@ async function clickTarget(
   }
 }
 
+const IN_PARENT_NOTE =
+  '(the click was not confirmed: it landed on the <iframe> in the parent page twice, not inside the frame, which was not ready for input; snapshot to check before retrying)';
+const NOWHERE_NOTE =
+  '(the click was not confirmed: neither the element inside the frame nor its <iframe> got it; snapshot to check before retrying)';
+/** Longest wait for one painted frame before a click into a frame (a hidden tab paints none). */
+const PAINT_MS = 500;
+
+/** Wait until each frame has painted a new frame (two animation frames), at most PAINT_MS. Never fails. */
+async function painted(frames: Frame[]): Promise<void> {
+  await Promise.all(
+    frames.map((f) =>
+      withTimeout(
+        realmOf(f).evaluate(() => new Promise<boolean>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))),
+        PAINT_MS,
+        'paint',
+      ).catch(() => false),
+    ),
+  );
+}
+
 async function click(page: Page, ref: Ref, opts?: { double?: boolean; button?: 'left' | 'right' | 'middle' }): Promise<string | void> {
   return withTarget(page, ref, 'click', async (frame, n, d) => {
     await rt(frame, 'watch', true).catch(() => undefined);
-    await timed('click.press', () => clickTarget(page, frame, n, ref, d, opts));
-    return (await timed('click.verify', () => reacted(frame))) ? undefined : NO_CHANGE_NOTE;
+    const unconfirmed = await timed('click.press', () => clickTarget(page, frame, n, ref, d, opts));
+    // A page that reacted got the click after all (late delivery); otherwise say why it may have missed.
+    return (await timed('click.verify', () => reacted(frame))) ? undefined : (unconfirmed ?? NO_CHANGE_NOTE);
   });
 }
 
