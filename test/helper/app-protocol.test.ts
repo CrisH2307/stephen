@@ -486,10 +486,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(settings).toContain('Text(verbatim: g.title).sectionLabelStyle(t)');
     expect(settings).not.toContain('Text(verbatim: "Settings")');
     expect(settings).not.toMatch(/"Settings"\)\.font\(TypeScale\.pageTitle\)/);
-    for (const label of ['Length', 'Tone', 'Model', 'Effort']) {
-      expect(settings).toMatch(new RegExp(`Segmented\\("${label}",[^\\n]*caption: true\\)`));
+    // #189: the choices are system Pickers with the label above them (Caption), segmented for 2 to 3, menu for more.
+    for (const label of ['Length', 'Tone']) {
+      expect(settings).toMatch(new RegExp(`Caption\\("${label}"\\)[\\s\\S]*?Picker\\("${label}", selection: bind[^\\n]*\\n[\\s\\S]*?\\.pickerStyle\\(\\.segmented\\)`));
     }
-    expect(read('Components/Controls.swift')).toMatch(/if caption \{\s*Text\(verbatim: label\)/);
+    for (const label of ['Model', 'Effort']) {
+      expect(settings).toMatch(new RegExp(`Caption\\("${label}"\\)[\\s\\S]*?Picker\\("${label}", selection:[\\s\\S]*?\\.pickerStyle\\(\\.menu\\)`));
+    }
+    expect(settings).not.toContain('Segmented(');
+    expect(settings).toContain('private struct Caption: View');
     const app = read('AppWindow.swift');
     expect(app).toContain('NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")');
     expect(app).toContain('@objc func settingsClicked(_ sender: Any?) { show(page: .settings) }');
@@ -1010,13 +1015,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const settings = read('SettingsPage.swift');
     const pane = settings.match(/private struct PrivacySettingsPane: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     // Order: the read-only table, the switch, then the rules accordion.
-    const order = ['PermissionsSection(model: model)', 'FormRow(Self.label)', 'RulesSourceSection(model: model)'].map((x) => pane.indexOf(x));
+    const order = ['PermissionsSection(model: model)', 'Toggle(Self.label, isOn:', 'RulesSourceSection(model: model)'].map((x) => pane.indexOf(x));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     // The switch's words and behaviour are unchanged.
     expect(pane).toContain('private static let label = "Save my F5 commands to measure mistakes"');
     expect(pane).toContain('Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))');
-    expect(pane).toContain('.toggleStyle(StephenSwitch()).disabled(model.connection != .online)');
+    // #189: the switch shows its label (no labelsHidden), on the theme's accent.
+    expect(pane).toContain('.tint(t.accent).disabled(model.connection != .online)');
+    expect(pane).not.toContain('FormRow(Self.label)');
     expect(pane).toContain('Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")');
     expect(pane).toContain('if model.connection != .online { Note("Start Stephen to change this.") }');
     expect(pane).toContain('.alert("Delete the saved recordings too?", isPresented: $askDelete)');
@@ -1115,6 +1122,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(box).toContain('ChatLinks(permissions: actions.openPermissions)');
     expect(box).toContain('openPermissions: { [weak self] in selectSettingsPane(.privacy); self?.openWindow(.settings) }');
     expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
+  });
+
+  it('#189: Settings uses the Mac controls: every switch shows its label on the theme accent, no StephenSwitch', () => {
+    const settings = read('SettingsPage.swift');
+    const appearance = read('AppearanceSettings.swift');
+    expect(settings).toContain('Toggle("Speak replies out loud", isOn: bind(\\.speak)).tint(t.accent)');
+    expect(settings).toContain('Toggle("Explain steps as you go", isOn: bind(\\.explain)).tint(t.accent)');
+    expect(appearance).toContain('.tint(t.accent)');
+    expect(appearance).toContain('Text(verbatim: "Follow the Mac")');
+    expect(appearance).toContain('Text(verbatim: "Light by day, Dark at night. The window and the Ask box change together.")');
+    for (const src of [settings, appearance]) expect(src).not.toContain('labelsHidden().toggleStyle');
+    expect(settings).not.toContain('FormRow("Speak replies out loud")');
+    expect(read('Components/Controls.swift')).not.toContain('StephenSwitch');
+    // Segmented stays for the memory page (Show memory as); Settings no longer uses it.
+    expect(read('MemoryPage.swift')).toContain('Segmented("Show memory as"');
   });
 
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
