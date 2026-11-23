@@ -72,7 +72,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | closed (#110); issue #93 still open | dev | #93, `fix/steps-other-command` |
+| R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | closed (#110; issue #93 closed; release #279) | dev | #93, `fix/steps-other-command` |
 | R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | fixed (#111 merged), Mac check pending; issue #94 still open | dev | #94, `fix/retry-trust-esc-deny` |
 | R10a-3 | R10a | Low | A failed tool call reads as done in the step list | fixed (#134 merged), Mac check pending | dev | `fix/review-10a-lows` |
 | R10a-4 | R10a | Low | Home Allow and Deny delay starts when the view appears, not when the window is shown | open | dev | none |
@@ -123,7 +123,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 | R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed (#157 merged 2026-11-17) | review | #157 |
 | LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121 |
 | MJ-1 | manager job 1 | P0 | Recorder plan review | done: plan accepted with 8 points (#10, 2026-11-17); PR #166 reviewed | review | #166 |
-| I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in #170. Smaller points fixed in the follow-up PR: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Still open: Desktop and Documents in iCloud (needs a check whether that iCloud option is on); Fn+Option in the PR 2 switch text | dev | #169 |
+| I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | closed (#170, #173; release #279). #173 fixed the smaller points: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Leftovers (Desktop and Documents in iCloud; Fn+Option in the PR 2 switch text) moved to #278 | dev | #169 |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | closed (#119 resume; #129, owner chose cancel) | review, owner | `docs/adr-007-resume`, #107 |
 | MJ-6 | manager job 6 | P1 | Flaky suite research | in progress: #131, #242, #247, #262 merged; #109 and #263 open | review | #109 |
 | UI-149 | #136, UI review P12 | P2 | Home: New chat button, composer focused, shortcut hints | closed (#196 merged), Mac check pending | dev | #149 |
@@ -153,7 +153,7 @@ Severity "not rated" means the review named the problem but gave no level.
 | I-262 | macOS CI | Low | Two macOS CI flakes: Zen early exit race, cross-site iframe click read too early | closed (#262) | dev | #109, #262 |
 | I-263 | macOS CI on qa `cd8027e` | Low | `test/drivers/review1.test.ts` D4 "defaults to a 60 s Allow wait" got "Not connected." | open (flake, not rerun alone yet) | dev | #263, #109 |
 | CI-14 | GitHub, PR #259 | Low | GitHub retired the hosted `macos-14` runner on 2026-11-02; no macOS 14 job is possible | closed (#259: macOS 14 is the minimum, the `macos` job on macos-15 builds the helper for a macOS 14 target; #260 research) | review | #259, #260 |
-| I-171 | tracker | Low | Second test suite: the lock message was lost in a vitest TypeError | fixed (#178 merged); issue still open | dev | #171 |
+| I-171 | tracker | Low | Second test suite: the lock message was lost in a vitest TypeError | closed (#178; issue closed; release #279) | dev | #171 |
 | I-207 | CI #195 | Low | A click after typing is lost when the Chrome window is not painting (macOS CI) | open; CI uses headless Chrome on macOS as the workaround (#195) | dev | #207 |
 | I-208 | review of #206 | Medium | Recording on sign can lag after a hand edit of config.json; a clip can land after off or Delete | closed (#238) | dev | #208 |
 | DEC-261 | dev lane decision | Low | A "?" anywhere blocks a typed memory save too, not only a spoken one | closed (#261) | dev | #261 |
