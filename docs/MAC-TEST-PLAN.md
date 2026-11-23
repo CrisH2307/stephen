@@ -1,7 +1,7 @@
-# Mac test plan (items 1 to 4 + review 7 fixes)
+# Mac test plan
 
-Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suite green (2771 passed, 13 skipped) (the real-Chromium timing test
-`review2.int #15` is flaky under load and passes alone), real-model eval 59/60 (`mis-lofi` borderline).
+Updated: 2026-11-22, for the qa to main release. Build from `qa` (section 0). The full suite and CI results are in the
+release PR. Each section names the PRs it checks.
 
 ## How to use this plan
 1. Build first (docs/BRANCHING.md, step 3). In a terminal, in the repo folder, run:
@@ -30,6 +30,14 @@ Date: 2026-11-02. Branch `claude/nifty-johnson-yk4hv6`. Cloud results: full suit
 | 12 | UI v3.2 | 11 | 0 |
 | 13 | Latency monitor and command id | 9 | 11 |
 | 14 | Week of 2026-11-12: fixes merged into qa | 33 | 5 |
+| 15 | Fixes of 2026-11-16 and 17 | 11 | 1 |
+| 16 | Merges of 2026-11-17 | 17 | 0 |
+| 17 | UI v4 step c: Settings, sidebar resize | 8 | 0 |
+| 18 | UI v4 step d: Memory and Jobs | 9 | 0 |
+| 19 | UI v4 step e: Conversations | 9 | 0 |
+| 20 | ADR-007 v2: resume, "Open in chat" | 10 | 0 |
+| 21 | ADR-010 part a: edit and resend | 15 | 0 |
+| 22 | ADR-010 part b: Edit request on a job | 11 | 0 |
 
 ## Two-minute click check (every PR that changes helper/)
 
@@ -64,7 +72,7 @@ Write "Mac click check: done" in the PR (or what failed). If a step fails, do no
   See: all tests pass.
 - [ ] `[scripted]` **0.5** Do: run `node dist/cli.js mac-checks`.
   See: the line "the key listener is on" says PASS. If it says FAIL, do the four steps of 0.2 again. (F5 and Esc do
-  nothing without this. It is what broke the test of 2026-11-11. The line needs the key listener check PR merged.)
+  nothing without this. It is what broke the test of 2026-11-11.)
 
 ## 1. Accounts, one real call each
 - [ ] `[scripted]` **1.1** Do: run `node dist/cli.js accounts`.
@@ -401,8 +409,7 @@ Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
 Build from `qa` (section 0) and start Stephen. Then give about 10 real commands: 3 with "Hey Stephen", 3 with F5, 1 typed in
 the Ask box, 1 timer ("set a timer for one minute"), and 2 that use the browser ("open YouTube").
 
-**The scripted checks in 13.1 and 13.3 need PR #98 merged** (branch `feat/mac-checks`). It adds `node dist/cli.js mac-checks`.
-Before that PR is merged, the command does not exist and those checks cannot be run.
+The scripted checks in 13.1 and 13.3 use `node dist/cli.js mac-checks`.
 
 ### 13.1 The log is written and private (scripted)
 Do: give one browser command ("open YouTube"). Then run `node dist/cli.js mac-checks`.
@@ -532,7 +539,7 @@ Give a few real commands first (see the start of section 13).
   See: in the `ptt / model` block, rows that start with `tool ` and the tool name, each with p50 and p95. Rows `cold start` or `warm start`. A line `tier (shadow):` with counts. (S4-13, #43, #117)
 - [ ] `[hands]` **14.32** Do: run `node dist/cli.js latency --days 1` and look at the line `ptt / model  (n=..., ok ..`.
   See: slow or failed commands show as `not timed: cancelled 1` (or `error 1`) and are not inside the p50 and p95 numbers. (R10a-7, #43, #117)
-- [ ] `[hands]` **14.33** Do: run `tail -n 1 ~/.stephen/telemetry/latency-$(date +%F).jsonl` (use `~/.browser-hub` if `doctor` says Stephen still uses the old folder).
+- [ ] `[hands]` **14.33** Do: run `tail -n 1 ~/.browser-hub/telemetry/latency-$(date +%F).jsonl`. This is the folder on your Mac today: `doctor` says "using the legacy folder" and names `.browser-hub`. If `doctor` does not say that, use `~/.stephen` instead of `~/.browser-hub`.
   See: one line with an id, numbers and short code words (for example `asr`, `tts`, `start`, `tier`). No words you said, no web address. (Plan Q20, #43, #117) (The report does not print the ASR model or the TTS engine. Only this file has them.)
 
 ### 14.7 The Ask box opens from the sidebar and with ⌘K (PR #118, issue #87)
@@ -559,6 +566,8 @@ At the end, remove your memory test items: `node dist/cli.js memory list`, then 
 ### 15.1 Questions do not save memory (PR #128, issue #122)
 - [ ] `[hands]` **15.1** Do: hold F5 and say "Can you remember my sister's name". Then hold F5 and say "Don't forget my keys". Then run `node dist/cli.js memory list`.
   See: Stephen answers both like normal questions. Nothing new is in the list. (R10b-1, R10b-3, #122, #128)
+- [ ] `[hands]` **15.1b** Do: type "remember that? I parked on level 3" in the Ask box and press Return. Then hold F5 and say the same line, with a question in your voice after "remember that". Then run `node dist/cli.js memory list`.
+  See: Stephen answers both like normal requests. Nothing new is in the list, typed or spoken. (#261) If the spoken words show no "?", say so in the issue.
 - [ ] `[hands]` **15.2** Do: say "Hey Stephen, remember that my gym is Goodlife" with the wake word. Then say "Hey Stephen, keep in mind that my bike is blue".
   See: the first one asks first, and the question says `You said "remember that …"`. Click Deny. The second one asks nothing and saves nothing. (R10b-4, #122, #128)
 
@@ -601,7 +610,7 @@ The ids in brackets are the findings and pull requests. If a check fails, put th
 At the end, remove your memory test items: `node dist/cli.js memory list`, then `node dist/cli.js memory forget <id>` for each one you added.
 
 ### 16.1 Shadow tier uses the site list (PR #157, finding R10b-6)
-- [ ] `[hands]` **16.1** Do: hold F5 and say "open YouTube". Then run `tail -n 1 ~/.stephen/telemetry/latency-$(date +%F).jsonl` (use `~/.browser-hub` if `doctor` says Stephen still uses the old folder). You can also run `node dist/cli.js latency --days 1 --json` and look at the tiers.
+- [ ] `[hands]` **16.1** Do: hold F5 and say "open YouTube". Then run `tail -n 1 ~/.browser-hub/telemetry/latency-$(date +%F).jsonl`. This is the folder on your Mac today: `doctor` says "using the legacy folder" and names `.browser-hub`. If `doctor` does not say that, use `~/.stephen` instead of `~/.browser-hub`. You can also run `node dist/cli.js latency --days 1 --json` and look at the tiers.
   See: the last line has `"tier":1` (not `"tier":2`). In `node dist/cli.js latency --days 1`, the line `tier (shadow):` shows `1` with a count (the text is like `1 1`). The label only shows the tier. What Stephen does is the same as before. (R10b-6, #157)
 
 ### 16.2 Menu bar icon by shape (PR #159, issue #143)
@@ -678,6 +687,7 @@ Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Ha
   See: no "New from your chats" box at first. After Return it appears at the top, above the search field, with Keep, Edit and Skip. Nothing is in `node dist/cli.js memory list` yet.
 - [ ] `[hands]` **18.3** Do: on that row press Edit, change the words, press Return, then Keep. Tell Stephen something else and press Skip.
   See: Return in the edit field does not keep it; only the Keep click does. After Keep the edited words are in `memory list`. After Skip the row goes and nothing is saved.
+  Also: tell Stephen one more thing, press Edit, delete all the words and click Keep. See: the note "Empty, nothing kept." The edit field stays open and nothing new is in `memory list`.
 - [ ] `[hands]` **18.4** Do: if you have a suggestion from an email or a page (third-party text), look at its row.
   See: its words are shown exactly, and the line under them says "third-party text, check it" in amber.
 - [ ] `[hands]` **18.5** Do: press ⌘F, type a word. Click a node. Make the window as wide as it goes, then as narrow as it goes.
@@ -770,6 +780,8 @@ phone.
   See: `[DEV REVIEW]` a confirm alert "Delete this version?" comes first. Cancel keeps everything. Delete removes only the edited message and what followed it in that version. Version 1 and the earlier turns stay.
 - [ ] `[hands]` **21.9b** Do: edit a message again so it has two versions, show version 1 and click "Delete this version", then Delete. Open version 2 in chat and ask "what did I ask before this?".
   See: version 1 and what followed it are gone. Version 2 shows no "earlier part has expired" line, and Stephen still knows the turns before the edited message.
+- [ ] `[hands]` **21.9c** Do: start a new chat with three messages. Edit message 2, so it has two versions. Show version 1 of message 2, then edit message 3 (the one after it in version 1). Now show version 1 of message 2 again and click "Delete this version", then Delete.
+  See: `[DEV REVIEW]` the note "Another version still uses these messages." Nothing is deleted: both versions of message 2 and both versions of message 3 are still there. (#266)
 - [ ] `[hands]` **21.10** Do: show version 2 of a row and click "Open in chat", then type a follow-up on Home.
   See: Stephen continues version 2 (it knows "play jazz", not the old later turns). "Continuing an earlier chat" shows as in section 20.
 - [ ] `[hands]` **21.11** Do: edit the wake-word row's text and send it. Note `app.speakReplies` in config.json.
@@ -790,7 +802,8 @@ finish. Start a second job, "start a job to write a long story about snow", and 
 - [ ] `[hands]` **22.2** Do: click Stop on the running job. When it says Stopped, look at its row again.
   See: "Edit request" is on now, and the "Stop the job first" line is gone.
 - [ ] `[hands]` **22.3** Do: on the finished poem job, click "Edit request".
-  See: an editor opens with the old request prefilled ("write a short poem about rain"), a line that this starts a new job and that nothing starts until you allow it, and Continue and Cancel. Cancel closes it. Nothing is sent.
+  See: an editor opens with the old request prefilled ("write a short poem about rain"), a line that this starts a new job and that nothing starts until you allow it, and Continue and Cancel. Under the field, a counter "N of 440 characters". Cancel closes it. Nothing is sent.
+  Then paste a long text (more than 440 characters) into the field. See: the counter turns red and Continue is off. Delete text until the counter is 440 or less: Continue is on again. (#269)
 - [ ] `[hands]` **22.4** Do: click "Edit request" again, change it to "write a short poem about rain in French" and click Continue. Read the dialog, then click Deny.
   See: `[DEV REVIEW]` the same "Stephen: start a background job?" dialog as a new job, with every field: "Edited job, from <old job id>.", the Task (it quotes "Earlier request (a record)" and then your edit), "Folder: a new folder in <your jobs folder>, next to the old one. Its name is shown when the job starts.", "Input files: a copy of the old job folder ... symlinks are skipped", Budgets, Web: off, Model. After Deny: a note "Okay, I didn't start it." No new row, no new folder in Stephen Jobs. The dialog names no version and nothing ending in `-v2`.
 - [ ] `[hands]` **22.5** Do: do 22.4 again and click Allow this time.
