@@ -222,9 +222,9 @@ describe.each(PROTOCOLS)('page engine snapshot over %s', (protocol) => {
     const s = await pe.snapshot(page, TAB, { filter: 'interactive', maxChars: 20000 });
     await pe.click(page, refIn(s.text, /button "Child button"/));
     await pe.type(page, refIn(s.text, /textbox "Child input"/), 'inside frame');
-    await pe.click(page, refIn(s.text, /link "Cross link"/));
-    // The cross-site iframe runs in another renderer process: the click's mousedown and our reads reach it on
-    // separate channels, so its text can change after click() returns (#109). Wait for it.
+    // undefined = the click reached the link and the frame reacted. A note names why not (#109).
+    expect(await pe.click(page, refIn(s.text, /link "Cross link"/))).toBeUndefined();
+    // The cross-site iframe runs in another renderer process, so read its text with a wait.
     await pe.waitFor(page, { text: 'cross clicked', timeoutMs: 3000 });
     const same = page.frames().find((f) => f.url().endsWith('/frame-child.html') && f !== page.mainFrame());
     const cross = page.frames().find((f) => f.url().includes('/frame-cross.html'));
