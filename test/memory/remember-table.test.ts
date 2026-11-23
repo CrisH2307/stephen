@@ -64,6 +64,26 @@ const TABLE: [string, Want, Want, Want][] = [
   ['Note my keys', 'N', 'N', 'N'],
   ['Keep in mind that my flight is at nine', 'S', 'S', 'N'],
   ['Keep in mind my keys', 'N', 'N', 'N'],
+  // questions without a "?" (post-release review of #128, #162): an auxiliary, modal or wh-word opener
+  ['Remember is my gym open today', 'N', 'N', 'N'],
+  ['Remember do I have a dentist appointment', 'N', 'N', 'N'],
+  ['Remember whose car is that', 'N', 'N', 'N'],
+  ['Remember which bus goes downtown', 'N', 'N', 'N'],
+  ['Remember whether my gym is open', 'N', 'N', 'N'],
+  ['Can you remember that is my gym open today', 'N', 'N', 'N'],
+  // other question marks (U+2753, U+FE56, U+2047)
+  ['Remember my gym❓', 'N', 'N', 'N'],
+  ['Remember my gym﹖', 'N', 'N', 'N'],
+  ['Remember my gym⁇', 'N', 'N', 'N'],
+  // voice to-dos: should, must, supposed to (typed still saves, as today)
+  ['Remember I should pay the rent', 'S', 'N', 'N'],
+  ['Remember I must pay the rent', 'S', 'N', 'N'],
+  ['Remember I am supposed to pay the rent', 'S', 'N', 'N'],
+  // real facts that still save (the new rules must not catch them)
+  ['Remember my gym is goodlife', 'S', 'S', 'S'],
+  ['Remember I parked on level 3', 'S', 'S', 'S'],
+  ["Remember that my sister's name is Ana", 'S', 'S', 'S'],
+  ['Remember I have a dentist appointment on Friday', 'S', 'S', 'S'],
 ];
 
 /** What the real caller of `source` passes to MemoryRouter.route for `phrase`. */
