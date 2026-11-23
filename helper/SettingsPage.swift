@@ -152,6 +152,14 @@ private struct Note: View {
   var body: some View { Text(verbatim: text).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true) }
 }
 
+/// The label above a choice (#147). The Picker under it is read to VoiceOver with the same name, so this is hidden there.
+private struct Caption: View {
+  @Environment(\.stephenTheme) var t
+  let text: String
+  init(_ text: String) { self.text = text }
+  var body: some View { Text(verbatim: text).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.ink2).accessibilityHidden(true) }
+}
+
 /** A section header in the pane's own words. */
 private func header(_ s: String) -> some View { return Text(verbatim: s) }
 
@@ -192,8 +200,24 @@ private struct VoiceSettingsPane: View {
         Section { Note(model.settingsNotice ?? "Stephen's settings are not available yet. Start Stephen and open this page again.") }
       } else {
         Section {
-          Segmented("Length", options: [("brief", "Brief"), ("balanced", "Balanced"), ("detailed", "Detailed")], selection: bind(\.length), caption: true)
-          Segmented("Tone", options: [("casual", "Casual"), ("friendly", "Friendly"), ("formal", "Formal")], selection: bind(\.tone), caption: true)
+          VStack(alignment: .leading, spacing: Space.xs) {
+            Caption("Length")
+            Picker("Length", selection: bind(\.length)) {
+              Text("Brief").tag("brief")
+              Text("Balanced").tag("balanced")
+              Text("Detailed").tag("detailed")
+            }
+            .labelsHidden().pickerStyle(.segmented)
+          }
+          VStack(alignment: .leading, spacing: Space.xs) {
+            Caption("Tone")
+            Picker("Tone", selection: bind(\.tone)) {
+              Text("Casual").tag("casual")
+              Text("Friendly").tag("friendly")
+              Text("Formal").tag("formal")
+            }
+            .labelsHidden().pickerStyle(.segmented)
+          }
           FormRow("Speak replies out loud") { switchView("Speak replies out loud", bind(\.speak)) }
           FormRow("Explain steps as you go") { switchView("Explain steps as you go", bind(\.explain)) }
         }
