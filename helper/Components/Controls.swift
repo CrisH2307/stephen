@@ -69,7 +69,7 @@ struct Tag: View {
   }
 }
 
-/// Segmented control (Length, Tone). Track is surface-2, the chosen segment is surface with a strong outline (3:1 on
+/// Segmented control (Show memory as). Settings uses the system Picker now (#189). Track is surface-2, the chosen segment is surface with a strong outline (3:1 on
 /// the track, #146). `caption: true` writes the label above it (#147); VoiceOver reads the label either way.
 struct Segmented<Value: Hashable>: View {
   @Environment(\.stephenTheme) var t
@@ -155,30 +155,6 @@ struct AskField: View {
     .padding(.horizontal, large ? Space.l : Space.m).padding(.vertical, large ? Space.l : 10)
     .background(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).fill(t.surface))
     .overlay(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).stroke(t.lineStrong, lineWidth: 1))
-  }
-}
-
-/// On / off switch: "on" is the accent track (3:1 or more on its ground and on the off track), "off" is surface-2 with
-/// a strong outline, so on and off differ by colour and not only by knob position (#146). Use with
-/// `.toggleStyle(StephenSwitch())`. ponytail: not used yet; the call sites (SettingsPage, AppearanceSettings) are a
-/// follow-up for the dev lane.
-struct StephenSwitch: ToggleStyle {
-  @Environment(\.stephenTheme) var t
-  func makeBody(configuration: Configuration) -> some View {
-    let on = configuration.isOn
-    return Button { configuration.isOn.toggle() } label: {
-      ZStack(alignment: on ? .trailing : .leading) {
-        Capsule().fill(on ? t.accent : t.surface2)
-          .overlay(Capsule().stroke(on ? t.accent : t.lineStrong, lineWidth: 1))
-        Circle().fill(t.surface).overlay(Circle().stroke(on ? Color.clear : t.lineStrong, lineWidth: 1))
-          .padding(2)
-      }
-      .frame(width: 34, height: 20)
-      .stephenAnimation(value: on)
-    }
-    .buttonStyle(.plain)
-    // VoiceOver reads it as the system switch: its label, on or off.
-    .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
   }
 }
 
