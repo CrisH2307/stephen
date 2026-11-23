@@ -61,7 +61,7 @@ and compare turns. ADR-008 measurement 4 (F5 "open Safari" x20) is still open an
 | Today | One idle `serve` 52 MB (ADR-008). The listener, the speech models and the helper are not measured. CPU while waiting for the wake word, battery and disk are not measured. |
 | Target | Idle (waiting for the wake word): under 3% of one core, under 400 MB for all Stephen processes, no measurable battery drain beyond the mic being on. Disk: under 1 GB including speech models, logs capped. |
 | Gap | No numbers for the biggest parts. |
-| Next step | A 10-minute idle run on the Mac: `scripts/measure-idle.sh` (samples `ps -axo pid,rss,%cpu,command` every 10 s for Stephen's processes, plus `du -sh ~/.stephen`). Paste the totals into this file. |
+| Next step | A 10-minute idle run on the Mac: `scripts/measure-idle.sh` (Stephen running, other Claude Code sessions closed). Paste the totals into this file. |
 
 ## 6. Cost per day
 

@@ -1,157 +1,61 @@
 #!/bin/bash
-# Measures Stephen's idle CPU, memory, and disk usage on macOS.
-# Usage: measure-idle.sh [--seconds N]
-# Default: 600 seconds (10 minutes), sample every 10 seconds
+# Stephen's idle CPU, memory and disk on macOS (docs/NFR-STEPHEN.md section 5).
+# Usage: scripts/measure-idle.sh [--seconds N]   (default 600: one sample every 10 s for 10 minutes)
+# Prints only process kinds, numbers and sizes. Never a command line (it can hold paths or ids).
+# Close other Claude Code sessions first: they start their own "serve" processes, which would be counted too.
+set -u
 
-set -e
-
-# Default duration
-DURATION=600
+SECONDS_TOTAL=600
 INTERVAL=10
+if [ "${1:-}" = "--seconds" ] && [ -n "${2:-}" ]; then SECONDS_TOTAL=$2
+elif [ $# -gt 0 ]; then echo "Usage: $0 [--seconds N]" >&2; exit 2; fi
 
-# Parse --seconds option
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --seconds)
-      shift
-      DURATION="$1"
-      shift
-      ;;
-    *)
-      echo "Usage: $0 [--seconds N]" >&2
-      exit 1
-      ;;
-  esac
-done
-
-# Calculate number of samples
-SAMPLES=$((DURATION / INTERVAL))
-
-# Create temp file for collecting samples
-SAMPLE_FILE=$(mktemp /tmp/stephen_samples_XXXXXX)
-
-cleanup() {
-  rm -f "$SAMPLE_FILE"
-}
-trap cleanup EXIT
-
-# Collect samples - avoid subshell by using process substitution
-sample_count=0
-while [ $sample_count -lt $SAMPLES ]; do
-  # Get Stephen processes and process them without subshell
-  ps -axo pid=,rss=,%cpu=,command= 2>/dev/null | grep -E '(node.*dist/cli\.js|Stephen Helper|sherpa-onnx)' | grep -v 'grep' > /tmp/ps_out_$$
-  
-  while read -r pid rss cpu cmd; do
-    # Determine process name
-    if echo "$cmd" | grep -q 'node.*dist/cli\.js'; then
-      if echo "$cmd" | grep -q 'serve'; then
-        name="serve"
-      else
-        name="cli"
-      fi
-    elif echo "$cmd" | grep -q 'Stephen Helper'; then
-      name="Stephen Helper"
-    elif echo "$cmd" | grep -q 'sherpa-onnx'; then
-      name="sherpa-onnx"
-    else
-      continue
-    fi
-    # Store: name|rss|cpu
-    printf "%s|%s|%s\n" "$name" "$rss" "$cpu" >> "$SAMPLE_FILE"
-  done < /tmp/ps_out_$$
-  
-  rm -f /tmp/ps_out_$$
-  
-  sample_count=$((sample_count + 1))
-  if [ $sample_count -lt $SAMPLES ]; then
-    sleep $INTERVAL
-  fi
-done
-
-# Process all samples - handle spaces in process names
-# Use a while loop with IFS to read process names with spaces
-OLDIFS="$IFS"
-IFS=$'\n'
-PROCESS_NAMES=$(cut -d'|' -f1 "$SAMPLE_FILE" 2>/dev/null | sort -u)
-for name in $PROCESS_NAMES; do
-  # Restore IFS for the rest of processing
-  IFS="$OLDIFS"
-  
-  proc_rss=$(grep "^${name}|" "$SAMPLE_FILE" | cut -d'|' -f2)
-  proc_cpu=$(grep "^${name}|" "$SAMPLE_FILE" | cut -d'|' -f3)
-  
-  if [ -n "$proc_rss" ]; then
-    proc_count=$(echo "$proc_rss" | wc -w | tr -d ' ')
-    
-    # Max RSS
-    proc_max=$(echo $proc_rss | tr ' ' '\n' | sort -n | tail -1)
-    proc_max_mb=$(echo "scale=1; $proc_max / 1024" | bc)
-    
-    # Median RSS
-    proc_med_rss=$(echo $proc_rss | tr ' ' '\n' | sort -n | sed -n "$(( (proc_count + 1) / 2 ))p")
-    proc_med_rss_mb=$(echo "scale=1; $proc_med_rss / 1024" | bc)
-    
-    # Median CPU
-    proc_med_cpu=$(echo $proc_cpu | tr ' ' '\n' | sort -n | sed -n "$(( (proc_count + 1) / 2 ))p")
-    
-    # p95 CPU
-    proc_p95_pos=$((proc_count * 95 / 100))
-    if [ $proc_p95_pos -lt 1 ]; then
-      proc_p95_pos=1
-    fi
-    proc_p95_cpu=$(echo $proc_cpu | tr ' ' '\n' | sort -n | sed -n "${proc_p95_pos}p")
-    
-    echo "$name $proc_max_mb $proc_med_rss_mb $proc_med_cpu $proc_p95_cpu"
-  fi
-  
-  IFS=$'\n'
-done
-IFS="$OLDIFS"
-
-# Total stats
-all_rss=$(cut -d'|' -f2 "$SAMPLE_FILE")
-all_cpu=$(cut -d'|' -f3 "$SAMPLE_FILE")
-
-if [ -n "$all_rss" ]; then
-  total_count=$(echo "$all_rss" | wc -w | tr -d ' ')
-  
-  total_max=$(echo $all_rss | tr ' ' '\n' | sort -n | tail -1)
-  total_max_mb=$(echo "scale=1; $total_max / 1024" | bc)
-  
-  total_med_rss=$(echo $all_rss | tr ' ' '\n' | sort -n | sed -n "$(( (total_count + 1) / 2 ))p")
-  total_med_rss_mb=$(echo "scale=1; $total_med_rss / 1024" | bc)
-  
-  total_med_cpu=$(echo $all_cpu | tr ' ' '\n' | sort -n | sed -n "$(( (total_count + 1) / 2 ))p")
-  
-  total_p95_pos=$((total_count * 95 / 100))
-  if [ $total_p95_pos -lt 1 ]; then
-    total_p95_pos=1
-  fi
-  total_p95_cpu=$(echo $all_cpu | tr ' ' '\n' | sort -n | sed -n "${total_p95_pos}p")
-  
-  echo ""
-  echo "=== Total ==="
-  echo "total $total_max_mb $total_med_rss_mb $total_med_cpu $total_p95_cpu"
-else
-  echo "No Stephen processes found during the sample period"
+# Stephen's home, as src/config.ts resolveStephenHome finds it.
+HOME_DIR=${STEPHEN_HOME:-${BROWSER_HUB_HOME:-}}
+if [ -z "$HOME_DIR" ]; then
+  HOME_DIR=$HOME/.stephen
+  [ ! -d "$HOME_DIR" ] && [ -d "$HOME/.browser-hub" ] && HOME_DIR=$HOME/.browser-hub
 fi
 
-# Disk usage
-echo ""
-echo "=== Disk usage ==="
+SAMPLES=$(mktemp "${TMPDIR:-/tmp}/stephen-idle.XXXXXX")
+trap 'rm -f "$SAMPLES"' EXIT
 
-if [ -d "$HOME/.stephen" ]; then
-  stephen_size=$(du -sh "$HOME/.stephen" 2>/dev/null | cut -f1)
-  echo "~/.stephen $stephen_size"
-else
-  echo "~/.stephen not found"
-fi
-
-# Check for speech model directories
-for dir in "$HOME/.stephen/speech" "$HOME/.stephen/models" "$HOME/.stephen/voice"; do
-  if [ -d "$dir" ]; then
-    model_size=$(du -sh "$dir" 2>/dev/null | cut -f1)
-    basename=$(basename "$dir")
-    echo "$basename $model_size"
-  fi
+n=0
+end=$(( $(date +%s) + SECONDS_TOTAL ))
+while :; do
+  n=$((n + 1))
+  # One line per process: sample, kind, rss KB, cpu %. The kind is decided here; the command line goes nowhere.
+  ps -axo rss=,%cpu=,command= | awk -v s="$n" '
+    /dist\/cli\.js listen/ { k = "listen" }
+    /dist\/cli\.js serve/  { k = "serve" }
+    /dist\/cli\.js jobs _run/ { k = "job" }
+    /Stephen Helper/        { k = "helper" }
+    k != "" { print s, k, $1, $2; k = "" }' >> "$SAMPLES"
+  [ "$(date +%s)" -ge "$end" ] && break
+  sleep "$INTERVAL"
 done
+
+# Per sample, sum each kind (several serves count together), then take max, median and p95 over the samples.
+awk -v samples="$n" '
+  { mem[$1 SUBSEP $2] += $3; cpu[$1 SUBSEP $2] += $4; kinds[$2] = 1; tm[$1] += $3; tc[$1] += $4 }
+  function pct(a, cnt, p,   i) { asorti_n(a, cnt); i = int((cnt - 1) * p + 0.5) + 1; return srt[i] }
+  function asorti_n(a, cnt,   i, j, t) { for (i = 1; i <= cnt; i++) srt[i] = a[i];
+    for (i = 2; i <= cnt; i++) { t = srt[i]; for (j = i - 1; j >= 1 && srt[j] > t; j--) srt[j + 1] = srt[j]; srt[j + 1] = t } }
+  function row(name, m, c,   mx, i) { mx = 0; for (i = 1; i <= samples; i++) if (m[i] > mx) mx = m[i]
+    printf "%-8s %9.0f %9.0f %8.1f %8.1f\n", name, mx / 1024, pct(m, samples, 0.5) / 1024, pct(c, samples, 0.5), pct(c, samples, 0.95) }
+  END {
+    printf "Samples: %d (every 10 s)\n\n%-8s %9s %9s %8s %8s\n", samples, "process", "max MB", "med MB", "med CPU", "p95 CPU"
+    for (k in kinds) { delete m; delete c; for (i = 1; i <= samples; i++) { m[i] = mem[i SUBSEP k] + 0; c[i] = cpu[i SUBSEP k] + 0 }; row(k, m, c) }
+    delete m; delete c; for (i = 1; i <= samples; i++) { m[i] = tm[i] + 0; c[i] = tc[i] + 0 }; row("total", m, c)
+    if (!length(kinds)) print "\nNo Stephen process was running. Start Stephen and run this again."
+  }' "$SAMPLES"
+
+echo
+echo "Disk:"
+if [ -d "$HOME_DIR" ]; then
+  echo "  Stephen home  $(du -sh "$HOME_DIR" 2>/dev/null | cut -f1)"
+  [ -d "$HOME_DIR/models" ] && echo "  speech models $(du -sh "$HOME_DIR/models" 2>/dev/null | cut -f1)"
+else
+  echo "  Stephen home not found"
+fi
+exit 0
