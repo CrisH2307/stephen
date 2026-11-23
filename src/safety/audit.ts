@@ -177,13 +177,21 @@ export class AuditLog implements IAuditLog {
       }
       // fstat the open file on every write: a file recreated from outside (logrotate `create 0644`) gets 0600 back
       // before our line goes in, and the size kept in memory comes from the file we really write to.
-      const fh = await fs.open(this.path, 'a', 0o600);
+      // 'a+' (not 'a') so the last byte can be read: a torn line from an earlier failed write has no "\n" at its end,
+      // and the next line must start on a line of its own, never join the torn one.
+      const fh = await fs.open(this.path, 'a+', 0o600);
       try {
         const st = await fh.stat();
         if ((st.mode & 0o777) !== 0o600) await fh.chmod(0o600);
+        let prefix = '';
+        if (st.size > 0) {
+          const last = Buffer.alloc(1);
+          await fh.read(last, 0, 1, st.size - 1);
+          if (last[0] !== 0x0a) prefix = '\n';
+        }
         writing = true;
-        await fh.appendFile(line);
-        size = st.size;
+        await fh.appendFile(prefix + line);
+        size = st.size + prefix.length;
       } finally {
         await fh.close();
       }
