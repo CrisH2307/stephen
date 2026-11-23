@@ -33,7 +33,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 | S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | closed (#112) | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | closed (#95) | review | `docs/review-10a`, PR #95 |
 | S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170, #173 and #238 (#208); PR 2 (Settings switch, owner-only app.sock `replay.set`, "Recording on" sign) merged (#206); PR 3 mark not started | dev | #48, `feat/replay-recorder`, `feat/replay-switch-48` |
-| S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | closed (#98, #99, #105: `mac-checks` and the plain test plan); the Mac pass itself is #49, owner | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
+| S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | closed (#98, #99, #105, #276: `mac-checks` and the plain test plan; release #279); the Mac pass itself is #49, owner | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed (#114 merged; issue #90 closed), Mac check pending (test plan 14.4) | dev | #90, #54, #68, `fix/remember-once` |
 | S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed (#118 merged; issue #87 closed), Mac check pending | dev | #87, `fix/ask-button` |
 | S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | closed (#115, #116) | dev | #65, #67, `fix/claude-cli-contract` |
@@ -63,7 +63,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 | PL-7 | review 3.2 | P1 | `ui/chat-title` (F1) deferred to phase 3 | open | dev | #77 |
 | PL-8 | review 3.2 | P1 | C2 UI items wait for C5: live steps, section pages, Connected and Permissions, recents | open: unblocked by #241 (C5); parts landed in UI v4 (#246, #252 to #255); the issue needs a check of what is left | dev | #57 |
 | PL-9 | plan C1 | P0 | Persist conversations and steps by command id (blocked on ADR-007) | closed (#257 v1 store, #258 v2 resume; #258 Mac check done before merge) | dev | #55 |
-| PL-10 | plan C4 | P0 | Review 10b and release | in progress: Review 10b done (#124), release prepared 2026-11-21 | review | #58 |
+| PL-10 | plan C4 | P0 | Review 10b and release | closed (Reviews 10a #95 and 10b #124, release #279) | review | #58 |
 | PL-11 | plan C6 | P1 | helper.sock nonce (peer user check already exists, review fact 35) | open | dev | #70 |
 | PL-12 | plan B4 | P2 | Memory full: already built (review fact 33); close the issue after a check | fixed in code | dev | #79 |
 | PL-13 | issue | P2 | Ask box: multi-line input and longer limit | fixed (#167 merged), Mac check pending | dev | #88 |
