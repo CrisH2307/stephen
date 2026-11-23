@@ -140,6 +140,17 @@ does). Local first; nothing is uploaded automatically. Sending is a human action
 | Gap | The macOS parts are called directly from several places. |
 | Next step | A design note for the platform seam (key listener, secret store, speaker, app launcher, file permissions) before any Windows code. Dev lane. |
 
+## Decisions from Cris (2026-11-23)
+
+The dev lane asked four questions. Cris's answers, so nobody has to ask again:
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Should Stephen have a daily spending limit? | Yes, a free daily limit, on by default, with a warning before the limit is reached. We do not know yet where money would come from, so each person uses their own Claude account and the limit protects them. Plan in section 6. |
+| 2 | Is 15 minutes, from nothing to the first spoken command, the right setup target for a friend? | Yes, try it. Cris will have friends set Stephen up and report how long it took and where they got stuck. Section 7. |
+| 3 | Crash reports: send by hand, after reading the file? | Stephen (or an agent) reports a crash or incident on its own, like an on-call page. The agents get it a few minutes after the report (after a short edit window, not an hourly check), investigate as maintainers, and Cris has a switch: let the agent fix it, or fix it himself. Same on GitHub. Section 9, incident loop. |
+| 4 | Sign the app for the public release? | Later, after the friends release; there is more to build first. Section 8. |
+
 ## What to measure next (in order)
 
 1. Idle resource run (section 5), 10 minutes, no code.
