@@ -143,6 +143,7 @@ enum TypeScale {
   static let body = Font.system(size: 15)
   static let secondary = Font.system(size: 13)
   static let sectionLabel = Font.system(size: 12, weight: .semibold)
+  static let eyebrow = Font.system(size: 12)
   static let mono = Font.system(size: 13, design: .monospaced)
 }
 
@@ -155,6 +156,11 @@ extension View {
   /// Section label look (v4): 12 pt semibold, sentence case as written, no tracking, ink-2.
   func sectionLabelStyle(_ t: Theme) -> some View {
     return self.font(TypeScale.sectionLabel).foregroundColor(t.ink2)
+  }
+
+  /// Eyebrow look (v4): the small "kind" word above a list title, 12 pt regular, ink-2.
+  func eyebrowStyle(_ t: Theme) -> some View {
+    return self.font(TypeScale.eyebrow).foregroundColor(t.ink2)
   }
 
   /// The pre-v4 label look (11 pt medium, upper case, tracked). Pinned on the two safety labels, the question card's
