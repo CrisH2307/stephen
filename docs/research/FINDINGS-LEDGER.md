@@ -33,7 +33,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 | S4-2 A7 | review 4 | P0 | "Forget that" same-ms tie; Linux `process-cwd` tty; `runner.ts:192` literal | closed (#112) | dev | #52, `fix/forget-tie-ps-tty` |
 | S4-3 R10a | review 4 | P0 | Review 10a over `013696d..qa` | closed (#95) | review | `docs/review-10a`, PR #95 |
 | S4-4 A6a | review 4 | P0 | Replay recorder and "that was wrong" mark | in progress: PR 1 (recorder, off by default, F5 only, 30-day purge, `stephen replay delete`) merged (#166), fixes #170, #173 and #238 (#208); PR 2 (Settings switch, owner-only app.sock `replay.set`, "Recording on" sign) merged (#206); PR 3 mark not started | dev | #48, `feat/replay-recorder`, `feat/replay-switch-48` |
-| S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | closed (#98, #99, #105: `mac-checks` and the plain test plan); the Mac pass itself is #49, owner | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
+| S4-5 A1 | review 4 | P0 | Check script and plain Mac test steps | closed (#98, #99, #105, #276: `mac-checks` and the plain test plan; release #279); the Mac pass itself is #49, owner | review | #91, #49, `feat/mac-checks`, `docs/mac-test-plain` |
 | S4-6 B5 B2 | review 4 | P0 | "Remember" needs repeating; memory accuracy set | fixed (#114 merged; issue #90 closed), Mac check pending (test plan 14.4) | dev | #90, #54, #68, `fix/remember-once` |
 | S4-7 | review 4 | P1 | Ask Stephen button does nothing | fixed (#118 merged; issue #87 closed), Mac check pending | dev | #87, `fix/ask-button` |
 | S4-8 A5 A8 | review 4 | P1 | CLI contract: `--effort` probe, version range, stream-json fixture | closed (#115, #116) | dev | #65, #67, `fix/claude-cli-contract` |
@@ -63,7 +63,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 | PL-7 | review 3.2 | P1 | `ui/chat-title` (F1) deferred to phase 3 | open | dev | #77 |
 | PL-8 | review 3.2 | P1 | C2 UI items wait for C5: live steps, section pages, Connected and Permissions, recents | open: unblocked by #241 (C5); parts landed in UI v4 (#246, #252 to #255); the issue needs a check of what is left | dev | #57 |
 | PL-9 | plan C1 | P0 | Persist conversations and steps by command id (blocked on ADR-007) | closed (#257 v1 store, #258 v2 resume; #258 Mac check done before merge) | dev | #55 |
-| PL-10 | plan C4 | P0 | Review 10b and release | in progress: Review 10b done (#124), release prepared 2026-11-21 | review | #58 |
+| PL-10 | plan C4 | P0 | Review 10b and release | closed (Reviews 10a #95 and 10b #124, release #279) | review | #58 |
 | PL-11 | plan C6 | P1 | helper.sock nonce (peer user check already exists, review fact 35) | open | dev | #70 |
 | PL-12 | plan B4 | P2 | Memory full: already built (review fact 33); close the issue after a check | fixed in code | dev | #79 |
 | PL-13 | issue | P2 | Ask box: multi-line input and longer limit | fixed (#167 merged), Mac check pending | dev | #88 |
@@ -72,8 +72,8 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | closed (#110); issue #93 still open | dev | #93, `fix/steps-other-command` |
-| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | fixed (#111 merged), Mac check pending; issue #94 still open | dev | #94, `fix/retry-trust-esc-deny` |
+| R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | closed (#110; issue #93 closed; release #279) | dev | #93, `fix/steps-other-command` |
+| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | closed (#111; Mac check passed 2026-11-23; issue #94 closed; release #279) | dev | #94, `fix/retry-trust-esc-deny` |
 | R10a-3 | R10a | Low | A failed tool call reads as done in the step list | fixed (#134 merged), Mac check pending | dev | `fix/review-10a-lows` |
 | R10a-4 | R10a | Low | Home Allow and Deny delay starts when the view appears, not when the window is shown | open | dev | none |
 | R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | fixed (#111 merged), Mac check pending | dev | `fix/retry-trust-esc-deny` |
@@ -88,7 +88,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | fixed in code by #108, Mac check pending (checked 2026-11-17, see #10) | dev | #86, `fix/mic-stop-f5` |
+| R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | closed (#108; Mac check passed 2026-11-23; release #279) | dev | #86, `fix/mic-stop-f5` |
 | R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed (#152 merged), Mac check pending | dev | #106, #152 |
 | R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | fixed (#129 merged; owner chose cancel, 2026-11-16), Mac check pending | dev | #107, #129 |
 | R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed (#111 merged), Mac check pending | dev | `fix/retry-trust-esc-deny` |
@@ -99,7 +99,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 |---|---|---|---|---|---|---|
 | I-109 | tracker #10 | Low | Full test suite flaky under CPU load (fixed sleeps in the clicks eval; two suites at once) | in progress: #131, #178, #242, #247 and #262 fixed races; macOS CI had 10 green runs (#195); a new macOS flake on 2026-11-22 is #263 (row I-263) | dev | #109, #131 |
 | I-121 | Linux run for #112 | Low | Linux: `ps` start time reads 1 s early; a job's first-second process may be left running | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121, #132 |
-| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | fixed (#162 merged), Mac check pending. Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
+| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | closed (#162; Mac check passed 2026-11-23; release #279). Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
 
 ## F. Requests from the dev lane (tracker #10, 2026-11-12)
 
@@ -115,7 +115,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | fixed (#128 merged), Mac check pending | dev | #122 |
+| R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | closed (#128; Mac check passed 2026-11-23; release #279) | dev | #122 |
 | R10b-2 | R10b | Medium | `mac-checks` 13.1d false FAIL on the latency fields added by #117 | closed (#125) | review | `fix/mac-checks-latency-fields` |
 | R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | fixed (#128 merged), Mac check pending | dev | #122 |
 | R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | fixed (#128 merged), Mac check pending | dev | #122 |
@@ -123,7 +123,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 | R10b-6 | R10b | Low | Shadow tier labels lean to Tier 2 (no site list given to the classifier) | fixed (#157 merged 2026-11-17) | review | #157 |
 | LNX-1 | Linux run for #112 | Low | `ps` start time reads 1 s early on Linux; `process-cwd` test still fails; job stragglers may be missed | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121 |
 | MJ-1 | manager job 1 | P0 | Recorder plan review | done: plan accepted with 8 points (#10, 2026-11-17); PR #166 reviewed | review | #166 |
-| I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | fixed in #170. Smaller points fixed in the follow-up PR: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Still open: Desktop and Documents in iCloud (needs a check whether that iCloud option is on); Fn+Option in the PR 2 switch text | dev | #169 |
+| I-169 | review of #166 | High | Recorder: the owner-only check ignored letter case (`~/.stephen/Replay/...` passed `upload_file`, the answer told whether a clip exists); clips could outlive 30 days while the listener ran; a future start time never expired; the synced-folder check ignored case | closed (#170, #173; release #279). #173 fixed the smaller points: Google Drive and OneDrive folders refused; the boundary scan fails on non-literal `import(`/`require` and on any spelling of "replay"; at most 5 clips wait for the disk and each write has a 30 s limit. Leftovers (Desktop and Documents in iCloud; Fn+Option in the PR 2 switch text) moved to #278 | dev | #169 |
 | MJ-3 | manager job 3 | P1 | Resume without carrying permissions; click outside the Ask box | closed (#119 resume; #129, owner chose cancel) | review, owner | `docs/adr-007-resume`, #107 |
 | MJ-6 | manager job 6 | P1 | Flaky suite research | in progress: #131, #242, #247, #262 merged; #109 and #263 open | review | #109 |
 | UI-149 | #136, UI review P12 | P2 | Home: New chat button, composer focused, shortcut hints | closed (#196 merged), Mac check pending | dev | #149 |
@@ -148,12 +148,15 @@ Severity "not rated" means the review named the problem but gave no level.
 | R254-1 | review of #254 | not rated | A failed job could move to Earlier; Return in the inspector kept a suggestion; Keep on an empty edit | closed (#254, tests pinned) | dev | #254 |
 | R255-1 | review of #255 | not rated | VoiceOver label type, what you said not copyable, palette query not cleared by the sidebar and Cmd+2 | closed (#255) | dev | #255 |
 | R257-1 | review of #257 | not rated | `finishCommand` could reject and drop the history line; line time; `--text` could hang on an audit read | closed (#257) | dev | #257 |
-| I-248 | tester intern, Mac test 0.2 and 0.4 | Medium | `swiftc` cannot find `SwiftUIMacros.StateMacro` on macOS 27.2.1, so `install-helper` fails | fixed (#251 merged: fall back to an older SDK), Mac check pending; issue still open | dev | #248 |
+| I-248 | tester intern, Mac test 0.2 and 0.4 | Medium | `swiftc` cannot find `SwiftUIMacros.StateMacro` on macOS 27.2.1, so `install-helper` fails | closed (#251: fall back to an older SDK; Mac check passed 2026-11-23; issue closed; release #279) | dev | #248 |
 | I-249 | tester intern | Low | `npx vitest run` fails on Node 21.5.0 but `doctor` passes it | closed (#250: engines `^20.19.0 \|\| >=22.12.0`, doctor checks the same) | dev | #249 |
 | I-262 | macOS CI | Low | Two macOS CI flakes: Zen early exit race, cross-site iframe click read too early | closed (#262) | dev | #109, #262 |
 | I-263 | macOS CI on qa `cd8027e` | Low | `test/drivers/review1.test.ts` D4 "defaults to a 60 s Allow wait" got "Not connected." | open (flake, not rerun alone yet) | dev | #263, #109 |
 | CI-14 | GitHub, PR #259 | Low | GitHub retired the hosted `macos-14` runner on 2026-11-02; no macOS 14 job is possible | closed (#259: macOS 14 is the minimum, the `macos` job on macos-15 builds the helper for a macOS 14 target; #260 research) | review | #259, #260 |
-| I-171 | tracker | Low | Second test suite: the lock message was lost in a vitest TypeError | fixed (#178 merged); issue still open | dev | #171 |
+| I-171 | tracker | Low | Second test suite: the lock message was lost in a vitest TypeError | closed (#178; issue closed; release #279) | dev | #171 |
 | I-207 | CI #195 | Low | A click after typing is lost when the Chrome window is not painting (macOS CI) | open; CI uses headless Chrome on macOS as the workaround (#195) | dev | #207 |
 | I-208 | review of #206 | Medium | Recording on sign can lag after a hand edit of config.json; a clip can land after off or Delete | closed (#238) | dev | #208 |
 | DEC-261 | dev lane decision | Low | A "?" anywhere blocks a typed memory save too, not only a spoken one | closed (#261) | dev | #261 |
+| I-205 | issue | not rated | Voice: stop music while it plays (duck on wake, pause by media key) | closed (#216 voice side, #228 Mac media key; release #279) | dev | #205 |
+| I-270 | CI on qa | Low | CI failed on qa (warm-claude flake, #109) | closed (#267: the fake serve counts as connected only after its claim line is logged; release #279) | dev | #270, #109 |
+| I-278 | review of #169 | Low | Recorder leftovers from #169: Desktop and Documents in iCloud, Fn+Option in the switch text | open | dev | #278 |
