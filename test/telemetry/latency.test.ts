@@ -62,6 +62,17 @@ describe('LatencyMonitor', () => {
     expect(parseLatencyRecord({ ...rows[0], firstTokenMs: 'soon' })).not.toHaveProperty('firstTokenMs');
   });
 
+  it('end() writes the model cost as a number, and drops a bad one', () => {
+    const t = setup();
+    t.m.begin('h_c', 'ptt');
+    t.m.end('h_c', 'ok', { route: 'model', turns: 1, costUsd: 0.0123456789 });
+    t.m.begin('h_d', 'ptt');
+    t.m.end('h_d', 'ok', { route: 'model', costUsd: 'a lot' as never });
+    const rows = t.lines().map((l) => JSON.parse(l));
+    expect(rows[0].costUsd).toBe(0.012346);
+    expect(rows[1]).not.toHaveProperty('costUsd');
+  });
+
   it('a trigger that never became a command still gets a row; a second end and unknown ids do nothing', () => {
     const t = setup();
     t.m.begin('h_w', 'wake');
@@ -226,16 +237,12 @@ describe('new fields: closed lists, numbers only', () => {
       expect(parseLatencyRecord({ ...base, costUsd: 100 })!.costUsd).toBe(100);
     });
 
-    it('rejects out-of-range costUsd', () => {
-      expect(parseLatencyRecord({ ...base, costUsd: -0.000001 })).toBeNull();
-      expect(parseLatencyRecord({ ...base, costUsd: 100.000001 })).toBeNull();
-      expect(parseLatencyRecord({ ...base, costUsd: NaN })).toBeNull();
-      expect(parseLatencyRecord({ ...base, costUsd: Infinity })).toBeNull();
-    });
-
-    it('rejects non-number costUsd', () => {
-      expect(parseLatencyRecord({ ...base, costUsd: '0.001' })).toBeNull();
-      expect(parseLatencyRecord({ ...base, costUsd: null })).not.toHaveProperty('costUsd');
+    it('drops a bad costUsd and keeps the record', () => {
+      for (const bad of [-0.000001, 100.000001, NaN, Infinity, '0.001', null, { usd: 1 }]) {
+        const r = parseLatencyRecord({ ...base, costUsd: bad });
+        expect(r, String(bad)).not.toBeNull();
+        expect(r, String(bad)).not.toHaveProperty('costUsd');
+      }
       expect(parseLatencyRecord({ ...base })).not.toHaveProperty('costUsd');
     });
   });
