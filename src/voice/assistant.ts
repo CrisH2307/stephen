@@ -4,9 +4,6 @@
  */
 import { newConversationId, newHistoryId } from '../history/store.js';
 import type { ClaudeOutcome, ModelTimes } from './claude.js';
-
-/** Cost of the model run, USD (rounded to 6 decimal places, 0 to 100). */
-export type CostUsd = number;
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
 
@@ -147,8 +144,8 @@ export interface CommandReport {
   replyMs: number;
   /** The model run's own times, when the runner measured them (warm process). Numbers only. */
   model?: ModelTimes;
-  /** Cost of the model run, USD (rounded to 6 decimal places, 0 to 100). */
-  costUsd?: CostUsd;
+  /** Model run cost in USD (Claude Code's number), when it said. */
+  costUsd?: number;
   /** The spoken reply was cut short: ms from the cancel until the speech process ended (a number, for the latency log). */
   silenceMs?: number;
   /** Conversation id (ADR-007): the same for every command of one conversation, a new one when a conversation starts. */
@@ -344,7 +341,7 @@ export class Assistant {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
       replyAt = now();
-      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}), ...(out.kind === 'ok' && out.costUsd !== null && out.costUsd !== undefined ? { costUsd: out.costUsd } : {}) };
+      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}), ...(out.kind === 'ok' && typeof out.costUsd === 'number' ? { costUsd: out.costUsd } : {}) };
       if (out.kind === 'cancelled' || this.cancelled) {
         this.o.status('Cancelled.');
         this.o.chimes.play('done');
