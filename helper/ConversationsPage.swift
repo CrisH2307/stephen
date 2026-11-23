@@ -138,7 +138,7 @@ struct ConversationsPage: View {
             .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
           if let n = model.historyNotice ?? model.auditNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
           if model.history.isEmpty {
-            Text(verbatim: "Nothing yet. What you ask Stephen, and what it does, is listed here.")
+            Text(verbatim: "Nothing yet. Ask Stephen something and it shows here.")
               .font(TypeScale.body).foregroundColor(t.ink2)
           } else {
             VStack(alignment: .leading, spacing: Space.m) {
