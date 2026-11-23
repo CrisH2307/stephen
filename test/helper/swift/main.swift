@@ -4,9 +4,9 @@
 // side on stdout, so the Node HelperClient can be tested against the actual Swift code.
 //
 // stdin (one per line):  flags [fn] [opt] [cmd] [ctrl] [shift] | key <code> [repeat] | keyup <code> | audio 0|1 | perm 0|1
-//                        | interrupt | exit
-// stdout:                ready | ui <state> | quit | open_window | error <message>
-// args:                  --socket <path> [--max-hold-ms <n>]
+//                        | interrupt | press_over | postkeys 0|1 | exit
+// stdout:                ready | ui <state> | quit | open_window | media_key <key> | error <message>
+// args:                  --socket <path> [--max-hold-ms <n>] | --retry-delays (prints nextRetryDelay from 3 s, exits)
 
 #if canImport(Darwin)
 import Darwin
@@ -21,6 +21,13 @@ var socketPath = ""
 var maxHold = PTT_MAX_HOLD_MS
 var args = CommandLine.arguments.dropFirst().makeIterator()
 while let a = args.next() {
+  if a == "--retry-delays" {  // pure check: nextRetryDelay from 3 s, four steps
+    var d = 3.0
+    var out: [String] = []
+    for _ in 0..<4 { out.append(String(Int(d))); d = nextRetryDelay(d) }
+    print(out.joined(separator: " "))
+    exit(0)
+  }
   if a == "--socket", let v = args.next() { socketPath = v }
   if a == "--max-hold-ms", let v = args.next(), let n = Int64(v) { maxHold = n }
 }
@@ -36,6 +43,12 @@ let core = HelperCore(socketPath: socketPath, maxHoldMs: maxHold, log: { msg in
 core.readAudio = { simulatedAudio }
 core.onUIState = { s in print("ui \(s.rawValue)") }
 core.onOpenWindow = { print("open_window") }
+var postKeys = true
+core.readPostEvents = { postKeys }
+core.onMediaKey = { k in
+  print("media_key \(k)")
+  return postKeys ? nil : "Stephen Helper needs the Accessibility permission"
+}
 /** exit() would wait for the stdin reader thread's lock on stdin; flush and leave directly. */
 func leave(_ code: Int32) -> Never {
   fflush(stdout)
@@ -81,6 +94,10 @@ DispatchQueue.global().async {
         core.setInputMonitoring(parts.count > 1 && parts[1] == "1")
       case "interrupt":
         core.handleTapInterrupted()
+      case "press_over":
+        core.handle(.pressOver)
+      case "postkeys":
+        postKeys = parts.count > 1 && parts[1] == "1"
       case "exit":
         core.stop()
         leave(0)

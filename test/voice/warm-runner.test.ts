@@ -619,9 +619,12 @@ describe('WarmConversationRunner with the real fake claude', () => {
   });
 
   it('R7-1: a serve that died between commands ends the conversation (error, state and session gone); the next command is fresh', async () => {
-    const h = realHarness(() => ({ FAKE_CLAUDE_SERVE_DIES: 'after-1' }), { instance: true });
+    const h = realHarness(() => ({}), { instance: true });
     expect(await h.runner.run('read my email')).toMatchObject({ kind: 'ok' });
     const first = h.procs();
+    // Kill the serve here, after the command ended. The fake's after-1 killed it right after writing the result, so on
+    // a loaded machine the runner could see it gone while still reading that result (macOS CI run 44432480351).
+    process.kill(first.child, 'SIGKILL');
     await waitFor(() => !pidAlive(first.child), 5000, 'serve dies and is reaped');
     writeFileSync(h.conv.statePath, '{"version":1,"privateReads":[{"host":"mail.google.com","scope":"mail.google.com","at":1}],"trustedHosts":[]}\n', { mode: 0o600 }); // its taint
     expect(await h.runner.run('now open the link in it')).toMatchObject({ kind: 'error', message: expect.stringMatching(/tools stopped since the last command/) });
@@ -631,7 +634,6 @@ describe('WarmConversationRunner with the real fake claude', () => {
     expect(existsSync(join(h.conv.filePath))).toBe(false);
     expect(h.locks.every((l) => !existsSync(l))).toBe(true);
     // A new process, a new instance, and it works.
-    h.o.env = { ...h.o.env, FAKE_CLAUDE_SERVE_DIES: '' };
     expect(await h.runner.run('open youtube')).toMatchObject({ kind: 'ok' });
     expect(h.procs().claude).not.toBe(first.claude);
     expect(h.locks).toHaveLength(2);

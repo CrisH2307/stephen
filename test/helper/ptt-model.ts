@@ -47,6 +47,10 @@ export class PttModel {
     return this.isDown ? this.release(now, true) : [];
   }
 
+  pressOver(now: number): Out[] {
+    return this.isDown ? this.release(now, !this.byF5) : [];
+  }
+
   key(code: number, isRepeat: boolean, now: number): Out[] {
     if (isRepeat) return [];
     if (code === 96) {
@@ -56,7 +60,9 @@ export class PttModel {
       this.downAt = now;
       return [{ type: 'ptt_down', at: now }];
     }
-    return code === 53 ? [{ type: 'esc', at: now }] : [];
+    if (code !== 53) return [];
+    // Esc also ends a press (after the esc): the listener dropped that recording, so the next F5 must not be swallowed.
+    return [{ type: 'esc', at: now }, ...(this.isDown ? this.release(now, !this.byF5) : [])];
   }
 
   keyUp(code: number, now: number): Out[] {
@@ -76,6 +82,7 @@ export type Step =
   | { key: number; repeat?: boolean }
   | { keyup: number }
   | { interrupt: true }
+  | { pressOver: true }
   /** Let time pass (the model ticks; the Swift harness really waits — keep these short there). */
   | { wait: number };
 
@@ -116,6 +123,12 @@ export const SCENARIOS: Scenario[] = [
     steps: [{ flags: { fn: true, opt: true } }, { interrupt: true }, { flags: { fn: true, opt: true, shift: true } }, { flags: {} }],
     expect: ['ptt_down', 'ptt_up'],
   },
+  {
+    name: '#106: window press, listener cancels (press over), then F5 records on the first press',
+    steps: [{ key: 96 }, { pressOver: true }, { key: 96 }, { keyup: 96 }],
+    expect: ['ptt_down', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
+  { name: '#106: press over while idle does nothing', steps: [{ pressOver: true }], expect: [] },
   { name: 'interrupt while idle does nothing', steps: [{ interrupt: true }], expect: [] },
   { name: 'Esc (53) is reported, auto-repeat and other keys are not', steps: [{ key: 53 }, { key: 53, repeat: true }, { key: 0 }, { key: 36 }], expect: ['esc'] },
   { name: 'Esc during a press', steps: [{ flags: { fn: true, opt: true } }, { key: 53 }, { flags: {} }], expect: ['ptt_down', 'esc', 'ptt_up'] },
@@ -126,6 +139,27 @@ export const SCENARIOS: Scenario[] = [
   { name: 'F5 during a Fn+Option press does nothing extra', steps: [{ flags: { fn: true, opt: true } }, { key: 96 }, { keyup: 96 }, { flags: {} }], expect: ['ptt_down', 'ptt_up'] },
   { name: 'F5 max hold sends ptt_up; repeats while still held do not restart', steps: [{ key: 96 }, { wait: SCENARIO_MAX_HOLD_MS + 250 }, { key: 96, repeat: true }, { keyup: 96 }], expect: ['ptt_down', 'ptt_up'] },
   { name: 'Esc during an F5 press', steps: [{ key: 96 }, { key: 53 }, { keyup: 96 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
+  // #86: the window's mic (Ask box, Home's Talk) starts a press through the same F5 key-down (main.swift box.ptt).
+  {
+    name: 'started from the app, then F5: the F5 release ends it, and the next F5 is a new press',
+    steps: [{ key: 96 }, { key: 96 }, { keyup: 96 }, { key: 96 }, { keyup: 96 }],
+    expect: ['ptt_down', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
+  // Esc in the Ask box goes through the same Esc key-down (main.swift box.cancelTalk), so the press ends after esc
+  // and Node cancels it (test/voice/ptt.test.ts: esc then ptt_up sends nothing).
+  { name: 'started from the app, then Esc in the box: esc, then the press ends', steps: [{ key: 96 }, { key: 53 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
+  {
+    name: 'started from the app, then Esc, then F5: Esc ends the press, so F5 is not swallowed',
+    steps: [{ key: 96 }, { key: 53 }, { key: 96 }, { keyup: 96 }],
+    expect: ['ptt_down', 'esc', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
+  // #107: a click outside the Ask box while it listens calls cancelTalk (AskBox.close), the same Esc key-down: nothing is sent.
+  { name: '#107: window press, then a click outside the box: esc, then the press ends', steps: [{ key: 96 }, { key: 53 }], expect: ['ptt_down', 'esc', 'ptt_up'] },
+  {
+    name: 'Esc during a Fn+Option press latches: still holding the keys does not restart it',
+    steps: [{ flags: { fn: true, opt: true } }, { key: 53 }, { flags: { fn: true, opt: true, shift: true } }, { flags: {} }, { flags: { fn: true, opt: true } }, { flags: {} }],
+    expect: ['ptt_down', 'esc', 'ptt_up', 'ptt_down', 'ptt_up'],
+  },
 ];
 
 /** Run a scenario against the model with a fake clock (ticks every 10 ms while waiting). */
@@ -138,6 +172,7 @@ export function runModel(s: Scenario, maxHoldMs = SCENARIO_MAX_HOLD_MS): Out[] {
     else if ('key' in step) out.push(...m.key(step.key, !!step.repeat, now));
     else if ('keyup' in step) out.push(...m.keyUp(step.keyup, now));
     else if ('interrupt' in step) out.push(...m.interrupt(now));
+    else if ('pressOver' in step) out.push(...m.pressOver(now));
     else {
       const end = now + step.wait;
       while (now < end) {
@@ -158,5 +193,6 @@ export function harnessLine(step: Exclude<Step, { wait: number }>): string {
   }
   if ('key' in step) return `key ${step.key}${step.repeat ? ' repeat' : ''}`;
   if ('keyup' in step) return `keyup ${step.keyup}`;
+  if ('pressOver' in step) return 'press_over';
   return 'interrupt';
 }

@@ -233,7 +233,7 @@ describe('attach-only Zen: zen-launch + serve (fake zen on real Chromium)', () =
     try {
       const res = await srv.call('tab_open', { browser: 'zen', intent: 'open the song' });
       expect(res.isError).toBe(true);
-      expect(text(res)).toMatch(/NEEDS_USER: Zen is open, but it wasn't started with Stephen access\. Quit Zen \(⌘Q\) and reopen it with the 'Zen for Stephen' app/);
+      expect(text(res)).toMatch(/NEEDS_USER: Zen is open, but it wasn't started with Stephen access, so Stephen can't connect to it\. Stephen needs "Zen for Stephen"\..*Quit Zen \(⌘Q\) and reopen it with the 'Zen for Stephen' app/);
     } finally {
       await srv.client.close();
     }

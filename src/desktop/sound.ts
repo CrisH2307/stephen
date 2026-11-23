@@ -165,3 +165,41 @@ export async function controlPlayer(deps: DesktopDeps, action: MediaAction, play
   }
 }
 
+
+/**
+ * Duck on wake (issue #205). argv = ["duck", level]: lower the output volume to `level` when it is louder and not
+ * muted; prints {"saved": <old volume> | null} (null = nothing changed). argv = ["restore", n]: set the volume to n
+ * (mute untouched).
+ */
+export const DUCK_JXA = `function run(argv) {
+  var app = Application.currentApplication();
+  app.includeStandardAdditions = true;
+  var n = Number(argv[1]);
+  if (!(n >= 0 && n <= 100)) throw new Error('bad level');
+  if (argv[0] === 'restore') { app.setVolume(null, { outputVolume: n }); return '{}'; }
+  if (argv[0] !== 'duck') throw new Error('bad action');
+  var s = app.getVolumeSettings();
+  if (s.outputMuted || !(s.outputVolume > n)) return JSON.stringify({ saved: null });
+  app.setVolume(null, { outputVolume: n });
+  return JSON.stringify({ saved: s.outputVolume });
+}`;
+
+const level = (n: number): string => {
+  if (!Number.isInteger(n) || n < 0 || n > 100) throw new Error('the volume level must be a whole number from 0 to 100');
+  return String(n);
+};
+
+/** Lower the volume to `to`; resolves with the volume to restore later, or null when nothing changed. */
+export async function duckVolume(deps: DesktopDeps, to: number): Promise<number | null> {
+  const r = await deps.execFile(BIN.osascript, ['-l', 'JavaScript', '-e', DUCK_JXA, 'duck', level(to)], { timeoutMs: TIMEOUT_MS });
+  try {
+    const v = (JSON.parse(r.stdout.trim()) as { saved?: unknown }).saved;
+    return typeof v === 'number' && v >= 0 && v <= 100 ? Math.round(v) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function restoreVolume(deps: DesktopDeps, to: number): Promise<void> {
+  await deps.execFile(BIN.osascript, ['-l', 'JavaScript', '-e', DUCK_JXA, 'restore', level(to)], { timeoutMs: TIMEOUT_MS });
+}

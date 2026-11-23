@@ -239,6 +239,8 @@ export interface PageEngine {
   waitFor(page: Page, opts: { text?: string; textGone?: string; timeoutMs: number }): Promise<void>;
   /** PNG, scaled (0.1–1). ref → element screenshot. */
   screenshot(page: Page, opts: { ref?: Ref; fullPage?: boolean; scale: number }): Promise<Buffer>;
+  /** Our own note for a screenshot that was clipped (e.g. a very long page), or null. */
+  screenshotNote?(png: Uint8Array): string | null;
   uploadFile(page: Page, ref: Ref, paths: string[]): Promise<void>;
   /**
    * URLs of every frame whose content snapshot / find / readText / screenshot can expose (main frame
@@ -377,6 +379,8 @@ export interface AuditEntry {
   outcome: 'ok' | 'denied' | 'error';
   error?: string;
   intent?: string;
+  /** The listener's command id (`serve --command-file`), `h_<16 hex>`. A label for joining logs, never an input. */
+  cmd?: string;
 }
 
 /** Implementation: src/safety/audit.ts (AuditLog). */

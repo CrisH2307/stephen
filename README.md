@@ -15,8 +15,8 @@ Everything stays on your Mac: Stephen only talks to browsers on `127.0.0.1` and 
 
 | | |
 |---|---|
-| macOS | Apple silicon or Intel |
-| Node.js | **20.19 or newer** (`node --version`; install from [nodejs.org](https://nodejs.org) or `brew install node`) |
+| macOS | **14 (Sonoma) or newer**, Apple silicon or Intel |
+| Node.js | **20.19+ (20.x) or 22.12+; 24 is what CI uses** (Node 21 is out. Running the tests needs 22.12+ or 24, because vitest 5 does.) (`node --version`; install from [nodejs.org](https://nodejs.org) or `brew install node`) |
 | Claude Code | installed and working (`claude --version`) |
 | Google Chrome | **144 or newer** for real-profile mode (Chrome menu → *Help → About Google Chrome*) |
 | Zen | installed in `/Applications` (`Zen.app`, `Zen Browser.app` or `Zen Twilight.app`) |
@@ -115,7 +115,7 @@ And what Claude sees when it tries to use Zen:
 | Situation | What Claude does |
 |---|---|
 | Zen was opened with Zen for Stephen | Uses your open Zen: your existing tabs, or a new tab in your windows. |
-| Zen is open the normal way | Tells you: *"Zen is open, but it wasn't started with Stephen access. Quit Zen (⌘Q) and reopen it with the 'Zen for Stephen' app…"*  and waits for you instead of retrying. |
+| Zen is open the normal way | Tells you Stephen needs "Zen for Stephen", and why: Stephen only connects to a Zen started with its remote-control port open, and a normal Zen window does not open it. It waits for you instead of retrying. |
 | Zen isn't open | Tells you to open Zen with the Zen for Stephen app. It does **not** open a browser itself. |
 
 `zen-launch` options: `--quit-running` (what the Reopen button runs), `--json`. Exit codes: `0` Zen is ready for Stephen, `2` you need to do something (e.g. Zen is open normally), `1` error. `stephen doctor` shows whether a Stephen-ready Zen is running, whether Zen is open normally, and whether the launcher app exists.

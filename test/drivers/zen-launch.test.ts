@@ -10,12 +10,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appleScriptString, osascriptQuitArgv } from '../../src/drivers/macos.js';
 import type { Clock, SpawnedProcess } from '../../src/drivers/util.js';
-import { ZEN_NOT_CLAUDE_READY_MESSAGE, ZenDriver, type ZenReadiness } from '../../src/drivers/zen.js';
+import { ZEN_NOT_CLAUDE_READY_MESSAGE, ZEN_NOT_RUNNING_MESSAGE, ZenDriver, type ZenReadiness } from '../../src/drivers/zen.js';
 import { HubError } from '../../src/errors.js';
 import {
   type InstallLauncherDeps,
   type RunFn,
   ZEN_RUNNING_NORMALLY_LEAD,
+  ZEN_RUNNING_NORMALLY_MESSAGE,
   type ZenLaunchDeps,
   buildLauncherAppleScript,
   findLegacyZenLauncher,
@@ -271,6 +272,14 @@ describe('zen-launch', () => {
   it('the driver error text and zen-launch agree on how to recover', () => {
     expect(ZEN_NOT_CLAUDE_READY_MESSAGE).toMatch(/Zen for Stephen.*stephen zen-launch/);
   });
+
+  it('#89 the messages say Stephen needs "Zen for Stephen" and why a normal Zen window does not connect', () => {
+    const why = /can only connect to a Zen that was started with its remote-control port open\. A normal Zen window does not open that port\. The 'Zen for Stephen' app opens Zen with it\./;
+    expect(ZEN_NOT_CLAUDE_READY_MESSAGE).toMatch(/Stephen needs "Zen for Stephen"/);
+    expect(ZEN_NOT_CLAUDE_READY_MESSAGE).toMatch(why);
+    expect(ZEN_NOT_RUNNING_MESSAGE).toMatch(why);
+    expect(ZEN_RUNNING_NORMALLY_MESSAGE).toMatch(why);
+  });
 });
 
 // ───────────────────────────── launcher app ─────────────────────────────
@@ -297,7 +306,7 @@ describe('install-zen-launcher', () => {
     // exit 2 + "open normally" → the Reopen dialog; other failures show zen-launch's message
     expect(script).toContain(`if errNum is 2 and errMsg contains ${appleScriptString(ZEN_RUNNING_NORMALLY_LEAD)} then`);
     expect(script).toContain(
-      'display dialog "Zen is open without Stephen access. Quit and reopen it for Stephen? Your tabs come back if Zen restores your previous session." with title "Zen for Stephen" buttons {"Cancel", "Reopen"} default button "Reopen" cancel button "Cancel"',
+      'display dialog "Zen is open without Stephen access. A normal Zen window does not open the remote-control port Stephen needs. Quit and reopen it for Stephen? Your tabs come back if Zen restores your previous session." with title "Zen for Stephen" buttons {"Cancel", "Reopen"} default button "Reopen" cancel button "Cancel"',
     );
     expect(script).toContain('my showError(errMsg)');
     expect(script).not.toMatch(/\bproperty\b/); // applets would write properties back into themselves

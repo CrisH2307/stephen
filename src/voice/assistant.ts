@@ -2,8 +2,8 @@
  * One command end to end after transcription: memory, timer and job routers → Claude → reply → `say` → chime. Shared by the mic,
  * `--text` and the Stephen app's typed chat (src/app/server.ts): call command(text, {source, raw}).
  */
-import { newHistoryId } from '../history/store.js';
-import type { ClaudeOutcome } from './claude.js';
+import { newConversationId, newHistoryId } from '../history/store.js';
+import type { ClaudeOutcome, ModelTimes } from './claude.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
 
@@ -53,11 +53,19 @@ export interface CommandRunner {
 export interface RunHooks {
   /** The command's trust (default `wake`, the most cautious). A conversation of another trust is never continued. */
   trust?: Trust;
+  /** The command's id (CommandReport.id). ToolLogRunner writes it to the command id file. A label only. */
+  id?: string;
   /**
-   * Called right before the command goes to Claude, once every earlier process group is gone (warm runner), so
-   * nothing of an earlier, cancelled command can still write after this point (docs/REVIEW-7.md R7-10).
+   * Called right before the command goes to Claude. The warm runner calls it once every earlier process group is
+   * gone, so nothing of an earlier, cancelled command can still write after this point (docs/REVIEW-7.md R7-10).
+   * The one-shot runner calls it right before it starts Claude, without that guarantee.
    */
   beforeSend?: () => void;
+  /**
+   * A resumed chat (ADR-007 v2): the conversation starts fresh (never `--resume`, never a live process) and its serve
+   * starts with `--assume-private-read`. It can only make the gate stricter.
+   */
+  assumePrivateRead?: boolean;
 }
 
 /** A deterministic router that runs before Claude (timers, jobs): a reply, or null when the text isn't its command. */
@@ -77,7 +85,40 @@ export interface HandleOptions {
   speak?: boolean;
   /** History entry id for this command (the app hands it out in chat.accepted). Default: a fresh newHistoryId(). */
   id?: string;
+  /**
+   * A resumed chat (ADR-007 v2): only the window's next message after the owner's "Open in chat" click carries it
+   * (src/app/server.ts listenerQueue). The current conversation ends, a new one starts, and if Claude runs, its prompt
+   * is prompt(message, trust) (the wrapper with the old turns, then the message) and its serve gets
+   * `--assume-private-read`. Local routers and the history line see only the owner's message.
+   */
+  resume?: ResumeRequest;
 }
+
+/** What HandleOptions.resume needs: builds the first prompt from the owner's message (src/history/resume.ts). */
+export interface ResumeRequest {
+  /** The conversation still has stored turns. False: nothing is sent and the owner is told (RESUME_GONE_MESSAGE). */
+  saved(): boolean;
+  prompt(message: string, trust: Trust): string;
+  /**
+   * Edit and resend (ADR-010): the message this one is a new version of, and that message's source. Only the window's
+   * chat.edit sets it (src/app/server.ts listenerQueue). The history line gets editOf; the audit line names it.
+   */
+  edit?: EditedMessage;
+}
+
+/** The message an edit replaces (ADR-010): its conversation, its command id and its source. */
+export interface EditedMessage {
+  conv: string;
+  id: string;
+  /** The edited line's time (epoch ms): the new branch cuts the earlier conversation here. */
+  ts: number;
+  source: CommandSource;
+}
+
+/** A resume whose conversation is gone: the owner's message is not sent anywhere; this is the reply. */
+export const RESUME_GONE_MESSAGE = 'That conversation is no longer saved.';
+/** A resumed message a local router answered (timer, memory, job): the earlier chat was not used. */
+export const RESUME_NOT_USED_MESSAGE = 'The earlier chat was not used for this.';
 
 /** What happened to one command (onDone, and the return value of command()). */
 export interface CommandReport {
@@ -101,6 +142,14 @@ export interface CommandReport {
   route: 'memory' | 'timer' | 'job' | 'model';
   /** Milliseconds from the start of the command until the reply text existed (before it was spoken or shown). */
   replyMs: number;
+  /** The model run's own times, when the runner measured them (warm process). Numbers only. */
+  model?: ModelTimes;
+  /** The spoken reply was cut short: ms from the cancel until the speech process ended (a number, for the latency log). */
+  silenceMs?: number;
+  /** Conversation id (ADR-007): the same for every command of one conversation, a new one when a conversation starts. */
+  conv?: string;
+  /** Edit and resend (ADR-010): the message this command is a new version of (ResumeRequest.edit). */
+  editOf?: EditedMessage;
 }
 
 export interface AssistantOptions {
@@ -137,6 +186,15 @@ export class Assistant {
   private phaseValue: Phase = 'idle';
   private speech: SpeakHandle | null = null;
   private cancelled = false;
+  /** When a cancel hit a reply being spoken (assistant clock), and how long the speech took to end after it. */
+  private silenceFrom: number | null = null;
+  private silenceMs: number | undefined;
+  /**
+   * The open conversation's id (ADR-007), or null when none is open. A Claude run that is not a follow-up starts a new
+   * one; a command a local router answers joins the open one (ADR-007 open question 4).
+   * ponytail: a local command after the follow-up window ran out still joins the old id; ask the runner if that matters.
+   */
+  private conv: string | null = null;
   constructor(private readonly o: AssistantOptions) {}
 
   get phase(): Phase {
@@ -174,6 +232,8 @@ export class Assistant {
     const trust = trustOf(source);
     const id = opts.id ?? newHistoryId();
     this.cancelled = false;
+    this.silenceFrom = null;
+    this.silenceMs = undefined;
     this.phaseNow = 'running';
     try {
       this.o.onStart?.({ id, source, said: text });
@@ -183,8 +243,13 @@ export class Assistant {
     let said = text;
     let via: CommandReport['route'] = 'model';
     let replyAt = t0;
-    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs'>): CommandReport => {
-      const full: CommandReport = { ...r, id, source, said, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0) };
+    let conv = this.conv ?? newConversationId();
+    this.conv = conv;
+    let editOf: EditedMessage | undefined;
+    const report = (r: Omit<CommandReport, 'id' | 'source' | 'said' | 'ms' | 'route' | 'replyMs' | 'conv' | 'editOf'>): CommandReport => {
+      // A failed or cancelled Claude run ends the conversation (conversation.ts): the next command gets a new id.
+      if (r.ranClaude && r.outcome !== 'ok') this.conv = null;
+      const full: CommandReport = { ...r, id, source, said, conv, ms: Math.max(0, now() - t0), route: via, replyMs: Math.max(0, replyAt - t0), ...(editOf ? { editOf } : {}), ...(this.silenceMs !== undefined ? { silenceMs: this.silenceMs } : {}) };
       try {
         this.o.onDone?.(full);
       } catch (e) {
@@ -193,6 +258,25 @@ export class Assistant {
       return full;
     };
     try {
+      if (opts.resume) {
+        // Never resume silently: a conversation with no stored turns sends nothing, not even the owner's message.
+        let saved = false;
+        try {
+          saved = opts.resume.saved();
+        } catch {
+          saved = false;
+        }
+        if (!saved) {
+          replyAt = now();
+          await this.deliver(RESUME_GONE_MESSAGE, false, opts.speak, t0);
+          return report({ result: 'error', outcome: 'error', reply: RESUME_GONE_MESSAGE, ranClaude: false, followUp: false, turns: 0 });
+        }
+        // A resumed chat (and an edit, ADR-010) starts a new conversation: the old one ends first.
+        this.endConversation();
+        conv = newConversationId();
+        this.conv = conv;
+        editOf = opts.resume.edit;
+      }
       let prefix = '';
       let prompt = text;
       const local = { source, ...(opts.raw !== undefined ? { raw: opts.raw } : {}) };
@@ -214,11 +298,16 @@ export class Assistant {
         if (route.said !== undefined) said = route.said;
         // A memory change ends the conversation BEFORE anything else runs: a resumed session would keep the old
         // system prompt (claude's --system-prompt-snapshot), so the next command must start fresh.
-        if (route.changed) this.o.runner.endConversation?.();
+        if (route.changed) {
+          this.o.runner.endConversation?.();
+          this.conv = null; // this command keeps its id; the next one starts a new conversation
+        }
         if (this.cancelled) return report({ result: 'cancelled', outcome: 'cancelled', reply: '', ranClaude: false, followUp: false, turns: 0 });
         if (!route.rest) {
-          await this.deliver(route.reply, true, opts.speak, t0);
-          return report({ result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', reply: route.reply, ranClaude: false, followUp: false, turns: 0 });
+          // An armed resume answered locally: say the earlier chat was not used, never drop it silently.
+          const reply = opts.resume ? `${route.reply} ${RESUME_NOT_USED_MESSAGE}` : route.reply;
+          await this.deliver(reply, true, opts.speak, t0);
+          return report({ result: this.cancelled ? 'cancelled' : 'ok', outcome: 'memory', reply, ranClaude: false, followUp: false, turns: 0 });
         }
         this.o.status(`Stephen: ${route.reply}`);
         prefix = route.reply;
@@ -226,7 +315,7 @@ export class Assistant {
       }
       let followUp = false;
       try {
-        followUp = this.o.runner.followUp?.(trust) ?? false;
+        followUp = opts.resume ? false : (this.o.runner.followUp?.(trust) ?? false);
         // "Play <something>" starts a fresh conversation (docs/PLAN-WORK-SPLIT.md §13): a conversation that read
         // private data (Canvas, email…) must confirm before opening YouTube with a query, which the phone and an
         // empty room can't answer. A new conversation has read nothing private, so the normal gate lets it through.
@@ -237,15 +326,20 @@ export class Assistant {
       } catch {
         // run() reports it
       }
+      if (!followUp || this.conv === null) conv = newConversationId();
+      this.conv = conv;
       this.o.status(followUp ? 'Working… (follow-up)' : 'Working…');
       let out: ClaudeOutcome;
       try {
-        out = await this.o.runner.run(prompt, { trust });
+        // A resumed chat: the old turns go in only inside the wrapper, and the serve assumes a private read.
+        out = opts.resume
+          ? await this.o.runner.run(opts.resume.prompt(prompt, trust), { trust, id, assumePrivateRead: true })
+          : await this.o.runner.run(prompt, { trust, id });
       } catch (e) {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
       replyAt = now();
-      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0 };
+      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}) };
       if (out.kind === 'cancelled' || this.cancelled) {
         this.o.status('Cancelled.');
         this.o.chimes.play('done');
@@ -284,6 +378,7 @@ export class Assistant {
       this.phaseNow = 'speaking';
       this.speech = this.o.speaker.speak(spoken);
       await this.speech.done;
+      if (this.silenceFrom !== null) this.silenceMs = Math.max(0, now() - this.silenceFrom);
       this.speech = null;
     }
     this.o.chimes.play('done');
@@ -315,6 +410,7 @@ export class Assistant {
 
   /** End the follow-up conversation: the next command starts a fresh Claude session with a fresh gate. */
   endConversation(): void {
+    this.conv = null;
     this.o.runner.endConversation?.();
   }
 
@@ -323,6 +419,7 @@ export class Assistant {
     if (this.phaseNow === 'idle') return false;
     this.cancelled = true;
     if (this.phaseNow === 'running') return this.o.runner.cancel();
+    if (this.speech) this.silenceFrom = (this.o.now ?? Date.now)();
     this.speech?.cancel();
     return true;
   }

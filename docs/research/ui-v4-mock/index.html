@@ -1,0 +1,407 @@
+<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stephen UI v4 mock</title><style>
+:root,[data-theme="light"]{--ground:#F5F6F8;--surface:#FFFFFF;--surface2:#F2F3F6;--line:#E3E5EA;--lineStrong:#7E8793;--ink:#0E1525;--ink2:#556070;--primary:#13244A;--primaryText:#FFFFFF;--accent:#2456C9;--ok:#1E7A4F;--warn:#8A5A00;--bad:#B42318;--selection:#E5EBF8;--sidebar:#ECEEF1;--a-sb:95%;--a-tb:92%;--a-pal:90%}
+[data-theme="dark"]{--ground:#12151B;--surface:#171A21;--surface2:#1F232C;--line:#2A2F3A;--lineStrong:#696F7B;--ink:#EEF0F4;--ink2:#A3AAB7;--primary:#DCE6FF;--primaryText:#0E1525;--accent:#7FA6FF;--ok:#5CC28B;--warn:#E0B04A;--bad:#F07167;--selection:#242B3C;--sidebar:#1B1E25;--a-sb:88%;--a-tb:85%;--a-pal:88%}
+[data-theme="navy"]{--ground:#0F1B33;--surface:#16264A;--surface2:#1E3260;--line:#26385F;--lineStrong:#71809F;--ink:#EEF2FA;--ink2:#A9B6CF;--primary:#DCE6FF;--primaryText:#0E1525;--accent:#8FB0FF;--ok:#5CC28B;--warn:#E0B04A;--bad:#FF8A80;--selection:#253760;--sidebar:#16264A;--a-sb:88%;--a-tb:85%;--a-pal:88%}
+[data-theme="rose"]{--ground:#FFF5F7;--surface:#FFFFFF;--surface2:#FBE9EE;--line:#F1DCE2;--lineStrong:#9E7E87;--ink:#2A1219;--ink2:#7A5560;--primary:#7A1F3D;--primaryText:#FFFFFF;--accent:#B4235A;--ok:#1E7A4F;--warn:#8A5A00;--bad:#B42318;--selection:#F6E5EB;--sidebar:#FBEFF2;--a-sb:95%;--a-tb:92%;--a-pal:90%}
+[data-theme="sun"]{--ground:#FFFBEA;--surface:#FFFFFF;--surface2:#F7F0D4;--line:#EFE6C4;--lineStrong:#91865E;--ink:#221C08;--ink2:#6B5F35;--primary:#3D3200;--primaryText:#FFFFFF;--accent:#7A5E00;--ok:#1E7A4F;--warn:#8A5A00;--bad:#B42318;--selection:#EFECE0;--sidebar:#FBF5DC;--a-sb:95%;--a-tb:92%;--a-pal:90%}
+/* Glass fallbacks: Reduce transparency and Increase contrast make every glass surface solid (plan section 8.3). */
+html[data-rt="on"]{--a-sb:100%;--a-tb:100%;--a-pal:100%}
+@media (prefers-reduced-transparency:reduce){:root{--a-sb:100%!important;--a-tb:100%!important;--a-pal:100%!important}}
+@media (prefers-contrast:more){:root{--a-sb:100%!important;--a-tb:100%!important;--a-pal:100%!important;--line:var(--lineStrong)}}
+*{box-sizing:border-box}
+html{background:var(--ground)}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+::selection{background:var(--selection);color:var(--ink)}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3,h4,p,ul,table{margin:0;padding:0}
+ul{list-style:none}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+kbd{font:12px ui-monospace,"SF Mono",Menlo,monospace;color:var(--ink2)}
+.num{font-variant-numeric:tabular-nums}
+/* Page frame around the mocks (not the app) */
+.top{padding:24px 32px 20px;border-bottom:1px solid var(--line);background:var(--surface)}
+.top h1{font-size:22px;font-weight:600}
+.top p{font-size:13px;color:var(--ink2);margin:4px 0 16px;max-width:70ch}
+.ctl{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;font-size:13px}
+.seg{display:inline-flex;border:1px solid var(--lineStrong);border-radius:10px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:6px 14px;font-size:13px;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"],.seg button[aria-checked="true"]{background:var(--primary);color:var(--primaryText)}
+.chk{display:inline-flex;gap:8px;align-items:center}
+main{max-width:1180px;margin:0 auto;padding:16px 32px 64px}
+section{margin-top:48px}
+section>h2{font-size:15px;font-weight:600;margin-bottom:12px}
+.cap{font-size:13px;color:var(--ink2);margin-top:12px;max-width:75ch}
+/* The sample desktop: the owner's wallpaper, not Stephen's UI. Flat blocks so the glass has something to frost. */
+.desk{position:relative;border-radius:14px;padding:28px;background:#2F5D62;overflow:hidden}
+.desk .blk{position:absolute;border-radius:10px}
+.desk .b1{left:-30px;top:40px;width:260px;height:300px;background:#E07A2F}
+.desk .b2{left:120px;top:380px;width:200px;height:180px;background:#F2E8CF}
+.desk .b3{right:40px;top:-20px;width:240px;height:160px;background:#1B1F3B}
+.desk .dtext{position:absolute;left:24px;top:120px;width:150px;color:#fff;font-size:13px;line-height:1.5}
+/* Window */
+.win{position:relative;display:grid;grid-template-columns:232px 1fr;height:640px;border-radius:12px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,.32),0 0 0 1px rgba(0,0,0,.2)}
+.sb{background:color-mix(in srgb,var(--sidebar) var(--a-sb),transparent);-webkit-backdrop-filter:blur(30px) saturate(1.3);backdrop-filter:blur(30px) saturate(1.3);border-right:1px solid var(--line);padding:12px 12px 16px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.lights{display:flex;gap:8px;padding:4px 4px 16px}
+.lights i{width:12px;height:12px;border-radius:50%;background:#FF5F57}
+.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
+.word{font-size:15px;font-weight:600;padding:0 10px}
+.state{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px 4px}
+.rec{display:flex;align-items:center;gap:8px;margin:8px 0 4px;padding:8px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--lineStrong);font-size:13px}
+.glabel{font-size:12px;font-weight:600;color:var(--ink2);padding:20px 10px 6px}
+.nav{position:relative;display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;border-radius:8px;padding:7px 10px;text-align:left;font-size:15px}
+.nav .nl{flex:1}
+.nav .i{color:var(--ink2)}
+.nav[aria-current="page"]{background:var(--selection);font-weight:600}
+.nav[aria-current="page"] .i{color:var(--accent)}
+.nav[aria-current="page"]::before{content:"";position:absolute;left:2px;top:8px;bottom:8px;width:3px;border-radius:2px;background:var(--accent)}
+.badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--primary);color:var(--primaryText);font-size:11px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.col{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.scroll{overflow:auto;flex:1;position:relative;background:var(--ground)}
+.tb{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 20px 10px 28px;background:color-mix(in srgb,var(--ground) var(--a-tb),transparent);-webkit-backdrop-filter:blur(24px) saturate(1.3);backdrop-filter:blur(24px) saturate(1.3);border-bottom:1px solid var(--line)}
+.tb h3{font-size:15px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srch{display:inline-flex;align-items:center;gap:8px;min-width:200px;border:1px solid var(--lineStrong);border-radius:8px;background:var(--surface);padding:5px 10px;font-size:13px;color:var(--ink2)}
+.srch span{flex:1;text-align:left}
+.banner{display:flex;align-items:center;gap:10px;padding:10px 28px;background:var(--surface);border-bottom:1px solid var(--line);font-weight:500}
+.banner .i{color:var(--warn)}
+.banner span{flex:1}
+.content{padding:28px 40px 48px;max-width:760px}
+.intro{font-size:13px;color:var(--ink2);margin:0 0 24px;max-width:65ch}
+.btn{border:1px solid var(--lineStrong);background:transparent;border-radius:10px;padding:6px 14px;font-size:13px;white-space:nowrap}
+.btn.p{background:var(--primary);color:var(--primaryText);border-color:var(--primary)}
+.btn.bad{color:var(--bad)}
+.btn:disabled{opacity:.55}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:10px;border:1px solid var(--lineStrong);background:transparent;flex:none}
+.iconbtn.p{background:var(--primary);color:var(--primaryText);border-color:var(--primary)}
+.iconbtn.q{border-color:transparent;color:var(--ink2)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink2);flex:none}
+.st.ok .dot{background:var(--ok)}.st.warn .dot{background:var(--warn)}.st.bad .dot{background:var(--bad)}
+.st.warn .i{color:var(--warn)}.st.bad .i{color:var(--bad)}
+.h4{font-size:15px;font-weight:600;margin:28px 0 8px}
+.h4:first-child{margin-top:0}
+.list{border-top:1px solid var(--line)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;min-height:44px;border-bottom:1px solid var(--line)}
+.rl{min-width:0}
+.title{font-size:15px;font-weight:500;overflow-wrap:anywhere}
+.facts{font-size:13px;color:var(--ink2);margin-top:2px}
+.rr{display:flex;align-items:center;gap:10px;flex:none}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.chip{border:1px solid var(--lineStrong);background:transparent;border-radius:10px;padding:6px 14px;font-size:13px}
+.chip[aria-pressed="true"]{background:var(--selection);border-color:var(--accent);font-weight:600}
+.field{display:flex;align-items:center;gap:10px;border:1px solid var(--lineStrong);background:var(--surface);border-radius:10px;padding:0 12px;margin-bottom:16px}
+.field input{flex:1;min-width:0;border:0;background:transparent;padding:9px 0;font-size:15px;outline:0}
+.field:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+input::placeholder,textarea::placeholder{color:var(--ink2)}
+/* Accordions: closed by default, remembered per page and section. */
+details.acc{border-top:1px solid var(--line);margin-top:24px}
+details.acc>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:12px 0;font-size:15px;font-weight:600}
+details.acc>summary::-webkit-details-marker{display:none}
+details.acc>summary .i{transition:transform .15s ease-out;color:var(--ink2)}
+details.acc[open]>summary .i{transform:rotate(90deg)}
+details.acc>summary .n{font-weight:400;color:var(--ink2);font-size:13px}
+.accbody{padding:0 0 8px 24px}
+/* Home */
+.greet{font-size:26px;font-weight:600}
+.date{font-size:13px;color:var(--ink2);margin-top:4px}
+.next{margin-top:12px;font-size:15px}
+.next a{color:var(--accent)}
+.compbox{display:flex;align-items:flex-end;gap:10px;border:1px solid var(--lineStrong);background:var(--surface);border-radius:12px;padding:12px 12px 12px 16px;margin:28px 0 12px}
+.compbox textarea{flex:1;border:0;background:transparent;resize:none;height:56px;font-size:15px;outline:0}
+.compbox:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+/* Conversations rows (accordions without memory: the record opens, it is not a preference) */
+details.conv{border-bottom:1px solid var(--line)}
+details.conv>summary{list-style:none;display:flex;justify-content:space-between;gap:16px;padding:12px 0}
+details.conv>summary::-webkit-details-marker{display:none}
+.refl{display:flex;gap:8px;align-items:baseline;font-size:13px;margin-top:6px}
+.refl .i{width:14px;height:14px;transform:translateY(2px)}
+.steps{padding:0 0 14px 16px;border-left:1px solid var(--line);margin:0 0 12px 2px;font-size:13px;color:var(--ink2);display:flex;flex-direction:column;gap:4px}
+.reply{color:var(--ink2);margin:0 0 10px}
+.dayh{font-size:12px;font-weight:600;color:var(--ink2);margin:20px 0 4px}
+/* Settings */
+.set{display:grid;grid-template-columns:200px 1fr;min-height:100%}
+.subnav{border-right:1px solid var(--line);padding:12px 10px}
+.subnav .glabel{padding-top:14px}
+.subnav .glabel:first-child{padding-top:4px}
+.subnav .nav{font-size:13px;padding:6px 10px}
+.form{border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.form>.g{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line);min-height:48px}
+.form>.g:last-child{border-bottom:0}
+.g .val{color:var(--ink2)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:12px;font-weight:600;color:var(--ink2);text-align:left;padding:10px 12px 10px 0;border-bottom:1px solid var(--line)}
+td,tbody th{padding:12px 12px 12px 0;border-bottom:1px solid var(--line)}
+tbody th{font-size:15px;font-weight:400;color:var(--ink)}
+.sw{width:40px;height:24px;border-radius:12px;border:1px solid var(--lineStrong);background:var(--surface2);position:relative;padding:0;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--ink2)}
+.sw[aria-checked="true"]{background:var(--accent);border-color:var(--accent)}
+.sw[aria-checked="true"]::after{left:18px;background:#FFFFFF}
+[data-theme="dark"] .sw[aria-checked="true"]::after,[data-theme="navy"] .sw[aria-checked="true"]::after{background:#0E1525}
+.tiles{display:flex;gap:10px;flex-wrap:wrap}
+.tile{border:2px solid var(--line);background:transparent;border-radius:12px;padding:8px;font-size:13px;display:flex;flex-direction:column;gap:6px;align-items:center}
+.tile[aria-pressed="true"]{border-color:var(--accent);font-weight:600}
+.swatch{width:72px;height:44px;border-radius:8px;background:var(--ground);border:1px solid var(--line);position:relative}
+.swatch b{position:absolute;left:8px;right:8px;top:8px;height:16px;border-radius:4px;background:var(--surface)}
+.swatch u{position:absolute;left:8px;bottom:6px;width:20px;height:6px;border-radius:3px;background:var(--accent)}
+/* Palette */
+.pal{position:absolute;z-index:5;top:64px;left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 32px));border-radius:12px;background:color-mix(in srgb,var(--surface) var(--a-pal),transparent);-webkit-backdrop-filter:blur(30px) saturate(1.3);backdrop-filter:blur(30px) saturate(1.3);box-shadow:0 16px 40px rgba(0,0,0,.28),0 0 0 1px var(--lineStrong)}
+.pal[hidden]{display:none}
+.pal .pin{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.pal .pin input{flex:1;border:0;background:transparent;font-size:15px;outline:0;min-width:0}
+.pal ul{max-height:360px;overflow:auto;padding:6px 6px 8px}
+.pal .ph{font-size:12px;font-weight:600;color:var(--ink2);padding:10px 10px 4px}
+.pal .pi{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:15px;min-height:36px}
+.pal .pi .i{color:var(--ink2)}
+.pal .pi .pt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal .pi .pf{font-size:13px;color:var(--ink2);white-space:nowrap}
+.pal .pi[aria-selected="true"]{background:var(--selection)}
+.pal .foot{display:flex;gap:16px;padding:10px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--ink2)}
+/* Ask box */
+.mbar{display:flex;justify-content:flex-end;align-items:center;gap:16px;padding:6px 14px;background:color-mix(in srgb,var(--surface2) 92%,transparent);color:var(--ink);font-size:12px;border-radius:10px 10px 0 0}
+.mark{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:1.5px solid var(--ink);border-radius:50%;font-size:10px;font-weight:600}
+.askwrap{position:relative;border-radius:14px;padding:0 0 28px;background:#2F5D62;max-width:560px}
+.panel{width:360px;margin:10px auto 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.22);overflow:hidden}
+.pstrip{display:flex;align-items:center;gap:6px;padding:8px 8px 8px 16px;border-bottom:1px solid var(--line)}
+.pstrip .st{flex:1}
+.thread{padding:16px;display:flex;flex-direction:column;gap:16px}
+.me{align-self:flex-end;max-width:85%}
+.me .bub{background:var(--selection);border-radius:12px;padding:10px 14px}
+.src{font-size:12px;color:var(--ink2);margin-top:4px;text-align:right}
+.q{border:1.5px solid var(--warn);border-radius:12px;padding:16px;background:var(--surface2)}
+.q .ql{font-size:12px;font-weight:600;color:var(--ink2)}
+.q .qt{margin:4px 0 10px;font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.qf{max-height:140px;overflow:auto;font-size:13px;color:var(--ink2);white-space:pre-line;overflow-wrap:anywhere}
+.q .note{font-size:13px;color:var(--ink2);margin-top:10px}
+.q .btns{display:flex;justify-content:space-between;margin-top:14px}
+.pfield{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
+.pfield input{flex:1;min-width:0;font-size:13px;border:1px solid var(--lineStrong);border-radius:10px;padding:7px 10px;background:var(--surface2)}
+.hide,[hidden]{display:none!important}
+@media (max-width:860px){.win{grid-template-columns:1fr;height:auto}.sb{display:none}.content{padding:20px}.set{grid-template-columns:1fr}.subnav{display:none}main{padding:16px}.desk{padding:12px}.srch{min-width:0}.srch span{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-house" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9M10 19v-5h4v5"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M3 5h11a1.5 1.5 0 011.5 1.5v5A1.5 1.5 0 0114 13H8l-3 3v-3H3a1.5 1.5 0 01-1.5-1.5v-5A1.5 1.5 0 013 5zM17 9h4a1.5 1.5 0 011.5 1.5v5A1.5 1.5 0 0121 17h-1v3l-3-3h-5a1.5 1.5 0 01-1.5-1.5V15"/></symbol>
+<symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6zM15 3v4h4M9 12h7M9 16h7"/></symbol>
+<symbol id="i-tray" viewBox="0 0 24 24"><path d="M3 13l3-8h12l3 8v6H3zM3 13h5l1 2h6l1-2h5"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6 18c1.5-3 4-4 6-4s4.5 1 6 4"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2 2M16.7 16.7l2 2M5.3 18.7l2-2M16.7 7.3l2-2"/></symbol>
+<symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+<symbol id="i-dots" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><path d="M8 13V6.5a1.2 1.2 0 012.4 0V11M10.4 11V4.5a1.2 1.2 0 012.4 0V11M12.8 11V5.5a1.2 1.2 0 012.4 0V12M15.2 12V8.5a1.2 1.2 0 012.4 0V14c0 4-2.5 6.5-6 6.5-2.6 0-4.2-1-5.6-3.2L4.5 14a1.2 1.2 0 012-1.2L8 14.5"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17.5h.01"/></symbol>
+<symbol id="i-run" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+<symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/></symbol>
+</defs></svg>
+<header class="top"><h1>Stephen UI v4 mock</h1><p>Pictures for discussion, not the app. Example content. Plan: docs/research/UI-V4-IA-PLAN.md. Press ⌘K (or Ctrl+K) inside the window for the palette.</p>
+<div class="ctl"><div class="seg" role="group" aria-label="Theme" id="themes"><button data-t="light" aria-pressed="true">Light</button><button data-t="dark" aria-pressed="false">Dark</button><button data-t="navy" aria-pressed="false">Navy</button><button data-t="rose" aria-pressed="false">Rose</button><button data-t="sun" aria-pressed="false">Sun</button></div>
+<label class="chk"><input type="checkbox" id="rt"> Reduce transparency (glass becomes solid)</label>
+<label class="chk"><input type="checkbox" id="wq"> A question is waiting</label></div></header>
+<main>
+<section id="s1"><h2>1. Main window: glass shell, toolbar, ⌘K palette, accordions</h2>
+<div class="desk"><div class="blk b1"></div><div class="blk b2"></div><div class="blk b3"></div><p class="dtext">Your desktop (example). The sidebar, the toolbar and the palette let it show through a little.</p>
+<div class="win" id="win">
+<nav class="sb" aria-label="Sections"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="word">Stephen</div>
+<div class="state"><span class="st ok"><span class="dot"></span>Listening</span><button class="btn">Stop</button></div>
+<div class="rec" role="status"><svg class="i" aria-hidden="true"><use href="#i-wave"/></svg>Recording on</div>
+<div class="glabel">Talk</div>
+<button class="nav" data-p="home" aria-current="page"><svg class="i" aria-hidden="true"><use href="#i-house"/></svg><span class="nl">Home</span><span class="badge hide" id="hbadge">1</span><kbd>⌘1</kbd></button>
+<button class="nav" data-p="conv"><svg class="i" aria-hidden="true"><use href="#i-chat"/></svg><span class="nl">Conversations</span><kbd>⌘2</kbd></button>
+<button class="nav" data-p="jobs"><svg class="i" aria-hidden="true"><use href="#i-tray"/></svg><span class="nl">Jobs</span><kbd>⌘3</kbd></button>
+<div class="glabel">Control</div>
+<button class="nav" data-p="mem"><svg class="i" aria-hidden="true"><use href="#i-note"/></svg><span class="nl">Memory</span><kbd>⌘4</kbd></button>
+<button class="nav" data-p="set"><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg><span class="nl">Settings</span><kbd>⌘5</kbd></button>
+</nav>
+<div class="col"><div class="scroll" id="scroll">
+<div class="tb"><h3 id="ptitle"></h3><span id="pact"></span><button class="srch" id="openpal" aria-keyshortcuts="Meta+K" aria-label="Search and actions, Command K"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span>Search</span><kbd>⌘K</kbd></button></div>
+<div class="banner hide" id="banner" role="status"><svg class="i" aria-hidden="true"><use href="#i-warn"/></svg><span>Stephen is waiting for your OK</span><button class="btn" data-go="ask">Open</button></div>
+
+<div class="page" data-page="home"><div class="content">
+<h3 class="greet">Afternoon, Cris.</h3><p class="date">Tuesday, November 18</p>
+<p class="next">Next: CSCI 3310 lab at 3:00 PM, in 46 minutes · <a href="#" data-go="jobs">1 job running</a></p>
+<div class="compbox"><textarea id="composer" placeholder="Type, hold F5, or say Hey Stephen" aria-label="Ask Stephen"></textarea><button class="iconbtn" aria-label="Talk"><svg class="i" aria-hidden="true"><use href="#i-mic"/></svg></button><button class="iconbtn p" aria-label="Send"><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></button></div>
+<div class="chips"><button class="chip" data-fill="Plan my day">Plan my day</button><button class="chip" data-fill="Find internships">Find internships</button><button class="chip" data-fill="Start a job to ">Start a job</button></div>
+<details class="acc" data-acc="home.recent"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Recent chats <span class="n">3 · 1 refused</span></summary><div class="accbody"><ul class="list">
+<li class="row"><div class="rl"><div class="title">Email Prof Rahman about the Lab 4 report</div><div class="facts">F5 · 2:14 PM · 2 steps · 1 refused</div></div><span class="st warn"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg>Refused</span></li>
+<li class="row"><div class="rl"><div class="title">Open YouTube and play lofi</div><div class="facts">Typed · 1:02 PM · 2 steps</div></div><span class="st ok"><span class="dot"></span>Done</span></li>
+<li class="row"><div class="rl"><div class="title">What is due this week on Canvas?</div><div class="facts">Hey Stephen · 9:40 AM · 1 step</div></div><span class="st ok"><span class="dot"></span>Done</span></li></ul><div class="rr" style="padding-top:12px"><button class="btn" data-go="conv">View all</button></div></div></details>
+</div></div>
+
+<div class="page" data-page="conv" hidden><div class="content">
+<p class="intro">What you asked, what Stephen did, and what it refused. The list is saved on this Mac.</p>
+<div class="field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input type="search" placeholder="Search conversations" aria-label="Search conversations"></div>
+<div class="chips" role="group" aria-label="Filter"><button class="chip" aria-pressed="true">All</button><button class="chip" aria-pressed="false">Refused</button><button class="chip" aria-pressed="false">Failed</button></div>
+<h4 class="dayh">Today</h4><div class="list">
+<details class="conv"><summary><div class="rl"><div class="title">Email Prof Rahman that my Lab 4 report is attached</div><div class="facts">F5 · 2:14 PM · 2 steps · 1 refused</div>
+<div class="refl"><span class="st warn"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg></span><span>Refused: click button "Send". You did not allow it.</span></div></div><span class="st warn"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg>Refused</span></summary>
+<p class="reply">I did not send it. The email is still a draft in Gmail.</p>
+<div class="steps"><span>open mail.google.com</span><span>type the message</span><span>Refused: click button "Send". You did not allow it.</span></div>
+<div class="rr acts" style="padding-bottom:14px"><button class="btn">Open in chat</button><button class="btn" data-edit aria-label="Edit this message">Edit</button></div><div class="editor" hidden><p class="facts" style="color:var(--warn)">You said this with F5. Check the words before you send.</p><div class="field" style="margin:6px 0 8px"><input type="text" value="Email Prof Rahman that my Lab 4 report is attached" aria-label="Edit this message"></div><div class="rr" style="padding-bottom:14px"><button class="btn" data-cancel>Cancel</button><button class="btn p">Send</button></div></div></details>
+<details class="conv"><summary><div class="rl"><div class="title">Open YouTube and play lofi</div><div class="facts">Typed · 1:02 PM · 2 steps</div></div><span class="st ok"><span class="dot"></span>Done</span></summary>
+<p class="reply">YouTube is open and a lofi mix is playing.</p><div class="steps"><span>open youtube.com</span><span>click "lofi hip hop radio"</span></div>
+<div class="rr acts" style="padding-bottom:14px"><button class="btn">Open in chat</button><button class="btn" data-edit aria-label="Edit this message">Edit</button></div><div class="editor" hidden><p class="facts" style="color:var(--warn)">You typed this. Check the words before you send.</p><div class="field" style="margin:6px 0 8px"><input type="text" value="Open YouTube and play lofi" aria-label="Edit this message"></div><div class="rr" style="padding-bottom:14px"><button class="btn" data-cancel>Cancel</button><button class="btn p">Send</button></div></div></details></div>
+<h4 class="dayh">Yesterday</h4><div class="list">
+<details class="conv"><summary><div class="rl"><div class="title">Find 5 software internships in Toronto</div><div class="facts">Hey Stephen · 4:10 PM · started a job</div></div><span class="st"><span class="dot"></span>Job</span></summary>
+<p class="reply">Started a job. It shows up in Jobs.</p><div class="rr" style="padding-bottom:14px"><button class="btn" data-go="jobs">Open in Jobs</button></div></details></div>
+<p class="cap">A row with a refusal or a failure shows those lines even when closed. Open in chat starts a new session with the old turns as quoted data and no old approvals (ADR-007 v2). Edit opens your message in place, keeps where it came from, and sends nothing until Send; the gate asks again (ADR-010).</p>
+</div></div>
+
+<div class="page" data-page="jobs" hidden><div class="content">
+<p class="intro">Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it.</p>
+<h4 class="h4">Running</h4><ul class="list"><li class="row"><div class="rl"><div class="title">Find 5 software internships in Toronto</div><div class="facts num">Started 4:10 PM · 3 min · $0.12 spent</div></div><div class="rr"><span class="st ok"><span class="dot"></span>Running</span><button class="btn bad">Stop</button></div></li></ul>
+<h4 class="h4">Failed</h4><ul class="list"><li class="row"><div class="rl"><div class="title">Compare three laptop stands under $60</div><div class="facts num">Nov 14 · 30 min</div></div><span class="st bad"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Failed, timed out</span></li></ul>
+<details class="acc" data-acc="jobs.earlier"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Earlier <span class="n">2</span></summary><div class="accbody"><ul class="list">
+<li class="row"><div class="rl"><div class="title">Summarise this week's Canvas announcements</div><div class="facts num">Nov 16 · 6 min · $0.31 spent</div></div><span class="st"><span class="dot"></span>Finished</span></li>
+<li class="row"><div class="rl"><div class="title">Rename the screenshots in Downloads</div><div class="facts num">Nov 15 · 1 min</div></div><span class="st"><span class="dot"></span>Stopped</span></li></ul></div></details>
+</div></div>
+
+<div class="page" data-page="mem" hidden><div class="content">
+<p class="intro">Things Stephen remembers about you. It only saves what you tell it or keep.</p>
+<h4 class="h4">New from your chats</h4><ul class="list">
+<li class="row"><div class="rl"><div class="title">Moved gym to Fit4Less on Simcoe St</div><div class="facts">You said · 2:20 PM · not kept yet</div></div><div class="rr"><button class="btn">Skip</button><button class="btn">Edit</button><button class="btn p">Keep</button></div></li>
+<li class="row"><div class="rl"><div class="title">Lab 5 is due December 2</div><div class="facts" style="color:var(--warn)">From Canvas · third-party text, check it</div></div><div class="rr"><button class="btn">Skip</button><button class="btn">Edit</button><button class="btn p">Keep</button></div></li></ul>
+<h4 class="h4">Saved</h4>
+<div class="field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input type="search" placeholder="Search memory" aria-label="Search memory"><kbd>⌘F</kbd></div>
+<div class="chips" role="group" aria-label="Filter"><button class="chip" aria-pressed="true">All</button><button class="chip" aria-pressed="false">People</button><button class="chip" aria-pressed="false">School</button><button class="chip" aria-pressed="false">Places</button><span style="flex:1"></span><div class="seg" role="radiogroup" aria-label="Show memory as"><button role="radio" aria-checked="false">Graph</button><button role="radio" aria-checked="true">List</button></div></div>
+<ul class="list"><li class="row"><div class="rl"><div class="title">Lab 4 report is due Friday</div><div class="facts">School · you said, Nov 3</div></div><button class="btn bad">Forget</button></li>
+<li class="row"><div class="rl"><div class="title">Prof Rahman teaches CSCI 3310</div><div class="facts">People · you said, Oct 28</div></div><button class="btn bad">Forget</button></li></ul>
+<div class="field" style="margin-top:24px"><input type="text" placeholder="Tell Stephen something to remember" aria-label="Tell Stephen"></div>
+<details class="acc" data-acc="mem.about"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>About memory</summary><div class="accbody"><p class="facts">Stephen loads up to 8 KB of memory into each chat. Today: 41%. Nothing is saved until you press Keep. Forget all is in the ⋯ menu.</p></div></details>
+</div></div>
+
+<div class="page" data-page="set" hidden><div class="set">
+<nav class="subnav" aria-label="Settings panes"><div class="glabel">You</div>
+<button class="nav" data-s="about-you">About you</button><button class="nav" data-s="connected">Connected</button><button class="nav" data-s="privacy" aria-current="page">Privacy and permissions</button><button class="nav" data-s="routines">Routines</button>
+<div class="glabel">Stephen</div><button class="nav" data-s="voice">Voice</button><button class="nav" data-s="model">Model and effort</button>
+<div class="glabel">App</div><button class="nav" data-s="appearance">Appearance</button><button class="nav" data-s="about">About</button></nav>
+<div class="content">
+<div class="pane" data-pane="privacy"><h4 class="h4">What Stephen may do</h4>
+<table><thead><tr><th scope="col">Action</th><th scope="col">F5</th><th scope="col">Hey Stephen</th><th scope="col">Phone</th></tr></thead><tbody>
+<tr><th scope="row">Read</th><td><span class="st ok"><span class="dot"></span>Allowed</span></td><td><span class="st ok"><span class="dot"></span>Allowed</span></td><td><span class="st ok"><span class="dot"></span>Allowed</span></td></tr>
+<tr><th scope="row">Type and click</th><td><span class="st ok"><span class="dot"></span>Allowed</span></td><td><span class="st ok"><span class="dot"></span>Allowed</span></td><td><span class="st ok"><span class="dot"></span>Allowed</span></td></tr>
+<tr><th scope="row">Send or submit</th><td><span class="st warn"><span class="dot"></span>Asks you</span></td><td><span class="st warn"><span class="dot"></span>Asks you</span></td><td><span class="st bad"><span class="dot"></span>Never</span></td></tr></tbody></table>
+<p class="facts" style="margin-top:8px">Read only. These come from Stephen's safety rules.</p>
+<h4 class="h4">Recording</h4><div class="form"><div class="g"><div><div class="title" style="font-weight:400">Save my F5 commands to measure mistakes</div><div class="facts">Audio and words, on this Mac for 30 days. Never sent anywhere.</div></div><button class="sw" role="switch" aria-checked="true" aria-label="Save my F5 commands to measure mistakes"></button></div></div>
+<details class="acc" data-acc="set.privacy.rules"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Where these rules come from</summary><div class="accbody"><p class="facts">Send or submit, by F5: asks you, because a button like Send or Delete asks first. By phone: never, because the phone link is locked to read tools.</p></div></details></div>
+<div class="pane" data-pane="connected" hidden><div class="form">
+<div class="g"><div><div class="title" style="font-weight:400">Canvas</div><div class="facts">Read only</div></div><span class="st ok"><span class="dot"></span>Connected</span></div>
+<div class="g"><div><div class="title" style="font-weight:400">Gmail</div></div><span class="st"><span class="dot"></span>Not set up</span></div>
+<div class="g"><div><div class="title" style="font-weight:400">Zen</div><div class="facts">Needs the Zen for Stephen app</div></div><button class="btn">Open Zen for Stephen</button></div>
+<div class="g"><div><div class="title" style="font-weight:400">Phone link</div><div class="facts">Locked to Stephen's phone tools</div></div><span class="rr"><span class="st"><span class="dot"></span>Off</span><button class="btn">Turn on</button></span></div></div>
+<details class="acc" data-acc="set.connected.how"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>How to connect</summary><div class="accbody"><p class="facts">Sign in and out with <kbd>stephen connect</kbd> and <kbd>stephen disconnect</kbd> in Terminal. Keys and tokens stay in the Keychain.</p></div></details></div>
+<div class="pane" data-pane="voice" hidden><div class="form">
+<div class="g"><span>Length</span><div class="seg" role="radiogroup" aria-label="Length"><button role="radio" aria-checked="false">Brief</button><button role="radio" aria-checked="true">Balanced</button><button role="radio" aria-checked="false">Detailed</button></div></div>
+<div class="g"><span>Tone</span><div class="seg" role="radiogroup" aria-label="Tone"><button role="radio" aria-checked="false">Casual</button><button role="radio" aria-checked="true">Friendly</button><button role="radio" aria-checked="false">Formal</button></div></div>
+<div class="g"><span>Speak replies out loud</span><button class="sw" role="switch" aria-checked="true" aria-label="Speak replies out loud"></button></div>
+<div class="g"><span>Explain steps as you go</span><button class="sw" role="switch" aria-checked="false" aria-label="Explain steps as you go"></button></div></div>
+<div class="rr" style="margin-top:16px"><button class="btn p">Save</button><span class="facts">Applies from your next command.</span></div>
+<details class="acc" data-acc="set.voice.voices"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Voices and fallback order</summary><div class="accbody"><p class="facts">ElevenLabs, then Kokoro, then the macOS voice.</p></div></details>
+<details class="acc" data-acc="set.voice.wake" style="margin-top:0"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Wake word and F5</summary><div class="accbody"><p class="facts">Wake word on: "hey stephen". Push to talk: hold F5. Read only for now: change it in config.json.</p></div></details></div>
+<div class="pane" data-pane="appearance" hidden><div class="tiles" id="tiles"></div>
+<div class="form" style="margin-top:20px"><div class="g"><span>Follow the Mac</span><button class="sw" role="switch" aria-checked="false" aria-label="Follow the Mac"></button></div><div class="g"><div><span>Glass</span><div class="facts">Follows Reduce transparency and Increase contrast in System Settings.</div></div><span class="val">Automatic</span></div></div></div>
+<div class="pane" data-pane="about-you" hidden><div class="form"><div class="g"><span>Name</span><span class="val">Cris</span></div><div class="g"><span>School</span><span class="val">Example University</span></div><div class="g"><span>Time zone</span><span class="val">Eastern</span></div></div><p class="facts" style="margin-top:8px">Read from voice.aboutMe in config.json.</p></div>
+<div class="pane" data-pane="routines" hidden><ul class="list"><li class="row"><div class="rl"><div class="title">Morning brief</div><div class="facts">Uses Canvas and Calendar. Say "morning brief"</div></div><span class="st ok"><span class="dot"></span>Ready</span></li></ul></div>
+<div class="pane" data-pane="model" hidden><div class="form"><div class="g"><span>Model</span><span class="val">Default</span></div><div class="g"><span>Effort</span><span class="val">Default</span></div></div></div>
+<div class="pane" data-pane="about" hidden><div class="form"><div class="g"><div><span>Config file</span><div class="facts">~/.stephen/config.json</div></div><button class="btn">Open</button></div></div>
+<details class="acc" data-acc="set.about.speed"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Speed, last 7 days</summary><div class="accbody"><p class="facts num">Median 1.7 s from end of speech.</p></div></details>
+<details class="acc" data-acc="set.about.doctor" style="margin-top:0"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>Doctor</summary><div class="accbody"><button class="btn">Run doctor</button></div></details></div>
+</div></div></div>
+</div>
+<div class="pal" id="pal" hidden role="dialog" aria-label="Search and actions"><div class="pin"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="palq" placeholder="Search conversations, pages and actions" aria-label="Search" role="combobox" aria-controls="pallist" aria-expanded="true" autocomplete="off"><kbd>esc</kbd></div>
+<ul id="pallist" role="listbox" aria-label="Results"></ul>
+<div class="foot"><span>↑↓ move</span><span>↩ open</span><span>Never approves. Never sends. Return and Esc stay in here.</span></div></div>
+</div></div></div>
+<p class="cap">Glass: the sidebar, the toolbar and the palette only (a theme tint at 88% to 95%, so text keeps 4.5:1 on any desktop). Solid: pages, lists, the composer, the waiting banner and the Recording on sign. Turn on "Reduce transparency" above to see the solid fallback.</p></section>
+
+<section id="s2"><h2>2. Ask box with the question (solid)</h2>
+<div class="askwrap"><div class="mbar"><span class="mark" aria-hidden="true">S</span><span>Tue 2:15 PM</span></div>
+<div class="panel"><div class="pstrip"><span class="st ok"><span class="dot"></span>Ready</span><button class="iconbtn q" aria-label="More"><svg class="i" aria-hidden="true"><use href="#i-dots"/></svg></button><button class="iconbtn q" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+<div class="thread"><div class="me"><div class="bub">email Prof Rahman that my Lab 4 report is attached</div><div class="src">From: F5</div></div>
+<div class="q" role="group" aria-label="Needs your OK"><div class="ql">Needs your OK</div><div class="qt">mail.google.com, Stephen wants to click a button</div>
+<div class="qf" tabindex="0" role="region" aria-label="Details">Site: https://mail.google.com (Chrome, tab c1)
+Action: click · button c1:e2
+Why you are asked: [a button like Send or Delete asks first]
+Claude says (unverified): «email Prof Rahman the Lab 4 report»
+Element label: «Send»</div>
+<div class="note">From: F5 · Ready in a moment</div>
+<div class="btns"><button class="btn" disabled>Deny</button><button class="btn p" disabled>Allow</button></div></div></div>
+<div class="pfield"><input type="text" placeholder="Type, hold F5, or say Hey Stephen" aria-label="Message Stephen"><button class="iconbtn" aria-label="Dictate"><svg class="i" aria-hidden="true"><use href="#i-mic"/></svg></button><button class="iconbtn p" aria-label="Send"><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></button></div></div></div>
+<p class="cap">The strip shows Stephen's state as a word; the chat title moved into the ⋯ menu. The question card stays solid, its own object inside the panel on purpose. Allow is a click only, after 0.75 s; Esc denies. Unchanged.</p></section>
+</main>
+<script>
+(function(){
+var $=function(s,r){return (r||document).querySelector(s)},$$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+var THEMES=['light','dark','navy','rose','sun'],NAMES={light:'Light',dark:'Dark',navy:'Navy',rose:'Rose',sun:'Sun'};
+var PAGES={home:'',conv:'Conversations',jobs:'Jobs',mem:'Memory',set:'Settings'};
+var PANES={'about-you':'About you',connected:'Connected',privacy:'Privacy and permissions',routines:'Routines',voice:'Voice',model:'Model and effort',appearance:'Appearance',about:'About'};
+var state={page:'home',pane:'privacy'};
+function theme(t){document.documentElement.setAttribute('data-theme',t);$$('#themes button').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.t===t)});$$('#tiles .tile').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.t===t)})}
+$('#tiles').innerHTML=THEMES.map(function(t){return '<button class="tile" data-t="'+t+'" aria-pressed="'+(t==='light')+'"><span class="swatch" data-theme="'+t+'"><b></b><u></u></span>'+NAMES[t]+'</button>'}).join('');
+$$('#themes button,#tiles .tile').forEach(function(b){b.addEventListener('click',function(){theme(b.dataset.t)})});
+function go(p,pane){state.page=p;if(pane)state.pane=pane;
+ $$('.sb .nav').forEach(function(n){n.dataset.p===p?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});
+ $$('.page').forEach(function(x){x.hidden=x.dataset.page!==p});
+ $$('.subnav .nav').forEach(function(n){n.dataset.s===state.pane?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});
+ $$('.pane').forEach(function(x){x.hidden=x.dataset.pane!==state.pane});
+ $('#ptitle').textContent=p==='set'?PANES[state.pane]:PAGES[p];
+ var act={conv:'<button class="iconbtn q" aria-label="More: Clear all"><svg class="i" aria-hidden="true"><use href="#i-dots"/></svg></button>',mem:'<span class="st warn"><span class="dot"></span>41% full</span>'};
+ $('#pact').innerHTML=act[p]||'';$('#scroll').scrollTop=0}
+$$('.sb .nav').forEach(function(n){n.addEventListener('click',function(){go(n.dataset.p)})});
+$$('.subnav .nav').forEach(function(n){n.addEventListener('click',function(){go('set',n.dataset.s)})});
+document.addEventListener('click',function(e){var g=e.target.closest('[data-go]');if(!g)return;e.preventDefault();if(g.dataset.go==='ask'){location.hash='#s2';return}go(g.dataset.go)});
+$$('[data-fill]').forEach(function(c){c.addEventListener('click',function(){var t=$('#composer');t.value=c.dataset.fill;t.focus()})});
+$$('.chip[aria-pressed]').forEach(function(c){c.addEventListener('click',function(){$$('.chip',c.parentNode).forEach(function(x){x.setAttribute('aria-pressed',x===c)})})});
+$$('[role="radiogroup"]').forEach(function(g){$$('[role="radio"]',g).forEach(function(r){r.addEventListener('click',function(){$$('[role="radio"]',g).forEach(function(x){x.setAttribute('aria-checked',x===r)})})})});
+$$('.sw').forEach(function(s){s.addEventListener('click',function(){s.setAttribute('aria-checked',s.getAttribute('aria-checked')!=='true')})});
+// Accordions: closed by default, open state remembered per page and section.
+$$('details.acc').forEach(function(d){if(store('acc.'+d.dataset.acc)==='1')d.open=true;d.addEventListener('toggle',function(){store('acc.'+d.dataset.acc,d.open?'1':'0')})});
+$('#rt').addEventListener('change',function(e){document.documentElement.setAttribute('data-rt',e.target.checked?'on':'off')});
+$('#wq').addEventListener('change',function(e){$('#banner').classList.toggle('hide',!e.target.checked);$('#hbadge').classList.toggle('hide',!e.target.checked);if(!$('#pal').hidden)placePal()});
+$$('[data-edit]').forEach(function(b){b.addEventListener('click',function(){var d=b.closest('details');d.querySelector('.editor').hidden=false;d.querySelector('.acts').hidden=true;d.querySelector('.editor input').focus()})});
+$$('[data-cancel]').forEach(function(b){b.addEventListener('click',function(){var d=b.closest('details');d.querySelector('.editor').hidden=true;d.querySelector('.acts').hidden=false})});
+// Palette. Results only navigate or run the safe allow list (plan section 7.3). No Allow, no send.
+var CONV=[{t:'Email Prof Rahman that my Lab 4 report is attached',f:'F5 · 2:14 PM'},{t:'Open YouTube and play lofi',f:'Typed · 1:02 PM'},{t:'Find 5 software internships in Toronto',f:'Hey Stephen · Yesterday'},{t:'What is due this week on Canvas?',f:'Hey Stephen · 9:40 AM'}];
+var ICON={home:'i-house',conv:'i-chat',jobs:'i-tray',mem:'i-note',set:'i-gear'};
+function items(q){var L=q.toLowerCase(),out=[];function m(s){return !L||s.toLowerCase().indexOf(L)>=0}
+ if($('#wq').checked)out.push({h:'Waiting',t:'Stephen is waiting for your OK',f:'Opens the Ask box',ic:'i-warn',run:function(){location.hash='#s2'}});
+ if(q.trim())out.push({h:'Ask',t:'Ask Stephen: '+q,f:'Fills the composer',ic:'i-up',run:function(){go('home');var c=$('#composer');c.value=q;c.focus()}});
+ CONV.filter(function(c){return L&&m(c.t)}).slice(0,5).forEach(function(c){out.push({h:'Conversations',t:c.t,f:c.f,ic:'i-chat',run:function(){go('conv')}})});
+ Object.keys(PAGES).forEach(function(p){var n=PAGES[p]||'Home';if(m(n))out.push({h:'Go to',t:n,f:'⌘'+(Object.keys(PAGES).indexOf(p)+1),ic:ICON[p],run:function(){go(p)}})});
+ Object.keys(PANES).forEach(function(s){if(L&&m(PANES[s]))out.push({h:'Go to',t:'Settings: '+PANES[s],f:'',ic:'i-gear',run:function(){go('set',s)}})});
+ [{t:'New chat',f:'⌘N',run:function(){go('home');$('#composer').value=''}},{t:'Open the Ask box',f:'',run:function(){location.hash='#s2'}},{t:'Run doctor',f:'Read-only check',run:function(){go('set','about')}}]
+  .concat(THEMES.map(function(t){return {t:'Theme: '+NAMES[t],f:'',run:function(){theme(t)}}}))
+  .forEach(function(a){if(m(a.t)&&(L||a.t==='New chat'||a.t==='Open the Ask box'))out.push({h:'Actions',t:a.t,f:a.f,ic:'i-run',run:a.run})});
+ return out}
+var sel=0,cur=[];
+function render(){var q=$('#palq').value;cur=items(q);if(sel>=cur.length)sel=0;var last='',ul=$('#pallist');ul.textContent='';
+ cur.forEach(function(it,i){if(it.h!==last){var h=document.createElement('li');h.className='ph';h.setAttribute('role','presentation');h.textContent=it.h;ul.appendChild(h);last=it.h}
+  var li=document.createElement('li');li.className='pi';li.id='pi'+i;li.setAttribute('role','option');li.setAttribute('aria-selected',i===sel);
+  li.innerHTML='<svg class="i" aria-hidden="true"><use href="#'+it.ic+'"/></svg><span class="pt"></span><span class="pf"></span>';
+  li.querySelector('.pt').textContent=it.t;li.querySelector('.pf').textContent=it.f; /* conversation text is data: textContent only */
+  li.addEventListener('mousemove',function(){if(sel!==i){sel=i;mark()}});li.addEventListener('click',function(){run(i)});ul.appendChild(li)});
+ $('#palq').setAttribute('aria-activedescendant',cur.length?'pi'+sel:'')}
+function mark(){$$('#pallist .pi').forEach(function(li,i){li.setAttribute('aria-selected',i===sel)});var a=$('#pi'+sel);if(a)a.scrollIntoView({block:'nearest'});$('#palq').setAttribute('aria-activedescendant','pi'+sel)}
+var opener=null;
+function placePal(){var w=$('#win').getBoundingClientRect(),b=$('#banner'),t=$('.tb').getBoundingClientRect();var edge=b.classList.contains('hide')?t.bottom:b.getBoundingClientRect().bottom;$('#pal').style.top=(edge-w.top+12)+'px'}
+function openPal(){opener=document.activeElement;placePal();$('#pal').hidden=false;$('#palq').value='';sel=0;render();$('#palq').focus()}
+function closePal(){$('#pal').hidden=true;if(opener&&opener.focus)opener.focus()}
+function run(i){var it=cur[i];if(!it)return;closePal();it.run()}
+$('#openpal').addEventListener('click',openPal);
+$('#palq').addEventListener('input',function(){sel=0;render()});
+$('#palq').addEventListener('keydown',function(e){if(e.key==='ArrowDown'){sel=Math.min(sel+1,cur.length-1);mark();e.preventDefault()}else if(e.key==='ArrowUp'){sel=Math.max(sel-1,0);mark();e.preventDefault()}else if(e.key==='Enter'){run(sel);e.preventDefault();e.stopPropagation()}else if(e.key==='Escape'){closePal();e.preventDefault();e.stopPropagation()}});
+document.addEventListener('keydown',function(e){if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#pal').hidden?openPal():closePal()}
+ else if((e.metaKey||e.ctrlKey)&&/^[1-5]$/.test(e.key)){e.preventDefault();go(Object.keys(PAGES)[+e.key-1])}});
+document.addEventListener('mousedown',function(e){if(!$('#pal').hidden&&!e.target.closest('#pal')&&!e.target.closest('#openpal'))closePal()});
+go('home');
+})();
+</script></body></html>

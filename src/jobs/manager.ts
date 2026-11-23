@@ -9,7 +9,7 @@
  */
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync } from 'node:fs';
+import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, realpathSync, renameSync, rmSync, writeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { expandPath } from '../config.js';
@@ -23,6 +23,9 @@ import {
   branchFor,
   buildJobEnv,
   cleanTask,
+  EDIT_REQUEST_MAX,
+  EDIT_REQUEST_TOO_LONG,
+  editedTask,
   isJobId,
   jobFiles,
   jobIdFor,
@@ -30,11 +33,12 @@ import {
   jobSettings,
   jobSlug,
   reposNamed,
+  SLUG_MAX,
   slugOf,
   wantsWeb,
   type JobSpec,
 } from './spec.js';
-import { isFinal, jobsDir, listJobStates, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState } from './state.js';
+import { isFinal, jobVersions, jobsDir, listJobStates, listJobStatesAsync, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
 
 export type GitFn = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -55,6 +59,8 @@ export interface JobManagerOptions {
   /** Stephen's home (`~/.stephen`). */
   home: string;
   config: JobsConfig;
+  /** The model and effort picked in Settings > Model; a null model falls back to jobs.model. */
+  modelPrefs?: () => { model: string | null; effort: string | null };
   /** The owner's zone: the date in an id and the daily cap. */
   timeZone: string;
   /** `claude` (voice.claudePath). */
@@ -87,12 +93,115 @@ export interface JobPlan {
   cwd: string;
   web: boolean;
   model: string;
+  effort?: string;
   maxTurns: number;
   maxBudgetUsd: number;
   wallClockMs: number;
   repo?: { name: string; path: string; branch: string };
   /** Files in `<root>/inbox/` that start() moves into the job's input/ (plain jobs only), shown in the dialog. */
   inputs?: string[];
+  /**
+   * ADR-010: an edited job. The dialog shows all of it: the old job, the version, and either the old folder that is
+   * copied (with its counts) or, for a code job, the old branch the new worktree branch is cut from.
+   */
+  edit?: { of: string; version: number; base: string; copyFrom?: string; files?: number; bytes?: number; fromBranch?: string };
+}
+
+/** ADR-010: Edit request is off while a job is queued or running (threat E9). */
+export const EDIT_STOP_FIRST = 'Stop the job first to change its request.';
+/** ADR-010 copy caps for an edited job's folder (threat E10). */
+export const COPY_MAX_BYTES = 500 * 1024 * 1024;
+export const COPY_MAX_FILES = 10_000;
+export const COPY_TOO_BIG = 'The old job folder is too big to copy. Start a new job instead.';
+export const COPY_GONE = "The old job folder isn't there any more (or isn't a plain folder in your jobs folder). Start a new job instead.";
+
+/**
+ * Walk the old job folder `src` without following any symlink: regular files and folders only (symlinks, sockets and
+ * the rest are skipped). Over COPY_MAX_FILES entries (files and folders) or COPY_MAX_BYTES → COPY_TOO_BIG. With `dst`
+ * (a fresh empty folder), each file is copied there: opened O_NOFOLLOW (a file swapped for a link since the walk is
+ * skipped), written O_CREAT|O_EXCL|O_NOFOLLOW 0600, bytes counted as copied. `src` is only ever read.
+ *
+ * [DEV REVIEW] Folders: Node cannot read a folder's entries through an O_DIRECTORY|O_NOFOLLOW fd (no fdopendir), so
+ * each folder, `src` included, must be a plain folder whose realpath is exactly its own path (no symlink anywhere on
+ * the way) before it is read, after it is read, and after each of its files is opened. A folder swapped for a symlink
+ * at any level → COPY_GONE, and the caller removes what was copied (fail closed). `src` must be a realpath.
+ * `beforeRead` is a test hook (the gap between the check and the read).
+ */
+export function copyJobFolder(src: string, dst: string | null, beforeRead?: (dir: string) => void): { files: number; bytes: number } | { error: string } {
+  let entries = 0;
+  let files = 0;
+  let bytes = 0;
+  const buf = Buffer.allocUnsafe(1024 * 1024);
+  let swapped = false;
+  const plain = (dir: string): boolean => {
+    if (plainFolder(dir)) return true;
+    swapped = true;
+    return false;
+  };
+  const copyFile = (from: string, to: string): boolean => {
+    let fd: number;
+    try {
+      fd = openSync(from, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch {
+      return true; // a link or gone since the walk: skipped
+    }
+    try {
+      if (!plain(dirname(from))) return false; // the folder was swapped while the file was opened
+      if (!fstatSync(fd).isFile()) return true;
+      const out = openSync(to, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      try {
+        for (let n = readSync(fd, buf); n > 0; n = readSync(fd, buf)) {
+          bytes += n;
+          if (bytes > COPY_MAX_BYTES) return false;
+          writeSync(out, buf, 0, n);
+        }
+      } finally {
+        closeSync(out);
+      }
+      return true;
+    } finally {
+      closeSync(fd);
+    }
+  };
+  const walk = (from: string, to: string | null): boolean => {
+    if (!plain(from)) return false;
+    beforeRead?.(from);
+    const names = readdirSync(from).sort();
+    if (!plain(from)) return false; // swapped while it was read: the names may be another folder's
+    for (const n of names) {
+      const a = join(from, n);
+      const st = lstatSync(a, { throwIfNoEntry: false });
+      if (!st || !(st.isDirectory() || st.isFile())) continue;
+      if (++entries > COPY_MAX_FILES) return false;
+      if (st.isDirectory()) {
+        if (to) mkdirSync(join(to, n), { mode: 0o700 });
+        if (!walk(a, to && join(to, n))) return false;
+        continue;
+      }
+      files++;
+      if (!to) {
+        bytes += st.size;
+        if (bytes > COPY_MAX_BYTES) return false;
+      } else if (!copyFile(a, join(to, n))) return false;
+    }
+    return true;
+  };
+  return walk(src, dst) ? { files, bytes } : { error: swapped ? COPY_GONE : COPY_TOO_BIG };
+}
+
+/** A real folder (not a symlink) whose realpath is exactly `dir`: no symlink anywhere on its path. */
+function plainFolder(dir: string): boolean {
+  try {
+    const st = lstatSync(dir);
+    return st.isDirectory() && !st.isSymbolicLink() && realpathSync(dir) === dir;
+  } catch {
+    return false;
+  }
+}
+
+/** ADR-010: the old job folder may be copied: a plain folder directly in the job root (checked at plan and at start). */
+function oldFolderOk(folder: string, realRoot: string): boolean {
+  return !!folder && plainFolder(folder) && dirname(folder) === realRoot;
 }
 
 /** The owner's drop folder for job inputs (owner, 2026-11-05): `<jobs root>/inbox/`. */
@@ -142,12 +251,21 @@ export class JobManager {
     return expandPath(this.o.config.root, this.userHome);
   }
 
-  list(): JobState[] {
-    return listJobStates(this.o.home, {
+  private reconcileOptions(): ReconcileOptions {
+    return {
       now: () => this.now(),
       ...(this.o.alive ? { alive: this.o.alive } : {}),
       onFailed: (s) => this.auditEnd(s, s.error, 'reconcile'),
-    });
+    };
+  }
+
+  list(): JobState[] {
+    return listJobStates(this.o.home, this.reconcileOptions());
+  }
+
+  /** list() without blocking the event loop on `ps` (the listener's job watcher, #202 B2). */
+  listAsync(): Promise<JobState[]> {
+    return listJobStatesAsync(this.o.home, this.reconcileOptions());
   }
 
   get(id: string): JobState | null {
@@ -222,6 +340,7 @@ export class JobManager {
       // No inbox files for a repo job, or when the caller can't show them (a phone job, REVIEW-8 R8-2).
       const inbox = repo || opts.inbox === false ? [] : inboxFiles(join(realRoot, INBOX_DIR));
       if (!Array.isArray(inbox)) return { error: inbox.error };
+      const picked = this.o.modelPrefs?.();
       return {
         id,
         task,
@@ -229,7 +348,8 @@ export class JobManager {
         cwd: repo ? join(folder, 'repo') : folder,
         ...(inbox.length ? { inputs: inbox } : {}),
         web: wantsWeb(task),
-        model: this.o.config.model,
+        model: picked?.model ?? this.o.config.model,
+        ...(picked?.effort ? { effort: picked.effort } : {}),
         maxTurns: this.o.config.maxTurns,
         maxBudgetUsd: this.o.config.maxBudgetUsd,
         wallClockMs: this.o.config.wallClockMin * 60_000,
@@ -237,6 +357,94 @@ export class JobManager {
       };
     }
     return { error: 'Too many jobs with that name today.' };
+  }
+
+  /**
+   * ADR-010 Edit request, [DEV REVIEW]: plan a NEW job from a stopped, finished or failed one. Creates nothing; the
+   * caller shows the job dialog (startPrompt) and starts only after the owner approves it, like any job. Nothing of
+   * the old job is reused unless the plan carries it and the dialog shows it: web, budgets and model come fresh from
+   * the edited request and the settings; the old folder is copied (never reused, never written); a code job gets a new
+   * worktree branch cut from the old job's branch (the old worktree is never used). The id is today's date and the
+   * old slug with `-v<version>`, so the caps count it like any start.
+   */
+  async planEdit(oldId: string, rawRequest: string): Promise<JobPlan | { error: string }> {
+    if (!this.o.config.enabled) return { error: 'Jobs are turned off in your Stephen settings (jobs.enabled).' };
+    const old = this.get(oldId);
+    if (!old) return { error: `There's no job ${oldId}.` };
+    if (!isFinal(old.status)) return { error: EDIT_STOP_FIRST };
+    const request = cleanTask(rawRequest);
+    if (request.split(' ').filter(Boolean).length < 2) return { error: 'Say what the job should do, like "write my lab report draft".' };
+    if ([...request].length > EDIT_REQUEST_MAX) return { error: EDIT_REQUEST_TOO_LONG };
+    const cap = this.capError();
+    if (cap) return { error: cap };
+    const root = this.root();
+    const rootErr = this.rootError(root);
+    if (rootErr) return { error: rootErr };
+    const realRoot = existsSync(root) ? realpathSync(root) : '';
+    if (!realRoot) return { error: COPY_GONE };
+    const git = this.o.git ?? defaultGit;
+    let repo: { name: string; path: string } | undefined;
+    let edit: NonNullable<JobPlan['edit']>;
+    if (old.repo) {
+      const configured = this.o.config.repos[old.repo.name];
+      if (!configured) return { error: `Your repo "${old.repo.name}" is no longer in your Stephen settings. Start a new job instead.` };
+      const path = expandPath(configured, this.userHome);
+      const top = await git(['-C', path, 'rev-parse', '--show-toplevel']);
+      if (top.code !== 0) return { error: `Your repo "${old.repo.name}" (${path}) isn't a git repository I can use.` };
+      repo = { name: old.repo.name, path: realpathSync(top.stdout.trim()) };
+      const from = old.repo.branch;
+      const has = /^stephen\/job-[a-z0-9][a-z0-9-]*$/.test(from) ? await git(['-C', repo.path, 'rev-parse', '--verify', '--quiet', `refs/heads/${from}`]) : { code: 1 };
+      if (has.code !== 0) return { error: `The old job's branch ${from} is gone. Start a new job instead.` };
+      edit = { of: old.id, version: 0, base: '', fromBranch: from };
+    } else {
+      // The old folder must still be a plain folder in the job root (it came from Stephen's own state file).
+      if (!oldFolderOk(old.folder, realRoot)) return { error: COPY_GONE };
+      const scan = copyJobFolder(old.folder, null);
+      if ('error' in scan) return scan;
+      edit = { of: old.id, version: 0, base: '', copyFrom: old.folder, ...scan };
+    }
+    // The old job's name without its `-v<N>`, with room for a version of up to four digits.
+    const base = (old.editOf ? slugOf(old.id).replace(/-v\d+$/, '') : slugOf(old.id)).slice(0, SLUG_MAX - 6).replace(/-+$/, '') || 'job';
+    const t = await this.editTarget(old.id, base, realRoot, repo?.path, 2);
+    if (t) {
+      const { id, folder, branch } = t;
+      edit = { ...edit, version: t.version, base };
+      const picked = this.o.modelPrefs?.();
+      return {
+        id,
+        task: editedTask(old.task, request),
+        folder,
+        cwd: repo ? join(folder, 'repo') : folder,
+        web: wantsWeb(request),
+        model: picked?.model ?? this.o.config.model,
+        ...(picked?.effort ? { effort: picked.effort } : {}),
+        maxTurns: this.o.config.maxTurns,
+        maxBudgetUsd: this.o.config.maxBudgetUsd,
+        wallClockMs: this.o.config.wallClockMin * 60_000,
+        ...(repo ? { repo: { ...repo, branch } } : {}),
+        edit,
+      };
+    }
+    return { error: 'Too many jobs with that name today.' };
+  }
+
+  /**
+   * ADR-010: the id of an edited job: today, the old name, `-v<version>`, where the version is the highest in the job's
+   * family (the jobs linked by editOf) + 1, at least `min`, and the next one while that folder, meta folder or branch
+   * exists. Two edits of version 1 get versions 2 and 3. Only a lookup: the start claims the id (exclusive mkdir).
+   */
+  private async editTarget(of: string, base: string, realRoot: string, repoPath: string | undefined, min: number): Promise<{ id: string; folder: string; branch: string; version: number } | null> {
+    const top = jobVersions(this.list()).get(of)?.versions ?? 1;
+    const day = this.today();
+    for (let v = Math.max(min, top + 1), n = 0; n < 50; v++, n++) {
+      const id = jobIdFor(day, `${base}-v${v}`);
+      const folder = join(realRoot, id);
+      if (existsSync(folder) || existsSync(metaDirOf(this.o.home, id))) continue;
+      const branch = branchFor(slugOf(id));
+      if (repoPath && (await (this.o.git ?? defaultGit)(['-C', repoPath, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0) continue;
+      return { id, folder, branch, version: v };
+    }
+    return null;
   }
 
   /** Make the job folder `<root>/<id>`: fresh, 0700, a real folder whose realpath is exactly where we meant. */
@@ -283,19 +491,62 @@ export class JobManager {
     const cap = this.capError() || extraCap?.() || '';
     if (cap) return { refused: cap };
     const home = this.o.home;
-    const metaDir = metaDirOf(home, plan.id);
-    let folder: string;
+    let folder = '';
+    let metaDir = '';
     try {
       await ensurePrivateDir(jobsDir(home), home);
-      folder = this.makeFolder(plan);
+      // [DEV REVIEW] ADR-010: the exclusive mkdir claims the id. An edited job whose id a sibling edit took first (two
+      // dialogs open at once) moves to the next free version; nothing of the sibling's folder is touched.
+      for (let tries = 0; ; tries++) {
+        try {
+          folder = this.makeFolder(plan);
+          break;
+        } catch (e) {
+          if (!plan.edit || (e as NodeJS.ErrnoException).code !== 'EEXIST' || tries >= 20) throw e;
+          const next = await this.editTarget(plan.edit.of, plan.edit.base, dirname(plan.folder), plan.repo?.path, plan.edit.version + 1);
+          if (!next) throw e;
+          plan = {
+            ...plan,
+            id: next.id,
+            folder: next.folder,
+            cwd: plan.repo ? join(next.folder, 'repo') : next.folder,
+            ...(plan.repo ? { repo: { ...plan.repo, branch: next.branch } } : {}),
+            edit: { ...plan.edit, version: next.version },
+          };
+        }
+      }
+      metaDir = metaDirOf(home, plan.id);
       mkdirSync(metaDir, { mode: 0o700 }); // fresh too
       if (lstatSync(metaDir).isSymbolicLink()) throw new Error(`${metaDir} is a symlink`);
     } catch (e) {
       return { refused: `I couldn't make the job folder (${(e as Error).message}).` };
     }
     if (plan.repo) {
-      const r = await (this.o.git ?? defaultGit)(['-C', plan.repo.path, 'worktree', 'add', join(folder, 'repo'), '-b', plan.repo.branch]);
-      if (r.code !== 0) return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
+      // ADR-010: an edited code job's new branch is cut from the old job's branch; the old worktree is never used.
+      const from = plan.edit?.fromBranch ? [`refs/heads/${plan.edit.fromBranch}`] : [];
+      const r = await (this.o.git ?? defaultGit)(['-C', plan.repo.path, 'worktree', 'add', join(folder, 'repo'), '-b', plan.repo.branch, ...from]);
+      if (r.code !== 0) {
+        // [DEV REVIEW] Nothing half-made stays behind: the claimed job folder and meta folder go, as for a failed copy.
+        rmSync(folder, { recursive: true, force: true });
+        rmSync(metaDir, { recursive: true, force: true });
+        return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
+      }
+    } else if (plan.edit) {
+      // ADR-010 [DEV REVIEW]: a copy of the old job's folder (shown in the dialog), checked against the caps again as it
+      // copies. Over them, or anything failing: the new folders go and nothing is started. The old folder is only read.
+      let copied: ReturnType<typeof copyJobFolder>;
+      try {
+        // planEdit's folder check again, right before the copy: the folder may have been swapped while the dialog was open.
+        const from = plan.edit.copyFrom ?? '';
+        copied = oldFolderOk(from, dirname(folder)) ? copyJobFolder(from, folder) : { error: COPY_GONE };
+      } catch (e) {
+        copied = { error: `I couldn't copy the old job folder (${(e as Error).message}).` };
+      }
+      if ('error' in copied) {
+        rmSync(folder, { recursive: true, force: true });
+        rmSync(metaDir, { recursive: true, force: true });
+        return { refused: copied.error };
+      }
     } else {
       const input = join(folder, 'input');
       mkdirSync(input, { mode: 0o700 });
@@ -322,6 +573,7 @@ export class JobManager {
       cwd: plan.cwd,
       metaDir,
       model: plan.model,
+      ...(plan.effort ? { effort: plan.effort } : {}),
       maxTurns: plan.maxTurns,
       maxBudgetUsd: plan.maxBudgetUsd,
       wallClockMs: plan.wallClockMs,
@@ -358,6 +610,7 @@ export class JobManager {
       denials: 0,
       summary: '',
       error: '',
+      ...(plan.edit ? { editOf: plan.edit.of, editVersion: plan.edit.version } : {}),
     };
     const sup: SupervisorSpec = { version: 1, home, claudePath: this.o.claudePath, auditLogPath: this.o.auditLogPath ?? null, spec };
     try {
@@ -374,7 +627,7 @@ export class JobManager {
         tool: 'job_start',
         outcome: 'ok',
         confirmation: 'approved',
-        args: { id: plan.id, task: plan.task, folder, web: plan.web, model: plan.model, maxTurns: plan.maxTurns, maxBudgetUsd: plan.maxBudgetUsd, wallClockMin: plan.wallClockMs / 60_000, source, ...(plan.repo ? { repo: plan.repo.name, branch: plan.repo.branch } : {}) },
+        args: { id: plan.id, task: plan.task, folder, web: plan.web, model: plan.model, maxTurns: plan.maxTurns, maxBudgetUsd: plan.maxBudgetUsd, wallClockMin: plan.wallClockMs / 60_000, source, ...(plan.repo ? { repo: plan.repo.name, branch: plan.repo.branch } : {}), ...(plan.edit ? { editOf: plan.edit.of, version: plan.edit.version } : {}) },
       })
       .catch(() => undefined);
     // The supervisor gets the same scratch environment as the job (it passes it on), its own process group (a

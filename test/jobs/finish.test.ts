@@ -66,66 +66,66 @@ describe('FinishWatcher', () => {
     return { w, said, notes };
   }
 
-  it('announces a job that reached a final status once, not while it runs, and not again on the next poll', () => {
+  it('announces a job that reached a final status once, not while it runs, and not again on the next poll', async () => {
     const h = harness(tmp);
     let list = [job('2026-11-05-a')];
     const t = watch(() => list, h.home);
-    t.w.poll();
+    await t.w.poll();
     expect(t.said).toEqual([]);
     list = [finished('2026-11-05-a')];
-    t.w.poll();
-    t.w.poll();
+    await t.w.poll();
+    await t.w.poll();
     expect(t.said).toHaveLength(1);
     expect(t.notes).toEqual([['Stephen job done', 'write my lab report draft']]);
   });
 
-  it('a restart (new watcher, same home) does not repeat it; a job that ends meanwhile is announced', () => {
+  it('a restart (new watcher, same home) does not repeat it; a job that ends meanwhile is announced', async () => {
     const h = harness(tmp);
     const list = [finished('2026-11-05-a')];
     const first = watch(() => list, h.home);
-    first.w.poll();
+    await first.w.poll();
     expect(first.said).toHaveLength(1);
     const second = watch(() => list, h.home);
-    second.w.poll();
+    await second.w.poll();
     expect(second.said).toEqual([]);
     expect(second.notes).toEqual([]);
     list.push(finished('2026-11-05-b', { task: 'research laptops', status: 'failed', error: 'Out of turns.' }));
-    second.w.poll();
+    await second.w.poll();
     expect(second.said).toHaveLength(1);
     expect(second.notes).toEqual([['Stephen job failed', 'research laptops']]);
     const mode = statSync(join(jobsDir(h.home), '.announced.json')).mode & 0o777;
     expect(mode).toBe(0o600);
   });
 
-  it('jobs that ended long ago are marked seen without a word; at most three are told at once', () => {
+  it('jobs that ended long ago are marked seen without a word; at most three are told at once', async () => {
     const h = harness(tmp);
     const old = finished('2026-11-01-old', { endedAt: NOW - 3 * 86_400_000 });
     const many = ['a', 'b', 'c', 'd', 'e'].map((x, i) => finished(`2026-11-05-${x}`, { endedAt: NOW - 1000 * (10 - i) }));
     const t = watch(() => [old, ...many], h.home);
-    t.w.poll();
+    await t.w.poll();
     expect(t.said).toHaveLength(3);
     expect(t.said.join(' ')).not.toContain('2026-11-01');
-    t.w.poll();
+    await t.w.poll();
     expect(t.said).toHaveLength(3);
   });
 
-  it('a throwing list does not throw', () => {
+  it('a throwing list does not throw', async () => {
     const h = harness(tmp);
     const t = watch(() => {
       throw new Error('disk gone');
     }, h.home);
-    expect(() => t.w.poll()).not.toThrow();
+    await expect(t.w.poll()).resolves.toBeUndefined();
   });
 
-  it('reads real state files: a job the supervisor finishes is announced', () => {
+  it('reads real state files: a job the supervisor finishes is announced', async () => {
     const h = harness(tmp);
     mkdirOf(h.home);
     writeJobState(h.home, job('2026-11-05-real'));
     const t = watch(() => h.manager.list(), h.home);
-    t.w.poll();
+    await t.w.poll();
     expect(t.said).toEqual([]);
     writeJobState(h.home, finished('2026-11-05-real', { summary: 'Done <b>now</b>. Link https://evil.example/x?token=abc.' }));
-    t.w.poll();
+    await t.w.poll();
     expect(t.said).toHaveLength(1);
     expect(t.said[0]).not.toContain('https://');
   });
@@ -140,7 +140,7 @@ describe('"show my job"', () => {
   it.each(['show my job', 'show the job', 'what did the job say', 'what did my job find', 'read me the job summary', 'show me the latest job result', 'the job summary'])('is the show intent: %s', (said) => {
     expect(parseJobIntent(said)).toEqual({ kind: 'show' });
   });
-  it('the list phrases stay lists', () => {
+  it('the list phrases stay lists', async () => {
     for (const s of ['show my jobs', 'list my jobs', 'what are my jobs', 'is the job done yet']) expect(parseJobIntent(s)).toEqual({ kind: 'list' });
   });
 
@@ -192,7 +192,7 @@ describe('jobs.list / jobs.stop over app.sock', () => {
       history: null,
       audit: null,
       settings: () => ({ config: {}, configPath: '/x/config.json' }),
-      ...(h ? { jobs: appJobs(h.manager, 100) } : {}),
+      ...(h ? { jobs: appJobs(h.manager, new JobRouter({ jobs: h.manager, confirmer: { kind: 'deny', confirm: async () => 'declined' } }), 100) } : {}),
       speakReplies: false,
       openWindow: () => null,
     });
@@ -218,10 +218,10 @@ describe('jobs.list / jobs.stop over app.sock', () => {
     expect(wire).not.toContain('ghp_');
     expect(wire).not.toContain('sess-secret-1');
     expect(wire).not.toContain('"pid"');
-    expect(Object.keys(jobRow(finished('2026-11-05-a'))).sort()).toEqual(['costUsd', 'createdAt', 'endedAt', 'error', 'folder', 'id', 'startedAt', 'status', 'summary', 'task', 'turns']);
+    expect(Object.keys(jobRow(finished('2026-11-05-a'))).sort()).toEqual(['costUsd', 'createdAt', 'endedAt', 'error', 'folder', 'id', 'request', 'startedAt', 'status', 'summary', 'task', 'turns', 'version', 'versions']);
   });
 
-  it('the window and the jobs module agree on what a job id is', () => {
+  it('the window and the jobs module agree on what a job id is', async () => {
     expect(APP_JOB_ID_RE.source).toBe(JOB_ID_RE.source);
   });
 

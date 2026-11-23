@@ -120,11 +120,16 @@ install-helper`, and works as before.
   is trimmed by the VAD), then to Claude as usual. Presses shorter than 250 ms are ignored (`Ignored a … ms tap`).
   Recording stops at 30 s even if you keep holding. A press while Claude is working or Stephen is talking
   **cancels that first**, then records. "Hey Stephen" said while holding the keys is just removed from the command.
-- **Wake-word gating.** With the helper connected, "Hey Stephen" has no fixed cooldown. It is ignored only while
-  the Mac is **playing sound** (`Ignored "hey stephen" — sound is playing…`), which is when a video or page could be
-  saying it; in silence it works straight away. "Stephen stop" works at any time. The busy rules are unchanged:
-  ignored while Stephen speaks, and it cancels a running command. If the helper disconnects, the listener falls back
-  to the 20 s cooldown until it is back.
+- **Wake-word gating.** With the helper connected, "Hey Stephen" has no fixed cooldown. In silence it works
+  straight away. While the Mac is **playing sound** (when a video or page could be saying it), it works like Alexa
+  (issue #205): the volume drops to `voice.duckVolume` (default 20%), Stephen listens, and only a **media command**
+  runs: stop, pause, play / resume, next, previous, volume, mute. The grammar classifier decides, never the model,
+  and the model does not run. Anything else is not done: `Hold F5 for that.` The volume goes back on every path
+  (done, cancel, Esc, error, timeout). If the audio state is unknown (no audio event yet), the wake word is still
+  ignored. "Stephen stop" works at any time; with nothing running and sound playing, it pauses the sound (the Mac's
+  play/pause media key, through the helper). The busy rules are unchanged: ignored while Stephen speaks, and it
+  cancels a running command. If the helper disconnects, the listener falls back to the 20 s cooldown until it is
+  back.
 - **Push-to-talk only.** `"wakeWord": false` in the `voice` config (or `stephen listen --ptt-only`) turns "Hey
   Stephen" off completely. This needs the helper; without it `stephen listen` exits with a message. The stop
   phrase still works.
@@ -443,13 +448,24 @@ start-up. **Now:** 3 short haiku turns + start-up + one fetch: expect roughly 4�
   `stephen history clear` deletes them all.
 - Stored only on this Mac in `<home>/history/YYYY-MM-DD.jsonl` (folder 0700, files 0600): what you said, the reply,
   the outcome, tool names and timings. Never sent back to Claude. Caps: said 2000 chars, reply 4000 chars, 5 MB a day.
-- `"history": { "retentionDays": 1 }` in config.json (default 1, 0 to 30). A rolling window: entries from before the
+- `"history": { "retentionDays": 7 }` in config.json (default 7, 0 to 30). A rolling window: entries from before the
   same time N days ago are deleted when `stephen listen` starts, on every new entry and when history is listed
   (`stephen history`, the app); `0` turns history off and deletes what is there.
 - **Claude Code's own copy.** With follow-ups on, Claude Code saves each voice session as a transcript in
   `~/.claude/projects/<voice workdir slug>/` (prompt, tool results, replies). Stephen deletes a session's transcript
   when its conversation ends, deletes older ones with the same retention window, and `stephen history clear` deletes
   them all (and ends the follow-up conversation). With `voice.followUpWindowSec: 0` nothing is saved at all.
+
+### Latency log (plan A2)
+
+- `stephen latency [--days 1|7|30] [--json]` shows p50 and p95 per trigger and route for each step, from end of
+  speech, marks a group that is over the plan's target, and lists the 10 slowest commands by id (default 7 days).
+- It reads `<home>/telemetry/latency-YYYY-MM-DD.jsonl`: ids, code words and numbers only, kept 30 days.
+- A model run on the warm process also records `modelMs` (waiting for the model), `toolMs` (waiting for tools) and,
+  when this Claude Code lists `--include-partial-messages`, `firstTokenMs`. They are taken from when stream lines
+  arrive, never from what they say. A spoken reply records `firstAudio`, the moment the audio player starts. The first audio after a command is counted, so a spoken
+  timer or a second spoken line in that window can take `firstAudio` (R10a-10: a label for joining logs, it decides
+  nothing).
 - **Persona file.** `<home>/voice/persona.txt` (persona, aboutMe, memory) exists only while a `claude` run starts and is
   deleted after each run and when `stephen listen` exits.
 - Tool names come from `stephen serve --tool-log <home>/voice/tool-log.jsonl`, which records only

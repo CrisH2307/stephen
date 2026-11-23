@@ -7,7 +7,7 @@
  * `HelperBridge` wraps a started link: it tracks the connection and the latest `audio` event, dedupes menu-bar
  * `state` updates and answers "is sound playing right now?" with a fresh `query_audio`.
  */
-import type { HelperCommand, HelperEvent } from '../helper/protocol.js';
+import type { HelperCommand, HelperEvent, MediaKey, MediaKeyAction } from '../helper/protocol.js';
 import type { Phase } from './assistant.js';
 
 export type HelperEventType = HelperEvent['type'];
@@ -32,6 +32,9 @@ export const PTT_NEEDS_HELPER =
   'or turn the wake word back on.';
 /** How long to wait for a fresh `audio` answer before using the last known value. */
 export const AUDIO_QUERY_WAIT_MS = 300;
+/** How long to wait for the helper's `media_key_done` (an older helper never answers). */
+export const MEDIA_KEY_WAIT_MS = 1500;
+export type { MediaKeyAction };
 
 export class HelperBridge {
   private up = true;
@@ -105,6 +108,11 @@ export class HelperBridge {
     return true;
   }
 
+  /** Tell the helper the listener dropped the recording, so it ends its press. Only ends a press; never a command. */
+  pressOver(): void {
+    if (this.connected) this.link.send({ type: 'press_over' });
+  }
+
   /**
    * Is the Mac playing sound right now? Sends `query_audio` and waits up to `waitMs` for the answer, else uses the
    * last known value. Without a connected helper: false (callers then behave as before the helper existed).
@@ -123,6 +131,29 @@ export class HelperBridge {
       const timer = setTimeout(() => finish(this.playing ?? false), waitMs);
       const off = this.link.on('audio', (e) => finish(e.playing));
       this.link.send({ type: 'query_audio' });
+    });
+  }
+
+  /**
+   * Press a Mac media key through the helper (issue #205) and wait for its answer. `pause` presses play/pause only
+   * while sound is playing (the key is a toggle: on silence it would start the music).
+   */
+  async media(action: MediaKeyAction, waitMs: number = MEDIA_KEY_WAIT_MS): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (!this.connected) return { ok: false, reason: "Stephen Helper isn't connected" };
+    if (action === 'pause' && !(await this.queryAudio())) return { ok: false, reason: 'nothing is playing' };
+    const key: MediaKey = action === 'next' || action === 'previous' ? action : 'play_pause';
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        off();
+        resolve({ ok: false, reason: 'Stephen Helper did not answer (update it: stephen install-helper)' });
+      }, waitMs);
+      const off = this.link.on('media_key_done', (e) => {
+        if (e.key !== key) return;
+        clearTimeout(timer);
+        off();
+        resolve(e.ok ? { ok: true } : { ok: false, reason: e.message || 'the helper could not press the key' });
+      });
+      this.link.send({ type: 'media_key', key });
     });
   }
 

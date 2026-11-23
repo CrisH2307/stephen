@@ -2,11 +2,15 @@
  * Push-to-talk, Esc, wake-word gating on `audio.playing`, quiet-while-playing replies and menu-bar states,
  * with a fake Stephen Helper and scripted audio frames (no models needed).
  */
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ReplayRecorder } from '../../src/replay/recorder.js';
 import { Assistant } from '../../src/voice/assistant.js';
 import type { KeywordHit } from '../../src/voice/engine.js';
 import { HelperBridge, assistantHooks } from '../../src/voice/helper-link.js';
-import { Listener, type ListenerOptions } from '../../src/voice/listener.js';
+import { Listener, type ListenerDeps, type ListenerOptions } from '../../src/voice/listener.js';
 import { FakeHelper, FakeRunner, FakeTranscriber, FakeVad, FRAME, ScriptedSource, ScriptedSpotter, frames } from './fakes.js';
 import { RecordingChimes, RecordingSpeaker, waitFor } from './helpers.js';
 
@@ -25,6 +29,7 @@ function setup(opts: {
   o?: Partial<ListenerOptions>;
   /** false = no helper at all. */
   helper?: boolean;
+  replay?: ListenerDeps['replay'];
 }) {
   const runner = opts.runner ?? new FakeRunner();
   const speaker = new RecordingSpeaker(opts.speakMs ?? 0);
@@ -38,7 +43,7 @@ function setup(opts: {
   const spotter = new ScriptedSpotter(opts.hits ?? {});
   const gates = new Map<number, Gate>();
   const source = new ScriptedSource(frames(opts.pattern), gates as Map<number, () => Promise<void>>);
-  const listener = new Listener({ ...OPTS, ...opts.o }, { source, spotter, vad: new FakeVad(), transcriber, assistant, chimes, status, helper: bridge });
+  const listener = new Listener({ ...OPTS, ...opts.o }, { source, spotter, vad: new FakeVad(), transcriber, assistant, chimes, status, helper: bridge, replay: opts.replay });
   const t = { listener, runner, speaker, chimes, lines, transcriber, assistant, fake, bridge };
   for (const [i, g] of opts.gates?.(t) ?? []) gates.set(i, g);
   return t;
@@ -286,6 +291,50 @@ describe('Esc (helper)', () => {
     expect(t.lines).toContain('Stopped.');
   });
 
+  it('#86: mic started from the app, then Esc (the helper sends esc, then ptt_up): nothing is sent; the next F5 press records and sends', async () => {
+    const t = setup({
+      pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(30) + 's'.repeat(20) + '.'.repeat(40),
+      texts: ['open youtube'],
+      gates: (t) => [
+        [5, down(t)], // the window's mic: the same ptt_down as F5 (helper/main.swift box.ptt)
+        [
+          35,
+          () => {
+            t.fake.emit({ type: 'esc', at: Date.now() });
+            up(t, 30 * MS_PER_FRAME)();
+          },
+        ],
+        [55, down(t)], // F5
+        [85, up(t, 30 * MS_PER_FRAME)],
+      ],
+    });
+    await t.listener.run();
+    expect(t.lines).toContain('Cancelled (Esc).');
+    expect(t.transcriber.heard).toHaveLength(1);
+    expect(t.runner.prompts).toEqual(['open youtube']);
+  });
+
+  it('#106: a push-to-talk recording cancelled by "stephen stop" sends exactly one press_over; a wake capture sends none', async () => {
+    const ptt = setup({
+      pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(40),
+      hits: { 40: 'STOP' },
+      texts: [],
+      gates: (t) => [[5, down(t)]],
+    });
+    await ptt.listener.run();
+    expect(ptt.lines).toContain('Cancelled (stop phrase).');
+    expect(ptt.fake.sent.filter((c) => c.type === 'press_over')).toHaveLength(1);
+
+    const wake = setup({
+      pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(10),
+      hits: { 12: 'WAKE', 25: 'STOP' },
+      texts: [],
+    });
+    await wake.listener.run();
+    expect(wake.lines).toContain('Cancelled (stop phrase).');
+    expect(wake.fake.sent.filter((c) => c.type === 'press_over')).toHaveLength(0);
+  });
+
   it('does nothing when idle', async () => {
     const t = setup({ pattern: '.'.repeat(40), texts: [], gates: (t) => [[10, () => t.fake.emit({ type: 'esc', at: Date.now() })]] });
     await t.listener.run();
@@ -513,5 +562,56 @@ describe('HelperBridge', () => {
     boom.start = () => Promise.reject(new Error('socket exploded'));
     expect(await HelperBridge.connect(boom)).toEqual({ reason: 'socket exploded' });
     expect('bridge' in (await HelperBridge.connect(new FakeHelper()))).toBe(true);
+  });
+});
+
+describe('replay recorder hook (issue #48)', () => {
+  /** A wake-word command, then an F5 press. */
+  const twoCommands = (replay: ListenerDeps['replay']) =>
+    setup({
+      pattern: '.'.repeat(10) + 's'.repeat(20) + '.'.repeat(50) + 's'.repeat(25) + '.'.repeat(80),
+      hits: { 12: 'WAKE' },
+      texts: ['hey stephen open youtube', 'open mail'],
+      replay,
+      gates: (t) => [
+        [
+          75,
+          async () => {
+            await idleAgain(t, 1)();
+            down(t)();
+          },
+        ],
+        [120, up(t, 45 * MS_PER_FRAME)],
+      ],
+    });
+
+  it('the recorder hears every handed-off command with its source; only the F5 one is saved', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'stephen-hook-'));
+    const recorder = new ReplayRecorder({ home, enabled: () => true, excludeFromBackups: async () => {} });
+    const seen: { source: string; samples: number; transcript: string }[] = [];
+    const t = twoCommands({ capture: (c) => (seen.push({ source: c.source, samples: c.audio.length, transcript: c.transcript }), recorder.capture(c)) });
+    const started = Date.now();
+    await t.listener.run();
+    await recorder.idle();
+    expect(t.runner.prompts).toEqual(['open youtube', 'open mail']);
+    expect(seen.map((s) => s.source)).toEqual(['voice-wake', 'voice-ptt']);
+    expect(seen[1]).toMatchObject({ transcript: 'open mail', samples: t.transcriber.heard[1]!.length });
+    const files = readdirSync(join(home, 'replay')).filter((f) => f.startsWith('h_'));
+    expect(files).toHaveLength(2); // one clip: .wav + .json
+    const side = JSON.parse(readFileSync(join(home, 'replay', files.find((f) => f.endsWith('.json'))!), 'utf8')) as { startedAt: number; trigger: string };
+    expect(side.trigger).toBe('f5');
+    expect(side.startedAt).toBeGreaterThanOrEqual(started);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('a recorder that throws never fails the command', async () => {
+    const t = twoCommands({
+      capture: () => {
+        throw new Error('disk full');
+      },
+    });
+    await t.listener.run();
+    expect(t.runner.prompts).toEqual(['open youtube', 'open mail']);
+    expect(t.speaker.said).toHaveLength(2);
   });
 });

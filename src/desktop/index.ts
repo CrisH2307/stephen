@@ -33,13 +33,13 @@ import { readBundleId, resolveApp } from './resolve.js';
 import { BIN, defaultDesktopDeps, execErrorText, queryStatus, verifyCodeSignature, type DesktopDeps, type DesktopStatus } from './system.js';
 import { parseOpenUrl, redirectSignals, UrlDenied, type ParsedOpenUrl, type RedirectSignal } from './url.js';
 import { findMediaTabs, MEDIA_SITE_LABEL, TabMediaControl, type MediaTab } from './media-tab.js';
+import { appMediaKey } from './media-key.js';
+import { appSocketFor } from '../safety/app-confirm.js';
 import { DEFAULT_MEDIA_TIMING, MediaPlayer } from './play.js';
 import { controlPlayer, MEDIA_ACTIONS, pickPlayer, PLAYERS, playersStatus, setVolume, VOLUME_ACTIONS, type MediaAction, type Player, type VolumeAction } from './sound.js';
 
 export { parseDesktopConfig, type DesktopConfig } from './config.js';
 export type { DesktopDeps, DesktopFs, ExecFileFn, ExecResult } from './system.js';
-
-export const DESKTOP_TOOLS = ['open_app', 'open_url', 'play_media', 'media_control', 'volume', 'desktop_status'] as const;
 
 /**
  * How openParsed opened a page: a tab in the attached browser (`how`: a new one, or an existing one reused —
@@ -368,7 +368,8 @@ export class Desktop {
 
   /**
    * media_control: a YouTube Music tab first, then a YouTube watch tab (src/desktop/media-tab.ts, through the
-   * browser gate), then Spotify / Apple Music by JXA only if running. A named `player` goes straight to that app.
+   * browser gate), then Spotify / Apple Music by JXA only if running, then the Mac media key through Stephen Helper
+   * (issue #205: the normal Zen, YouTube in any browser). A named `player` goes straight to that app.
    */
   async mediaControl(action: MediaAction, player: Player | undefined, intent: string): Promise<CallToolResult> {
     this.requireMac();
@@ -403,6 +404,18 @@ export class Desktop {
 
     const st = await playersStatus(this.deps);
     const target = pickPlayer(st, action, player);
+    if (!target && !player) {
+      // Nothing Stephen can see: press the Mac media key; the app that plays sound reacts.
+      await this.rateLimited(tool, intent, { ...args, via: 'media_key' });
+      const press = this.deps.mediaKey ?? appMediaKey(appSocketFor(this.hub.cfg.home));
+      const k = await press(action);
+      if (k.ok) {
+        await this.audit({ tool, args: { ...args, via: 'media_key' }, outcome: 'ok', intent: clean(intent, 200) });
+        const key = action === 'next' || action === 'previous' ? action : 'play/pause';
+        return okResult(`Pressed the Mac's ${key} media key (the app playing sound reacts: Zen, YouTube, Spotify or Music).`);
+      }
+      tabNote += `; the media key didn't work either (${k.reason})`;
+    }
     if (!target) {
       await this.audit({ tool, args: { ...args, players: st, ...(tabNote ? { tabs: tabNote } : {}) }, outcome: 'error', error: 'no player to control', intent: clean(intent, 200) });
       if (player) return okResult(`Nothing done: ${player} isn't running. To start new music, use play_media.`);

@@ -2,9 +2,10 @@
 
 import SwiftUI
 
-/// "STEPHEN" / "YOU" label above a group of rows.
+/// "Talk" / "Control" label above a group of rows (sentence case, v4).
 struct SidebarSection<Content: View>: View {
   @Environment(\.stephenTheme) var t
+  @Environment(\.sidebarWidth) var sidebarWidth
   let title: String
   var collapsed: Bool = false
   let content: Content
@@ -16,7 +17,7 @@ struct SidebarSection<Content: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text(verbatim: title).sectionLabelStyle(t).padding(.horizontal, Space.s).opacity(collapsed ? 0 : 1)
-        .fixedSize().frame(width: SidebarMetrics.content(collapsed), alignment: .leading).clipped().accessibilityAddTraits(.isHeader)
+        .fixedSize().frame(width: SidebarMetrics.content(collapsed, sidebarWidth), alignment: .leading).clipped().accessibilityAddTraits(.isHeader)
       content
     }
   }
@@ -25,6 +26,7 @@ struct SidebarSection<Content: View>: View {
 /// One sidebar row. `collapsed` shows the icon only (60 pt rail) with a tooltip.
 struct SidebarRow: View {
   @Environment(\.stephenTheme) var t
+  @Environment(\.sidebarWidth) var sidebarWidth
   let title: String
   let symbol: String
   let selected: Bool
@@ -32,9 +34,11 @@ struct SidebarRow: View {
   var shortcut: String? = nil
   /// nil = the sidebar's content width (it animates between rail and full); a list elsewhere passes its own width.
   var width: CGFloat? = nil
+  /// Waiting questions to count on this row (Home, #138); 0 shows nothing.
+  var badge: Int = 0
   let action: () -> Void
-  init(_ title: String, symbol: String, selected: Bool, collapsed: Bool = false, shortcut: String? = nil, width: CGFloat? = nil, action: @escaping () -> Void) {
-    self.title = title; self.symbol = symbol; self.selected = selected; self.collapsed = collapsed; self.shortcut = shortcut; self.width = width; self.action = action
+  init(_ title: String, symbol: String, selected: Bool, collapsed: Bool = false, shortcut: String? = nil, width: CGFloat? = nil, badge: Int = 0, action: @escaping () -> Void) {
+    self.title = title; self.symbol = symbol; self.selected = selected; self.collapsed = collapsed; self.shortcut = shortcut; self.width = width; self.badge = badge; self.action = action
   }
   var body: some View {
     Button(action: action) {
@@ -42,16 +46,24 @@ struct SidebarRow: View {
       HStack(spacing: Space.s) {
         Image(systemName: symbol).font(.system(size: 16, weight: selected ? .semibold : .regular))
           .foregroundColor(selected ? t.accent : t.ink2).frame(width: 20)
+          // On the icon, so the rail (collapsed) shows it too.
+          .overlay(alignment: .topTrailing) {
+            if badge > 0 {
+              Text(verbatim: "\(badge)").font(.system(size: 10, weight: .semibold)).foregroundColor(t.primaryText)
+                .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
+                .background(Capsule().fill(t.primary)).offset(x: 8, y: -7)
+            }
+          }
         Text(verbatim: title).font(TypeScale.body.weight(selected ? .semibold : .regular)).foregroundColor(t.ink)
           .lineLimit(1).fixedSize().opacity(collapsed ? 0 : 1)
         Spacer(minLength: 0)
         if let shortcut = shortcut { Text(verbatim: shortcut).font(TypeScale.secondary).foregroundColor(t.ink2).opacity(collapsed ? 0 : 1) }
       }
       .padding(.horizontal, Space.s).padding(.vertical, 8)
-      .frame(width: width ?? SidebarMetrics.content(collapsed), alignment: .leading)
+      .frame(width: width ?? SidebarMetrics.content(collapsed, sidebarWidth), alignment: .leading)
       .background(
         ZStack(alignment: .leading) {
-          RoundedRectangle(cornerRadius: Corner.row).fill(t.accent.opacity(selected ? 0.12 : 0))
+          RoundedRectangle(cornerRadius: Corner.row).fill(selected ? t.selection : Color.clear)
           // The mark for "you are here": a small accent bar on the leading edge.
           Capsule().fill(t.accent).frame(width: 3, height: 18).padding(.leading, 2).opacity(selected ? 1 : 0)
         }
@@ -62,7 +74,7 @@ struct SidebarRow: View {
     }
     .buttonStyle(.plain)
     .help(title)
-    .accessibilityLabel(title)
+    .accessibilityLabel(badge == 0 ? title : "\(title), \(badge == 1 ? "1 question waiting" : "\(badge) questions waiting")")
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
   }
 }

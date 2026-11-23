@@ -7,7 +7,9 @@ import { relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT, listTsFiles } from '../helpers/import-scan.js';
 import { parseJobsConfig } from '../../src/jobs/config.js';
+import { EFFORTS } from '../../src/voice/config.js';
 import {
+  JOB_EFFORTS,
   JOB_ENV_KEYS,
   branchFor,
   buildJobArgs,
@@ -21,7 +23,6 @@ import {
   jobSettings,
   jobSlug,
   reposNamed,
-  untrustedJobOutput,
   wantsWeb,
   type JobSpec,
 } from '../../src/jobs/spec.js';
@@ -142,7 +143,7 @@ describe('settings.json (ADR-004)', () => {
         autoAllowBashIfSandboxed: true,
         excludedCommands: [],
         allowAppleEvents: false,
-        network: { allowedDomains: [], strictAllowlist: true },
+        network: { allowedDomains: [], strictAllowlist: true, allowUnixSockets: [], allowAllUnixSockets: false },
         filesystem: { denyRead: ['/Users/cris/.stephen', '~/.ssh', '~/.aws', '~/.config', '~/Library/Keychains', '/Users/cris/code/stephen/.env'] },
       },
       permissions: {
@@ -151,6 +152,13 @@ describe('settings.json (ADR-004)', () => {
         deny: ['Bash(git push *)', 'Bash(open *)', 'Bash(osascript *)'],
       },
     });
+  });
+
+  it('#208: no Unix sockets, so a job\'s shell cannot reach app.sock (the recorder switch) or helper.sock', () => {
+    const s = jobSettings({ stephenHome: '/h', stephenRepo: '/r' }) as { sandbox: { enabled: boolean; network: Record<string, unknown> } };
+    expect(s.sandbox.enabled).toBe(true);
+    expect(s.sandbox.network.allowAllUnixSockets).toBe(false);
+    expect(s.sandbox.network.allowUnixSockets).toEqual([]);
   });
 
   it('the test switch is not a user option: only src/jobs/spec.ts and manager.ts name it, and the listener never sets it', () => {
@@ -264,10 +272,6 @@ describe('job output is untrusted (rule 6)', () => {
     expect(c).toContain('[link: evil.example]');
     expect(c).not.toContain('</untrusted_job_output>');
     expect([...cleanJobOutput('word '.repeat(2000))].length).toBeLessThanOrEqual(2000);
-    const block = untrustedJobOutput('2026-11-05-x', raw);
-    expect(block.startsWith('<untrusted_job_output job="2026-11-05-x">')).toBe(true);
-    expect(block.match(/<\/untrusted_job_output>/g)).toHaveLength(1);
-    expect(untrustedJobOutput('../evil', 'x')).toContain('job="unknown"');
   });
 });
 
@@ -294,5 +298,20 @@ describe('jobs config (owner defaults 2026-11-05)', () => {
     expect(() => parseJobsConfig({ repos: { '../x': '/tmp' } })).toThrow(/jobs.repos/);
     expect(() => parseJobsConfig({ model: '--dangerously-skip-permissions' })).toThrow(/jobs.model/);
     expect(parseJobsConfig({ wallClockMin: 180, repos: { stephen: '~/code/stephen' }, model: null }).wallClockMin).toBe(180);
+  });
+});
+
+describe('job argv: picked effort', () => {
+  it('--effort follows the spec, and is absent without one', () => {
+    const a = buildJobArgs(spec({ effort: 'high' }));
+    expect(a[a.indexOf('--effort') + 1]).toBe('high');
+    expect(buildJobArgs(spec())).not.toContain('--effort');
+  });
+  it('an effort that is not a known level is never passed (spec.json is a file on disk)', () => {
+    expect(buildJobArgs(spec({ effort: '--dangerously-skip-permissions' }))).not.toContain('--effort');
+    expect(buildJobArgs(spec({ effort: 'ultra' }))).not.toContain('--dangerously-skip-permissions');
+  });
+  it('JOB_EFFORTS is the same list as EFFORTS (src/jobs may not import voice code)', () => {
+    expect([...JOB_EFFORTS]).toEqual([...EFFORTS]);
   });
 });

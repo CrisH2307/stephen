@@ -3,7 +3,6 @@ import {
   baseRisk,
   destructiveShortcut,
   highRiskReason,
-  isHighRiskControl,
   isMultilineEditor,
   isMutating,
   isPaymentFrame,
@@ -116,7 +115,7 @@ describe('isSecretField', () => {
   });
 });
 
-describe('isHighRiskControl', () => {
+describe('highRiskReason', () => {
   it.each([
     'Send',
     'Send ‪(⌘Enter)‬',
@@ -152,23 +151,23 @@ describe('isHighRiskControl', () => {
     'Forward',
     'Donate',
   ])('high risk: %s', (name) => {
-    expect(isHighRiskControl(button(name))).toBe(true);
+    expect(highRiskReason(button(name))).not.toBeNull();
   });
 
   it.each(['Inbox', 'Postal code', 'Posts', 'Compose', 'Next', 'Search', 'Paypal balance', 'Settings', 'Signature', 'Sender info', 'Older'])(
     'not high risk: %s',
     (name) => {
-      expect(isHighRiskControl(button(name))).toBe(false);
+      expect(highRiskReason(button(name))).toBeNull();
     },
   );
 
   it('uses text and aria-label as well as name', () => {
-    expect(isHighRiskControl(button('', { text: 'Send', name: '' }))).toBe(true);
-    expect(isHighRiskControl(button('', { ariaLabel: 'Delete message', text: null }))).toBe(true);
+    expect(highRiskReason(button('', { text: 'Send', name: '' }))).not.toBeNull();
+    expect(highRiskReason(button('', { ariaLabel: 'Delete message', text: null }))).not.toBeNull();
   });
 
   it('a submit control is high risk whatever its label', () => {
-    expect(isHighRiskControl(button('Go', { isSubmit: true }))).toBe(true);
+    expect(highRiskReason(button('Go', { isSubmit: true }))).not.toBeNull();
   });
 
   it.each([
@@ -181,13 +180,13 @@ describe('isHighRiskControl', () => {
     'Create filter', 'Mark as spam', 'Report spam', 'Report phishing', 'Block "Bob"', 'Empty Trash now',
     'Delete forever', 'Mute', 'Discard drafts', 'Send now', 'Comment', 'Merge pull request', 'Approve',
   ])('high risk (multilingual / app-specific): %s', (name) => {
-    expect(isHighRiskControl(button(name))).toBe(true);
+    expect(highRiskReason(button(name))).not.toBeNull();
   });
 
   it.each(['Sender name', 'Sent', 'Sending options', 'Deleted items', 'Envoyés', 'Löschung', 'Paysage', 'Shared with me', 'Blocked senders', 'Comments', 'Ordinateur', 'Resender'])(
     'word boundaries keep %s low risk',
     (name) => {
-      expect(isHighRiskControl(button(name))).toBe(false);
+      expect(highRiskReason(button(name))).toBeNull();
     },
   );
 

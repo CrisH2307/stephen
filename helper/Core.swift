@@ -26,6 +26,15 @@ let MAX_LINE_BYTES = 4096
 let KEYCODE_ESCAPE: Int64 = 53
 /** macOS virtual key code for F5 (kVK_F5): hold it to talk, like Fn+Option. */
 let KEYCODE_F5: Int64 = 96
+/** The media keys `media_key` may post (src/helper/protocol.ts MEDIA_KEYS). */
+let MEDIA_KEYS: Set<String> = ["play_pause", "next", "previous"]
+/** The window's app.sock reconnect wait doubles up to this while Stephen stays unreachable (#202 C1). */
+let APP_RETRY_MAX_SECONDS = 10.0
+
+/** The next reconnect wait after `current` seconds: 3, 6, 10, 10, ... (AppClient.swift). */
+func nextRetryDelay(_ current: Double) -> Double {
+  return min(current * 2, APP_RETRY_MAX_SECONDS)
+}
 
 // ───────────────────────────── time ─────────────────────────────
 
@@ -50,18 +59,22 @@ struct Stamp {
 // ───────────────────────────── events out (helper → node) ─────────────────────────────
 
 enum HelperEventOut: Equatable {
-  case hello(version: String, inputMonitoring: Bool)
+  /** `postEvents`: Accessibility granted (needed to post media keys); nil = not reported. */
+  case hello(version: String, inputMonitoring: Bool, postEvents: Bool? = nil)
   case pttDown(at: Int64)
   case pttUp(at: Int64, heldMs: Int64)
   case esc(at: Int64)
   case audio(playing: Bool, at: Int64)
+  /** Answer to `media_key` (issue #205): ok, or why the key was not posted. */
+  case mediaKeyDone(key: String, ok: Bool, message: String?)
   case error(message: String)
 
   /** One JSON object followed by "\n". */
   var jsonLine: String {
     switch self {
-    case let .hello(version, inputMonitoring):
-      return "{\"type\":\"hello\",\"version\":\(jsonString(version)),\"inputMonitoring\":\(inputMonitoring)}\n"
+    case let .hello(version, inputMonitoring, postEvents):
+      let post = postEvents.map { ",\"postEvents\":\($0)" } ?? ""
+      return "{\"type\":\"hello\",\"version\":\(jsonString(version)),\"inputMonitoring\":\(inputMonitoring)\(post)}\n"
     case let .pttDown(at):
       return "{\"type\":\"ptt_down\",\"at\":\(at)}\n"
     case let .pttUp(at, heldMs):
@@ -70,6 +83,9 @@ enum HelperEventOut: Equatable {
       return "{\"type\":\"esc\",\"at\":\(at)}\n"
     case let .audio(playing, at):
       return "{\"type\":\"audio\",\"playing\":\(playing),\"at\":\(at)}\n"
+    case let .mediaKeyDone(key, ok, message):
+      let why = message.map { ",\"message\":\(jsonString($0))" } ?? ""
+      return "{\"type\":\"media_key_done\",\"key\":\(jsonString(key)),\"ok\":\(ok)\(why)}\n"
     case let .error(message):
       return "{\"type\":\"error\",\"message\":\(jsonString(message))}\n"
     }
@@ -103,14 +119,14 @@ func jsonString(_ s: String) -> String {
 enum UIState: String, CaseIterable {
   case idle, listening, recording, working, speaking
 
-  /** Menu-bar text glyph (recording is drawn red by the UI). */
-  var glyph: String {
+  /** Menu-bar SF Symbol: a different shape per state, so it reads without colour (#143). */
+  var symbol: String {
     switch self {
-    case .idle: return "○"
-    case .listening: return "●"
-    case .recording: return "●"
-    case .working: return "◐"
-    case .speaking: return "🔈"
+    case .idle: return "circle"
+    case .listening: return "ear"
+    case .recording: return "mic.fill"
+    case .working: return "hourglass"
+    case .speaking: return "speaker.wave.2.fill"
     }
   }
 
@@ -131,6 +147,10 @@ enum HelperCommandIn: Equatable {
   case quit
   /** Show the Stephen window (additive: older helpers log it as an unknown type and ignore it). */
   case openWindow
+  /** The listener dropped the recording: end the press if one is down (additive, like openWindow). */
+  case pressOver
+  /** Post a Mac media key: play_pause, next or previous (issue #205; additive, like openWindow). */
+  case mediaKey(String)
   /** Valid JSON object with an unknown `type` (ignored, per the protocol). */
   case unknown(type: String)
   /** Not a JSON object, no string `type`, or a known type with bad fields. */
@@ -149,6 +169,12 @@ func parseCommand(_ line: String) -> HelperCommandIn {
   case "query_audio": return .queryAudio
   case "quit": return .quit
   case "open_window": return .openWindow
+  case "press_over": return .pressOver
+  case "media_key":
+    guard case let .string(k)? = obj["key"], MEDIA_KEYS.contains(k) else {
+      return .invalid(reason: "media_key: bad \"key\" field")
+    }
+    return .mediaKey(k)
   default: return .unknown(type: type)
   }
 }
@@ -401,6 +427,7 @@ struct Modifiers: Equatable {
  *  - Short taps are still reported; Node drops presses under PTT_MIN_HOLD_MS.
  *  - `tick` sends `ptt_up` once the press reaches `maxHoldMs`.
  *  - `interrupt` (event tap disabled: key-ups may have been missed) sends `ptt_up` if down and latches.
+ *  - `pressOver` (the listener cancelled the recording) ends a press like Esc does, without the `esc` (#106).
  */
 final class PushToTalk {
   let maxHoldMs: Int64
@@ -444,7 +471,17 @@ final class PushToTalk {
     return release(at: t, stillHeld: true)
   }
 
-  /** Esc key-downs → esc; an F5 key-down starts a press (auto-repeats ignored for both). */
+  /** The listener dropped this recording: end the press (a held Fn+Option must be let go first, like after Esc). */
+  func pressOver(at t: Stamp) -> [HelperEventOut] {
+    guard isDown else { return [] }
+    return release(at: t, stillHeld: !byF5)
+  }
+
+  /**
+   * Esc key-downs → esc; an F5 key-down starts a press (auto-repeats ignored for both). Esc during a press also ends
+   * the press (after the esc, so Node cancels instead of sending): the listener has dropped that recording, so the
+   * next F5 must start a new one, not be swallowed by a press nobody is holding (#86).
+   */
   func keyDown(keyCode: Int64, isRepeat: Bool, at t: Stamp) -> [HelperEventOut] {
     guard !isRepeat else { return [] }
     if keyCode == KEYCODE_F5 {
@@ -455,7 +492,7 @@ final class PushToTalk {
       return [.pttDown(at: t.wallMs)]
     }
     guard keyCode == KEYCODE_ESCAPE else { return [] }
-    return [.esc(at: t.wallMs)]
+    return [.esc(at: t.wallMs)] + (isDown ? release(at: t, stillHeld: !byF5) : [])
   }
 
   /** F5 released → ends an F5 press. Other key-ups are ignored. */
@@ -798,6 +835,12 @@ final class HelperCore {
   var onQuit: () -> Void = {}
   /** `open_window` from the client (main queue). */
   var onOpenWindow: () -> Void = {}
+  /** A push-to-talk press ended, however it ended (F5 or keys released, Esc, max hold, tap lost). Main queue. */
+  var onPressEnded: () -> Void = {}
+  /** Post a media key (main queue): nil when posted, else why not. The answer goes back as `media_key_done`. */
+  var onMediaKey: (String) -> String? = { _ in "media keys are not supported here" }
+  /** Whether posting keys is allowed (Accessibility), for `hello`; nil = not reported. Any thread. */
+  var readPostEvents: () -> Bool? = { nil }
   var log: (String) -> Void
 
   init(socketPath: String, maxHoldMs: Int64 = PTT_MAX_HOLD_MS, log: @escaping (String) -> Void) {
@@ -810,7 +853,9 @@ final class HelperCore {
     inputMonitoringFlag.set(inputMonitoring)
     server.log = log
     server.helloLine = { [unowned self] in
-      HelperEventOut.hello(version: HELPER_PROTOCOL_VERSION, inputMonitoring: inputMonitoringFlag.get()).jsonLine
+      HelperEventOut.hello(
+        version: HELPER_PROTOCOL_VERSION, inputMonitoring: inputMonitoringFlag.get(), postEvents: readPostEvents()
+      ).jsonLine
     }
     server.onCommand = { [unowned self] cmd in DispatchQueue.main.async { self.handle(cmd) } }
     server.onConnect = { [unowned self] in DispatchQueue.main.async { self.sendAudio(force: true) } }
@@ -825,7 +870,7 @@ final class HelperCore {
     if inputMonitoringFlag.get() == granted { return }
     inputMonitoringFlag.set(granted)
     log("Input Monitoring \(granted ? "granted" : "not granted")")
-    server.send(.hello(version: HELPER_PROTOCOL_VERSION, inputMonitoring: granted))
+    server.send(.hello(version: HELPER_PROTOCOL_VERSION, inputMonitoring: granted, postEvents: readPostEvents()))
   }
 
   func handleFlags(_ m: Modifiers, at t: Stamp = .now()) {
@@ -863,6 +908,12 @@ final class HelperCore {
     case .openWindow:
       log("open_window requested by client")
       onOpenWindow()
+    case .pressOver:
+      emit(ptt.pressOver(at: .now()))
+    case let .mediaKey(k):
+      let why = onMediaKey(k)
+      log("media_key \(k): \(why ?? "posted")")
+      server.send(.mediaKeyDone(key: k, ok: why == nil, message: why))
     case let .unknown(type): log("ignored unknown command type \(jsonString(type))")
     case let .invalid(reason): log("ignored malformed command: \(reason)")
     }
@@ -884,6 +935,7 @@ final class HelperCore {
         let ms = Int(ptt.maxHoldMs) + 5  // + slack so the tick never lands a millisecond early
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(ms)) { [weak self] in self?.tick() }
       }
+      if case .pttUp = e { onPressEnded() }
     }
   }
 }

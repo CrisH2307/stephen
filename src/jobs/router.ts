@@ -4,6 +4,7 @@
  * text and the wake word alike. A spoken "yes" never counts; Deny, a timeout or no dialog at all means nothing is
  * created. After the wake word, stopping asks too and the list is a count only (same trust split as timers).
  */
+import { dirname } from 'node:path';
 import { quoteUntrusted } from '../safety/confirm.js';
 import { clean } from '../safety/text.js';
 import type { ConfirmPrompt, Confirmer } from '../types.js';
@@ -33,6 +34,7 @@ export interface JobRouterOptions {
 
 const minutes = (ms: number) => Math.max(1, Math.round(ms / 60_000));
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 /** A task as Stephen says it: one line, short. */
 const said = (task: string) => `"${clean(task, 60)}"`;
 
@@ -40,11 +42,22 @@ const said = (task: string) => `"${clean(task, 60)}"`;
 export function startPrompt(plan: JobPlan, source: string): ConfirmPrompt {
   const lines = [
     `Task: ${quoteUntrusted(plan.task, TASK_MAX)}`,
-    `Folder: ${plan.folder}`,
-    ...(plan.repo ? [`Code: a new git worktree of "${plan.repo.name}" (${plan.repo.path}) on branch ${plan.repo.branch}. Nothing is pushed.`] : []),
+    // ADR-010: an edited job's version (and so its folder and branch name) is fixed only when it starts (a race moves
+    // it to the next free one), so the dialog names none of them: only what stays true.
+    ...(plan.edit ? [`Edited job, from ${plan.edit.of}. A new job: the old job, its folder and its result are not changed. Nothing from it is reused except what this dialog shows.`] : []),
+    plan.edit ? `Folder: a new folder in ${dirname(plan.folder)}, next to the old one. Its name is shown when the job starts.` : `Folder: ${plan.folder}`,
+    ...(plan.repo
+      ? [
+          plan.edit?.fromBranch
+            ? `Code: a new git worktree of "${plan.repo.name}" (${plan.repo.path}) on a new branch, cut from the old job's branch ${plan.edit.fromBranch}. Its name is shown when the job starts. The old worktree is not used. Nothing is pushed.`
+            : `Code: a new git worktree of "${plan.repo.name}" (${plan.repo.path}) on branch ${plan.repo.branch}. Nothing is pushed.`,
+        ]
+      : []),
     plan.repo
       ? 'Input: the repo itself (the inbox is not used for code jobs).'
-      : plan.inputs?.length
+      : plan.edit
+        ? `Input files: a copy of the old job folder ${plan.edit.copyFrom ?? ''} (${plural(plan.edit.files ?? 0, 'file')}, ${mb(plan.edit.bytes ?? 0)}; symlinks are skipped). The inbox is not used.`
+        : plan.inputs?.length
         ? `Input files (moved from your jobs inbox): ${plan.inputs.slice(0, 8).map((n) => quoteUntrusted(n, 60)).join(', ')}${plan.inputs.length > 8 ? ` and ${plan.inputs.length - 8} more` : ''}.`
         : 'Input files: none (put files in the inbox folder inside your jobs folder before starting).',
     `Budgets: up to ${plural(minutes(plan.wallClockMs), 'minute')}, ${plural(plan.maxTurns, 'turn')}, $${plan.maxBudgetUsd}.`,
@@ -121,6 +134,29 @@ export class JobRouter {
     } catch (e) {
       return no(`Something went wrong with the job (${clean((e as Error).message, 120)}).`);
     }
+  }
+
+  /**
+   * ADR-010 Edit request, [DEV REVIEW]: the owner's click in the Stephen window (app.sock jobs.edit, window socket
+   * only). A NEW job: planEdit (refused while the old job is queued or running), then the same job dialog as any start
+   * with every field, and the start only on "approved". Anything else starts nothing. No voice, phone or model path
+   * calls this (boundary test).
+   */
+  async editJob(oldId: string, request: string): Promise<JobState | { refused: string }> {
+    const source = 'app';
+    const plan = await this.o.jobs.planEdit(oldId, request);
+    if ('error' in plan) return { refused: plan.error };
+    let answer: 'approved' | 'declined' | 'unavailable';
+    try {
+      answer = await this.o.confirmer.confirm(startPrompt(plan, source));
+    } catch {
+      answer = 'unavailable';
+    }
+    if (answer !== 'approved') {
+      this.o.jobs.declined(plan, answer, source);
+      return { refused: answer === 'unavailable' ? "I couldn't show the confirmation dialog, so I didn't start the job." : "Okay, I didn't start it." };
+    }
+    return this.o.jobs.start(plan, source);
   }
 
   private async start(task: string, source: string): Promise<JobRoute> {

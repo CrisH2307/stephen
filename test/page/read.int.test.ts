@@ -58,6 +58,9 @@ describe.each(PROTOCOLS)('page engine find/readText/describe over %s', (protocol
     expect(m[0]?.ref).toMatch(/^z1:f\d+e\d+$/);
     expect(m[0]?.context).toBe(`iframe "${new URL(env.fx.b).host}"`);
     await pe.click(page, m[0]?.ref as string);
+    // The cross-site iframe runs in another renderer process: the click's mousedown and our reads reach it on
+    // separate channels, so its text can change after click() returns (CI run 44955033934, #109). Wait for it.
+    await pe.waitFor(page, { text: 'cross clicked', timeoutMs: 3000 });
     const cross = page.frames().find((f) => f.url().includes('/frame-cross.html'));
     expect(await cross?.evaluate(() => document.getElementById('out')?.textContent)).toBe('cross clicked');
     const t = await pe.find(page, TAB, 'same-origin child', 5);

@@ -52,6 +52,36 @@ export function cleanTask(task: string): string {
   return truncate(stripUnsafe(String(task).normalize('NFKC')).replace(/\s+/g, ' ').trim(), TASK_MAX);
 }
 
+/** ADR-010: an edited job's task quotes the old request as a record, then the edited request (the owner's words). */
+export const EDIT_RECORD_HEAD = 'Earlier request (a record): ';
+/**
+ * The longest edited request (code points, after cleanTask): with the two heads, the quotes and a short quote of the
+ * old request it still fits in TASK_MAX, so editedTask never cuts it. The window's editor and the manager's edit plan enforce it.
+ */
+export const EDIT_REQUEST_MAX = 440;
+export const EDIT_REQUEST_TOO_LONG = `The edited request is too long (at most ${EDIT_REQUEST_MAX} characters). Shorten it and try again.`;
+export const EDIT_REQUEST_HEAD = ' Edited request: ';
+
+/**
+ * The task of an edited job, within TASK_MAX: the edited request (at most EDIT_REQUEST_MAX, checked by the manager) is
+ * kept whole, and the quoted old request is shortened to fit. `oldTask` may itself be an edited job's task: only its own request is quoted.
+ */
+export function editedTask(oldTask: string, edited: string): string {
+  const now = cleanTask(edited);
+  // - 4: the two quotes, and cleanTask (NFKC) turns the ellipsis of a shortened quote into three dots.
+  const room = TASK_MAX - [...EDIT_RECORD_HEAD].length - [...EDIT_REQUEST_HEAD].length - [...now].length - 4;
+  const old = truncate(requestOf(oldTask), Math.max(1, room));
+  return cleanTask(`${EDIT_RECORD_HEAD}"${old}"${EDIT_REQUEST_HEAD}${now}`);
+}
+
+/** The owner's own request in a task: after the last EDIT_REQUEST_HEAD of an edited job's task, else all of it. */
+export function requestOf(task: string): string {
+  const t = cleanTask(task);
+  if (!t.startsWith(EDIT_RECORD_HEAD)) return t;
+  const at = t.lastIndexOf(EDIT_REQUEST_HEAD);
+  return at < 0 ? t : t.slice(at + EDIT_REQUEST_HEAD.length);
+}
+
 /** "Write my SOFE 3980 lab report draft!" → "write-my-sofe-3980-lab-report-draft" (whole words, ≤ 40). Never empty. */
 export function jobSlug(task: string): string {
   const words = String(task).normalize('NFKD').toLowerCase().replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter(Boolean);
@@ -97,6 +127,8 @@ export interface JobSpec {
   /** `<stephen home>/jobs/<id>`: settings, persona, logs, spec (outside the job's reach). */
   metaDir: string;
   model: string;
+  /** The picked effort (Settings > Model); absent = no flag. */
+  effort?: string;
   maxTurns: number;
   maxBudgetUsd: number;
   wallClockMs: number;
@@ -124,6 +156,12 @@ export function jobToolLists(web: boolean): { tools: string[]; allowed: string[]
     disallowed: JOB_DISALLOWED_TOOLS.filter((t) => !(web && (JOB_WEB_TOOLS as readonly string[]).includes(t))),
   };
 }
+
+/**
+ * The effort levels a job may pass to claude. src/jobs loads no voice code (ADR-004 rule 3), so this is a copy of
+ * EFFORTS in src/voice/config.ts; test/jobs/spec.test.ts fails if the two drift.
+ */
+export const JOB_EFFORTS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
  * The argv after `claude` (cwd = spec.cwd). Same rules as buildClaudeArgs: the prompt sits right after `-p`, the
@@ -154,6 +192,8 @@ export function buildJobArgs(s: JobSpec): string[] {
     '--session-id', s.sessionId,
     '--name', `stephen-job-${slugOf(s.id)}`,
     '--model', s.model,
+    // Only a known effort level becomes an argument: spec.json is a file on disk, not a trusted value.
+    ...(JOB_EFFORTS.includes(s.effort ?? '') ? ['--effort', s.effort!] : []),
   ];
 }
 
@@ -172,7 +212,9 @@ export function jobSettings(o: { stephenHome: string; stephenRepo: string; testO
       autoAllowBashIfSandboxed: true,
       excludedCommands: [],
       allowAppleEvents: false,
-      network: { allowedDomains: [], strictAllowlist: true },
+      // No Unix sockets (#208): a job's shell must never reach <home>/run/app.sock (the Settings switches) or
+      // helper.sock. This is Claude Code's default; written out so no later change can turn it on without a failing test.
+      network: { allowedDomains: [], strictAllowlist: true, allowUnixSockets: [], allowAllUnixSockets: false },
       filesystem: { denyRead: [o.stephenHome, '~/.ssh', '~/.aws', '~/.config', '~/Library/Keychains', join(o.stephenRepo, '.env')] },
     },
     permissions: {
@@ -250,6 +292,7 @@ const mixed = (t: string) => /[a-z]/.test(t) && /[A-Z]/.test(t) && (t.match(/\d/
  * before any regex runs, control/bidi characters removed, links reduced to their host (accounts/result.ts
  * reduceLinks), key-shaped tokens replaced by "[secret]", `<untrusted_…` tags escaped, one line, capped. Dates,
  * numbers and job ids stay (unlike account data, a job reads no mail, so it has no one-time codes to mask).
+ * A summary reaches only the owner (spoken, printed, Jobs tab), no model. If it ever goes into a model prompt, frame it then.
  */
 export function cleanJobOutput(text: unknown, max = SUMMARY_MAX): string {
   const raw = typeof text === 'string' ? text.slice(0, max * 8) : '';
@@ -260,10 +303,4 @@ export function cleanJobOutput(text: unknown, max = SUMMARY_MAX): string {
     .replace(/\s+/g, ' ')
     .trim();
   return truncate(s, max);
-}
-
-/** How a finished job's summary is framed wherever it is shown or spoken (never as a voice-session prompt). */
-export function untrustedJobOutput(id: string, summary: string): string {
-  const body = cleanJobOutput(summary);
-  return `<untrusted_job_output job="${isJobId(id) ? id : 'unknown'}">\n${body || '(no summary)'}\n</untrusted_job_output>`;
 }

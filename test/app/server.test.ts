@@ -16,7 +16,6 @@ import {
   MEMORY_OFF_MESSAGE,
   PROPOSAL_GONE_MESSAGE,
   appSocketPath,
-  assistantQueue,
   type AppCommandQueue,
   type AppServerOptions,
 } from '../../src/app/server.js';
@@ -141,21 +140,25 @@ async function harness(o: Partial<AppServerOptions> = {}, home = mkdtempSync(joi
     settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: '/Users/cris/.stephen/config.json', talk: talk.get() }),
     setTalk: (c) => void talk.set(c),
     setModel: (c) => void new ModelStore(join(home, 'config.json'), { model: 'sonnet', effort: null }).set(c),
+    replay: { set: () => {}, deleteAll: async () => 0, on: () => false },
     accounts: () => accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }),
     jobs: {
       list: () => [],
       stop: async (id) => {
         if (id !== '2026-11-05-write-my-lab-report') return { refused: `There's no job ${id}.` };
-        return { id, task: 'write my lab report draft', status: 'stopped', folder: `/Users/cris/Stephen Jobs/${id}`, createdAt: 1, startedAt: 2, endedAt: 3, turns: 9, costUsd: 0.25, summary: '', error: 'Stopped by the owner.' };
+        return { id, task: 'write my lab report draft', status: 'stopped', folder: `/Users/cris/Stephen Jobs/${id}`, createdAt: 1, startedAt: 2, endedAt: 3, turns: 9, costUsd: 0.25, summary: '', error: 'Stopped by the owner.', request: 'write my lab report draft', version: 1, versions: 1 };
       },
+      edit: async () => ({ refused: 'Stop the job first to change its request.' }),
     },
     speakReplies: false,
     openWindow: () => (calls.opens++, null),
     control: FAKE_CONTROL,
     usage: async () => ({ context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } }),
+    latency: () => ({ triggers: 2, text: 'Latency, last 7 days: 2 triggers' }),
     personal: async () =>
       personalSummary({ aboutMe: { name: 'Cris' }, accounts: await accountsStatus({ canvas: { enabled: false } }, { platform: 'linux', envFile: null }), jobsOn: true, timeZone: 'America/Toronto' }),
     newId: () => `h_test${++ids}`,
+    resume: { arm: () => null, cancel: () => {}, armed: () => false },
     ...o,
   });
   await server.start();
@@ -198,14 +201,22 @@ describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the rea
     );
     h.history.append({ source: 'voice-ptt', said: 'remember my prof', reply: 'Saved', outcome: 'memory', tools: [], followUp: false, ms: 40, turns: 0 });
     // The fixture's waiting proposal p1 (from Canvas); a32 proposes p2.
-    h.proposals.propose('Lab 4 for SOFE 3980 is due Friday', 'canvas');
+    h.proposals.propose('Lab 4 for SOFE 3980 is due Friday', 'you');
 
     const lines = readFileSync(FIXTURE, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as FixtureLine);
     const expected = new Map(lines.filter((l) => l.kind === 'response').map((l) => [l.msg.id!, l.msg]));
     const requests = lines.filter((l) => l.kind === 'request').map((l) => l.msg);
     expect(requests.length).toBeGreaterThan(15);
+    // The fixture's client also sent confirm.ask (a gate), so the window's resume and edit requests go on a window connection
+    // (opened only then: an earlier Ask box would take the fixture's confirm.ask).
+    let win: TestClient | null = null;
     for (const req of requests) {
-      const got = await h.client.request(req);
+      const windowOnly = req.type.startsWith('chat.resume') || req.type === 'chat.edit' || req.type === 'history.deleteVersion';
+      if (windowOnly && !win) {
+        win = await h.connect();
+        await win.request({ id: 'w0', type: 'hello', version: '1', confirms: true });
+      }
+      const got = await (windowOnly ? win! : h.client).request(req);
       const want = expected.get(req.id!)!;
       expect({ id: got.id, type: got.type }, JSON.stringify(req)).toEqual({ id: want.id, type: want.type });
       if (want.type === 'error' && ['busy', MEMORY_MESSAGES.secret, MEMORY_GONE_MESSAGE].includes(want.message as string)) {
@@ -339,7 +350,7 @@ describe('chat', () => {
     const h = await harness();
     const accepted = await h.client.request({ id: 'c1', type: 'chat.send', text: "  what's the weather\u0007 in Toronto  " });
     expect(accepted).toEqual({ id: 'c1', type: 'chat.accepted', entryId: expect.stringMatching(/^h_test\d+$/) });
-    expect(h.queue.started).toEqual([{ text: "what's the weather in Toronto", opts: { id: accepted.entryId, raw: "what's the weather\u0007 in Toronto", speak: false } }]);
+    expect(h.queue.started).toEqual([{ text: "what's the weather in Toronto", opts: { id: accepted.entryId, raw: "what's the weather\u0007 in Toronto", speak: false, window: false } }]);
     h.queue.finish(h.server, { reply: "It's 8 degrees and cloudy." }, ['web_search', 'read_page', 'web_search']);
     const done = await h.client.waitFor((m) => m.type === 'chat.done');
     expect(done).toEqual({ type: 'chat.done', entryId: accepted.entryId, reply: "It's 8 degrees and cloudy.", outcome: 'ok', tools: ['web_search', 'read_page'], ms: 1234 });
@@ -378,24 +389,6 @@ describe('chat', () => {
     expect(done).toMatchObject({ entryId: a.entryId, outcome: 'error', reply: 'Something went wrong: boom' });
   });
 
-  it('assistantQueue (no listener): busy follows the assistant; stop cancels and ends the conversation', async () => {
-    const calls: string[] = [];
-    let busy = false;
-    const q = assistantQueue({
-      get busy() {
-        return busy;
-      },
-      command: async (text, o) => (calls.push(`run ${text} ${o.source} ${o.id}`), {}) as CommandReport,
-      cancel: () => (calls.push('cancel'), true),
-      endConversation: () => void calls.push('end'),
-    });
-    expect(q.start('x', { id: 'h_1', raw: 'x', speak: false })).not.toBeNull();
-    busy = true;
-    expect(q.busy()).toBe(true);
-    expect(q.start('y', { id: 'h_2', raw: 'y', speak: false })).toBeNull();
-    q.stop();
-    expect(calls).toEqual(['run x app h_1', 'cancel', 'end']);
-  });
 });
 
 describe('memory, history, settings, audit, window', () => {
@@ -457,7 +450,7 @@ describe('memory, history, settings, audit, window', () => {
     expect(config.voice).toMatchObject({ model: 'sonnet', wakeWord: true, aboutMe: { school: 'I study software engineering in Toronto.' } });
     expect(JSON.stringify(config)).not.toContain('Secret St'); // R9-12: the home address stays out of the window
     expect(config.memory).toEqual({ enabled: true, confirmWakeWord: true, maxItems: 30 });
-    expect(config.history).toEqual({ enabled: true, retentionDays: 1 });
+    expect(config.history).toEqual({ enabled: true, retentionDays: 7 });
     expect(config.app).toEqual({ enabled: true, speakReplies: false });
     const text = JSON.stringify(config);
     for (const leak of ['"elevenlabs":', 'apiKeyFile', 'elevenlabs-key', 'claudePath', '/.local/bin/claude', 'YEBbZ0itqHW31uoXSBns']) expect(text).not.toContain(leak);
@@ -517,6 +510,88 @@ describe('memory, history, settings, audit, window', () => {
     expect(await none.client.request({ id: 'm', type: 'model.set', model: 'haiku' })).toEqual({ id: 'm', type: 'error', message: 'not available in this listener' });
   });
 
+  it('replay.set writes only voice.replay.enabled; settings.get shows it; replay.delete runs the delete', async () => {
+    const home = mkdtempSync(join(tmp, 'replay-'));
+    const file = join(home, 'config.json');
+    writeFileSync(file, JSON.stringify({ voice: { wakeWord: false, replay: { enabled: false } }, memory: { enabled: true } }), { mode: 0o600 });
+    const { writeReplaySwitch } = await import('../../src/app/replay-switch.js');
+    let deletes = 0;
+    const on = () => parseVoiceConfig(JSON.parse(readFileSync(file, 'utf8')).voice).replay.enabled;
+    const h = await harness(
+      {
+        replay: { set: (e) => writeReplaySwitch(file, e), deleteAll: async () => ++deletes, on },
+        settings: () => appSettings({ voice: parseVoiceConfig(VOICE_RAW), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: file, replay: on() }),
+      },
+      home,
+    );
+    const r = await h.client.request({ id: 'r', type: 'replay.set', enabled: true });
+    expect(r).toMatchObject({ type: 'settings', config: { replay: { enabled: true } } });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ voice: { wakeWord: false, replay: { enabled: true } }, memory: { enabled: true } });
+    expect(await h.client.request({ id: 'g', type: 'settings.get' })).toMatchObject({ config: { replay: { enabled: true } } });
+    await h.client.request({ id: 'r2', type: 'replay.set', enabled: false });
+    expect(on()).toBe(false);
+    expect(await h.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'ok' });
+    expect(deletes).toBe(1);
+    // A failed delete says so; no recorder (dry run) refuses both.
+    const bad = await harness({ replay: { set: () => {}, deleteAll: async () => Promise.reject(new Error('EPERM')), on: () => false } });
+    expect(await bad.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'error', message: 'could not delete the recordings' });
+    const none = await harness({ replay: undefined }, mkdtempSync(join(tmp, 'replay2-')));
+    expect(await none.client.request({ id: 'r', type: 'replay.set', enabled: true })).toEqual({ id: 'r', type: 'error', message: 'not available in this listener' });
+    expect(await none.client.request({ id: 'd', type: 'replay.delete' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
+  });
+
+  it('#208: replay.set writes only {enabled}, so a stray key under replay cannot make the switch snap back off', async () => {
+    const home = mkdtempSync(join(tmp, 'replay-stray-'));
+    const file = join(home, 'config.json');
+    writeFileSync(file, JSON.stringify({ voice: { wakeWord: false, replay: { enabled: false, keepDays: 400 } } }), { mode: 0o600 });
+    const { writeReplaySwitch } = await import('../../src/app/replay-switch.js');
+    writeReplaySwitch(file, true);
+    const voice = JSON.parse(readFileSync(file, 'utf8')).voice;
+    expect(voice).toEqual({ wakeWord: false, replay: { enabled: true } });
+    expect(parseVoiceConfig(voice).replay.enabled).toBe(true);
+  });
+
+  it('#208: the replay push follows config.json (a hand edit too), and recording needs a window to show the sign', async () => {
+    const home = mkdtempSync(join(tmp, 'replay-push-'));
+    const file = join(home, 'config.json');
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: false } } }), { mode: 0o600 });
+    const { writeReplaySwitch } = await import('../../src/app/replay-switch.js');
+    const on = () => parseVoiceConfig(JSON.parse(readFileSync(file, 'utf8')).voice).replay.enabled;
+    const h = await harness({ replay: { set: (e) => writeReplaySwitch(file, e), deleteAll: async () => 0, on }, replayPollMs: 20 }, home);
+    const isReplay = (want: boolean) => (m: Record<string, unknown>) => m.type === 'replay' && m.on === want;
+    // No window connected: even with the switch on, nothing may record.
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: true } } }), { mode: 0o600 });
+    expect(h.server.recordingAllowed()).toBe(false);
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: false } } }), { mode: 0o600 });
+    // The window says hello: it gets the switch at once.
+    expect((await h.client.request({ id: 'x', type: 'hello', version: '1', confirms: true })).type).toBe('hello');
+    await h.client.waitFor(isReplay(false));
+    expect(h.server.recordingAllowed()).toBe(false);
+    // A hand edit of config.json reaches the sign within the poll, with no request from the window.
+    h.client.messages.splice(0);
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: true } } }), { mode: 0o600 });
+    await h.client.waitFor(isReplay(true), 1000);
+    expect(h.server.recordingAllowed()).toBe(true);
+    // replay.set off: the push comes before the answer.
+    h.client.messages.splice(0);
+    expect((await h.client.request({ id: 'off', type: 'replay.set', enabled: false })).type).toBe('settings');
+    const i = h.client.messages.findIndex(isReplay(false));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(i).toBeLessThan(h.client.messages.findIndex((m) => m.id === 'off'));
+    expect(h.server.recordingAllowed()).toBe(false);
+    // The window leaves: the switch on no longer records.
+    writeFileSync(file, JSON.stringify({ voice: { replay: { enabled: true } } }), { mode: 0o600 });
+    h.client.close();
+    await sleep(50);
+    expect(h.server.recordingAllowed()).toBe(false);
+    // No recorder (dry run): no replay push, never allowed.
+    const none = await harness({ replay: undefined }, mkdtempSync(join(tmp, 'replay-none-')));
+    await none.client.request({ id: 'x', type: 'hello', version: '1', confirms: true });
+    await sleep(50);
+    expect(none.client.messages.some((m) => m.type === 'replay')).toBe(false);
+    expect(none.server.recordingAllowed()).toBe(false);
+  });
+
   it('settings.set refuses unknown keys and bad values and changes nothing', async () => {
     const home = mkdtempSync(join(tmp, 'setbad-'));
     const h = await harness({}, home);
@@ -566,6 +641,17 @@ describe('memory, history, settings, audit, window', () => {
     expect(await none.client.request({ id: 'd', type: 'doctor.run' })).toEqual({ id: 'd', type: 'error', message: 'not available in this listener' });
   });
 
+  it('latency.get answers with the report text for the asked days (default 7); without it, an error', async () => {
+    const asked: number[] = [];
+    const h = await harness({ latency: (days: number) => (asked.push(days), { triggers: 3, text: `report ${days}` }) });
+    expect(await h.client.request({ id: 'l', type: 'latency.get' })).toEqual({ id: 'l', type: 'latency', days: 7, triggers: 3, text: 'report 7' });
+    expect(await h.client.request({ id: 'l2', type: 'latency.get', days: 30 })).toEqual({ id: 'l2', type: 'latency', days: 30, triggers: 3, text: 'report 30' });
+    expect(await h.client.request({ id: 'l3', type: 'latency.get', days: 2 })).toMatchObject({ id: 'l3', type: 'error' });
+    expect(asked).toEqual([7, 30]);
+    const none = await harness({ latency: undefined });
+    expect(await none.client.request({ id: 'l', type: 'latency.get' })).toEqual({ id: 'l', type: 'error', message: 'not available in this listener' });
+  });
+
   it('usage.get answers from the listener; without it, an error', async () => {
     const h = await harness();
     expect(await h.client.request({ id: 'u', type: 'usage.get' })).toEqual({ id: 'u', type: 'usage', context: null, memory: { bytes: 6800, budget: 8192, percent: 83, warn: true } });
@@ -579,14 +665,14 @@ describe('memory, history, settings, audit, window', () => {
     expect(p1).toMatchObject({ id: 'a', type: 'suggestions', suggestions: [{ id: 'p1', text: 'I moved to Fit4Less', origin: 'you', untrusted: false }] });
     expect(await h.memory.list()).toEqual([]);
     expect(h.calls.ends).toBe(0);
-    h.proposals.propose('Lab 4 is due Friday', 'canvas');
+    h.proposals.propose('Lab 4 is due Friday', 'you');
     const list = await h.client.request({ id: 'b', type: 'memory.suggestions' });
-    expect((list.suggestions as { id: string; untrusted: boolean }[]).map((s) => [s.id, s.untrusted])).toEqual([['p2', true], ['p1', false]]);
+    expect((list.suggestions as { id: string; untrusted: boolean }[]).map((s) => [s.id, s.untrusted])).toEqual([['p2', false], ['p1', false]]);
     // a secret is refused before it is ever stored as a proposal
     expect(await h.client.request({ id: 'c', type: 'memory.propose', text: 'my password is hunter2' })).toEqual({ id: 'c', type: 'error', message: MEMORY_MESSAGES.secret });
     // keep with edited text: saved through the memory store, origin recorded, proposal gone, conversation ended
     const kept = await h.client.request({ id: 'd', type: 'memory.keep', propId: 'p2', text: 'Lab 4 is due Thursday' });
-    expect(kept).toMatchObject({ id: 'd', type: 'memory', items: [{ id: 'm1', text: 'Lab 4 is due Thursday', source: 'app', origin: 'canvas' }] });
+    expect(kept).toMatchObject({ id: 'd', type: 'memory', items: [{ id: 'm1', text: 'Lab 4 is due Thursday', source: 'app', origin: 'you' }] });
     expect(h.calls.ends).toBe(1);
     expect(h.proposals.list().map((p) => p.id)).toEqual(['p1']);
     // a refused keep leaves the proposal waiting
@@ -669,15 +755,13 @@ describe('pushes', () => {
     expect(await h.client.waitFor((m) => m.type === 'chat.done')).toEqual({ type: 'chat.done', entryId: 'h_v', reply: '', outcome: 'cancelled', tools: [], ms: 900 });
   });
 
-  it('chat.done carries the action chain as steps when something ran (audit outside the command is left out)', async () => {
+  it('chat.done carries the steps it is given (readCommandSteps builds them), and none when there are none', async () => {
     const h = await harness();
-    const calls = [{ tool: 'gmail_search', isError: false, ms: 800 }, { tool: 'weather_now', isError: true, ms: 20 }];
-    h.server.commandDone({ id: 'h_s', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search', 'weather_now'], calls);
-    const done = await h.client.waitFor((m) => m.type === 'chat.done');
-    expect(done.steps).toEqual([
-      { text: 'Used gmail_search', status: 'ok' },
-      { text: 'Used weather_now', status: 'failed' },
-    ]);
+    const steps = [{ text: 'Used gmail_search', status: 'ok' as const }, { text: 'Tried weather_now, it failed', status: 'failed' as const }];
+    h.server.commandDone({ id: 'h_s', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, ['gmail_search', 'weather_now'], steps);
+    expect((await h.client.waitFor((m) => m.type === 'chat.done' && m.entryId === 'h_s')).steps).toEqual(steps);
+    h.server.commandDone({ id: 'h_n', result: 'ok', outcome: 'ok', source: 'app', said: 'x', reply: 'Done.', ranClaude: true, followUp: false, ms: 900, turns: 1, route: 'model', replyMs: 0 }, [], []);
+    expect((await h.client.waitFor((m) => m.type === 'chat.done' && m.entryId === 'h_n')).steps).toBeUndefined();
   });
 
   it('closing the server disconnects clients', async () => {

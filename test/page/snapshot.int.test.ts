@@ -58,8 +58,13 @@ describe.each(PROTOCOLS)('page engine snapshot over %s', (protocol) => {
     });
     for (const filter of ['interactive', 'all'] as const) {
       const s = await pe.snapshot(page, TAB, { filter, maxChars: 20000 });
+      // Leave out the URL line: its random port can contain "737" (CI run 44270868067, port 40737).
+      const shown = s.text
+        .split('\n')
+        .filter((l) => !l.startsWith('URL: '))
+        .join('\n');
       for (const secret of ['Sup3rSecret!', '481516', '234234', '4111111111111111', '737']) {
-        expect(s.text).not.toContain(secret);
+        expect(shown).not.toContain(secret);
       }
       expect(s.text).toMatch(/textbox "Password" \[ref=[^\]]+\] value=\[redacted\]/);
       expect(s.text).toMatch(/textbox "Verification code" \[ref=[^\]]+\] value=\[redacted\]/);
@@ -218,6 +223,9 @@ describe.each(PROTOCOLS)('page engine snapshot over %s', (protocol) => {
     await pe.click(page, refIn(s.text, /button "Child button"/));
     await pe.type(page, refIn(s.text, /textbox "Child input"/), 'inside frame');
     await pe.click(page, refIn(s.text, /link "Cross link"/));
+    // The cross-site iframe runs in another renderer process: the click's mousedown and our reads reach it on
+    // separate channels, so its text can change after click() returns (#109). Wait for it.
+    await pe.waitFor(page, { text: 'cross clicked', timeoutMs: 3000 });
     const same = page.frames().find((f) => f.url().endsWith('/frame-child.html') && f !== page.mainFrame());
     const cross = page.frames().find((f) => f.url().includes('/frame-cross.html'));
     expect(await same?.evaluate(() => document.getElementById('out')?.textContent)).toBe('child clicked');

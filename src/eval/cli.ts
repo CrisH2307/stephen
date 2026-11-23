@@ -106,6 +106,7 @@ export async function runEvalCli(argv: string[], e: EvalEnv = {}): Promise<numbe
     outDir: join(cfg.home, 'eval'),
     claudePath: voice.claudePath,
     model,
+    effort: voice.claudeEffort ?? null,
     maxTurns: voice.maxTurns,
     nodePath: process.execPath,
     cliPath,

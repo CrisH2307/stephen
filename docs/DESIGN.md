@@ -22,7 +22,7 @@ Let Claude Code drive **Zen** and **Chrome** on macOS for everyday productivity 
 - Works with Claude Code over stdio, MCP SDK v1.
 
 ### Constraints
-- Node ≥ 20.19, ESM, TypeScript strict. Deps: `puppeteer-core`, `@modelcontextprotocol/sdk`, `zod`. Dev: `typescript`, `vitest`, `@types/node`, `@sparticuz/chromium` (real browser for tests on Linux CI).
+- Node ^20.19.0 || >=22.12.0 (tests: 22.12+ or 24, for vitest 5), ESM, TypeScript strict. Deps: `puppeteer-core`, `@modelcontextprotocol/sdk`, `zod`. Dev: `typescript`, `vitest`, `@types/node`, `@sparticuz/chromium` (real browser for tests on Linux CI).
 - macOS-specific paths are overridable by config (so Linux tests run).
 
 ## 2. High-level design
@@ -67,7 +67,7 @@ Let Claude Code drive **Zen** and **Chrome** on macOS for everyday productivity 
 - Binary default `/Applications/Zen.app/Contents/MacOS/zen` (also probe `Zen Browser.app`, `Zen Twilight.app`; config override).
 - **Default: attach-only real mode** (`mode: 'real'`, `launch: 'never'`). Gecko's Remote Agent can only be enabled by *starting* Zen with `--remote-debugging-port` ([Firefox remote security](https://firefox-source-docs.mozilla.org/remote/Security.html)) — a normally opened Zen can never be attached to, and Zen refuses unsigned extensions. So the user opens their everyday Zen through `stephen zen-launch` (wrapped by the "Zen for Stephen" applet, below) and the driver only attaches. With `launch: 'never'` the driver **never spawns Zen** (any mode):
   - **Stephen-ready Zen running** — the state file names a live pid in this mode on the same profile → reattach over BiDi (the normal reattach path; records `ownerPid`). A state still `starting` is waited for, never relaunched.
-  - **Zen running, not Stephen-ready** (`pgrep -x zen`, no usable state / endpoint refuses) → `NEEDS_USER`: "Zen is open, but it wasn't started with Stephen access. Quit Zen (⌘Q) and reopen it with the 'Zen for Stephen' app (or run `stephen zen-launch`). Your tabs come back if Zen is set to restore your previous session."
+  - **Zen running, not Stephen-ready** (`pgrep -x zen`, no usable state / endpoint refuses) → `NEEDS_USER`: "Zen is open, but it wasn't started with Stephen access, so Stephen can't connect to it. Stephen needs "Zen for Stephen". Stephen can only connect to a Zen that was started with its remote-control port open. A normal Zen window does not open that port. The 'Zen for Stephen' app opens Zen with it. Quit Zen (⌘Q) and reopen it with the 'Zen for Stephen' app (or run `stephen zen-launch`). Your tabs come back if Zen is set to restore your previous session."
   - **Zen not running** → `NEEDS_USER`: open Zen with the Zen for Stephen app (setup: `install-zen-launcher`).
   - Agent mode with `launch: 'never'` likewise only reattaches (error says to set `launch: 'auto'`).
   - Never quits or kills Zen. `browser_connect zen mode:'agent'` is refused in attach-only (it would open a separate Zen); `browser_status`/`browser_connect` print "Zen: attach-only (uses your open Zen; never launches one)"; server `instructions` tell the model to relay the error once and not retry in a loop, and to prefer the user's tabs / `tab_open` in their Zen.

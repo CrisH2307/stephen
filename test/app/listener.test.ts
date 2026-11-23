@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { AppServer, listenerQueue } from '../../src/app/server.js';
+import { appMediaKey } from '../../src/desktop/media-key.js';
 import { appSettings } from '../../src/app/settings.js';
 import { parseAppConfig } from '../../src/app/config.js';
 import { parseHistoryConfig } from '../../src/history/config.js';
@@ -110,6 +111,10 @@ async function setup(o: { hold?: boolean; texts?: string[] } = {}) {
     settings: () => appSettings({ voice: parseVoiceConfig({}), memory: parseMemoryConfig({}), history: parseHistoryConfig({}), app: parseAppConfig({}), configPath: '/x/config.json' }),
     speakReplies: false,
     openWindow: () => (bridge.openWindow() ? null : 'no helper'),
+    mediaKey: async (action) => {
+      const r = await bridge.media(action);
+      return r.ok ? null : r.reason;
+    },
   });
   await app.start();
   const running = listener.run();
@@ -198,5 +203,24 @@ describe('typed chat in the listener queue', () => {
     const t = await setup();
     expect(await t.client.request({ id: 'w', type: 'window.open' })).toEqual({ id: 'w', type: 'ok' });
     expect(t.fake.sent).toContainEqual({ type: 'open_window' });
+  });
+
+  it('issue #205: media.key from media_control (its real client) reaches the helper as media_key', async () => {
+    const t = await setup();
+    const press = appMediaKey(t.app.socketPath);
+    expect(await press('next')).toEqual({ ok: true });
+    expect(t.fake.sent).toContainEqual({ type: 'media_key', key: 'next' });
+    // pause presses play/pause only while sound plays (the key is a toggle).
+    t.fake.playing = false;
+    expect(await press('pause')).toEqual({ ok: false, reason: 'nothing is playing' });
+    t.fake.playing = true;
+    expect(await press('pause')).toEqual({ ok: true });
+    expect(t.fake.sent.filter((c) => c.type === 'media_key')).toEqual([{ type: 'media_key', key: 'next' }, { type: 'media_key', key: 'play_pause' }]);
+    t.fake.mediaKeyAnswer = { ok: false, message: 'Stephen Helper needs the Accessibility permission' };
+    expect(await press('play')).toEqual({ ok: false, reason: 'Stephen Helper needs the Accessibility permission' });
+  });
+
+  it('issue #205: media_control gets a clear reason when no listener runs', async () => {
+    expect(await appMediaKey(join(tmp, 'no.sock'))('next')).toEqual({ ok: false, reason: 'stephen listen is not running' });
   });
 });

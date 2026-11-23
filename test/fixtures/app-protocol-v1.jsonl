@@ -91,3 +91,25 @@
 {"from":"node","kind":"response","msg":{"id":"a40","type":"settings","config":{"voice":{"model":"haiku","effort":"low","speak":false},"talk":{"length":"balanced","tone":"casual","speak":false,"explain":false,"voice":"elevenlabs","samples":{"brief":{"casual":"Bet, playing lofi beats."}}}},"configPath":"/Users/cris/.stephen/config.json"}}
 {"from":"app","kind":"request","msg":{"id":"a41","type":"model.set","effort":"turbo"}}
 {"from":"node","kind":"response","msg":{"id":"a41","type":"error","message":"effort must be default or one of low, medium, high, xhigh, max"}}
+{"from":"app","kind":"request","msg":{"id":"a42","type":"latency.get"}}
+{"from":"node","kind":"response","msg":{"id":"a42","type":"latency","days":7,"triggers":2,"text":"Latency, last 7 days: 2 triggers\noutcomes: ok 2\n\nptt / model  (n=2)\n  step                n       p50       p95\n  speech → reply      2   3000 ms   5000 ms\n\nSlowest 2 (speech → reply):\n  h_00000000000000a2  2026-11-10 10:05  ptt / model  ok  5000 ms\n  h_00000000000000a1  2026-11-10 10:00  ptt / model  ok  3000 ms"}}
+{"from":"app","kind":"request","msg":{"id":"a43","type":"replay.set","enabled":true}}
+{"from":"node","kind":"push","msg":{"type":"replay","on":true}}
+{"from":"node","kind":"response","msg":{"id":"a43","type":"settings","config":{"voice":{"model":"haiku"},"replay":{"enabled":true}},"configPath":"/Users/cris/.stephen/config.json"}}
+{"from":"app","kind":"request","msg":{"id":"a44","type":"replay.delete"}}
+{"from":"node","kind":"response","msg":{"id":"a44","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a45","type":"hello","version":"1","confirms":true}}
+{"from":"node","kind":"response","msg":{"id":"a45","type":"hello","version":"1","listening":true,"model":"sonnet","confirms":true}}
+{"from":"node","kind":"push","msg":{"type":"resume","armed":false}}
+{"from":"app","kind":"request","msg":{"id":"a46","type":"chat.resume","conv":"c_0123456789abcdef"}}
+{"from":"node","kind":"push","msg":{"type":"resume","armed":true}}
+{"from":"node","kind":"response","msg":{"id":"a46","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a47","type":"chat.resume.cancel"}}
+{"from":"node","kind":"push","msg":{"type":"resume","armed":false}}
+{"from":"node","kind":"response","msg":{"id":"a47","type":"ok"}}
+{"from":"app","kind":"request","msg":{"id":"a48","type":"history.versions","entryId":"h_0123456789abcdef"}}
+{"from":"node","kind":"response","msg":{"id":"a48","type":"versions","entries":[],"expired":false}}
+{"from":"app","kind":"request","msg":{"id":"a49","type":"chat.edit","oldId":"h_0123456789abcdef","oldHash":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","conv":"c_0123456789abcdef","text":"play sara"}}
+{"from":"node","kind":"response","msg":{"id":"a49","type":"error","message":"This conversation changed. Open it again."}}
+{"from":"app","kind":"request","msg":{"id":"a50","type":"history.deleteVersion","entryId":"h_0123456789abcdef"}}
+{"from":"node","kind":"response","msg":{"id":"a50","type":"error","message":"That message is no longer saved."}}

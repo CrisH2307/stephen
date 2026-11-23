@@ -12,9 +12,10 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writePrivateFileAtomicSync } from '../lib/fs.js';
 import { killGroup } from '../lib/process.js';
-import { stripUnsafe, truncate } from '../safety/text.js';
+import { cleanMemoryText } from '../memory/store.js';
+import { truncate } from '../safety/text.js';
 import { removeServeLock } from '../server/instance.js';
-import { toolLogServeArgs } from '../server/tool-log.js';
+import { commandFileServeArgs, toolLogServeArgs } from '../server/tool-log.js';
 import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
 import { DEFAULT_TALK, EXPLAIN_LINE, LENGTH_LINES, TONE_LINES, type TalkPrefs } from './talk.js';
@@ -143,13 +144,12 @@ export const MEMORY_ITEM_MAX_CHARS = 200;
 
 /**
  * One memory item made safe for the prompt. The store already cleans text, but this is the last stop before Claude,
- * so it cleans again: control / bidi / zero-width characters removed, whitespace collapsed to one line, `<` `>`
+ * so it cleans again with cleanMemoryText: control / bidi / zero-width characters removed, whitespace collapsed to one line, `<` `>`
  * turned into `‹` `›` (an item can never close or open the <user_memory> tag), at most MEMORY_ITEM_MAX_CHARS.
  */
 export function cleanMemoryItem(item: unknown): string {
   if (typeof item !== 'string') return '';
-  const flat = stripUnsafe(item).replace(/\s+/g, ' ').trim().replace(/</g, '‹').replace(/>/g, '›');
-  return truncate(flat, MEMORY_ITEM_MAX_CHARS);
+  return truncate(cleanMemoryText(item), MEMORY_ITEM_MAX_CHARS);
 }
 
 /**
@@ -191,6 +191,12 @@ export interface ClaudeSettings {
   /** Optional lock-down flags this `claude` doesn't know (from probeClaudeFlags); they are left out. */
   unsupportedOptionalFlags?: ReadonlySet<string>;
   /**
+   * Warm process only: pass --include-partial-messages, so the stream carries `stream_event` lines and the first
+   * token can be timed (latency monitor). Set only when `claude --help` lists the flag. The text of those lines is
+   * never read.
+   */
+  partialMessages?: boolean;
+  /**
    * Follow-ups are on (voice.followUpWindowSec > 0): sessions are saved so the next command can `--resume`
    * them, so `--no-session-persistence` is left out. Off (default): every run is fresh and nothing is saved.
    */
@@ -210,8 +216,9 @@ export interface ClaudeSettings {
    * starts `serve --instance <id>`, and says where that config and the instance's lock are. The run uses that config
    * instead of `mcpConfigPath`, and deletes the lock once the process group is gone. Absent (tests, eval): the
    * static `mcpConfigPath`, no instance. `trust` is the conversation's (R7-2): `wake` adds `serve --trust wake`.
+   * `assumePrivateRead` (a resumed chat, ADR-007 v2) adds `serve --assume-private-read`.
    */
-  serveInstance?: (trust: Trust) => Promise<ServeInstance>;
+  serveInstance?: (trust: Trust, assumePrivateRead?: boolean) => Promise<ServeInstance>;
 }
 
 /** One `serve --instance` for one Claude process (see ClaudeSettings.serveInstance). */
@@ -231,6 +238,11 @@ export interface RunOptions {
   memory?: readonly string[];
   /** The command's trust (default `wake`): handed to serveInstance, so a `wake` run's serve gets `--trust wake`. */
   trust?: Trust;
+  /**
+   * A resumed chat (ADR-007 v2): the serve starts with `--assume-private-read`. Needs serveInstance (the static
+   * config has no such flag), so a run without one fails instead of starting a serve with a clean gate.
+   */
+  assumePrivateRead?: boolean;
 }
 
 /** A Claude session id we pass back to `--resume`: never option-looking, no separators. */
@@ -238,6 +250,10 @@ export const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 /** Saves nothing to disk; only passed when follow-ups are off (a resumed session must have been saved). */
 export const NO_SESSION_PERSISTENCE = '--no-session-persistence';
+/** Stream partial messages (warm process, for the first-token time). Used only when the help text lists it. */
+export const PARTIAL_MESSAGES = '--include-partial-messages';
+/** Sent only when `claude --help` lists it (OPTIONAL_CLAUDE_FLAGS), so a saved effort can't break every command on an older Claude Code. */
+export const EFFORT_FLAG = '--effort';
 
 /**
  * The flags that lock a headless run down to Stephen's tools. Checked against Claude Code 2.1.314 (`claude
@@ -300,7 +316,7 @@ export function buildClaudeArgs(prompt: string, s: ClaudeSettings, run: RunOptio
  * stream-json output). Prompts go to stdin as one JSON line each. Pure; unit-tested.
  */
 export function buildWarmArgs(s: ClaudeSettings, memory?: readonly string[]): string[] {
-  return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', ...lockedArgs(s, memory)];
+  return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', ...(s.partialMessages ? [PARTIAL_MESSAGES] : []), ...lockedArgs(s, memory)];
 }
 
 /** Everything after the prompt / output format: MCP config, lock-down, tool rules, persona, turn cap, model. */
@@ -321,8 +337,7 @@ function lockedArgs(s: ClaudeSettings, memory: readonly string[] | undefined): s
   ];
   const live = s.modelPrefs ? s.modelPrefs() : { model: s.model, effort: s.effort ?? null };
   if (live.model) args.push('--model', live.model);
-  // ponytail: not probed like the optional lock-down flags; a Claude Code too old for --effort fails the run, update it.
-  if (live.effort) args.push('--effort', live.effort);
+  if (live.effort && !s.unsupportedOptionalFlags?.has(EFFORT_FLAG)) args.push(EFFORT_FLAG, live.effort);
   return args;
 }
 
@@ -347,6 +362,8 @@ export function mcpConfig(
   toolLogPath: string | null = null,
   instance: string | null = null,
   trust: Trust = 'trusted',
+  commandFilePath: string | null = null,
+  assumePrivateRead = false,
 ): { mcpServers: Record<string, { command: string; args: string[] }> } {
   // --confirm app: nobody watches a headless chat, so confirmations go to the Ask box, else the macOS dialog (R9-2).
   // --voice: registers the `announce` tool (speak first, then act; mcp__stephen__announce is covered by ALLOWED_TOOLS).
@@ -354,11 +371,15 @@ export function mcpConfig(
   // --trust wake: a wake-word or phone conversation (R7-2, ADR-005): email shows only who and when (src/accounts/index.ts).
   // --confirm deny for the phone: nobody is at the Mac to answer a dialog, so every confirmation is declined.
   // --tool-log: tool names (never arguments) per call, for the command history (src/server/tool-log.ts).
+  // --command-file: the command id file; serve stamps the id on tool-log records and audit entries (a label only).
+  // --assume-private-read: a resumed chat (ADR-007 rule 5): the gate acts as if private data was read from the start.
   const args = [
     cliPath, 'serve', '--confirm', trust === 'phone' ? 'deny' : 'app', '--voice',
     ...(instance ? ['--instance', instance] : []),
     ...(trust !== 'trusted' ? ['--trust', 'wake'] : []),
+    ...(assumePrivateRead ? ['--assume-private-read'] : []),
     ...toolLogServeArgs(toolLogPath),
+    ...commandFileServeArgs(commandFilePath),
     ...(sessionStatePath ? ['--session-state', sessionStatePath] : []),
   ];
   return { mcpServers: { [MCP_SERVER_NAME]: { command: nodePath, args } } };
@@ -392,8 +413,10 @@ export async function writeMcpConfig(
   toolLogPath: string | null = null,
   instance: string | null = null,
   trust: Trust = 'trusted',
+  commandFilePath: string | null = null,
+  assumePrivateRead = false,
 ): Promise<string> {
-  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust), null, 2) + '\n');
+  return writePrivateFile(dir, MCP_CONFIG_FILE, JSON.stringify(mcpConfig(nodePath, cliPath, sessionStatePath, toolLogPath, instance, trust, commandFilePath, assumePrivateRead), null, 2) + '\n');
 }
 
 /** <home>/voice/persona.txt: the persona file of file mode (ClaudeSettings.personaFile). */
@@ -435,9 +458,21 @@ export type ClaudeOutcome =
       /** Claude Code's own timings from the result JSON (`duration_ms`, `duration_api_ms`), when present. */
       durationMs?: number | null;
       apiMs?: number | null;
+      /** Where the turn's time went, from the stream lines (warm process only). Numbers only. */
+      model?: ModelTimes;
     }
   | { kind: 'error'; message: string; sessionId: string | null }
   | { kind: 'cancelled' };
+
+/** One command's model run, measured from its stream lines (src/voice/warm-claude.ts). All in ms. */
+export interface ModelTimes {
+  /** Waiting for the model: prompt or tool result sent → the model's next message, summed. */
+  modelMs: number;
+  /** Tools: the model's message → the tool result, summed. */
+  toolMs: number;
+  /** Prompt sent → first streamed token. Only with --include-partial-messages. */
+  firstTokenMs?: number;
+}
 
 export interface ResultJson {
   type?: string;
@@ -456,6 +491,47 @@ const ERROR_TEXT: Record<string, string> = {
   error_during_execution: 'Something went wrong while I was working on that.',
   error_max_budget_usd: 'That would cost more than allowed, so I stopped.',
 };
+
+// Wording seen in Claude Code 2.1.319 ("Usage limit reached · limit resets 3pm") and earlier builds ("You've hit your limit · resets 3pm").
+const PLAN_LIMIT_RE = /\b(?:usage|plan|session|weekly|5-hour) limit reached\b|\bhit your (?:[a-z0-9-]+ )?limit\b/i;
+const LIMIT_RESET_RE = /\bresets?\s+(?:at\s+)?([^·|(\n]+)/i;
+
+/** The plain message for "plan limit reached" CLI text (with the reset time when the text carries one), else null. Pure. */
+export function planLimitMessage(text: string): string | null {
+  if (!PLAN_LIMIT_RE.test(text)) return null;
+  // The reset time is CLI text: keep only a short clock-like value.
+  const raw = LIMIT_RESET_RE.exec(text)?.[1]?.trim();
+  const at = raw && /^[0-9apm: .]{1,12}$/i.test(raw) ? raw : undefined;
+  return at ? `You've reached your Claude plan limit. It resets at ${at}.` : "You've reached your Claude plan limit.";
+}
+
+/** Claude Code versions Stephen's recorded fixtures (help text, stream-json) come from: the oldest and newest tested. */
+export const TESTED_CLAUDE_MIN = '2.1.316';
+export const TESTED_CLAUDE_MAX = '2.1.319';
+
+const versionParts = (v: string): number[] | null => {
+  const m = /(\d+)\.(\d+)\.(\d+)/.exec(v);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+};
+
+/** `claude --version` output vs the tested range: inside, below, above, or unparseable. Pure. */
+export function claudeVersionStatus(output: string): { version: string | null; status: 'ok' | 'below' | 'above' | 'unknown' } {
+  const v = versionParts(output);
+  if (!v) return { version: null, status: 'unknown' };
+  const cmp = (a: number[], b: number[]) => a[0]! - b[0]! || a[1]! - b[1]! || a[2]! - b[2]!;
+  const status = cmp(v, versionParts(TESTED_CLAUDE_MIN)!) < 0 ? 'below' : cmp(v, versionParts(TESTED_CLAUDE_MAX)!) > 0 ? 'above' : 'ok';
+  return { version: v.join('.'), status };
+}
+
+/** The doctor line for `claude --version` output (null output = could not run). Outside the tested range is a warning, never blocking. Newer is only a note (ok: true, same text): the CLI updates itself. */
+export function claudeVersionCheck(output: string | null): { ok: boolean; label: string; detail: string; fix?: string } {
+  const label = 'Claude Code version';
+  const r = claudeVersionStatus(output ?? '');
+  const range = `tested ${TESTED_CLAUDE_MIN} to ${TESTED_CLAUDE_MAX}`;
+  if (r.status === 'ok') return { ok: true, label, detail: `${r.version} (${range})` };
+  if (r.status === 'unknown') return { ok: false, label, detail: `could not read the version (${range})`, fix: 'Check that `claude --version` works (voice.claudePath in config.json).' };
+  return { ok: r.status === 'above', label, detail: `${r.version} is ${r.status === 'below' ? 'older' : 'newer'} than Stephen was ${range}`, fix: r.status === 'below' ? 'Update Claude Code (`claude update`).' : 'It may still work; if voice commands fail, tell the Stephen maintainer.' };
+}
 
 /** Parse `--output-format json` stdout (the last JSON object with type "result"). */
 export function parseClaudeOutput(stdout: string, exitCode: number | null, stderr = ''): ClaudeOutcome {
@@ -489,7 +565,7 @@ export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
-    const msg = ERROR_TEXT[res.subtype ?? ''] ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
+    const msg = ERROR_TEXT[res.subtype ?? ''] ?? planLimitMessage(text) ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
     return { kind: 'error', message: msg, sessionId };
   }
   return {
@@ -558,7 +634,6 @@ export interface RunnerOptions extends ClaudeSettings {
   memory?: () => readonly string[];
   /** Called after every finished (not cancelled) run with where the time went. */
   onTiming?: (t: ClaudeTiming) => void;
-  now?: () => number;
 }
 
 const MAX_STDOUT = 4 * 1024 * 1024;
@@ -591,25 +666,21 @@ export class ClaudeRunner {
     return this.child !== null;
   }
 
-  get pid(): number | null {
-    return this.child?.pid ?? null;
-  }
-
   async run(prompt: string, run: RunOptions = {}): Promise<ClaudeOutcome> {
     if (this.child) throw new Error('a command is already running');
     const memory = memoryForTrust(run.trust ?? 'wake', () => this.readMemory());
-    let args = this.nextArgs(prompt, { ...run, memory });
     // A fresh serve instance per run (docs/REVIEW-7.md R7-1): a serve Claude Code restarts mid-run refuses every call.
     let inst: ServeInstance | null = null;
+    if (run.assumePrivateRead && !this.o.serveInstance) return { kind: 'error', message: 'A resumed chat needs a fresh serve instance.', sessionId: null };
     if (this.o.serveInstance) {
       try {
-        inst = await this.o.serveInstance(run.trust ?? 'wake');
+        inst = await this.o.serveInstance(run.trust ?? 'wake', run.assumePrivateRead === true);
       } catch (e) {
         return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
       }
       if (this.child) throw new Error('a command is already running');
-      args = buildClaudeArgs(prompt, { ...this.o, mcpConfigPath: inst.mcpConfigPath }, { ...run, memory });
     }
+    const args = inst ? buildClaudeArgs(prompt, { ...this.o, mcpConfigPath: inst.mcpConfigPath }, { ...run, memory }) : this.nextArgs(prompt, { ...run, memory });
     if (this.o.personaFile) {
       // File mode: write this run's persona (with the memory just read) first. If that fails, don't fall back to
       // argv (memory would show in `ps`): the command fails with a clear message instead.
@@ -622,19 +693,10 @@ export class ClaudeRunner {
     }
     this.cancelled = false;
     const spawnFn: SpawnFn = this.o.spawn ?? ((c, a, opts) => spawn(c, a as string[], opts));
-    const now = this.o.now ?? Date.now;
-    const started = now();
+    const started = Date.now();
     let child: ChildProcess;
     try {
-      child = spawnFn(this.o.claudePath, args, {
-        cwd: this.o.cwd,
-        // The ElevenLabs key (if it came from the environment) has no business in claude or the server it starts:
-        // the listener itself speaks the replies (review #4 finding 7).
-        env: withoutSecrets(this.o.env ?? process.env),
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true, // own process group → cancel can kill claude AND the MCP server it started
-        shell: false,
-      });
+      child = spawnFn(this.o.claudePath, args, claudeSpawnOptions(this.o, 'ignore'));
     } catch (e) {
       if (inst) removeServeLock(inst.lockPath);
       return { kind: 'error', message: `Could not start Claude Code (${(e as Error).message}).`, sessionId: null };
@@ -652,7 +714,7 @@ export class ClaudeRunner {
       child.once('error', (e: NodeJS.ErrnoException) => {
         resolveRun({
           kind: 'error',
-          message: e.code === 'ENOENT' ? `Claude Code was not found ("${this.o.claudePath}"). Install it, or set "voice": {"claudePath": "…"}.` : `Could not start Claude Code (${e.message}).`,
+          message: e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : `Could not start Claude Code (${e.message}).`,
           sessionId: null,
         });
       });
@@ -671,7 +733,7 @@ export class ClaudeRunner {
     // forgotten items don't stay on disk until the next command (review 5, R5-3).
     if (this.o.personaFile) removePersonaFile(this.o.personaFile);
     if (outcome.kind === 'ok' && this.o.onTiming) {
-      this.o.onTiming({ wallMs: now() - started, durationMs: outcome.durationMs ?? null, apiMs: outcome.apiMs ?? null, turns: outcome.turns });
+      this.o.onTiming({ wallMs: Date.now() - started, durationMs: outcome.durationMs ?? null, apiMs: outcome.apiMs ?? null, turns: outcome.turns });
     }
     return outcome;
   }
@@ -718,6 +780,20 @@ export const KEPT_CLAUDE_CODE_ENV: ReadonlySet<string> = new Set([
   'CLAUDE_CODE_CLIENT_KEY_PASSPHRASE',
 ]);
 
+/**
+ * Spawn options for both Claude wrappers (this one and warm-claude). The env scrub lives here only: the ElevenLabs key
+ * and account secrets have no business in claude or the server it starts (review #4 finding 7).
+ * detached: own process group, so a kill takes claude AND the stephen serve it started.
+ */
+export function claudeSpawnOptions(o: { cwd: string; env?: NodeJS.ProcessEnv }, stdin: 'ignore' | 'pipe'): SpawnOptions {
+  return { cwd: o.cwd, env: withoutSecrets(o.env ?? process.env), stdio: [stdin, 'pipe', 'pipe'], detached: true, shell: false };
+}
+
+/** What both wrappers say when the claude program is missing (spawn ENOENT). */
+export function claudeNotFound(claudePath: string): string {
+  return `Claude Code was not found ("${claudePath}"). Install it, or set "voice": {"claudePath": "…"}.`;
+}
+
 /** Child-process environment without Stephen's own secrets and without a parent Claude Code session's variables. */
 export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = { ...env };
@@ -732,13 +808,13 @@ export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 /** Lock-down flags without which Stephen refuses to run a voice command (they keep built-in tools and user settings out). */
 export const REQUIRED_CLAUDE_FLAGS = ['--strict-mcp-config', '--tools', '--permission-mode', '--setting-sources', '--allowedTools', '--disallowedTools', '--append-system-prompt', '--mcp-config', '--output-format'] as const; // --max-turns works but is not listed in --help, so it isn't probed
 /** Nice-to-have flags: dropped (with a note) if this `claude` doesn't know them. Older versions lack them. */
-export const OPTIONAL_CLAUDE_FLAGS = ['--no-chrome', NO_SESSION_PERSISTENCE] as const;
+export const OPTIONAL_CLAUDE_FLAGS = ['--no-chrome', NO_SESSION_PERSISTENCE, EFFORT_FLAG] as const;
 
 /**
  * `ok.personaFile`: this help text mentions `--append-system-prompt-file`. Claude Code 2.1.316 accepts the flag but
  * lists it only inside the `--bare` help line, as `--append-system-prompt[-file]`, so both spellings count.
  */
-export type ClaudeFlagProbe = { ok: true; unsupportedOptional: Set<string>; personaFile: boolean } | { ok: false; missing: string[] };
+export type ClaudeFlagProbe = { ok: true; unsupportedOptional: Set<string>; personaFile: boolean; partialMessages?: true } | { ok: false; missing: string[] };
 
 /** Does this `claude --help` text mention `--append-system-prompt-file` (either spelling)? Pure. */
 export function helpMentionsPersonaFile(helpText: string): boolean {
@@ -753,7 +829,7 @@ export function checkClaudeFlags(helpText: string): ClaudeFlagProbe {
   if (!/(^|\s)--print\b/m.test(helpText) || !/claude/i.test(helpText)) return { ok: true, unsupportedOptional: new Set(), personaFile: false };
   const missing = REQUIRED_CLAUDE_FLAGS.filter((f) => !has(f));
   if (missing.length) return { ok: false, missing };
-  return { ok: true, unsupportedOptional: new Set(OPTIONAL_CLAUDE_FLAGS.filter((f) => !has(f))), personaFile: helpMentionsPersonaFile(helpText) };
+  return { ok: true, unsupportedOptional: new Set(OPTIONAL_CLAUDE_FLAGS.filter((f) => !has(f))), personaFile: helpMentionsPersonaFile(helpText), ...(has(PARTIAL_MESSAGES) ? { partialMessages: true as const } : {}) };
 }
 
 /** Runs `claude --help` once (argv, no shell, 15 s timeout). Null if it couldn't run (then nothing is dropped). */

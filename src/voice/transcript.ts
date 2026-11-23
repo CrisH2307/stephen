@@ -55,14 +55,6 @@ export interface WakeSearch {
   strict?: boolean;
 }
 
-/**
- * Find the wake phrase among the first words: returns the index just after it, or -1.
- * Optional filler words may be missing; content words (≥ 4 letters, e.g. "stephen") must all be there in order.
- */
-export function findWakePhrase(words: readonly string[], wakePhrase: string, search: number | WakeSearch = 6): number {
-  return findWakeSpan(words, wakePhrase, typeof search === 'number' ? { searchWords: search } : search)?.end ?? -1;
-}
-
 const leadOnly = (words: readonly string[], end: number) => words.slice(0, end).every((w) => LEAD_WORDS.has(w));
 
 function findWakeSpan(words: readonly string[], wakePhrase: string, o: WakeSearch): { start: number; end: number } | null {

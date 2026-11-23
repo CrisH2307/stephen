@@ -9,3 +9,20 @@
 **Snapshot.** Branch `qa` at `4d3aa0c` (2026-11-09): `main` plus open PRs #11 to #41. Facts go stale as PRs merge; regenerate rather than hand-edit when the gap grows.
 
 **Rules kept.** No secrets, keys, tokens, emails or config values. No em dashes.
+
+**Product plan and handoff (2026-11-10).** These two files make recommendations, unlike the dossier.
+`PRODUCT-PLAN-2026-11.md`: status, product decisions and fixed constraints, assumed defaults for Cris to confirm, phased roadmap from 1.9, language verdict, market summary, success metrics, open technical questions.
+`HANDOFF-PROMPT-CLAUDE-CODE.md`: ready-to-paste prompt that starts a Claude Code session from that plan (Fable owns technical design; RPI workflow; Cris commits and pushes).
+
+**Review and handoff (2026-11-12).** Which doc wins: `PLAN-REVIEW-2026-11.md` section 4 governs the next two weeks. Where it disagrees with `PRODUCT-PLAN-2026-11.md`, the review wins; the plan keeps its stale facts corrected in place and marked.
+`PLAN-REVIEW-2026-11.md`: independent review of the plan: fact check, ten findings, two-week plan (section 4), owner answers (5.1).
+`IDEAS-RESEARCH-2026-11.md`: research behind the plan's ideas (revision 3); background, not a work order.
+`HANDOFF-2026-11-12.md`: who does what (dev lane and review lane) and the two paste-ready prompts.
+`FINDINGS-LEDGER.md`: one table of every open or recently closed finding, with owner lane and issue or branch; update it in the same PR as the fix.
+`ZEN-REAL-BROWSER-2026-11.md`: why "play music" did not play in Zen (not attached, autoplay block), and the options for using the real Zen safely.
+
+**Ponytail audit (2026-11-18).** `PONYTAIL-AUDIT-2026-11.md`: where the code can be simpler, smaller or faster, with file:line, risk and the test for each finding. Proposals only; each fix needs the dev lane's OK, and SEC items need a security review.
+
+**UI v4 structure plan (2026-11-18).** `UI-V4-IA-PLAN.md`: inventory of every helper page, one hierarchy and data map, redundancy fixes, per-page order and accordions, the 5-row sidebar, the ⌘K palette and its safety rules, glass with contrast numbers and fallbacks, and the 5-step build mapping. Builds on `UI-V4-DIRECTION.md`. Mock in `ui-v4-mock/`; glass check `ui-v4-mock/glass-contrast.mjs`. A plan only: the dev lane approves before any build.
+
+`PLATFORM-MACOS-WINDOWS.md` is research on macOS versions (14 is the minimum) and a possible Windows version: what is Mac-only, what carries over, what a Windows helper would need, and the market.

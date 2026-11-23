@@ -114,6 +114,8 @@ describe.skipIf(!models.ok)('push-to-talk pipeline (real models, fake helper, fa
       expect.stringMatching(/^[0-9a-f]{32}$/),
       '--tool-log',
       join(tmp, 'homes', file, 'voice', 'tool-log.jsonl'),
+      '--command-file', // the command id for the tool log and the audit (plan A2)
+      join(tmp, 'homes', file, 'voice', 'command.json'),
       '--session-state',
       join(tmp, 'homes', file, 'voice', 'conversation-state.json'),
     ]);

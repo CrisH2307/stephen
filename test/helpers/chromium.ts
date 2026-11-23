@@ -22,9 +22,13 @@ export function chromiumPath(): Promise<string> {
   return exePromise;
 }
 
-/** Flags needed to run this Chromium in the sandbox-less CI container (none for the Mac's own Chrome). */
+/**
+ * Flags needed to run this Chromium in the sandbox-less CI container. The Mac's own Chrome needs none locally, but on
+ * the macOS CI runner a visible window loses clicks under load (#195), so CI runs it headless.
+ */
 export function chromiumArgs(): string[] {
-  return process.platform === 'darwin' ? [] : [...chromium.args];
+  if (process.platform !== 'darwin') return [...chromium.args];
+  return process.env.CI ? ['--headless'] : [];
 }
 
 export async function launchTestBrowser(protocol: TestProtocol): Promise<Browser> {

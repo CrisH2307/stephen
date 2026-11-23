@@ -17,7 +17,8 @@ import {
   type FindCandidate,
   type OutLine,
 } from '../../src/page/format.js';
-import { hostLabel, isPaymentFrame } from '../../src/page/frames.js';
+import { hostLabel } from '../../src/page/frames.js';
+import { isPaymentFrame } from '../../src/safety/classify.js';
 import { MAX_CAPTURE_PIXELS, MAX_OUTPUT_DIM, planCapture } from '../../src/page/png.js';
 import { PAYMENT_FRAME_DOMAINS } from '../../src/lib/secret-fields.js';
 
@@ -188,6 +189,9 @@ describe('frame helpers', () => {
       const host = p.startsWith('*.') ? `sub.${p.slice(2)}` : p;
       expect(isPaymentFrame(`https://${host}/`)).toBe(true);
     }
+  });
+  it('recognises a blob: frame made by a payment processor', () => {
+    expect(isPaymentFrame('blob:https://js.stripe.com/6f1c2d3e-0000-4000-8000-000000000000')).toBe(true);
   });
 });
 

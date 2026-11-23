@@ -30,7 +30,7 @@ describe('stephen eval-clicks', () => {
       run: async (a) => {
         const tab = await a.open(id);
         const ref = (await a.find(tab, label)).find((m) => m.role === 'button')!.ref;
-        await a.sleep(600);
+        await a.ready(tab);
         const r = await a.click(tab, ref);
         seen.push(`${id}:${r.ok}:${/STALE_REF|no longer|disappeared|stale/i.test(r.text)}:${await a.result(tab)}`);
       },

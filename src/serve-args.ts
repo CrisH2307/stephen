@@ -17,6 +17,10 @@
  * the listener can show tool names in the history (src/server/tool-log.ts). Same path rule as --session-state, but
  * a `.jsonl` file (see checkToolLogPath). It records only; it changes no tool's behaviour.
  *
+ * `serve --command-file <file>`: the listener's command id file (src/lib/command-id.ts). The id in it is stamped as
+ * `cmd` on tool-log records and audit entries. Same path rule as --session-state (see checkCommandFilePath). It is a
+ * label only: no tool and no gate decision reads it.
+ *
  * `serve --instance <id>`: the voice listener's Claude process (docs/REVIEW-7.md R7-1). `<id>` is 32 hex characters, a
  * fresh random one per Claude process. The first serve of an id takes `<home>/run/serve-<id>.lock`; a serve that finds
  * that lock already taken is a restart by Claude Code and refuses every tool call (src/server/instance.ts). The id is
@@ -40,7 +44,7 @@
 import { isAbsolute } from 'node:path';
 import { checkSessionStatePath } from './safety/session-state.js';
 import { SERVE_INSTANCE_RE } from './server/instance.js';
-import { checkToolLogPath } from './server/tool-log.js';
+import { checkCommandFilePath, checkToolLogPath } from './server/tool-log.js';
 
 export interface ServeArgs {
   confirm?: 'app' | 'dialog' | 'deny';
@@ -50,6 +54,8 @@ export interface ServeArgs {
   sessionState?: string;
   /** --tool-log <file>: absolute path directly inside <home>/voice/. */
   toolLog?: string;
+  /** --command-file <file>: absolute path directly inside <home>/voice/. */
+  commandFile?: string;
   /** --instance <id>: 32 hex characters (one serve per id; a second one refuses every call). */
   instance?: string;
   /** --trust wake: a wake-word conversation (email: who and when only). */
@@ -59,7 +65,7 @@ export interface ServeArgs {
 }
 
 export interface ServeArgsContext {
-  /** Stephen's home (loadConfig().home); required for --session-state, --tool-log and --instance. */
+  /** Stephen's home (loadConfig().home); required for --session-state, --tool-log, --command-file and --instance. */
   home?: string;
 }
 
@@ -94,6 +100,14 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
       const r = checkToolLogPath(p, ctx.home);
       if ('error' in r) return r;
       out.toolLog = r.path;
+    } else if (a === '--command-file' || a.startsWith('--command-file=')) {
+      if (out.commandFile !== undefined) return { error: '--command-file given twice' };
+      const p = a === '--command-file' ? argv[++i] : a.slice('--command-file='.length);
+      if (p === undefined) return { error: '--command-file needs a file path' };
+      if (!ctx.home) return { error: "--command-file: Stephen's home folder is unknown" };
+      const r = checkCommandFilePath(p, ctx.home);
+      if ('error' in r) return r;
+      out.commandFile = r.path;
     } else if (a === '--instance' || a.startsWith('--instance=')) {
       if (out.instance !== undefined) return { error: '--instance given twice' };
       const id = a === '--instance' ? argv[++i] : a.slice('--instance='.length);
@@ -123,7 +137,7 @@ export function parseServeArgs(argv: string[], ctx: ServeArgsContext = {}): Serv
   if (fakePage !== undefined && !dry) return { error: '--fake-page only goes with --dry-run' };
   if (dry || record !== undefined) {
     if (!dry || record === undefined) return { error: '--dry-run and --record <file> go together' };
-    if (out.confirm || out.voice || out.sessionState || out.toolLog || out.assumePrivateRead || out.instance) return { error: '--dry-run cannot be combined with other serve options' };
+    if (out.confirm || out.voice || out.sessionState || out.toolLog || out.commandFile || out.assumePrivateRead || out.instance) return { error: '--dry-run cannot be combined with other serve options' };
     out.dryRun = { record, ...(fakePage !== undefined ? { fakePage } : {}) };
   }
   return out;

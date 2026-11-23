@@ -17,7 +17,7 @@ export interface AppSettings {
   configPath: string;
 }
 
-export function appSettings(o: { voice: VoiceConfig; memory: MemoryConfig; history: HistoryConfig; app: AppConfig; configPath: string; talk?: TalkState; model?: ModelPrefs }): AppSettings {
+export function appSettings(o: { voice: VoiceConfig; memory: MemoryConfig; history: HistoryConfig; app: AppConfig; configPath: string; talk?: TalkState; model?: ModelPrefs; replay?: boolean }): AppSettings {
   const v = o.voice;
   const talk = o.talk ?? talkFromConfig(v);
   return {
@@ -43,6 +43,8 @@ export function appSettings(o: { voice: VoiceConfig; memory: MemoryConfig; histo
       memory: { enabled: o.memory.enabled, confirmWakeWord: o.memory.confirmWakeWord, maxItems: o.memory.maxItems },
       history: { enabled: o.history.retentionDays > 0, retentionDays: o.history.retentionDays },
       app: { enabled: o.app.enabled, speakReplies: o.app.speakReplies },
+      // The replay recorder switch (issue #48), read live from config.json like the recorder does.
+      replay: { enabled: o.replay ?? v.replay.enabled },
     },
     configPath: o.configPath,
   };

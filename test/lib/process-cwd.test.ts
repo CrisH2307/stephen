@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { pidsWithCwdIn, processStart } from '../../src/lib/process.js';
+import { PS_START_SLACK_MS, pidsWithCwdIn, processStart, startedWithinJob } from '../../src/lib/process.js';
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-cwd-')));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -23,12 +23,24 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('p
       expect(pids).not.toContain(process.pid);
       expect(pidsWithCwdIn(join(tmp, 'jo'))).toEqual([]); // a prefix of the name is not "inside"
       const p = processStart(inside.pid!);
-      expect(p?.tty).toBe('??');
-      expect(p!.startedAt).toBeGreaterThanOrEqual(Math.floor(t0 / 1000) * 1000);
+      expect(p?.tty).toBe(process.platform === 'darwin' ? '??' : '?'); // ps: '??' on macOS, '?' on Linux (no controlling tty)
+      expect(p!.startedAt).toBeGreaterThanOrEqual(Math.floor(t0 / 1000) * 1000 - (process.platform === 'linux' ? PS_START_SLACK_MS : 0)); // #121
       expect(processStart(999_999)).toBeNull();
     } finally {
       inside.kill();
       outside.kill();
     }
+  });
+});
+
+describe('startedWithinJob (#121)', () => {
+  const job = 10_500; // floor to 10_000
+  it('#121 linux accepts 1 s early, rejects 3 s early', () => {
+    expect(startedWithinJob(9000, job, 'linux')).toBe(true);
+    expect(startedWithinJob(7000, job, 'linux')).toBe(false);
+  });
+  it('#121 darwin rejects 1 s early, accepts the same second', () => {
+    expect(startedWithinJob(9000, job, 'darwin')).toBe(false);
+    expect(startedWithinJob(10_000, job, 'darwin')).toBe(true);
   });
 });

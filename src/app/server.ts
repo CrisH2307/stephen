@@ -21,20 +21,23 @@ import { randomUUID } from 'node:crypto';
 import { type Socket } from 'node:net';
 import { join } from 'node:path';
 import { LineFramer } from '../helper/framing.js';
+import type { MediaKeyAction } from '../helper/protocol.js';
 import { listenPrivateSocket, type PrivateSocket } from '../lib/private-socket.js';
 import { MAX_REPLY_CHARS, MAX_SAID_CHARS, newHistoryId, type HistoryEntry, type HistoryStore } from '../history/store.js';
+import { VERSION_GONE_MESSAGE, branchView, deleteVersionRefusal, editContext, versionsOf, type EditContext } from '../history/branch.js';
+import { quotePrompt } from '../history/resume.js';
 import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/store.js';
 import type { ProposalStore } from '../memory/proposals.js';
 import { memoryGraph } from './memory-graph.js';
 import type { ModelChanges } from './model.js';
 import { truncate } from '../safety/text.js';
-import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
-import { commandSteps } from './steps.js';
-import type { CommandReport } from '../voice/assistant.js';
+import type { ChatStep } from './steps.js';
+import type { CommandReport, ResumeRequest } from '../voice/assistant.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 import {
   APP_AUDIT_LIMIT_DEFAULT,
+  APP_CHAT_MAX_CHARS,
   APP_MAX_LINE_BYTES,
   APP_PROTOCOL_VERSION,
   encodeAppMessage,
@@ -52,9 +55,6 @@ import type { AppControl } from './control.js';
 import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
 
-/** Audit entries read to build one command's steps (newest first; a command makes far fewer). */
-const STEPS_AUDIT_LIMIT = 100;
-
 /** `<home>/run/app.sock` */
 export function appSocketPath(home: string): string {
   return join(home, 'run', 'app.sock');
@@ -67,13 +67,22 @@ export const MAX_QUEUED_OUTPUT_BYTES = 8 * 1024 * 1024;
 export const MEMORY_OFF_MESSAGE = 'Memory is off (memory.enabled is false in config.json).';
 export const MEMORY_GONE_MESSAGE = "That memory doesn't exist any more.";
 export const PROPOSAL_GONE_MESSAGE = 'That suggestion is no longer waiting.';
+export const ONLY_WINDOW_EDITS_MESSAGE = 'Only the Stephen window can edit a message.';
+/** ADR-010 Edit request: only the window's own click reaches it (threat E4). */
+export const ONLY_WINDOW_JOB_EDITS_MESSAGE = 'Only the Stephen window can edit a job request.';
+export { VERSION_GONE_MESSAGE };
 
 /** Where typed chat runs (Listener.submit + Assistant.command in `stephen listen`). */
 export interface AppCommandQueue {
   /** A command is running or being spoken, or the user is talking. */
   busy(): boolean;
-  /** Start a typed command now; null (nothing started) when busy. `text` is cleaned, `raw` as typed. */
-  start(text: string, opts: { id: string; raw: string; speak: boolean }): Promise<CommandReport> | null;
+  /**
+   * Start a typed command now; null (nothing started) when busy. `text` is cleaned, `raw` as typed. `window`: it came
+   * from the Stephen window (a client that said hello with confirms), the only sender that may take an armed resume.
+   * `edit` (ADR-010): the window's chat.edit, built from the store; it goes the resume path and is ignored without
+   * `window`.
+   */
+  start(text: string, opts: { id: string; raw: string; speak: boolean; window?: boolean; edit?: ResumeRequest }): Promise<CommandReport> | null;
   /** Same as Esc: cancel what is running and end the follow-up conversation. */
   stop(): void;
 }
@@ -93,7 +102,8 @@ export interface AppServerOptions {
   proposals?: ProposalStore;
   /** End the follow-up conversation (after any memory change, like the memory router). */
   endConversation: () => void;
-  history: Pick<HistoryStore, 'list' | 'clear'> | null;
+  /** `all` and `deleteVersion` (ADR-010 edit and resend, versions, Delete this version); absent = not available. */
+  history: (Pick<HistoryStore, 'list' | 'clear'> & Partial<Pick<HistoryStore, 'all' | 'deleteVersion'>>) | null;
   /** null = no audit log configured. */
   audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
   settings: () => AppSettings;
@@ -101,6 +111,13 @@ export interface AppServerOptions {
   setTalk?: (changes: Partial<TalkState>) => void;
   /** model.set (Settings > Model): validated changes in; applies from the next command. Absent = read-only. */
   setModel?: (changes: ModelChanges) => void;
+  /**
+   * replay.set / replay.delete (Settings > Privacy and permissions, issue #48 PR 2): `set` writes voice.replay.enabled to
+   * config.json, `deleteAll` is `stephen replay delete --all` (behind any queued write). Absent = not available.
+   */
+  replay?: { set: (enabled: boolean) => void; deleteAll: () => Promise<number>; on: () => boolean };
+  /** How often the replay switch is re-read for the "Recording on" sign (default 2000 ms; tests use less). */
+  replayPollMs?: number;
   /** accounts.status: which accounts are connected (no network, no secrets). Absent = not available. */
   accounts?: () => Promise<AccountsStatus>;
   /** jobs.list / jobs.stop (background jobs). Absent = jobs are off. */
@@ -109,12 +126,22 @@ export interface AppServerOptions {
   speakReplies: boolean;
   /** phone.on / phone.off / zen.open / doctor.run (src/app/control.ts). Absent = not available. */
   control?: AppControl;
+  /** latency.get: the `stephen latency` report of the last `days` days as text. Absent = not available. */
+  latency?: (days: number) => { triggers: number; text: string };
   /** usage.get (src/app/usage.ts). Absent = not available. */
   usage?: () => Promise<UsageReport>;
   /** personal.summary (src/app/personal.ts). Absent = not available. */
   personal?: () => Promise<PersonalSummary>;
   /** Ask Stephen Helper to show the window: null when sent, else why not. */
   openWindow: () => string | null;
+  /**
+   * chat.resume / chat.resume.cancel (ADR-007 v2): `arm` arms the resume of that conversation (null when armed, else
+   * why not), `cancel` clears it, `armed` says whether one is armed. Absent = not available. Arming sends nothing to
+   * the model: the owner's next chat.send carries it (listenerQueue).
+   */
+  resume?: { arm: (conv: string) => string | null; cancel: () => void; armed: () => boolean };
+  /** media.key (issue #205): press a Mac media key through Stephen Helper; null when done, else why not. */
+  mediaKey?: (action: MediaKeyAction) => Promise<string | null>;
   log?: (line: string) => void;
   /** History entry ids (tests). */
   newId?: () => string;
@@ -141,6 +168,9 @@ export class AppServer {
   /** Waiting questions by confirmId: who asked, with which request id. */
   private readonly confirms = new Map<string, { asker: Socket; id: string; timer: NodeJS.Timeout; push: AppMessage }>();
   private current: AppState = 'idle';
+  /** The last `replay` push: the switch as config.json says (issue #208). */
+  private replayOn = false;
+  private replayTimer: NodeJS.Timeout | null = null;
   /** A memory change happened while a command ran: end the conversation again once it is done. */
   private endAfterCommand = false;
   private readonly log: (line: string) => void;
@@ -161,12 +191,18 @@ export class AppServer {
   /** Create the socket (src/lib/private-socket.ts). Throws PrivateSocketError when it can't. */
   async start(): Promise<void> {
     this.sock = await listenPrivateSocket(this.socketPath, (sock) => this.accept(sock), this.log, 'app.sock');
+    if (this.o.replay) {
+      this.replayTimer = setInterval(() => this.recordingAllowed(), this.o.replayPollMs ?? 2000);
+      this.replayTimer.unref();
+    }
   }
 
   /** Disconnect every client, stop listening and remove the socket (if it is still ours). */
   async close(): Promise<void> {
     const sock = this.sock;
     this.sock = null;
+    if (this.replayTimer) clearInterval(this.replayTimer);
+    this.replayTimer = null;
     for (const c of this.confirms.values()) clearTimeout(c.timer);
     this.confirms.clear();
     for (const c of this.clients) c.destroy();
@@ -182,6 +218,25 @@ export class AppServer {
 
   // ───────────────────────────── pushes ─────────────────────────────
 
+  /**
+   * The replay recorder's `enabled` (issue #208): true only while the switch is on AND a Stephen window is connected
+   * (hello with confirms: true), so a clip is never saved without the "Recording on" sign there to show it. Pushes
+   * `replay` to the windows whenever the switch changes. Never throws.
+   */
+  recordingAllowed(): boolean {
+    let on = false;
+    try {
+      on = this.o.replay?.on() === true;
+    } catch {
+      on = false;
+    }
+    if (on !== this.replayOn) {
+      this.replayOn = on;
+      this.broadcast({ type: 'replay', on });
+    }
+    return on && this.askBoxes.size > 0;
+  }
+
   /** Listener / assistant state (idle, listening, recording, working, speaking). Consecutive duplicates are dropped. */
   setState(state: AppState): void {
     if (state === this.current) return;
@@ -195,15 +250,22 @@ export class AppServer {
   }
 
   /**
-   * A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run); `calls`:
-   * the same calls with their error flag, for the action chain. With an audit log, chat.done waits for one audit read
-   * to add `steps`; a failed read just leaves them out.
+   * A command just ended: if memory changed while it ran, end the conversation again now. finishCommand calls it at
+   * once, before the audit read, so the next command can't resume in the meantime. Safe to call twice.
    */
-  commandDone(r: CommandReport, tools: string[], calls: ToolCallRecord[] = []): void {
+  commandEnding(): void {
     if (this.endAfterCommand) {
       this.endAfterCommand = false;
       this.o.endConversation();
     }
+  }
+
+  /**
+   * A command finished (any source). `tools`: names of the tools Claude called (empty when it didn't run); `steps`:
+   * the action chain readCommandSteps built, the same list the history line stores (ADR-007 point 6).
+   */
+  commandDone(r: CommandReport, tools: string[], steps?: ChatStep[]): void {
+    this.commandEnding();
     const msg = {
       type: 'chat.done' as const,
       entryId: r.id,
@@ -212,14 +274,7 @@ export class AppServer {
       tools: [...new Set(tools)],
       ms: r.ms,
     };
-    const end = Date.now();
-    const audit = this.o.audit;
-    const send = (entries: AuditEntry[]) => {
-      const steps = commandSteps(entries, calls, end - r.ms, end);
-      this.broadcast(steps.length > 0 ? { ...msg, steps } : msg);
-    };
-    if (!audit || r.ms <= 0) return send([]);
-    audit.recent(STEPS_AUDIT_LIMIT).then(send, () => send([]));
+    this.broadcast(steps && steps.length > 0 ? { ...msg, steps } : msg);
   }
 
   // ───────────────────────────── connections ─────────────────────────────
@@ -295,6 +350,22 @@ export class AppServer {
       this.settle(req.confirmId, req.approve ? 'approved' : 'declined');
       return;
     }
+    if (req.type === 'chat.edit') {
+      this.edit(sock, req);
+      return;
+    }
+    if (req.type === 'jobs.edit') {
+      void this.jobEdit(sock, req).then((m) => this.send(sock, m));
+      return;
+    }
+    if (req.type === 'history.deleteVersion') {
+      this.send(sock, this.deleteVersion(sock, req));
+      return;
+    }
+    if (req.type === 'chat.resume' || req.type === 'chat.resume.cancel') {
+      this.send(sock, this.resumeRequest(sock, req));
+      return;
+    }
     if (req.type === 'hello' && req.confirms) {
       this.askBoxes.add(sock);
       // A box that connects late still gets the questions already waiting.
@@ -303,7 +374,14 @@ export class AppServer {
     this.answer(req).then(
       (msg) => {
         this.send(sock, msg);
-        if (req.type === 'hello' && msg.type === 'hello' && !this.gates.has(sock)) this.send(sock, { type: 'state', state: this.current });
+        if (req.type === 'hello' && msg.type === 'hello' && !this.gates.has(sock)) {
+          this.send(sock, { type: 'state', state: this.current });
+          if (this.o.replay) {
+            this.recordingAllowed();
+            this.send(sock, { type: 'replay', on: this.replayOn });
+          }
+          if (this.o.resume) this.send(sock, { type: 'resume', armed: this.o.resume.armed() });
+        }
       },
       (e: unknown) => this.send(sock, { id: req.id, type: 'error', message: (e as Error).message || 'error' }),
     );
@@ -323,18 +401,137 @@ export class AppServer {
       this.send(sock, { id: req.id, type: 'error', message: 'busy' });
       return;
     }
+    this.startChat(sock, req.id, text, req.text.trim());
+  }
+
+  /** chat.accepted, then the command in the queue (chat.send, chat.edit); chat.done comes from commandDone(). */
+  private startChat(sock: Socket, reqId: string, text: string, raw: string, edit?: ResumeRequest): void {
     const entryId = (this.o.newId ?? newHistoryId)();
-    this.send(sock, { id: req.id, type: 'chat.accepted', entryId });
+    this.send(sock, { id: reqId, type: 'chat.accepted', entryId });
     const fail = (message: string) =>
       this.broadcast({ type: 'chat.done', entryId, reply: message, outcome: 'error', tools: [], ms: 0 });
     let run: Promise<CommandReport> | null;
     try {
-      run = this.o.queue.start(text, { id: entryId, raw: req.text.trim(), speak: this.o.speakReplies });
+      // Whether the reply is spoken follows the window's normal setting, for an edit too (ADR-010).
+      run = this.o.queue.start(text, { id: entryId, raw, speak: this.o.speakReplies, window: this.isWindow(sock), ...(edit ? { edit } : {}) });
     } catch (e) {
       run = Promise.reject(e);
     }
     if (!run) return fail('Stephen got busy with another command. Try again when it is done.');
     run.catch((e: unknown) => fail(`Something went wrong: ${(e as Error).message}`));
+  }
+
+  /** The window: a client that said hello with confirms (the helper), never a gate connection (a serve). */
+  private isWindow(sock: Socket): boolean {
+    return this.askBoxes.has(sock) && !this.gates.has(sock);
+  }
+
+  /**
+   * chat.edit (ADR-010), [DEV REVIEW]: only from the window, never while a command runs. The request gives only the
+   * old command id, the old text's hash, the conversation on screen and the new text; a line outside that branch is
+   * refused; the earlier turns and the replaced turns' step lines come
+   * from the store (editContext), and the command goes the resume path: a new conversation, a new process with
+   * `--assume-private-read`, window trust, source `app`. Like chat.send: chat.accepted, then chat.done.
+   */
+  private edit(sock: Socket, req: Extract<AppRequest, { type: 'chat.edit' }>): void {
+    if (!this.isWindow(sock)) {
+      this.send(sock, { id: req.id, type: 'error', message: ONLY_WINDOW_EDITS_MESSAGE });
+      return;
+    }
+    const history = this.o.history;
+    if (!history?.all) {
+      this.send(sock, { id: req.id, type: 'error', message: 'not available in this listener' });
+      return;
+    }
+    const text = truncate(cleanTypedCommand(req.text), Math.min(MAX_SAID_CHARS, APP_CHAT_MAX_CHARS));
+    if (!text) {
+      this.send(sock, { id: req.id, type: 'error', message: 'Type a command first.' });
+      return;
+    }
+    if (this.o.queue.busy()) {
+      this.send(sock, { id: req.id, type: 'error', message: 'busy' });
+      return;
+    }
+    const all = history.all.bind(history);
+    const first = editContext(all(), req.oldId, req.oldHash, req.conv);
+    if ('refused' in first) {
+      this.send(sock, { id: req.id, type: 'error', message: first.refused });
+      return;
+    }
+    // Read again when the command runs (the store may have changed in between); saved() false sends nothing.
+    let ctx: EditContext | null = null;
+    const edit: ResumeRequest = {
+      saved: () => {
+        const c = editContext(all(), req.oldId, req.oldHash, req.conv);
+        ctx = 'refused' in c ? null : c;
+        return ctx !== null;
+      },
+      prompt: (message, trust) => (ctx ? quotePrompt(ctx.earlier, trust, message, ctx.replaced) : message),
+      edit: { ...first.editOf, source: first.source },
+    };
+    this.startChat(sock, req.id, text, req.text.trim(), edit);
+  }
+
+  /**
+   * jobs.edit (ADR-010 Edit request), [DEV REVIEW]: only from the window (the same isWindow check as chat.edit), never
+   * from a gate connection (a serve the model can reach). The listener plans a NEW job from the old one (refused while
+   * it is queued or running), shows the job dialog with every field, and starts it only on the owner's Allow.
+   */
+  private async jobEdit(sock: Socket, req: Extract<AppRequest, { type: 'jobs.edit' }>): Promise<AppMessage> {
+    if (!this.isWindow(sock)) return { id: req.id, type: 'error', message: ONLY_WINDOW_JOB_EDITS_MESSAGE };
+    if (!this.o.jobs) return { id: req.id, type: 'error', message: 'jobs are turned off' };
+    try {
+      const r = await this.o.jobs.edit(req.jobId, req.text);
+      return 'refused' in r ? { id: req.id, type: 'error', message: r.refused } : { id: req.id, type: 'job', job: r };
+    } catch {
+      return { id: req.id, type: 'error', message: 'could not edit the job' };
+    }
+  }
+
+  /**
+   * history.deleteVersion (ADR-010), [DEV REVIEW]: the window's "Delete this version" click, behind a confirm in the
+   * helper. Checked here, not trusted from the page: only a version's own line of a message with two or more versions,
+   * and never while another branch still shows a line it would delete (deleteVersionRefusal).
+   */
+  private deleteVersion(sock: Socket, req: Extract<AppRequest, { type: 'history.deleteVersion' }>): AppMessage {
+    if (!this.isWindow(sock)) return { id: req.id, type: 'error', message: 'Only the Stephen window can delete a version.' };
+    const history = this.o.history;
+    if (!history?.all || !history.deleteVersion) return { id: req.id, type: 'error', message: 'not available in this listener' };
+    try {
+      const all = history.all();
+      const why = deleteVersionRefusal(all, req.entryId);
+      if (why !== null) return { id: req.id, type: 'error', message: why };
+      const e = all.find((x) => x.id === req.entryId)!;
+      history.deleteVersion(e.conv!, e.id);
+      return { id: req.id, type: 'ok' };
+    } catch (e) {
+      return { id: req.id, type: 'error', message: (e as Error).message || 'could not delete that version' };
+    }
+  }
+
+  /**
+   * chat.resume / chat.resume.cancel: only from the window (a client that said hello with confirms, the helper), never
+   * from a gate connection (a serve, which the model can reach). Arming sends nothing to the model.
+   */
+  private resumeRequest(sock: Socket, req: Extract<AppRequest, { type: 'chat.resume' | 'chat.resume.cancel' }>): AppMessage {
+    if (!this.o.resume) return { id: req.id, type: 'error', message: 'not available in this listener' };
+    if (!this.isWindow(sock)) return { id: req.id, type: 'error', message: 'Only the Stephen window can continue a chat.' };
+    if (req.type === 'chat.resume.cancel') {
+      this.o.resume.cancel();
+      return { id: req.id, type: 'ok' };
+    }
+    let why: string | null;
+    try {
+      why = this.o.resume.arm(req.conv);
+    } catch (e) {
+      why = (e as Error).message || 'could not read that conversation';
+    }
+    return why === null ? { id: req.id, type: 'ok' } : { id: req.id, type: 'error', message: why };
+  }
+
+  /** The resume arm changed (ADR-007 v2): tell the window, for the "Continuing an earlier chat" line. */
+  resumeArmed(armed: boolean): void {
+    this.broadcast({ type: 'resume', armed });
   }
 
   /** confirm.ask: relay to the Ask boxes (never back to the asker), or "unavailable" when there is none. */
@@ -413,7 +610,9 @@ export class AppServer {
     }
   }
 
-  private async answer(req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' }>): Promise<AppMessage> {
+  private async answer(
+    req: Exclude<AppRequest, { type: 'chat.send' | 'confirm.ask' | 'confirm.answer' | 'chat.resume' | 'chat.resume.cancel' | 'chat.edit' | 'jobs.edit' | 'history.deleteVersion' }>,
+  ): Promise<AppMessage> {
     const { id } = req;
     const mem = this.o.memory;
     switch (req.type) {
@@ -436,6 +635,18 @@ export class AppServer {
       case 'history.clear':
         this.o.history?.clear();
         return { id, type: 'ok' };
+      case 'history.versions': {
+        if (!this.o.history?.all) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          const all = this.o.history.all();
+          const versions = versionsOf(all, req.entryId);
+          const line = all.find((e) => e.id === req.entryId);
+          const expired = line?.conv ? branchView(all, line.conv).expired : false;
+          return fitList(versions.reverse(), (e) => ({ id, type: 'versions', entries: [...e].reverse(), expired }));
+        } catch (e) {
+          return { id, type: 'error', message: (e as Error).message };
+        }
+      }
       case 'memory.list':
         if (!mem) return { id, type: 'error', message: MEMORY_OFF_MESSAGE };
         try {
@@ -477,6 +688,24 @@ export class AppServer {
           return { id, type: 'settings', config: s.config, configPath: s.configPath };
         } catch {
           return { id, type: 'error', message: 'could not save the setting' };
+        }
+      case 'replay.set':
+        if (!this.o.replay) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          this.o.replay.set(req.enabled);
+          this.recordingAllowed(); // the sign changes now, not at the next poll
+          const s = this.o.settings();
+          return { id, type: 'settings', config: s.config, configPath: s.configPath };
+        } catch {
+          return { id, type: 'error', message: 'could not save the setting' };
+        }
+      case 'replay.delete':
+        if (!this.o.replay) return { id, type: 'error', message: 'not available in this listener' };
+        try {
+          await this.o.replay.deleteAll();
+          return { id, type: 'ok' };
+        } catch {
+          return { id, type: 'error', message: 'could not delete the recordings' };
         }
       case 'audit.recent': {
         if (!this.o.audit) return { id, type: 'audit', entries: [] };
@@ -525,6 +754,11 @@ export class AppServer {
         if (req.type === 'doctor.run') return { id, type: 'doctor', ...(await c.doctor()) };
         return { id, type: 'phone', ...(await (req.type === 'phone.on' ? c.phoneOn() : c.phoneOff())) };
       }
+      case 'latency.get': {
+        if (!this.o.latency) return { id, type: 'error', message: 'not available in this listener' };
+        const days = req.days ?? 7;
+        return { id, type: 'latency', days, ...this.o.latency(days) };
+      }
       case 'usage.get':
         if (!this.o.usage) return { id, type: 'error', message: 'not available in this listener' };
         return { id, type: 'usage', ...(await this.o.usage()) };
@@ -548,6 +782,10 @@ export class AppServer {
         const why = this.o.openWindow();
         return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };
       }
+      case 'media.key': {
+        const why = this.o.mediaKey ? await this.o.mediaKey(req.action) : 'not available in this listener';
+        return why === null ? { id, type: 'ok' } : { id, type: 'error', message: why };
+      }
     }
   }
 }
@@ -556,7 +794,7 @@ export class AppServer {
 
 interface QueueAssistant {
   readonly busy: boolean;
-  command(text: string, opts: { source: 'app'; raw: string; speak: boolean; id: string }): Promise<CommandReport>;
+  command(text: string, opts: { source: 'app'; raw: string; speak: boolean; id: string; resume?: ResumeRequest }): Promise<CommandReport>;
   cancel(): boolean;
   endConversation(): void;
 }
@@ -567,23 +805,22 @@ interface QueueListener {
   cancel(reason: string): boolean;
 }
 
-/** Typed chat in the listener's queue (`stephen listen`). */
-export function listenerQueue(listener: QueueListener, assistant: QueueAssistant): AppCommandQueue {
+/**
+ * Typed chat in the listener's queue (`stephen listen`). `takeResume` (ADR-007 v2): the armed resume, taken when a
+ * window command runs, so only the window's next message continues an earlier chat.
+ */
+export function listenerQueue(listener: QueueListener, assistant: QueueAssistant, takeResume?: () => ResumeRequest | null): AppCommandQueue {
   return {
     busy: () => !listener.idle || assistant.busy,
-    start: (text, o) => listener.submit(() => assistant.command(text, { source: 'app', raw: o.raw, speak: o.speak, id: o.id })),
+    start: (text, o) =>
+      listener.submit(() => {
+        // Only the window's own message takes the arm (ADR-007 v2): another app.sock client never does. An edit
+        // (ADR-010) is the window's too, and it clears the arm: it goes the same resume path with its own context.
+        const armed = o.window ? (takeResume?.() ?? null) : null;
+        const resume = o.window && o.edit ? o.edit : armed;
+        return assistant.command(text, { source: 'app', raw: o.raw, speak: o.speak, id: o.id, ...(resume ? { resume } : {}) });
+      }),
     stop: () => void listener.cancel('app'),
   };
 }
 
-/** Typed chat straight into the assistant (no listener). */
-export function assistantQueue(assistant: QueueAssistant): AppCommandQueue {
-  return {
-    busy: () => assistant.busy,
-    start: (text, o) => (assistant.busy ? null : assistant.command(text, { source: 'app', raw: o.raw, speak: o.speak, id: o.id })),
-    stop: () => {
-      assistant.cancel();
-      assistant.endConversation();
-    },
-  };
-}

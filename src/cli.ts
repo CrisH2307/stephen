@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
@@ -8,6 +9,7 @@ import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
 import { parseTtsConfig } from './voice/tts/index.js';
 import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
+import { execFile } from 'node:child_process';
 import { helperDoctorChecks } from './helper/doctor.js';
 import { runInstallHelper } from './helper/install.js';
 import { existsSync, realpathSync } from 'node:fs';
@@ -25,7 +27,7 @@ import {
   readDevToolsActivePort,
   resolveZenRealProfile,
 } from './drivers/macos.js';
-import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
+import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import { errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
 import { pageEngine } from './page/index.js';
@@ -47,7 +49,8 @@ import {
   zenLauncherAppPath,
 } from './zen-launcher.js';
 
-const MIN_NODE: [number, number] = [20, 19];
+/** The Node versions Stephen supports (the dev lane's policy, #249). Same as package.json engines. */
+export const NODE_RANGE = '^20.19.0 || >=22.12.0';
 const MIN_CHROME = 144;
 
 const HELP = `stephen ${packageVersion()} — lets Claude use your Mac's browsers (Zen and Chrome), from Claude Code or by voice
@@ -67,6 +70,12 @@ Usage:
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
                          Show your recent commands (kept on this Mac only), or delete them
+  stephen latency [--days 1|7|30] [--json]
+                         How long commands take: p50 and p95 per trigger and route, and the 10 slowest
+  stephen replay delete --all | <id>
+                         Delete saved F5 recordings (saved only when voice.replay.enabled is on)
+  stephen mac-checks [--json]
+                         Pass or fail for the technical checks of the Mac test plan, section 13
   stephen jobs [list] | status <id> | show <id> | stop <id>
                          Background jobs ("Stephen, start a job to …"; each start asks in a dialog)
   stephen phone login | on | off | status | setup | check
@@ -87,7 +96,7 @@ Usage:
                          Exit code: 0 ready, 2 you need to do something, 1 error
   stephen install-zen-launcher [--dry-run]
                          Create "~/Applications/${ZEN_LAUNCHER_APP_NAME}.app" (runs zen-launch; put it in your Dock)
-  stephen install-helper [--dry-run]
+  stephen install-helper [--dry-run] [--force]
                          Build "~/Applications/Stephen Helper.app" (F5 or Fn+Option push-to-talk, Esc; needs Xcode tools)
   stephen help | --help  This help
   stephen --version      Print the version
@@ -145,13 +154,16 @@ async function serve(argv: string[] = []): Promise<void> {
   // --session-state: the gate's memory follows the voice conversation (imported now if present, saved on change).
   const withState = opts.sessionState ? withSessionState(createSafety, opts.sessionState) : createSafety;
   // --assume-private-read: arm the taint before the first action (after the state binding, so it is saved too).
+  // --command-file: the audit log stamps the listener's command id on each entry. The gate never sees the id.
+  const commandFile = opts.commandFile;
+  const withCmd: typeof createSafety = commandFile ? (c, d) => withState(c, { ...d, commandId: () => readCommandId(commandFile) }) : withState;
   const safetyFactory: typeof createSafety = opts.assumePrivateRead
     ? (c, d) => {
-        const s = withState(c, d);
+        const s = withCmd(c, d);
         s.gate.notePrivateData('private');
         return s;
       }
-    : withState;
+    : withCmd;
   const deps: ServerDepsWithVoice = {
     cfg,
     manager,
@@ -159,6 +171,7 @@ async function serve(argv: string[] = []): Promise<void> {
     safetyFactory,
     ...(opts.voice ? { voice: {} } : {}),
     ...(opts.toolLog ? { toolLog: opts.toolLog } : {}),
+    ...(commandFile ? { commandFile } : {}),
     ...(restarted ? { restarted } : {}),
     ...(opts.trust ? { trust: opts.trust } : {}),
   };
@@ -178,9 +191,10 @@ interface Check {
   info?: boolean;
 }
 
-function versionAtLeast(v: string, min: [number, number]): boolean {
+/** Is this Node version in NODE_RANGE? (20.19 or newer 20.x, or 22.12 and newer; all of 21 is out: no util.styleText.) */
+export function nodeSupported(v: string): boolean {
   const [maj = 0, minor = 0] = v.replace(/^v/, '').split('.').map(Number);
-  return maj > min[0] || (maj === min[0] && minor >= min[1]);
+  return (maj === 20 && minor >= 19) || (maj === 22 && minor >= 12) || maj > 22;
 }
 
 function majorOf(version: string | null): number | null {
@@ -220,10 +234,10 @@ async function doctor(network = false, json = false): Promise<number> {
     blocking: true,
   });
   add({
-    ok: versionAtLeast(process.versions.node, MIN_NODE),
-    label: `Node.js ≥ ${MIN_NODE.join('.')}`,
+    ok: nodeSupported(process.versions.node),
+    label: `Node.js ${NODE_RANGE}`,
     detail: process.versions.node,
-    fix: 'Install a current Node.js LTS (https://nodejs.org or `brew install node`).',
+    fix: 'Install Node 24 (the version CI uses): https://nodejs.org or `brew install node@24`. Node 21 is not supported.',
     blocking: true,
   });
 
@@ -317,7 +331,7 @@ async function doctor(network = false, json = false): Promise<number> {
           ok: false,
           label: 'Stephen-ready Zen running',
           detail: 'no — Zen is open normally (without Stephen access)',
-          fix: `Quit Zen (⌘Q) and reopen it for Stephen. ${openHint} Your tabs come back if Zen restores your previous session.`,
+          fix: `${ZEN_WHY_LAUNCHER} Quit Zen (⌘Q) and reopen it for Stephen. ${openHint} Your tabs come back if Zen restores your previous session.`,
         });
       } else {
         add({ ok: true, info: true, label: 'Stephen-ready Zen running', detail: `no — Zen is not open. ${zenAttach ? openHint : 'Stephen starts it when needed (launch: auto).'}` });
@@ -352,6 +366,11 @@ async function doctor(network = false, json = false): Promise<number> {
     }
 
     for (const c of await helperDoctorChecks(cfg.home)) add(c);
+
+    const claudeVersion = await new Promise<string | null>((res) => {
+      execFile(String(((cfg as Partial<HubConfig>).voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
+    });
+    add((await import('./voice/claude.js')).claudeVersionCheck(claudeVersion));
 
     add({ ok: true, info: true, label: 'Audit log', detail: cfg.auditLogPath });
     add({ ok: true, info: true, label: 'Saved output', detail: cfg.output.saveDir });
@@ -492,6 +511,12 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./memory/cli.js')).runMemoryCli(rest);
     case 'history':
       return (await import('./history/cli.js')).runHistoryCli(rest);
+    case 'latency':
+      return (await import('./telemetry/cli.js')).runLatencyCli(rest);
+    case 'replay':
+      return (await import('./replay/recorder.js')).runReplayCli(rest, loadConfig().home);
+    case 'mac-checks':
+      return (await import('./checks/mac-checks.js')).runMacChecksCli(rest);
     case 'jobs':
       // Owner-only, and the per-job supervisor (`jobs _run`): loaded on demand, never by `stephen serve`.
       return (await import('./jobs/cli.js')).runJobsCli(rest);

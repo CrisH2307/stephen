@@ -160,11 +160,13 @@ describe.each(PROTOCOLS)('out-of-process iframes over %s', (protocol) => {
     const link = refIn(s.text, /link "Cross link"/);
     expect((await pe.find(page, TAB, 'cross link', 1))[0]?.ref).toBe(link);
     await pe.click(page, link);
+    // The iframe runs in another renderer process, so its text can update a little after the click returns
+    // (CI run 44315329108 read it empty). Wait for it first, then check it is in the cross-site frame.
+    await pe.waitFor(page, { text: 'cross clicked', timeoutMs: 3000 });
     const cross = page.frames().find((f) => f.url().includes('/frame-cross.html'));
     expect(await cross?.evaluate(() => document.getElementById('out')?.textContent)).toBe('cross clicked');
     const info = await pe.describe(page, refIn(s.text, /textbox "Cross password"/));
     expect(info.frameUrl.startsWith(fx.b)).toBe(true);
-    await pe.waitFor(page, { text: 'cross clicked', timeoutMs: 3000 });
     await page.close();
   });
 

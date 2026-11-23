@@ -67,6 +67,8 @@ reply; the owner asked for a thread.) The thread is the same one Home shows, fro
 - **Thread**: your words, Stephen's replies (tools used as a small line), problems named "Problem" with Try again,
   small grey lines for busy and stopped. "Working…" under the last message; Esc stops it.
 - **Listening**: the thread is replaced by "Listening…" (tap to send when the box's mic started it).
+- **Click outside while listening**: cancels the recording and closes the box, like Esc; it never sends. Only tapping
+  the box, the Talk button, or releasing F5 sends.
 - **Needs your OK**: a message at the bottom of the thread with the gate's own question and facts and two buttons.
   Allow and Deny stay off for 0.75 s each time the question changes, Esc denies, and a spoken yes never counts for
   sending (enforced, not printed).

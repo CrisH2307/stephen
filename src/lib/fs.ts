@@ -11,6 +11,7 @@ import {
   fstatSync,
   fsyncSync,
   openSync,
+  readFileSync,
   readSync,
   renameSync,
   unlinkSync,
@@ -59,8 +60,8 @@ export function writePrivateJsonFileSync(path: string, value: unknown): void {
 
 export type ReadPrivateJsonResult = { state: unknown } | { missing: true } | { error: string };
 
-/** Read a private JSON file: O_NOFOLLOW, regular file, this user's, mode 0600, ≤ MAX_PRIVATE_JSON_BYTES. Never throws. */
-export function readPrivateJsonFile(path: string): ReadPrivateJsonResult {
+/** Read a private JSON file: O_NOFOLLOW, regular file, this user's, mode 0600, ≤ `maxBytes`. Never throws. */
+export function readPrivateJsonFile(path: string, maxBytes: number = MAX_PRIVATE_JSON_BYTES): ReadPrivateJsonResult {
   let fd: number;
   try {
     fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0));
@@ -76,7 +77,7 @@ export function readPrivateJsonFile(path: string): ReadPrivateJsonResult {
     const uid = myUid();
     if (uid !== null && st.uid !== uid) return { error: 'belongs to another user' };
     if ((st.mode & 0o777) !== 0o600) return { error: `has mode ${(st.mode & 0o777).toString(8)}, not 600` };
-    if (st.size > MAX_PRIVATE_JSON_BYTES) return { error: 'is too large' };
+    if (st.size > maxBytes) return { error: 'is too large' };
     const buf = Buffer.alloc(st.size);
     let off = 0;
     while (off < st.size) {
@@ -93,6 +94,40 @@ export function readPrivateJsonFile(path: string): ReadPrivateJsonResult {
     return { error: `could not be read (${(e as Error).message})` };
   } finally {
     closeSync(fd);
+  }
+}
+
+/**
+ * Append one line to a private day file: O_APPEND|O_NOFOLLOW, regular file, mode forced to 0600, ONE write.
+ * Returns false (nothing written) if the line would take the file over `maxBytes`. Throws if it can't be opened
+ * or is not a regular file.
+ */
+export function appendPrivateLineCapped(file: string, line: string, maxBytes: number): boolean {
+  const fd = openSync(file, fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW, 0o600);
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error(`${file} is not a regular file`);
+    if ((st.mode & 0o777) !== 0o600) fchmodSync(fd, 0o600);
+    if (st.size + Buffer.byteLength(line) > maxBytes) return false;
+    writeSync(fd, line);
+    return true;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Read a private regular file as text: O_NOFOLLOW, regular, ≤ `maxBytes`. A missing, symlinked, odd or big file reads as null. */
+export function readPrivateRegularFile(file: string, maxBytes: number): string | null {
+  try {
+    const fd = openSync(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    try {
+      const st = fstatSync(fd);
+      return st.isFile() && st.size <= maxBytes ? readFileSync(fd, 'utf8') : null;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return null;
   }
 }
 

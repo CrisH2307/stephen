@@ -2,6 +2,7 @@
  * Everything that touches macOS, behind injectable deps so the tests run on Linux:
  * process spawning (execFile with an argv array — never a shell), the file system, the platform.
  */
+import type { MediaKeyFn } from './media-key.js';
 import { nodeFetch, type FetchFn, type MediaTiming } from './media.js';
 import { execFile as nodeExecFile } from 'node:child_process';
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
@@ -45,6 +46,8 @@ export interface DesktopDeps {
   fetch?: FetchFn;
   /** play_media's player polling (tests only). */
   mediaTiming?: Partial<MediaTiming>;
+  /** media_control's media-key fallback (default: through `stephen listen`'s app.sock; src/desktop/media-key.ts). */
+  mediaKey?: MediaKeyFn;
 }
 
 /** Absolute paths: a PATH change can't swap in another binary. */

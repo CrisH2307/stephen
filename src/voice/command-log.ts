@@ -9,8 +9,18 @@
  * result. After a cancel, the old group can still be finishing a tool for up to the kill grace period, so the log is
  * emptied again in the `beforeSend` hook, which the warm runner calls once that group is gone and right before the
  * command goes out (docs/REVIEW-7.md R7-10). Recording never fails a command: errors are only logged.
+ *
+ * The command id file (plan A2, src/lib/command-id.ts) follows the same two steps. It is removed when a run starts,
+ * so a cancelled command's group that is still dying writes records without an id, never with the new one. The new
+ * id is written in `beforeSend`, right after the log reset. It stays after the run: a late record of that command
+ * still gets the right id. With the one-shot runner (voice.warm false) `beforeSend` has no "group is gone" promise:
+ * a cancelled command's serve can take up to 8 s to shut down (src/server/index.ts), and an audit entry it writes in
+ * that time gets the next command's id. The id is a label for joining logs, so that is a wrong label, nothing more.
  */
+import { readCommandSteps, type ChatStep } from '../app/steps.js';
 import type { HistoryStore } from '../history/store.js';
+import type { AuditEntry } from '../types.js';
+import { clearCommandFile, validCommandId, writeCommandFile } from '../lib/command-id.js';
 import { readToolLog, resetToolLog, type ToolCallRecord } from '../server/tool-log.js';
 import type { ClaudeOutcome } from './claude.js';
 import type { CommandReport, CommandRunner, RunHooks, Trust } from './assistant.js';
@@ -22,6 +32,8 @@ export class ToolLogRunner implements CommandRunner {
     private readonly inner: CommandRunner,
     readonly path: string,
     private readonly log: (line: string) => void = () => undefined,
+    /** `<home>/voice/command.json`, or null: no command id file. */
+    readonly commandFile: string | null = null,
   ) {}
 
   /** The tool calls of the last run (empty before the first). */
@@ -32,8 +44,13 @@ export class ToolLogRunner implements CommandRunner {
   async run(prompt: string, hooks: RunHooks = {}): Promise<ClaudeOutcome> {
     this.calls = [];
     this.reset();
+    this.commandId(undefined);
+    const beforeSend = () => {
+      this.reset();
+      this.commandId(hooks.id);
+    };
     try {
-      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), beforeSend: () => this.reset() });
+      return await this.inner.run(prompt, { ...(hooks.trust ? { trust: hooks.trust } : {}), ...(hooks.assumePrivateRead ? { assumePrivateRead: true } : {}), beforeSend });
     } finally {
       this.calls = readToolLog(this.path);
     }
@@ -59,6 +76,18 @@ export class ToolLogRunner implements CommandRunner {
     this.inner.prewarm?.(trust);
   }
 
+  /** Write the id of the command going out, or remove the file (no id, or one that is not a command id). */
+  private commandId(id: string | undefined): void {
+    if (!this.commandFile) return;
+    try {
+      // A valid id replaces the file in one rename. Anything else removes it, so an old id never stays.
+      if (validCommandId(id)) writeCommandFile(this.commandFile, id!);
+      else clearCommandFile(this.commandFile);
+    } catch (e) {
+      this.log(`Note: could not write the command id file ${this.commandFile} (${(e as Error).message}).`);
+    }
+  }
+
   private reset(): void {
     try {
       resetToolLog(this.path);
@@ -68,23 +97,96 @@ export class ToolLogRunner implements CommandRunner {
   }
 }
 
-/** The Assistant's onDone hook: append one history entry per command. Never throws. */
-export function historyRecorder(store: HistoryStore, tools: (() => ToolCallRecord[]) | null, log: (line: string) => void): (r: CommandReport) => void {
-  return (r) => {
+/** What finishCommand adds to a history line: the steps, the captured tools and the end time. */
+export interface HistoryExtra {
+  steps?: ChatStep[];
+  calls?: ToolCallRecord[];
+  ts?: Date;
+}
+
+/**
+ * Append one history entry per command (finishCommand calls it). Never throws.
+ * A tool's `cmd` is left out: the entry has the id itself, and history lines stay as they were before plan A2.
+ * `calls`: the command's tools captured when it ended (the runner's list moves on with the next command); without
+ * them `tools()` is read now. `ts`: when the command ended (before the audit read), so lines keep their order and
+ * their time; default now.
+ */
+export function historyRecorder(
+  store: HistoryStore,
+  tools: (() => ToolCallRecord[]) | null,
+  log: (line: string) => void,
+): (r: CommandReport, extra?: HistoryExtra) => void {
+  return (r, { steps, calls, ts } = {}) => {
     try {
       store.append({
         id: r.id,
+        ...(ts ? { ts: ts.toISOString() } : {}),
         source: r.source,
         said: r.said,
         reply: r.reply,
         outcome: r.outcome,
-        tools: r.ranClaude && tools ? tools() : [],
+        tools: r.ranClaude && (calls || tools) ? (calls ?? tools!()).map(({ tool, isError, ms }) => ({ tool, isError, ms })) : [],
         followUp: r.followUp,
         ms: r.ms,
         turns: r.turns,
+        ...(r.conv ? { conv: r.conv } : {}),
+        ...(steps ? { steps } : {}),
+        ...(r.editOf ? { editOf: { conv: r.editOf.conv, id: r.editOf.id, ts: r.editOf.ts } } : {}),
       });
     } catch (e) {
       log(`Note: could not write the command history (${(e as Error).message}).`);
     }
   };
+}
+
+/**
+ * The audit line of an edit and resend (ADR-010): the old command id, the old and new conversation ids and the old
+ * message's source. Never any message text. null for a command that is not an edit. Labelled with the new command's
+ * id (`cmd`) so it is never shown as a step of another command.
+ */
+export function editResendAudit(r: CommandReport): Omit<AuditEntry, 'ts'> | null {
+  if (!r.editOf) return null;
+  return {
+    tool: 'edit_resend',
+    outcome: 'ok',
+    cmd: r.id,
+    args: { oldId: r.editOf.id, oldConv: r.editOf.conv, ...(r.conv ? { newConv: r.conv } : {}), oldSource: r.editOf.source },
+  };
+}
+
+/**
+ * ADR-007 point 6: the steps are built BEFORE the history append. One audit read, then the same list goes to the
+ * history line (one append, never updated) and to chat.done. A failed or slow read: neither has steps.
+ * Never rejects (index.ts calls it with `void`): a throwing hook is logged, and the history line is still written.
+ */
+export async function finishCommand(
+  r: CommandReport,
+  calls: ToolCallRecord[],
+  o: {
+    audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
+    record?: (r: CommandReport, extra?: HistoryExtra) => void;
+    app?: { commandEnding(): void; commandDone(r: CommandReport, tools: string[], steps?: ChatStep[]): void } | null;
+    log?: (line: string) => void;
+    /** When the command ended (epoch ms, the onDone time); default now. The history line's ts and the steps' window. */
+    end?: number;
+  },
+): Promise<void> {
+  const end = o.end ?? Date.now();
+  const note = (e: unknown) => o.log?.(`Note: could not record the command (${(e as Error).message}).`);
+  try {
+    o.app?.commandEnding();
+  } catch (e) {
+    note(e);
+  }
+  const steps = await readCommandSteps(o.audit, calls, r.id, r.ms, end);
+  try {
+    o.record?.(r, { ...(steps ? { steps } : {}), calls, ts: new Date(end) });
+  } catch (e) {
+    note(e);
+  }
+  try {
+    o.app?.commandDone(r, calls.map((t) => t.tool), steps);
+  } catch (e) {
+    note(e);
+  }
 }

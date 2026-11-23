@@ -257,16 +257,6 @@ export const BUILTIN_BLOCKED_DOMAINS: readonly string[] = [
   'passwords.google',
 ];
 
-/**
- * URL schemes whose pages are never read or acted on. (Navigation targets are stricter: only
- * http:, https: and about:blank are allowed — see policy.ts.)
- */
-export const BLOCKED_SCHEMES: readonly string[] = [
-  'chrome:', 'chrome-extension:', 'chrome-untrusted:', 'chrome-search:', 'chrome-devtools:', 'devtools:',
-  'about:', 'file:', 'javascript:', 'data:', 'view-source:', 'moz-extension:', 'resource:', 'edge:',
-  'brave:', 'opera:', 'vivaldi:', 'filesystem:', 'jar:',
-];
-
 /** Pages where every mutation (and arriving by navigation) needs human confirmation. */
 export const BUILTIN_SENSITIVE_DOMAINS: readonly string[] = [
   // Payments / fintech

@@ -13,8 +13,9 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HelperClient } from '../../src/helper/client.js';
 import { LineFramer } from '../../src/helper/framing.js';
-import { swiftcArgs } from '../../src/helper/install.js';
+import { buildWithSdkFallback, findSwiftCompiler, listFallbackSdks, swiftcArgs } from '../../src/helper/install.js';
 import type { HelperEvent } from '../../src/helper/protocol.js';
+import { defaultRun } from '../../src/zen-launcher.js';
 import { until } from './fake-helper.js';
 import { SCENARIOS, SCENARIO_MAX_HOLD_MS, harnessLine } from './ptt-model.js';
 
@@ -107,6 +108,12 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     return c;
   };
 
+  it('#202 C1: the app.sock reconnect wait goes 3, 6, 10, 10 s (nextRetryDelay, max 10 s)', () => {
+    const r = spawnSync(harnessBin, ['--retry-delays'], { encoding: 'utf8', timeout: 10_000 });
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('3 6 10 10');
+  });
+
   it('creates run/ 0700 and the socket 0600; hello first, then audio', async () => {
     const sock = mk();
     await start(sock);
@@ -116,7 +123,7 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     const c = client(sock);
     const audio: HelperEvent[] = [];
     c.on('audio', (e) => audio.push(e));
-    expect(await c.start()).toEqual({ ok: true, hello: { type: 'hello', version: '1', inputMonitoring: true } });
+    expect(await c.start()).toEqual({ ok: true, hello: { type: 'hello', version: '1', inputMonitoring: true, postEvents: true } });
     await until(() => audio.length >= 1);
     expect(audio[0]).toMatchObject({ type: 'audio', playing: false });
   });
@@ -188,6 +195,30 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     c.send({ type: 'open_window' });
     await until(() => h.lines.includes('open_window'), 3000, 'open_window');
     expect(h.stderr.join('')).not.toContain('ignored unknown command type "open_window"');
+  });
+
+  it('issue #205: media_key is posted by the platform layer and answered with media_key_done; hello reports postEvents', async () => {
+    const sock = mk();
+    const h = await start(sock);
+    const c = client(sock);
+    const got: HelperEvent[] = [];
+    for (const t of ['hello', 'media_key_done'] as const) c.on(t, (e) => got.push(e));
+    await c.start();
+    await until(() => got.some((e) => e.type === 'hello'));
+    expect(got.find((e) => e.type === 'hello')).toMatchObject({ postEvents: true });
+    c.send({ type: 'media_key', key: 'next' });
+    await until(() => got.some((e) => e.type === 'media_key_done'), 3000, 'media_key_done');
+    expect(h.lines).toContain('media_key next');
+    expect(got.filter((e) => e.type === 'media_key_done')).toEqual([{ type: 'media_key_done', key: 'next', ok: true }]);
+    h.input('postkeys 0');
+    await sleep(50);
+    c.send({ type: 'media_key', key: 'play_pause' });
+    await until(() => got.filter((e) => e.type === 'media_key_done').length >= 2, 3000, 'second media_key_done');
+    expect(got.filter((e) => e.type === 'media_key_done')[1]).toEqual({ type: 'media_key_done', key: 'play_pause', ok: false, message: 'Stephen Helper needs the Accessibility permission' });
+    // A bad key is refused by the parser, never posted.
+    c.send({ type: 'media_key', key: 'eject' } as never);
+    await sleep(100);
+    expect(h.lines.filter((l) => l.startsWith('media_key '))).toEqual(['media_key next', 'media_key play_pause']);
   });
 
   it('audio is pushed on change only; a permission change re-sends hello', async () => {
@@ -290,10 +321,12 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     await until(() => h2.lines.includes('ui working'), 3000, 'state restored');
   });
 
-  it.runIf(process.platform === 'darwin')('compiles the full macOS app', () => {
+  it.runIf(process.platform === 'darwin')('compiles the full macOS app (same SDK choice as install-helper, #248)', async () => {
     const out = join(work, 'Stephen Helper');
-    const r = spawnSync(SWIFTC!, swiftcArgs(join(ROOT, 'helper'), out, null), { encoding: 'utf8', timeout: 600_000 });
-    expect(r.stderr + r.stdout).not.toMatch(/error:/);
-    expect(r.status).toBe(0);
-  }, 600_000);
+    const found = await findSwiftCompiler(defaultRun);
+    const sdk = found.ok ? found.compiler.sdkPath : null;
+    const b = await buildWithSdkFallback(sdk, (s) => defaultRun(SWIFTC!, swiftcArgs(join(ROOT, 'helper'), out, s), 600_000), () => listFallbackSdks(sdk));
+    expect(b.result.stderr + b.result.stdout).not.toMatch(/error:/);
+    expect(b.ok).toBe(true);
+  }, 1_200_000);
 });

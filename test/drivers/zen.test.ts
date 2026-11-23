@@ -156,7 +156,9 @@ function harness(opts: HarnessOpts = {}): Harness {
       h.children.push(child);
       const stdio = spawnOpts.stdio as unknown[];
       if (line !== null) writeSync(stdio[2] as number, `1730000000\tRemoteAgent\tINFO\t${line}\n`);
-      if (exitCode !== undefined) setTimeout(() => child.emit('exit', exitCode, null), 5);
+      // nextTick: the exit lands while #launch still awaits log.close(), the race behind #109.
+      // A driver that watches the child only after that await misses it and times out.
+      if (exitCode !== undefined) process.nextTick(() => child.emit('exit', exitCode, null));
       return child as unknown as SpawnedProcess;
     },
     connect: async (o) => {

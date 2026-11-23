@@ -70,6 +70,7 @@ struct PermissionRowData: Identifiable {
   let levels: [PermissionLevel]  // one per column
 }
 
+/// No box of its own: it sits straight in a grouped Form section (Settings, Privacy and permissions; plan 6.5 N1).
 struct PermissionTable: View {
   @Environment(\.stephenTheme) var t
   let columns: [String]  // e.g. ["F5", "Hey Stephen", "Phone"]
@@ -81,7 +82,7 @@ struct PermissionTable: View {
         Text(verbatim: "").frame(maxWidth: .infinity, alignment: .leading)
         ForEach(columns, id: \.self) { c in Text(verbatim: c).sectionLabelStyle(t).frame(width: 78, alignment: .leading) }
       }
-      .padding(.horizontal, Space.l).padding(.vertical, Space.s).accessibilityHidden(true)
+      .padding(.vertical, Space.s).accessibilityHidden(true)
       ForEach(rows) { r in
         Rectangle().fill(t.line).frame(height: 1)
         HStack(spacing: Space.s) {
@@ -94,14 +95,11 @@ struct PermissionTable: View {
             .frame(width: 78, alignment: .leading)
           }
         }
-        .padding(.horizontal, Space.l).padding(.vertical, 10)
+        .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(r.action). " + zip(columns, r.levels).map { "\($0): \($1.rawValue)" }.joined(separator: ". "))
       }
     }
-    .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface))
-    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.line, lineWidth: 1))
-    .clipShape(RoundedRectangle(cornerRadius: Corner.list))
   }
 }
 
@@ -111,25 +109,39 @@ struct VoiceRow: View {
   let name: String
   let source: String  // "ElevenLabs", "on this Mac"
   let current: Bool
-  var first: Bool = false
   let onPlay: () -> Void
   let onSelect: () -> Void
-  init(name: String, source: String, current: Bool, first: Bool = false, onPlay: @escaping () -> Void, onSelect: @escaping () -> Void) {
-    self.name = name; self.source = source; self.current = current; self.first = first; self.onPlay = onPlay; self.onSelect = onSelect
+  init(name: String, source: String, current: Bool, onPlay: @escaping () -> Void, onSelect: @escaping () -> Void) {
+    self.name = name; self.source = source; self.current = current; self.onPlay = onPlay; self.onSelect = onSelect
   }
+  /// A plain row (it sits in a Settings accordion), with the name side as a real button (#145) so Tab reaches it; Play
+  /// stays its own button.
   var body: some View {
-    GroupedRow(name, detail: source, first: first) {
+    VStack(spacing: 0) {
       HStack(spacing: Space.m) {
-        if current { Image(systemName: "checkmark").foregroundColor(t.accent).accessibilityHidden(true) }
-        Button(action: onPlay) { Image(systemName: "play.circle").font(.system(size: 18)).foregroundColor(t.accent) }
-          .buttonStyle(.plain).help("Play a sample").accessibilityLabel("Play \(name)")
+        Button(action: onSelect) {
+          HStack(spacing: Space.m) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(verbatim: name).font(TypeScale.body).foregroundColor(t.ink)
+              Text(verbatim: source).font(TypeScale.secondary).foregroundColor(t.ink2)
+            }
+            Spacer(minLength: Space.m)
+            if current { Image(systemName: "checkmark").foregroundColor(t.accent).accessibilityHidden(true) }
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(name), \(source)\(current ? ", current voice" : "")")
+        .accessibilityHint("Use this voice")
+        .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
+        Button(action: onPlay) {
+          Image(systemName: "play.circle").font(.system(size: 18)).foregroundColor(t.accent)
+            .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help("Play a sample").accessibilityLabel("Play \(name)")
       }
+      .padding(.vertical, Space.xs)
     }
-    .contentShape(Rectangle())
-    .onTapGesture(perform: onSelect)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(name), \(source)\(current ? ", current voice" : "")")
-    .accessibilityAddTraits(current ? .isSelected : [])
-    .accessibilityAction(named: "Use this voice", onSelect)
   }
 }

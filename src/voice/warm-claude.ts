@@ -16,26 +16,30 @@
  *    first command's transcript can still be deleted (R7-3).
  *  - Turn: `mcp_status` must still say connected, then ONE line `JSON.stringify({type:'user',…})`; the turn ends at the
  *    next `result` line. `duration_api_ms` and `total_cost_usd` are cumulative per process, so the outcome carries the
- *    difference from the previous result. Every other line type is ignored.
+ *    difference from the previous result. `assistant`, `user` and `stream_event` lines are only timed (ModelTimes:
+ *    when they arrive, never what they say). Every other line type is ignored.
  *  - Anything that isn't a JSON line, or an exit before the result, is an error. One turn at a time.
  * Cancel = kill the whole process group (never the stream `interrupt`: an interrupted tool keeps running).
  * WarmConversationRunner (conversation.ts) owns when a process lives and dies; this class only drives one.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import { groupAlive } from '../lib/process.js';
 import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
 import type { Trust } from './assistant.js';
 import {
   MCP_SERVER_NAME,
   SESSION_ID_RE,
   buildWarmArgs,
+  claudeNotFound,
+  claudeSpawnOptions,
   killGroup,
   outcomeFromResult,
   personaFor,
   removePersonaFile,
-  withoutSecrets,
   writePersonaFile,
   type ClaudeOutcome,
   type ClaudeSettings,
+  type ModelTimes,
   type ResultJson,
   type ServeInstance,
   type SpawnFn,
@@ -69,6 +73,8 @@ export interface WarmProcess {
   readonly memoryKey: string | undefined;
   /** The conversation's trust (R7-2): only commands of this trust go to it; `wake` = its serve has `--trust wake`. */
   readonly trust: Trust;
+  /** Its serve started with `--assume-private-read` (a resumed chat, ADR-007 v2). */
+  readonly assumePrivateRead?: boolean;
   /** It has exited (or never started). */
   readonly exited: boolean;
   /** Claude Code's session id, from the first line that carried one (null before that). */
@@ -133,6 +139,8 @@ export class WarmClaude implements WarmProcess {
   private seq = 0;
   private readonly pending = new Map<string, { resolve: (r: Record<string, unknown>) => void; reject: (e: Error) => void }>();
   private current: ((o: ClaudeOutcome) => void) | null = null;
+  /** The running turn's clock (ModelTimes): `mark` is when the model or a tool started working. */
+  private timing: { sentAt: number; mark: number; phase: 'model' | 'tool'; times: ModelTimes } | null = null;
   private prevApiMs = 0;
   private prevCostUsd = 0;
   private contextTokens: number | null = null;
@@ -156,6 +164,7 @@ export class WarmClaude implements WarmProcess {
     readonly memoryKey: string | undefined,
     memory: readonly string[] = [],
     readonly trust: Trust = 'wake',
+    readonly assumePrivateRead = false,
   ) {
     this.spawnedAt = this.now();
     let init!: { resolve: () => void; reject: (e: Error) => void };
@@ -216,9 +225,13 @@ export class WarmClaude implements WarmProcess {
   }
 
   private async start(memory: readonly string[]): Promise<void> {
+    if (this.assumePrivateRead && !this.o.serveInstance) {
+      this.onClosed();
+      throw new Error('A resumed chat needs a fresh serve instance.');
+    }
     if (this.o.serveInstance) {
       try {
-        this.inst = await this.o.serveInstance(this.trust);
+        this.inst = await this.o.serveInstance(this.trust, this.assumePrivateRead);
       } catch (e) {
         this.onClosed();
         throw new Error(`Could not write the MCP config (${(e as Error).message}).`);
@@ -240,13 +253,7 @@ export class WarmClaude implements WarmProcess {
     const spawnFn: SpawnFn = this.o.spawn ?? ((c, a, opts) => spawn(c, a as string[], opts));
     let child: ChildProcess;
     try {
-      child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), {
-        cwd: this.o.cwd,
-        env: withoutSecrets(this.o.env ?? process.env),
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true, // own process group: kill() takes claude AND the stephen serve it started
-        shell: false,
-      });
+      child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), claudeSpawnOptions(this.o, 'pipe'));
     } catch (e) {
       this.onClosed();
       throw new Error(`Could not start Claude Code (${(e as Error).message}).`);
@@ -258,7 +265,7 @@ export class WarmClaude implements WarmProcess {
     });
     child.stdin?.on('error', () => undefined); // EPIPE after an exit: the close handler reports it
     child.once('error', (e: NodeJS.ErrnoException) => {
-      this.stderr += e.code === 'ENOENT' ? `\nClaude Code was not found ("${this.o.claudePath}"). Install it, or set "voice": {"claudePath": "…"}.` : `\n${e.message}`;
+      this.stderr += `\n${e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : e.message}`;
       this.onClosed();
     });
     child.once('close', () => this.onClosed());
@@ -347,6 +354,8 @@ export class WarmClaude implements WarmProcess {
         const gone = o.kind === 'ok' ? this.serveProblem() : null;
         resolve(gone ? { kind: 'error', message: `Stephen's tools stopped during that command (${gone}), so I ended the conversation. Say it again.`, sessionId: o.kind === 'ok' ? o.sessionId : null } : o);
       };
+      const t = this.now();
+      this.timing = { sentAt: t, mark: t, phase: 'model', times: { modelMs: 0, toolMs: 0 } };
       this.child?.stdin?.write(userMessageLine(prompt));
     });
   }
@@ -390,8 +399,30 @@ export class WarmClaude implements WarmProcess {
       this.onResult(msg as ResultJson);
     } else if (msg.type === 'assistant') {
       this.contextTokens = contextTokensOf(msg) ?? this.contextTokens;
+      this.clock('tool');
+    } else if (msg.type === 'user') {
+      this.clock('model'); // a tool result went back to the model
+    } else if (msg.type === 'stream_event') {
+      // Only with --include-partial-messages. The first one of a turn is the first token; its text is never read.
+      const t = this.timing;
+      if (t && t.times.firstTokenMs === undefined && (msg.event as { type?: unknown } | undefined)?.type === 'content_block_delta') {
+        t.times.firstTokenMs = Math.max(0, Math.round(this.now() - t.sentAt));
+      }
     }
-    // stream_event, user, system/*, rate_limit_event…: ignored.
+    // system/*, rate_limit_event…: ignored.
+  }
+
+  /**
+   * Turn clock: an `assistant` line ends a wait for the model, a `user` line (tool result) ends a wait for tools.
+   * One model message can arrive as several `assistant` lines; only the first after a wait counts.
+   */
+  private clock(next: 'model' | 'tool'): void {
+    const t = this.timing;
+    if (!t || t.phase === next) return;
+    const now = this.now();
+    t.times[t.phase === 'model' ? 'modelMs' : 'toolMs'] += Math.max(0, Math.round(now - t.mark));
+    t.mark = now;
+    t.phase = next;
   }
 
   get context(): ContextUsage | null {
@@ -402,9 +433,11 @@ export class WarmClaude implements WarmProcess {
     const api = num(res.duration_api_ms);
     const cost = num(res.total_cost_usd);
     const out = outcomeFromResult(res);
+    const model = this.timing?.times;
+    this.timing = null;
     const perCommand: ClaudeOutcome =
       out.kind === 'ok'
-        ? { ...out, apiMs: api !== null ? Math.max(0, api - this.prevApiMs) : null, costUsd: cost !== null ? Math.max(0, cost - this.prevCostUsd) : null }
+        ? { ...out, apiMs: api !== null ? Math.max(0, api - this.prevApiMs) : null, costUsd: cost !== null ? Math.max(0, cost - this.prevCostUsd) : null, ...(model ? { model } : {}) }
         : out;
     if (api !== null) this.prevApiMs = api;
     if (cost !== null) this.prevCostUsd = cost;
@@ -473,16 +506,6 @@ export class WarmClaude implements WarmProcess {
   killNow(): void {
     this.killing = true;
     if (this.child?.pid) killGroup(this.child.pid, 'SIGKILL');
-  }
-}
-
-/** Is any process of group `pid` still there? */
-function groupAlive(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 

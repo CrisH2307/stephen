@@ -12,6 +12,9 @@
  * Additive: `{id, type:"jobs.list"}` → `{id, type:"jobs", jobs:[JobRow]}` (newest first, summaries cleaned and capped) and
  * `{id, type:"jobs.stop", jobId}` → `{id, type:"job", job:JobRow}` or an error (unknown job, jobs are off). Stopping
  * from the window is the owner's own click, so it needs no dialog.
+ * Additive (ADR-010 Edit request, [DEV REVIEW]): `{id, type:"jobs.edit", jobId, text}` → `{id, type:"job", job:JobRow}`
+ * (the NEW job) or an error. Only the window socket may send it; the old job must be stopped, finished or failed;
+ * nothing starts until the owner approves the job dialog (ADR-004), so the answer can take up to two minutes.
  * Additive (ROADMAP P2, src/app/control.ts), the owner's own clicks, so no dialog:
  *   `{id, type:"phone.on"}` / `{id, type:"phone.off"}` → `{id, type:"phone", on, lines}` (what `stephen phone on|off`
  *   printed; same checks and kill switch), `{id, type:"zen.open"}` → `{id, type:"zen", ok, message}`,
@@ -19,8 +22,14 @@
  *   phone.on, zen.open and doctor.run can take up to a minute or more (the lock-down check starts Claude Code).
  * Additive (ROADMAP P2, src/app/usage.ts): `{id, type:"usage.get"}` → `{id, type:"usage", context:{percent, warn, tokens,
  *   window} | null, memory:{percent, warn, bytes, budget}}` (warn at 80%; context null when unknown).
+ * Additive (plan A2, src/telemetry/cli.ts): `{id, type:"latency.get", days?}` (days 1, 7 or 30; default 7) →
+ *   `{id, type:"latency", days, triggers, text}`: the `stephen latency` report as plain text (ids, code words and
+ *   numbers only), for Settings > Speed.
  * Additive to the table in the plan: `{id, type:"window.open"}` → `{id, type:"ok"}`, used by `stephen app` to ask
  * the running listener to forward `{type:"open_window"}` to Stephen Helper.
+ * Additive (issue #205): `{id, type:"media.key", action:"play"|"pause"|"toggle"|"next"|"previous"}` → `{id, type:"ok"}`
+ * or an error with the reason. media_control (src/desktop/media-key.ts) uses it to press a Mac media key through the
+ * listener's Stephen Helper when no browser tab or music app can be controlled. "pause" presses only while sound plays.
  * Additive (Ask box "Needs your OK", UI-PLAN v3.1 section 5; threat model in docs/SYSTEM-DESIGN-STEPHEN.md section 5):
  *  - `hello` may carry `confirms: true` (this client shows questions: the Ask box), and the hello answer carries
  *    `confirms: true` (this listener relays them).
@@ -40,14 +49,39 @@
  *  - `{id, type:"memory.graph"}` → `{id, type:"graph", nodes:[{id, text, kind, new}], links:[{a, b}]}` (kind people |
  *    school | places | habits | projects | other, by fixed rules in src/app/memory-graph.ts; new = a waiting proposal).
  *  - `{id, type:"memory.suggestions"}` → `{id, type:"suggestions", suggestions:[{id, text, origin, untrusted, createdAt}]}`
- *    (newest first; origin you | chat | email | canvas | web; untrusted for third-party text).
+ *    (newest first; origin is always you; untrusted is always false).
  *  - `{id, type:"memory.propose", text}` (the Tell Stephen box; origin "you") → `suggestions`, or an error (secret …).
  *  - `{id, type:"memory.keep", propId, text?}` → `{id, type:"memory", items}` (saved through MemoryStore.add with the
  *    proposal's origin; `text` = the owner's edit). A refused keep leaves the proposal waiting.
  *  - `{id, type:"memory.skip", propId}` → `suggestions`.
  *  - `{id, type:"memory.usage"}` → `{id, type:"memory.usage", memory:{percent, warn, bytes, budget}}` (usage.get's memory bar).
+ * Additive (replay recorder switch, issue #48 PR 2), sent only by Settings > Privacy and permissions, the owner's own clicks:
+ *  - `{id, type:"replay.set", enabled}` → `settings` (config.replay.enabled is the saved value). The only message that
+ *    writes `voice.replay.enabled`: settings.set and model.set refuse it.
+ *  - `{id, type:"replay.delete"}` → `{id, type:"ok"}`: every saved clip, the same code as `stephen replay delete --all`.
+ *  - push `{type:"replay", on}` (issue #208): whether the recorder would save an F5 command now. Sent after hello, when
+ *    it changes (config.json is re-read every 2 s and on every F5), and after replay.set. Drives the "Recording on"
+ *    sign. Read only: nothing the window sends back changes it except replay.set.
+ * Additive (ADR-007 v2, resume), sent only by the window, the owner's own clicks; refused from any other connection:
+ *  - `{id, type:"chat.resume", conv}` (the "Open in chat" button on a Conversations row) → `{id, type:"ok"}` or an
+ *    error. It only arms: nothing goes to the model. The owner's next `chat.send` continues that conversation (a new
+ *    Claude process, `--assume-private-read`, the old turns quoted in one wrapper; src/history/resume.ts). Any other
+ *    command, `chat.resume.cancel` and RESUME_ARM_MS clear the arm.
+ *  - `{id, type:"chat.resume.cancel"}` (Cancel on Home, New chat) → `{id, type:"ok"}`.
+ *  - push `{type:"resume", armed}`: after hello and whenever the arm changes, for the "Continuing an earlier chat" line.
+ * Additive (ADR-010, edit and resend), sent only by the window, the owner's own clicks; refused from any other connection:
+ *  - `{id, type:"chat.edit", oldId, oldHash, conv, text}` (Send in a Conversations row's inline editor, or Return in
+ *    its field; `conv` is the version on screen, and the old line must be in that branch's view) → `chat.accepted` then a `chat.done` push, like chat.send; or an error: "busy", "This conversation
+ *    changed. Open it again." (the old line is gone or `oldHash`, SHA-256 hex of its stored text, does not match),
+ *    "Too many versions of this message. Start a new conversation instead.". Nothing else is taken from the app: the
+ *    listener builds the earlier turns from the store and sends them through the resume path (src/history/branch.ts).
+ *  - `{id, type:"history.versions", entryId}` → `{id, type:"versions", entries:[HistoryEntry], expired}`: the versions
+ *    of that message, oldest first, and whether the earlier part of its branch has expired. Read only.
+ *  - `{id, type:"history.deleteVersion", entryId}` ("Delete this version", behind a confirm in the helper) →
+ *    `{id, type:"ok"}`: deletes that version's own lines (that message and what followed it in its conversation).
  */
 import type { ChatStep } from './steps.js';
+import { MEDIA_KEY_ACTIONS, type MediaKeyAction } from '../helper/protocol.js';
 import type { HistoryEntry } from '../history/store.js';
 import type { MemoryItem } from '../memory/store.js';
 import { isProposalId, type MemoryProposal } from '../memory/proposals.js';
@@ -59,10 +93,10 @@ import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
 import { checkTalkChanges, type TalkState } from '../voice/talk.js';
 import { checkModelChange, type ModelChanges } from './model.js';
-import { APP_JOB_ID_RE, type JobRow } from './jobs-status.js';
+import { APP_JOB_ID_RE, APP_JOB_REQUEST_MAX, type JobRow } from './jobs-status.js';
 
 export const APP_PROTOCOL_VERSION = '1';
-/** Longest line in bytes, without its newline (both directions; AppClient.swift APP_MAX_LINE_BYTES). */
+/** Longest line in bytes, without its newline (both directions; AppProtocol.swift APP_MAX_LINE_BYTES). */
 export const APP_MAX_LINE_BYTES = 256 * 1024;
 /** chat.send text limit in characters (grapheme clusters, like Swift's String.count; APP_CHAT_MAX_CHARS). */
 export const APP_CHAT_MAX_CHARS = 2000;
@@ -80,6 +114,12 @@ export const APP_CONFIRM_TIMEOUT_MAX_MS = 3600 * 1000;
 /** confirmIds are randomUUID() strings. */
 const CONFIRM_ID_RE = /^[0-9a-f-]{36}$/;
 const MEM_ID_MAX_CHARS = 32;
+/** Conversation ids (newConversationId in src/history/store.ts). */
+const APP_CONV_RE = /^c_[0-9a-f]{16}$/;
+/** History entry ids (ID_RE in src/history/store.ts). */
+const APP_ENTRY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+/** chat.edit oldHash: SHA-256 hex (textHash in src/history/branch.ts). */
+const APP_HASH_RE = /^[0-9a-f]{64}$/;
 
 export type AppRequest =
   | { id: string; type: 'hello'; version: string; confirms?: boolean }
@@ -99,7 +139,9 @@ export type AppRequest =
   | { id: string; type: 'accounts.status' }
   | { id: string; type: 'jobs.list' }
   | { id: string; type: 'jobs.stop'; jobId: string }
+  | { id: string; type: 'jobs.edit'; jobId: string; text: string }
   | { id: string; type: 'window.open' }
+  | { id: string; type: 'media.key'; action: MediaKeyAction }
   | { id: string; type: 'confirm.ask'; title: string; body: string; timeoutMs: number }
   | { id: string; type: 'confirm.answer'; confirmId: string; approve: boolean }
   | { id: string; type: 'phone.on' }
@@ -107,13 +149,21 @@ export type AppRequest =
   | { id: string; type: 'zen.open' }
   | { id: string; type: 'doctor.run' }
   | { id: string; type: 'usage.get' }
+  | { id: string; type: 'latency.get'; days?: number }
   | { id: string; type: 'personal.summary' }
   | { id: string; type: 'memory.graph' }
   | { id: string; type: 'memory.suggestions' }
   | { id: string; type: 'memory.propose'; text: string }
   | { id: string; type: 'memory.keep'; propId: string; text?: string }
   | { id: string; type: 'memory.skip'; propId: string }
-  | { id: string; type: 'memory.usage' };
+  | { id: string; type: 'memory.usage' }
+  | { id: string; type: 'replay.set'; enabled: boolean }
+  | { id: string; type: 'replay.delete' }
+  | { id: string; type: 'chat.resume'; conv: string }
+  | { id: string; type: 'chat.resume.cancel' }
+  | { id: string; type: 'chat.edit'; oldId: string; oldHash: string; conv: string; text: string }
+  | { id: string; type: 'history.versions'; entryId: string }
+  | { id: string; type: 'history.deleteVersion'; entryId: string };
 
 export type AppRequestType = AppRequest['type'];
 
@@ -135,7 +185,9 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'accounts.status',
   'jobs.list',
   'jobs.stop',
+  'jobs.edit',
   'window.open',
+  'media.key',
   'confirm.ask',
   'confirm.answer',
   'phone.on',
@@ -143,6 +195,7 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'zen.open',
   'doctor.run',
   'usage.get',
+  'latency.get',
   'personal.summary',
   'memory.graph',
   'memory.suggestions',
@@ -150,6 +203,13 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'memory.keep',
   'memory.skip',
   'memory.usage',
+  'replay.set',
+  'replay.delete',
+  'chat.resume',
+  'chat.resume.cancel',
+  'chat.edit',
+  'history.versions',
+  'history.deleteVersion',
 ];
 
 export type AppState = 'idle' | 'listening' | 'recording' | 'working' | 'speaking';
@@ -162,6 +222,7 @@ export type AppMessage =
   | { id: string; type: 'chat.accepted'; entryId: string }
   | { id: string; type: 'ok' }
   | { id: string; type: 'history'; entries: HistoryEntry[] }
+  | { id: string; type: 'versions'; entries: HistoryEntry[]; expired: boolean }
   | { id: string; type: 'memory'; items: MemoryItem[] }
   | { id: string; type: 'settings'; config: Record<string, unknown>; configPath: string }
   | { id: string; type: 'audit'; entries: AuditEntry[] }
@@ -173,6 +234,7 @@ export type AppMessage =
   | { id: string; type: 'zen'; ok: boolean; message: string }
   | { id: string; type: 'doctor'; checks: DoctorCheck[]; problems: number; blocking: number }
   | ({ id: string; type: 'usage' } & UsageReport)
+  | { id: string; type: 'latency'; days: number; triggers: number; text: string }
   | ({ id: string; type: 'personal' } & PersonalSummary)
   | ({ id: string; type: 'graph' } & MemoryGraph)
   | { id: string; type: 'suggestions'; suggestions: MemoryProposal[] }
@@ -181,6 +243,8 @@ export type AppMessage =
   | { type: 'confirm'; confirmId: string; title: string; body: string }
   | { type: 'confirm.end'; confirmId: string }
   | { type: 'state'; state: AppState }
+  | { type: 'replay'; on: boolean }
+  | { type: 'resume'; armed: boolean }
   | { type: 'heard'; text: string; source: string }
   /** `steps`: what Stephen did (src/app/steps.ts), only when there is at least one; an older helper ignores it. */
   | { type: 'chat.done'; entryId: string; reply: string; outcome: ChatOutcome; tools: string[]; ms: number; steps?: ChatStep[] };
@@ -228,6 +292,10 @@ function memId(o: Fields): Check {
   return ok;
 }
 
+function entryId(o: Fields): Check {
+  return typeof o.entryId === 'string' && APP_ENTRY_ID_RE.test(o.entryId) ? ok : bad('entryId must be a history entry id');
+}
+
 function propId(o: Fields): Check {
   return isProposalId(o.propId) ? ok : bad('propId must be a proposal id like "p3"');
 }
@@ -264,7 +332,9 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'accounts.status': () => ok,
   'jobs.list': () => ok,
   'jobs.stop': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? ok : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
+  'jobs.edit': (o) => (typeof o.jobId === 'string' && APP_JOB_ID_RE.test(o.jobId) ? text(o, 'text', APP_JOB_REQUEST_MAX, 'text') : bad('jobId must be a job folder name like 2026-11-05-write-my-report')),
   'window.open': () => ok,
+  'media.key': (o) => (typeof o.action === 'string' && (MEDIA_KEY_ACTIONS as readonly string[]).includes(o.action) ? ok : bad('action must be play, pause, toggle, next or previous')),
   'confirm.ask': (o) => {
     const t = text(o, 'title', APP_CONFIRM_TITLE_MAX, 'title');
     if (!t.ok) return t;
@@ -286,6 +356,7 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   'zen.open': () => ok,
   'doctor.run': () => ok,
   'usage.get': () => ok,
+  'latency.get': (o) => (o.days === undefined || o.days === null || o.days === 1 || o.days === 7 || o.days === 30 ? ok : bad('days must be 1, 7 or 30')),
   'personal.summary': () => ok,
   'memory.graph': () => ok,
   'memory.suggestions': () => ok,
@@ -297,6 +368,20 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   },
   'memory.skip': propId,
   'memory.usage': () => ok,
+  'replay.set': (o) => (typeof o.enabled === 'boolean' ? ok : bad('enabled must be true or false')),
+  'replay.delete': () => ok,
+  'chat.resume': (o) => (typeof o.conv === 'string' && APP_CONV_RE.test(o.conv) ? ok : bad('conv must be a conversation id like c_0123456789abcdef')),
+  'chat.resume.cancel': () => ok,
+  'chat.edit': (o) =>
+    typeof o.oldId !== 'string' || !APP_ENTRY_ID_RE.test(o.oldId)
+      ? bad('oldId must be a history entry id')
+      : typeof o.oldHash !== 'string' || !APP_HASH_RE.test(o.oldHash)
+        ? bad('oldHash must be the SHA-256 of the old text, in hex')
+        : typeof o.conv !== 'string' || !APP_CONV_RE.test(o.conv)
+          ? bad('conv must be a conversation id like c_0123456789abcdef')
+          : text(o, 'text', APP_CHAT_MAX_CHARS, 'text'),
+  'history.versions': entryId,
+  'history.deleteVersion': entryId,
 };
 
 /** The request with only the fields its type uses (nulls dropped). */
@@ -325,12 +410,27 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
       return { id, type, memId: o.memId as string, text: o.text as string };
     case 'jobs.stop':
       return { id, type, jobId: o.jobId as string };
+    case 'jobs.edit':
+      return { id, type, jobId: o.jobId as string, text: o.text as string };
+    case 'media.key':
+      return { id, type, action: o.action as MediaKeyAction };
     case 'memory.forget':
       return { id, type, memId: o.memId as string };
     case 'history.list':
       return { id, type, ...(has('before') ? { before: o.before as string } : {}), ...(has('limit') ? { limit: o.limit as number } : {}) };
     case 'audit.recent':
       return { id, type, ...(has('limit') ? { limit: o.limit as number } : {}) };
+    case 'latency.get':
+      return { id, type, ...(has('days') ? { days: o.days as number } : {}) };
+    case 'replay.set':
+      return { id, type, enabled: o.enabled as boolean };
+    case 'chat.resume':
+      return { id, type, conv: o.conv as string };
+    case 'chat.edit':
+      return { id, type, oldId: o.oldId as string, oldHash: o.oldHash as string, conv: o.conv as string, text: o.text as string };
+    case 'history.versions':
+    case 'history.deleteVersion':
+      return { id, type, entryId: o.entryId as string };
     default:
       return { id, type } as AppRequest;
   }

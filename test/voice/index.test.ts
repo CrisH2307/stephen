@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -80,12 +80,37 @@ describe('stephen listen --text', () => {
     const text = readdirSync(dir).map((f) => readFileSync(join(dir, f), 'utf8')).join('');
     const rows = text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as { id: string; stages: Record<string, number> });
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ trigger: 'cli', route: 'model', outcome: 'ok', tier: null });
+    expect(rows[0]).toMatchObject({ trigger: 'cli', route: 'model', outcome: 'ok', start: 'cold' });
+    // Shadow classifier: a tier (1 or 2) and, for Tier 2, a closed reason code; never the text.
+    expect([1, 2]).toContain((rows[0] as unknown as { tier: number }).tier);
     expect(Object.keys(rows[0]!.stages).sort()).toEqual(['commandStart', 'done', 'replyReady']);
     expect(rows[0]!.stages.replyReady).toBeLessThanOrEqual(rows[0]!.stages.done!);
     expect(text).not.toMatch(/secret|diary/i);
     const hist = readdirSync(join(home, 'history')).map((f) => readFileSync(join(home, 'history', f), 'utf8')).join('');
     expect((JSON.parse(hist.split('\n')[0]!) as { id: string }).id).toBe(rows[0]!.id);
+  });
+
+  it('ADR-007: the history line carries the steps chat.done gets (built from the audit before the append)', async () => {
+    const home = join(tmp, 'home-steps');
+    mkdirSync(home, { recursive: true });
+    const auditLogPath = join(home, 'audit.log');
+    writeFileSync(auditLogPath, `${JSON.stringify({ ts: new Date().toISOString(), tool: 'click', kind: 'click', element: 'button "Send"', outcome: 'denied', verdict: 'confirm' })}\n`);
+    const t = env({ claudePath: fakeClaudePath() }, { loadConfig: () => ({ home, voice: { claudePath: fakeClaudePath() }, auditLogPath }) }, home);
+    expect(await runListen(['--text', 'send the mail'], t.e)).toBe(0);
+    const hist = readdirSync(join(home, 'history')).map((f) => readFileSync(join(home, 'history', f), 'utf8')).join('');
+    const line = JSON.parse(hist.split('\n')[0]!) as { conv?: string; steps?: unknown };
+    expect(line.steps).toEqual([{ text: 'Refused: click button "Send". you did not allow it', status: 'refused' }]);
+    expect(line.conv).toMatch(/^c_[0-9a-f]{16}$/);
+  });
+
+  it('shadow tier: "open youtube" is Tier 1 through the built-in site list (R10b-6)', async () => {
+    const home = join(tmp, 'home-tier');
+    const t = env({ claudePath: fakeClaudePath() }, {}, home);
+    expect(await runListen(['--text', 'open youtube'], t.e)).toBe(0);
+    const dir = join(home, 'telemetry');
+    const rows = readdirSync(dir).flatMap((f) => readFileSync(join(dir, f), 'utf8').split('\n').filter(Boolean)).map((l) => JSON.parse(l) as { tier?: number });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.tier).toBe(1);
   });
 
   it('follow-ups (fake claude + --text): within the window the 2nd command resumes the 1st session; after it, fresh', async () => {
@@ -150,6 +175,20 @@ describe('stephen listen --text', () => {
     expect(existsSync(join(zhome, 'voice', 'conversation-state.json'))).toBe(false);
     expect(zero.out).not.toContain('Working… (follow-up)');
     expect(existsSync(join(zhome, 'voice', 'conversation.json'))).toBe(false);
+  });
+
+  it('--text next to a running listener: no --command-file for its serve, and the listener\'s command.json is untouched', async () => {
+    const home = join(tmp, 'home-text-command-file');
+    const file = join(home, 'voice', 'command.json');
+    mkdirSync(join(home, 'voice'), { recursive: true, mode: 0o700 });
+    const daemon = '{"id":"h_00000000000000aa"}\n'; // the id of the command the daemon listener is running
+    writeFileSync(file, daemon, { mode: 0o600 });
+    const before = statSync(file);
+    const t = env({ claudePath: fakeClaudePath() }, { env: { ...process.env, FAKE_CLAUDE_LOG: join(tmp, 'text-command-file.log') } }, home);
+    expect(await runListen(['--text', 'open youtube'], t.e)).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(daemon);
+    expect(statSync(file).ino).toBe(before.ino); // not rewritten either
+    expect(JSON.parse(readFileSync(join(home, 'voice', 'mcp-config.json'), 'utf8')).mcpServers.stephen.args).not.toContain('--command-file');
   });
 
   it('--text runs (fake) Claude and speaks the cleaned-up reply', async () => {

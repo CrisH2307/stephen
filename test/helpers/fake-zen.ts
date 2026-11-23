@@ -11,15 +11,20 @@
  * WebDriver BiDi as far as Stephen is concerned (Chromium allows several sessions, unlike Gecko).
  * It prints the listening line on stderr exactly like Gecko, and exits when Chromium exits.
  */
-import { chmod, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, link, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const SCRIPT = (chromium: string) => `#!${process.execPath}
+const SCRIPT = (interpreter: string, chromium: string) => `#!${interpreter}
 // fake zen for Stephen tests (generated)
 const { spawn } = require('node:child_process');
 const { readFileSync } = require('node:fs');
 const net = require('node:net');
 const { join } = require('node:path');
+
+// zen-launch finds Zen with \`pgrep -x zen\`, which matches the process name. On macOS that is the interpreter's
+// file name (writeFakeZen runs this script with a node named "zen"). On Linux, Node renames its main thread to
+// "MainThread", so set it back. The command line stays as it is.
+try { require('node:fs').writeFileSync('/proc/self/comm', 'zen'); } catch {}
 
 const args = process.argv.slice(2);
 let profile = null;
@@ -83,8 +88,16 @@ const timer = setInterval(() => {
 
 /** Writes an executable fake `zen` into `dir` that runs `chromium`; returns its path. */
 export async function writeFakeZen(dir: string, chromium: string): Promise<string> {
+  // macOS names a script's process after its interpreter, and a symlink resolves to "node". So run the script with a
+  // hard link to node named "zen" (a copy when the link fails, e.g. another volume). Without this, \`pgrep -x zen\`
+  // finds the fake zen only when a real Zen happens to be running.
+  const binDir = join(dir, 'fake-zen-bin');
+  const interpreter = join(binDir, 'zen');
+  await mkdir(binDir, { recursive: true });
+  const node = await realpath(process.execPath);
+  await link(node, interpreter).catch((e: NodeJS.ErrnoException) => (e.code === 'EEXIST' ? undefined : copyFile(node, interpreter)));
   const path = join(dir, 'zen');
-  await writeFile(path, SCRIPT(chromium), 'utf8');
+  await writeFile(path, SCRIPT(interpreter, chromium), 'utf8');
   await chmod(path, 0o755);
   return path;
 }

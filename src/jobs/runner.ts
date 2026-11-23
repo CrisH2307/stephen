@@ -15,7 +15,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { closeSync, constants as fsConstants, openSync, writeSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { readPrivateJsonFile } from '../lib/fs.js';
-import { killGroup, pidsWithCwdIn, processStart } from '../lib/process.js';
+import { killGroup, pidsWithCwdIn, processStart, startedWithinJob } from '../lib/process.js';
 import { AuditLog } from '../safety/audit.js';
 import { clean } from '../safety/text.js';
 import type { IAuditLog } from '../types.js';
@@ -185,11 +185,15 @@ export class JobSupervisor {
     try {
       // Only what the job could have started: no terminal (the owner's Terminal shells have one) and started at or
       // after the job did (a shell or editor the owner already had open in the folder is never touched).
+      // #121: on Linux the start time may be up to 2 s early (see startedWithinJob). That stays safe because a
+      // process is killed only if ALL three hold: its working folder is inside this job's folder (pidsWithCwdIn),
+      // it has no terminal, and it started inside the slack window. An owner's shell has a terminal; an older
+      // background process in the job's own folder would have to have started within 2 s before the job.
       pids = this.d.stragglers
         ? this.d.stragglers(this.s.spec.folder)
         : pidsWithCwdIn(this.s.spec.folder).filter((pid) => {
             const p = processStart(pid);
-            return p !== null && p.tty === '??' && p.startedAt >= Math.floor(since / 1000) * 1000;
+            return p !== null && (p.tty === '??' || p.tty === '?') && startedWithinJob(p.startedAt, since);
           });
     } catch {
       return 0;

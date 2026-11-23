@@ -1,5 +1,5 @@
 // Stephen Helper: the Stephen window, SwiftUI hosted in one reused NSWindow. The frame (sidebar, page router) is in
-// MainWindow.swift, Home in HomeView.swift, Personal in PersonalView.swift, Conversations and Jobs in their own files; this
+// MainWindow.swift, Home in HomeView.swift, the ⌘K palette in Palette.swift, Conversations and Jobs in their own files; this
 // file has the Accounts helper and the window controller.
 // Data comes from AppModel (AppClient.swift), which talks to `stephen listen` over <home>/run/app.sock.
 //
@@ -12,61 +12,65 @@
 import AppKit
 import SwiftUI
 
-struct NoticeView: View {
-  let text: String
-
-  var body: some View {
-    Text(verbatim: text)
-      .font(.callout)
-      .foregroundColor(.secondary)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 6)
-  }
-}
-
-/** A centred symbol and one line, for lists with nothing in them yet. */
-struct EmptyStateView: View {
-  let symbol: String
-  let text: String
-
-  var body: some View {
-    VStack(spacing: 8) {
-      Image(systemName: symbol).font(.largeTitle).foregroundColor(.secondary)
-      Text(verbatim: text).foregroundColor(.secondary).multilineTextAlignment(.center)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .padding(20)
-  }
-}
-
+/// The window when the listener can't be reached (#144): theme colours, plain words, the same Start as the sidebar, and
+/// the technical reason folded under Details. The caller places it (centred on a page, above Appearance in Settings).
 struct OfflineView: View {
+  @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
+  @ObservedObject var control: StephenControl
+  @State private var problem: String? = nil
 
   var body: some View {
-    VStack(spacing: 12) {
-      Spacer()
-      if model.connection == .connecting {
+    VStack(spacing: Space.m) {
+      // Only the first connect shows "Connecting": the 3 s retries while offline keep the offline view still.
+      if model.connection == .connecting && model.offlineReason == nil {
         ProgressView().controlSize(.small)
-        Text(verbatim: "Connecting to Stephen…").foregroundColor(.secondary)
+        Text(verbatim: "Connecting to Stephen…").font(TypeScale.body).foregroundColor(t.ink2)
       } else {
-        Image(systemName: "bolt.horizontal.circle").font(.largeTitle).foregroundColor(.secondary)
-        Text(verbatim: "Can't reach Stephen. Press Start in the sidebar, or run `stephen listen`.").font(.title3)
-        if let reason = model.offlineReason {
-          Text(verbatim: reason).font(.caption).foregroundColor(.secondary)
+        Image(systemName: "bolt.horizontal.circle").font(.system(size: 32)).foregroundColor(t.ink2).accessibilityHidden(true)
+        Text(verbatim: title).font(TypeScale.section).foregroundColor(t.ink).accessibilityAddTraits(.isHeader)
+        action
+        if let p = problem {
+          Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.ink2).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        Button("Retry") { model.retry() }
+        if let reason = model.offlineReason {
+          DisclosureGroup {
+            Text(verbatim: reason).font(TypeScale.mono).foregroundColor(t.ink2).textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.top, Space.xs)
+          } label: {
+            Text(verbatim: "Details").font(TypeScale.secondary).foregroundColor(t.ink2)
+          }
+          .frame(maxWidth: 420)
+        }
       }
-      Spacer()
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .padding(20)
+    .padding(Space.xl)
+    .onAppear { control.refresh() }
+  }
+
+  /// True words for each listener state: "not running" only when it is stopped.
+  private var title: String {
+    switch control.listener {
+    case .stopped: return "Stephen is not running"
+    case .starting: return "Stephen is starting…"
+    case .running: return "Can't reach Stephen"
+    }
+  }
+
+  @ViewBuilder
+  private var action: some View {
+    switch control.listener {
+    case .stopped: PrimaryButton("Start") { problem = nil; control.start { problem = $0 } }
+    case .starting: EmptyView()
+    case .running: QuietButton("Try again") { model.retry() }
+    }
   }
 }
 
 // ───────────────────────────── accounts ─────────────────────────────
 
-/** An accounts.status row in words (Personal > Connected). Where the secret was found, never the secret. */
+/** An accounts.status row in words (Settings > Accounts). Where the secret was found, never the secret. */
 func accountStateWord(_ account: AccountRow) -> (word: String, kind: StatusKind) {
   let place = account.source.map { $0 == "keychain" ? " · Keychain" : " · \($0)" } ?? ""
   switch account.state {
@@ -86,7 +90,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
   private let control: StephenControl
   private let nav = WindowNav()
   private var window: NSWindow? = nil
-  /** Ask box hooks (⌘K, the sidebar field, Home's Talk and Send). Set before the first show(). */
+  /** Ask box hooks (the Ask Stephen menu item, the banner, Home's Talk). Set before the first show(). */
   var actions = WindowActions()
 
   init(model: AppModel, control: StephenControl) {
@@ -95,10 +99,18 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     super.init()
   }
 
-  /// ⌘K: Home's composer when the window is in front, else the Ask box.
-  @objc func askClicked(_ sender: Any?) {
-    if window?.isKeyWindow == true { nav.askHere() } else { actions.ask() }
+  /// The Ask Stephen menu item: open the Ask box. No shortcut since UI v4: ⌘K is the palette (plan 5.3, open question Q1).
+  @objc func askClicked(_ sender: Any?) { actions.ask() }
+
+  /// ⌘K, "Search and actions…": the main window comes forward first, then the palette opens in it. Never over the Ask
+  /// box (plan 7.5.5).
+  @objc func paletteClicked(_ sender: Any?) {
+    show()
+    nav.paletteOpen = true
   }
+
+  /// ⌘,: the window on Settings, which opens on the pane used last (#147).
+  @objc func settingsClicked(_ sender: Any?) { show(page: .settings) }
 
   func show(page: Page? = nil) {
     if let page = page { nav.page = page }
@@ -122,13 +134,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
   private func makeWindow() -> NSWindow {
     let w = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 860, height: 580),
+      contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],
       backing: .buffered,
       defer: false)
     w.title = "Stephen"
     w.isReleasedWhenClosed = false
-    w.minSize = NSSize(width: 640, height: 420)
+    w.contentMinSize = WindowMetrics.minContent
     w.contentView = NSHostingView(rootView: AppRootView(model: model, nav: nav, control: control, actions: actions))
     w.delegate = self
     w.center()
@@ -147,9 +159,15 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     let appItem = NSMenuItem(title: "Stephen", action: nil, keyEquivalent: "")
     let appMenu = NSMenu(title: "Stephen")
-    let ask = NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "k")
+    let ask = NSMenuItem(title: "Ask Stephen", action: #selector(askClicked(_:)), keyEquivalent: "")
     ask.target = self
     appMenu.addItem(ask)
+    let palette = NSMenuItem(title: "Search and actions…", action: #selector(paletteClicked(_:)), keyEquivalent: "k")
+    palette.target = self
+    appMenu.addItem(palette)
+    let settings = NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")
+    settings.target = self
+    appMenu.addItem(settings)
     appMenu.addItem(
       NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
     appItem.submenu = appMenu

@@ -178,8 +178,20 @@ const VoiceConfigSchema = z
     continueSec: z.number().min(0).max(10).default(4),
     /** Longest wake-word command (whisper hears at most 30 s). */
     maxCommandSec: z.number().min(2).max(60).default(25),
+    /**
+     * "Hey Stephen" while the Mac plays sound (issue #205): the output volume drops to this (0–100) while Stephen
+     * listens, then goes back. Only media commands run then (pause, next, volume…); hold F5 for anything else.
+     */
+    duckVolume: z.number().int().min(0).max(100).default(20),
     /** Give up if nothing is said this long after the wake word. */
     noSpeechTimeoutSec: z.number().min(1).max(30).default(5),
+    /**
+     * Replay recorder (src/replay/recorder.ts, issue #48): save the audio and words of F5 commands on this Mac for
+     * 30 days, to measure mistakes. Off by default. Only the owner turns it on: the Settings switch (app.sock
+     * `replay.set`, src/app/replay-switch.ts) or config.json by hand. No tool writes this key. The listener re-reads it
+     * on every F5 press, so turning it off stops saving at once.
+     */
+    replay: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
     /** Voice output: `tts` (auto|elevenlabs|kokoro|say), `elevenlabs` {voiceId, modelId, apiKeyFile, timeoutSec}, `kokoro` {speaker, speed}. */
     ...TTS_CONFIG_SHAPE,
   })

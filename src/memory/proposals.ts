@@ -11,7 +11,7 @@
  *  - Text goes through checkMemoryText (cleaned, one line, 200 characters at most, secret-looking text refused), the
  *    same rule as memory itself, so a planted "my password is …" is refused before it is even stored.
  *  - At most MAX_PROPOSALS; the oldest is dropped when a new one comes in. Same text twice → the existing one.
- *  - Every proposal says where it came from (`origin`). email, canvas and web are third-party text: `untrusted`.
+ *  - Every proposal says where it came from (`origin`). Only the owner's own text (`you`) exists, so none is `untrusted`.
  *  - Written atomically, 0600 (src/lib/fs.ts). A broken file reads as empty.
  */
 import { join } from 'node:path';
@@ -22,10 +22,6 @@ export { PROPOSAL_ORIGINS, type ProposalOrigin };
 
 export const PROPOSALS_FILE = 'memory-proposals.json';
 export const MAX_PROPOSALS = 20;
-
-export function isUntrustedOrigin(o: ProposalOrigin): boolean {
-  return o === 'email' || o === 'canvas' || o === 'web';
-}
 
 export interface MemoryProposal {
   /** "p3" */
@@ -53,7 +49,7 @@ export function isProposalId(id: unknown): id is string {
   return typeof id === 'string' && ID_RE.test(id);
 }
 
-const withTrust = (p: Stored): MemoryProposal => ({ ...p, untrusted: isUntrustedOrigin(p.origin) });
+const withTrust = (p: Stored): MemoryProposal => ({ ...p, untrusted: false });
 
 // ponytail: no lock file; only `stephen listen` (app.sock) writes this file. Add the MemoryStore lock if a second writer appears.
 export class ProposalStore {

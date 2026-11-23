@@ -272,10 +272,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let clickAction: @MainActor () -> Void
   private let control: StephenControl
   private let startStop: NSMenuItem
+  private let phoneItem: NSMenuItem
+  /** "Recording F5 commands": shown only while the replay recorder is on (issue #48). Not clickable. */
+  private let recordingItem: NSMenuItem
+  private let recordingOn: @MainActor () -> Bool
 
   init(
     checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void,
-    click: @escaping @MainActor () -> Void, control: StephenControl, quit: @escaping () -> Void
+    click: @escaping @MainActor () -> Void, control: StephenControl, recordingOn: @escaping @MainActor () -> Bool,
+    quit: @escaping () -> Void
   ) {
     self.checkPermission = checkPermission
     openWindowAction = openWindow
@@ -283,6 +288,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     self.control = control
     quitAction = quit
     startStop = NSMenuItem(title: "Start Stephen", action: nil, keyEquivalent: "")
+    phoneItem = NSMenuItem(title: "Phone link", action: nil, keyEquivalent: "")
+    recordingItem = NSMenuItem(title: "Recording F5 commands", action: nil, keyEquivalent: "")
+    self.recordingOn = recordingOn
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     header = NSMenuItem(title: "Stephen Helper", action: nil, keyEquivalent: "")
     permission = NSMenuItem(title: "Input Monitoring", action: nil, keyEquivalent: "")
@@ -295,6 +303,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     permission.action = #selector(openSettings(_:))
     permission.isEnabled = true
     menu.addItem(permission)
+    recordingItem.isEnabled = false
+    recordingItem.isHidden = true
+    menu.addItem(recordingItem)
     let openItem = NSMenuItem(title: "Open Stephen…", action: #selector(openWindowClicked(_:)), keyEquivalent: "")
     openItem.target = self
     openItem.isEnabled = true
@@ -303,8 +314,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     startStop.target = self
     startStop.action = #selector(startStopClicked(_:))
     menu.addItem(startStop)
+    // One item with a check mark, not two commands that read like states (#143).
+    phoneItem.target = self
+    phoneItem.action = #selector(phoneClicked(_:))
+    menu.addItem(phoneItem)
     for (title, action) in [
-      ("Phone link on", #selector(phoneOnClicked(_:))), ("Phone link off", #selector(phoneOffClicked(_:))),
       ("Open Zen for Stephen", #selector(zenClicked(_:))), ("Run doctor…", #selector(doctorClicked(_:))),
     ] {
       let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -350,6 +364,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     case .running(let fromApp): startStop.title = fromApp ? "Stop Stephen" : "Stephen is running in Terminal"
     }
     startStop.isEnabled = control.listener != .running(fromApp: false)
+    phoneItem.state = control.phoneLinkOn() ? .on : .off
+    recordingItem.isHidden = !recordingOn()
     render()
   }
 
@@ -379,16 +395,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     if control.listener == .stopped { control.start(report) } else { control.stop(report) }
   }
 
-  @objc func phoneOnClicked(_ sender: Any?) {
-    control.phoneOn { [weak self] m in
-      MainActor.assumeIsolated { self?.show(m.on == true ? "Phone link on" : "Phone link", phoneText(m)) }
+  @objc func phoneClicked(_ sender: Any?) {
+    let done: (AppMessage) -> Void = { [weak self] m in
+      MainActor.assumeIsolated { self?.show(m.on == true ? "Phone link on" : "Phone link off", phoneText(m)) }
     }
-  }
-
-  @objc func phoneOffClicked(_ sender: Any?) {
-    control.phoneOff { [weak self] m in
-      MainActor.assumeIsolated { self?.show("Phone link", phoneText(m)) }
-    }
+    if control.phoneLinkOn() { control.phoneOff(done) } else { control.phoneOn(done) }
   }
 
   @objc func zenClicked(_ sender: Any?) {
@@ -414,16 +425,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   }
 
   private func render() {
-    let status = problem ?? state.label
+    // Words first: a problem, then a missing permission, then the state.
+    let status = problem ?? (granted ? state.label : "Input Monitoring is off")
     if let button = item.button {
-      var attributes: [NSAttributedString.Key: Any] = [.font: NSFont.menuBarFont(ofSize: 0)]
-      if state == .recording { attributes[.foregroundColor] = NSColor.systemRed }
-      let glyph = problem != nil || !granted ? state.glyph + "!" : state.glyph
-      button.attributedTitle = NSAttributedString(string: glyph, attributes: attributes)
-      button.toolTip = "Stephen Helper — \(status)"
+      let image = NSImage(systemSymbolName: state.symbol, accessibilityDescription: nil)
+      image?.isTemplate = true  // the menu bar tints it for light and dark
+      button.image = image
+      button.imagePosition = .imageLeading
+      button.contentTintColor = state == .recording ? .systemRed : nil
+      button.title = problem != nil || !granted ? "!" : ""
+      button.toolTip = "Stephen: \(status)"
+      button.setAccessibilityLabel("Stephen, \(status == state.label ? status.lowercased() : status)")
     }
-    header.title = "Stephen Helper — \(status)"
-    permission.title = "Input Monitoring: \(granted ? "granted" : "not granted") — Open Settings…"
+    header.title = "Stephen: \(status)"
+    // The fix sits right under the header, and only while it is needed.
+    permission.title = "Open Input Monitoring settings…"
+    permission.isHidden = granted
   }
 }
 
@@ -474,10 +491,39 @@ func shutdownAndExit(_ code: Int32) {
   exit(code)
 }
 
+/**
+ * Post a Mac media key (issue #205), like the keyboard's play/pause, next and previous keys: an NX system-defined
+ * event, subtype 8 (NX_SUBTYPE_AUX_CONTROL_BUTTONS), key down then key up. The app that plays sound reacts (Zen,
+ * YouTube in any browser, Spotify, Apple Music). Needs the Accessibility permission. nil when posted, else why not.
+ */
+func postMediaKey(_ key: String) -> String? {
+  if !CGPreflightPostEventAccess() {
+    _ = CGRequestPostEventAccess()  // the system prompt, the first time
+    return "Stephen Helper needs the Accessibility permission (System Settings > Privacy & Security > Accessibility)"
+  }
+  // NX_KEYTYPE_PLAY 16, NX_KEYTYPE_NEXT 17, NX_KEYTYPE_PREVIOUS 18 (IOKit/hidsystem/ev_keymap.h).
+  let code = key == "next" ? 17 : key == "previous" ? 18 : 16
+  for down in [true, false] {
+    let state = down ? 0xA : 0xB
+    guard
+      let event = NSEvent.otherEvent(
+        with: .systemDefined, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state << 8)),
+        timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: (code << 16) | (state << 8), data2: -1),
+      let cg = event.cgEvent
+    else { return "could not make the media key event" }
+    cg.post(tap: .cghidEventTap)
+  }
+  return nil
+}
+
 core.readAudio = { audioWatcher.isPlaying() }
+core.readPostEvents = { CGPreflightPostEventAccess() }
+core.onMediaKey = { key in MainActor.assumeIsolated { postMediaKey(key) } }
 core.onUIState = { s in MainActor.assumeIsolated { statusMenu?.setState(s) } }
 core.onQuit = { shutdownAndExit(0) }
 core.onOpenWindow = { MainActor.assumeIsolated { showStephenWindow() } }
+// The Ask box's mic shows "Listening" only while the helper's press is really down (F5 can end a press the box started).
+core.onPressEnded = { MainActor.assumeIsolated { askBox?.box.micHeld = false } }
 keyTap.onF5Down = { MainActor.assumeIsolated { askBox?.show(focus: false) } }
 audioWatcher.onChange = { playing in core.handleAudio(playing: playing) }
 
@@ -505,6 +551,8 @@ watchdog.setEventHandler {
     core.handleTapInterrupted()
     keyTap.install()
   }
+  let keysOff = !keyTap.isEnabled
+  MainActor.assumeIsolated { if askBox?.box.keysOff != keysOff { askBox?.box.keysOff = keysOff } }
 }
 
 MainActor.assumeIsolated {
@@ -512,16 +560,20 @@ MainActor.assumeIsolated {
   app.setActivationPolicy(.accessory)
   statusMenu = StatusMenu(
     checkPermission: { CGPreflightListenEventAccess() }, openWindow: { showStephenWindow() },
-    click: { askBox?.toggle() }, control: stephenControl, quit: { shutdownAndExit(0) })
+    click: { askBox?.toggle() }, control: stephenControl, recordingOn: { appModel?.recordingOn ?? false },
+    quit: { shutdownAndExit(0) })
   let model = sharedAppModel()
   model.opened("askbox")
+  stephenControl.onStart = { [weak model] in model?.resetRetry() }
   let box = AskBoxController(model: model)
   box.anchor = { statusMenu?.button }
   box.openWindow = { page in showStephenWindow(page: page) }
   box.quit = { shutdownAndExit(0) }
+  box.start = { done in stephenControl.start(done) }
   box.ptt = { down in
     if down { core.handleKeyDown(keyCode: KEYCODE_F5, isRepeat: false) } else { core.handleKeyUp(keyCode: KEYCODE_F5) }
   }
+  box.cancelTalk = { core.handleKeyDown(keyCode: KEYCODE_ESCAPE, isRepeat: false) }
   askBox = box
 
   var granted = CGPreflightListenEventAccess()

@@ -105,15 +105,23 @@ export const LEGACY_ZEN_LAUNCHER_APP_NAME = 'Zen for Claude';
 /** How browser_status / browser_connect / doctor describe attach-only Zen. */
 export const ZEN_ATTACH_ONLY_LABEL = 'attach-only (uses your open Zen; never launches one)';
 
+/** Why a normal Zen window does not work (#89). True to the code: Gecko opens its remote-control port only when started with --remote-debugging-port, which `stephen zen-launch` passes. */
+export const ZEN_WHY_LAUNCHER =
+  "Stephen can only connect to a Zen that was started with its remote-control port open. " +
+  "A normal Zen window does not open that port. The 'Zen for Stephen' app opens Zen with it.";
+
 /** Attach-only: Zen runs, but not with remote control (it was opened normally). */
 export const ZEN_NOT_CLAUDE_READY_MESSAGE =
-  "Zen is open, but it wasn't started with Stephen access. Quit Zen (⌘Q) and reopen it with the 'Zen for Stephen' app " +
-  '(or run `stephen zen-launch`). Your tabs come back if Zen is set to restore your previous session.';
+  "Zen is open, but it wasn't started with Stephen access, so Stephen can't connect to it. Stephen needs \"Zen for Stephen\". " +
+  `${ZEN_WHY_LAUNCHER} ` +
+  "Quit Zen (⌘Q) and reopen it with the 'Zen for Stephen' app (or run `stephen zen-launch`). " +
+  'Your tabs come back if Zen is set to restore your previous session.';
 
 /** Attach-only: no Zen at all. */
 export const ZEN_NOT_RUNNING_MESSAGE =
-  "Zen isn't open. Open Zen with the 'Zen for Stephen' app (or run `stephen zen-launch`) so Stephen can use it — " +
-  'Stephen never starts Zen itself. (One-time setup if that app is missing: `stephen install-zen-launcher`.)';
+  "Zen isn't open. Open Zen with the 'Zen for Stephen' app (or run `stephen zen-launch`) so Stephen can use it. " +
+  `${ZEN_WHY_LAUNCHER} Stephen never starts Zen itself. ` +
+  '(One-time setup if that app is missing: `stephen install-zen-launcher`.)';
 
 const ATTACH_ONLY_MODEL_HINT = ' Tell the user; retrying will not help until they have done this.';
 
@@ -587,15 +595,19 @@ export class ZenDriver extends DriverBase {
     const logPath = this.#logPath(mode);
     const log = await open(logPath, 'w', 0o600);
     let child: SpawnedProcess;
+    let watch: ReturnType<typeof watchLaunch>;
     try {
       child = this.#deps.spawn(exe, buildZenArgs(profileDir, this.#cfg.zen.extraArgs), {
         detached: true,
         stdio: ['ignore', log.fd, log.fd],
       });
+      // Watch before any await: a Zen that exits at once (profile in use) can emit 'exit' while
+      // log.close() is pending, and a listener added after that never sees it (#109).
+      watch = watchLaunch(child);
     } finally {
       await log.close();
     }
-    const { launch, stop } = watchLaunch(child);
+    const { launch, stop } = watch;
     child.unref();
     try {
       if (child.pid === undefined) {

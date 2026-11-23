@@ -25,7 +25,6 @@ export type { SpeakHandle, Speaker } from '../speech.js';
 export { parseTtsConfig, TtsConfigError, TTS_CONFIG_SHAPE, type TtsConfig } from './config.js';
 export { findApiKey } from './keys.js';
 export { ensureKokoro, isKokoroInstalled, KOKORO_MODEL } from './kokoro.js';
-export { redactKey } from './redact.js';
 
 export const TTS_CHAIN: readonly TtsProviderName[] = ['elevenlabs', 'kokoro', 'say'];
 
@@ -50,6 +49,8 @@ export interface TtsDeps {
   fetch?: typeof fetch;
   /** Audio player (default `afplay`). */
   play?: PlayFn;
+  /** Called each time a player process is started (the audio starts now): the latency monitor's `firstAudio`. */
+  onAudio?: () => void;
   /** `say` binary (default "say"). */
   sayCommand?: string;
   kokoroEngine?: KokoroEngineFactory;
@@ -79,7 +80,18 @@ export interface TtsSpeaker extends Speaker {
 /** Build the voice-output Speaker (see the file header). Cheap: nothing runs until the first speak()/plan(). */
 export function createTts(cfg: TtsConfig, deps: TtsDeps): TtsSpeaker {
   const log = deps.log ?? ((l: string) => process.stderr.write(`[stephen] ${l}\n`));
-  const play = deps.play ?? afplayPlayer();
+  const basePlay = deps.play ?? afplayPlayer();
+  const audio = () => {
+    try {
+      deps.onAudio?.();
+    } catch {
+      /* a latency hook never breaks speech */
+    }
+  };
+  const play: PlayFn = (file, name) => {
+    audio();
+    return basePlay(file, name);
+  };
   const modelsRoot = deps.modelsRoot ?? join(deps.home, 'models');
   const logged = new Set<string>();
   const logOnce = (k: string, line: string) => {
@@ -148,7 +160,10 @@ export function createTts(cfg: TtsConfig, deps: TtsDeps): TtsSpeaker {
           ...(deps.kokoroEngine ? { engine: deps.kokoroEngine } : {}),
           ...(deps.tmpRoot ? { tmpRoot: deps.tmpRoot } : {}),
         });
-      } else p = new SayProvider(cfg.voice, cfg.rate, deps.sayCommand);
+      } else {
+        const say = new SayProvider(cfg.voice, cfg.rate, deps.sayCommand);
+        p = { name: say.name, speak: (t) => (audio(), say.speak(t)) };
+      }
       providers.set(name, p);
     }
     return p;

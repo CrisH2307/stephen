@@ -17,9 +17,12 @@ import { AppServer, listenerQueue } from '../app/server.js';
 import { appControl } from '../app/control.js';
 import { usageReport } from '../app/usage.js';
 import { appSettings } from '../app/settings.js';
+import { writeReplaySwitch } from '../app/replay-switch.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
 import { HistoryStore } from '../history/store.js';
+import { ResumeArm, conversationEntries, quotePrompt } from '../history/resume.js';
+import { branchView } from '../history/branch.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
 import { buildNameList } from './names.js';
 import { MemoryStore } from '../memory/store.js';
@@ -27,8 +30,13 @@ import { ProposalStore } from '../memory/proposals.js';
 import { AuditLog } from '../safety/audit.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
-import { toolLogPath } from '../server/tool-log.js';
+import { commandFilePath, toolLogPath } from '../server/tool-log.js';
+import { buildReport, formatReport } from '../telemetry/cli.js';
 import { LatencyMonitor } from '../telemetry/latency.js';
+import { defaultDesktopDeps } from '../desktop/system.js';
+import { listApps } from '../desktop/resolve.js';
+import { classify } from './grammar/classify.js';
+import { builtinLists } from './grammar/sites.js';
 import type { Confirmer } from '../types.js';
 import { LISTEN_USAGE, parseListenArgs } from './args.js';
 import { Assistant, type CommandReport, type CommandRunner, type Trust } from './assistant.js';
@@ -51,13 +59,16 @@ import {
   removePersonaFile,
   probeClaudeFlags,
   resolvePersonaFile,
+  EFFORT_FLAG,
 } from './claude.js';
-import { ToolLogRunner, historyRecorder } from './command-log.js';
+import { ToolLogRunner, editResendAudit, finishCommand, historyRecorder } from './command-log.js';
 import { Conversation, ConversationRunner, WarmConversationRunner, memoryKey } from './conversation.js';
 import { WarmClaude, probeWarmProtocol, type WarmClaudeOptions } from './warm-claude.js';
+import { ReplayRecorder } from '../replay/recorder.js';
 import { claudeTranscriptDir, purgeTranscripts, removeSessionTranscript } from './transcripts.js';
 import { DEFAULT_ASR_MODEL, VoiceConfigError, parseVoiceConfig, type AsrModelId, type VoiceConfig } from './config.js';
 import { SherpaSpotter, SherpaTranscriber, SherpaVad, writeKeywordsFile, type Spotter, type Transcriber, type Vad } from './engine.js';
+import { soundControl, type SoundControl } from './media-command.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
 import { MemoryRouter } from './memory-router.js';
@@ -141,6 +152,8 @@ export interface ListenEnv {
    * there is none. Default: the real client from src/helper/client.ts, loaded lazily (missing → null).
    */
   helper?: (home: string) => Promise<HelperLink | null> | HelperLink | null;
+  /** Volume and media keys for a wake word over playing sound (tests). Default: the real ones, unless `helper` is a fake. */
+  sound?: SoundControl | null;
   /** Clock for the follow-up window (tests). */
   now?: () => number;
   /** Asks before a wake-word "remember …" and "forget everything" (default: a macOS dialog, Deny default, 120 s). */
@@ -356,15 +369,22 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     now: env.date,
     onPurge: (olderThanMs) => void purgeTranscripts(transcripts, olderThanMs, conversation.current()),
   });
+  // Resume (ADR-007 v2): armed only by the owner's "Open in chat" click (app.sock chat.resume); the window's next
+  // message takes it, any other command clears it.
+  const resumeArm = new ResumeArm({ onChange: (on) => app?.resumeArmed(on) });
   if (!args.dryRun) history.purge(); // drop expired history (and old Claude transcripts) at start, not only on the next command (R5-6)
   const toolLog = history.enabled ? toolLogPath(home) : null;
-  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog);
+  // The command id file goes with the tool log (plan A2): the runner that resets the log also writes the id.
+  // Not for `--text`: that is a second process next to a running listener, and it must not relabel its command.
+  const commandFile = toolLog && args.text === null ? commandFilePath(home) : null;
+  const mcpConfigPath = await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, null, 'trusted', commandFile);
   // A fresh `serve --instance` per Claude process (R7-1): the config is rewritten before each spawn (one Claude
   // process at a time: the next spawns only after the previous group is gone), and the runner checks the serve's lock.
   // A wake-word conversation's serve also gets `--trust wake` (R7-2: email shows only who and when).
-  const serveInstance = async (trust: Trust): Promise<ServeInstance> => {
+  // A resumed chat's serve also gets `--assume-private-read` (ADR-007 v2, rule 5).
+  const serveInstance = async (trust: Trust, assumePrivateRead = false): Promise<ServeInstance> => {
     const id = newServeInstance();
-    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust) };
+    return { id, lockPath: serveLockPath(home, id), mcpConfigPath: await writeMcpConfig(voiceDir, process.execPath, cliPath, sessionStatePath, toolLog, id, trust, commandFile, assumePrivateRead) };
   };
   if (!args.dryRun) sweepServeLocks(home, Date.now() - 24 * 3600_000); // file times are real time: left behind by a killed listener
   // Settings > How Stephen talks: changed live by app.sock settings.set, read at the next command (persona, speak, voice).
@@ -396,10 +416,12 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       settings.unsupportedOptionalFlags = probe.unsupportedOptional;
       err(`Note: this Claude Code doesn't know ${[...probe.unsupportedOptional].join(', ')}; running without them (update Claude Code for the faster lock-down).`);
     }
+    // First-token time for the latency monitor: only when this Claude Code lists the flag (warm process only).
+    if (probe?.ok && probe.partialMessages) settings.partialMessages = true;
   }
   // Persona (+ aboutMe + memory) in a 0600 file instead of argv when this Claude Code takes the flag (voice.personaFile).
   if (resolvePersonaFile(cfg.personaFile, probe)) settings.personaFile = join(voiceDir, PERSONA_FILE);
-  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath, sessionStatePath, toolLog))}`);
+  if (args.dryRun) out(`MCP config (${mcpConfigPath}): ${JSON.stringify(mcpConfig(process.execPath, cliPath, sessionStatePath, toolLog, null, 'trusted', commandFile))}`);
   else if (!stephenCliBuilt(cliPath)) err(`Note: ${cliPath} does not exist yet — run \`npm run build\` first, or Claude can't start Stephen's tools.`);
 
   // Memory (memory.enabled): "remember …" / "forget …" are handled before Claude, and the saved texts reach Claude
@@ -448,7 +470,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       };
       warm = new WarmConversationRunner({
         conversation,
-        start: (key, trust) => new WarmClaude(warmOpts, key, memoryForTrust(trust, memoryNow), trust),
+        start: (key, trust, assumePrivateRead) => new WarmClaude(warmOpts, key, memoryForTrust(trust, memoryNow), trust, assumePrivateRead),
         onTiming: (t) => out(formatTiming(t)),
         now: env.now,
         log: err,
@@ -457,7 +479,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   }
   // Dry runs never resume (nothing ran before them); real runs continue a conversation inside the follow-up window.
   const inner: CommandRunner | null = warm ?? (claude ? new ConversationRunner(claude, conversation) : null);
-  const toolRunner = inner && toolLog ? new ToolLogRunner(inner, toolLog, err) : null;
+  const toolRunner = inner && toolLog ? new ToolLogRunner(inner, toolLog, err, commandFile) : null;
   const runner: CommandRunner = toolRunner ?? inner ?? new DryRunRunner(settings, out);
   const recordHistory = args.dryRun ? undefined : historyRecorder(history, toolRunner ? () => toolRunner.tools() : null, err);
   // The Stephen window (app.sock): started once the listener exists; until then (and with --text) it stays null.
@@ -475,19 +497,61 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
   } catch (e) {
     err(`Note: couldn't clear old latency logs (${(e as Error).message}).`);
   }
+  // Shadow mode (plan 2.5, E6a): the classifier only labels the latency row with its tier and reason code. Its text
+  // outputs never leave this function, and nothing it says changes what Stephen does. Sites: the code-owned built-in list
+  // (no owner aliases exist yet).
+  let ownerApps: string[] = [];
+  if (latency) void listApps(defaultDesktopDeps()).then((l) => (ownerApps = l.map((a) => a.name))).catch(() => undefined);
+  const shadowTier = (id: string, said: string) => {
+    try {
+      const k = classify(said, builtinLists(ownerApps));
+      latency?.note(id, k.tier === 1 ? { tier: 1 } : { tier: 2, reason: k.reason });
+    } catch (e) {
+      err(`Note: could not label the latency row (${(e as Error).message}).`);
+    }
+  };
   const onStart = (c: { id: string; source: CommandReport['source']; said: string }) => {
+    resumeArm.commandStarted(c.source); // wake word, F5, phone, --text: never a resumed chat
     latency?.begin(c.id, c.source === 'voice-ptt' ? 'ptt' : c.source === 'voice-wake' ? 'wake' : c.source);
     latency?.mark(c.id, 'commandStart');
+    shadowTier(c.id, c.said);
+    speaking = { id: c.id, marked: false };
     app?.heard(c.said, c.source);
   };
+  // The command whose reply is being spoken (one at a time). Its first player start is `firstAudio`.
+  let speaking: { id: string; marked: boolean } | null = null;
+  const onAudio = () => {
+    if (!speaking || speaking.marked) return;
+    speaking.marked = true;
+    latency?.mark(speaking.id, 'firstAudio');
+  };
+  let lastTts: () => string | null = () => null;
+  /** The last command's finishCommand: --text waits for it, so the history line is on disk before the process exits. */
+  let finishing: Promise<void> = Promise.resolve();
   const onDone = (r: CommandReport) => {
     const end = Date.now();
     latency?.mark(r.id, 'replyReady', end - Math.max(0, r.ms - r.replyMs));
     latency?.mark(r.id, 'done', end);
-    latency?.end(r.id, r.result, { route: r.route, followUp: r.followUp, turns: r.turns });
-    recordHistory?.(r);
+    const heard = speaking?.id === r.id && speaking.marked;
+    if (speaking?.id === r.id) speaking = null;
     const calls = r.ranClaude && toolRunner ? toolRunner.tools() : [];
-    app?.commandDone(r, calls.map((t) => t.tool), calls);
+    // Names and times only (ToolCallRecord's cmd, isError and the rest stay out). start: model times exist only for the
+    // warm process; a follow-up is --resume; anything else is a fresh one-shot process (inference from what Node sees).
+    latency?.end(r.id, r.result, {
+      route: r.route,
+      followUp: r.followUp,
+      turns: r.turns,
+      ...(r.model ? { model: r.model } : {}),
+      ...(r.ranClaude ? { start: r.model || r.followUp ? 'warm' : 'cold' } : {}),
+      ...(calls.length ? { tools: calls.map((t) => ({ name: t.tool, ms: t.ms })) } : {}),
+      ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
+      ...(heard && lastTts() ? { tts: lastTts()! } : {}),
+    });
+    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end }).then(() => {
+      // ADR-010: one audit line per edit and resend (ids and the old source, no text), after the steps were read.
+      const line = editResendAudit(r);
+      if (line && audit) return audit.append(line).catch((e: unknown) => err(`Note: could not audit the edit (${(e as Error).message}).`));
+    });
   };
   // Voice output: ElevenLabs → Kokoro → say fallback chain (src/voice/tts), starting at the chosen voice (voice.tts).
   // Tests inject env.speaker. The speaker is rebuilt when the voice setting changes, and silent when speak is off.
@@ -498,8 +562,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       let current: { voice: string; tts: TtsSpeaker } | null = null;
       const ttsFor = (): TtsSpeaker => {
         const voice = talk.get().voice;
-        if (current?.voice !== voice) current = { voice, tts: createTts({ ...cfg, tts: voice }, { home, log: err }) };
-        return current.tts;
+        if (current?.voice !== voice) current = { voice, tts: createTts({ ...cfg, tts: voice }, { home, log: err, onAudio }) };
+        const tts = current.tts;
+        lastTts = () => tts.lastProvider;
+        return tts;
       };
       if (talk.get().speak) {
         void ttsFor().warm().catch(() => {});
@@ -528,6 +594,10 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       : new JobManager({
           home,
           config: loaded.jobs,
+          modelPrefs: () => {
+            const p = modelStore.get();
+            return settings.unsupportedOptionalFlags?.has(EFFORT_FLAG) ? { ...p, effort: null } : p;
+          },
           timeZone: loaded.timeZone,
           claudePath: cfg.claudePath,
           auditLogPath: loaded.auditLogPath,
@@ -585,10 +655,28 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     return { ...s, accounts: [...s.accounts, phoneAccountRow({ on: isPhoneOn(home), ...(await phoneSignIn()) })] };
   };
   /** Serve <home>/run/app.sock for the Stephen window; null (with a note) when that isn't possible. */
-  const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null): Promise<AppServer | null> => {
+  const startApp = async (l: Listener, a: Assistant, b: HelperBridge | null, rec: { recorder: ReplayRecorder | null; on: () => boolean }): Promise<AppServer | null> => {
     const server = new AppServer({
       home,
-      queue: listenerQueue(l, a),
+      // The window's next message after "Open in chat" takes the armed resume (ADR-007 v2). Stored turns go in only
+      // through the one wrapper, under the content rule for that command's trust. An edited branch (ADR-010) sends
+      // its branch view: the earlier turns it points to, then its own lines.
+      queue: listenerQueue(l, a, () => {
+        const conv = resumeArm.take();
+        if (!conv) return null;
+        const turns = () => branchView(history.all(), conv).lines;
+        return { saved: () => turns().length > 0, prompt: (m: string, trust: Trust) => quotePrompt(turns(), trust, m) };
+      }),
+      resume: {
+        arm: (conv: string) => {
+          if (!history.enabled) return 'History is off, so there is no earlier chat to continue.';
+          if (conversationEntries((o) => history.list(o), conv).length === 0) return 'That conversation is no longer saved.';
+          resumeArm.arm(conv);
+          return null;
+        },
+        cancel: () => resumeArm.clear(),
+        armed: () => resumeArm.armed,
+      },
       listening: () => true,
       model: () => modelStore.get().model ?? 'default',
       memory: memoryStore,
@@ -596,16 +684,30 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       endConversation: () => a.endConversation(),
       history,
       audit,
-      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get() }),
+      settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get(), replay: rec.on() }),
       accounts: allAccounts,
       personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
-      ...(jobManager ? { jobs: appJobs(jobManager) } : {}),
+      ...(jobManager && jobRouter ? { jobs: appJobs(jobManager, jobRouter) } : {}),
       speakReplies: loaded.app.speakReplies,
       setTalk: (c) => void talk.set(c),
       setModel: (c) => void modelStore.set(c),
+      // The owner's Settings switch (app.sock replay.set / replay.delete, issue #48 PR 2).
+      ...(rec.recorder ? { replay: { set: (on: boolean) => writeReplaySwitch(configPath, on), deleteAll: () => rec.recorder!.deleteAll(), on: rec.on } } : {}),
       openWindow: () => (b?.openWindow() ? null : "Stephen Helper isn't connected to stephen listen"),
+      mediaKey: async (action) => {
+        const r = b ? await b.media(action) : { ok: false as const, reason: "Stephen Helper isn't connected to stephen listen" };
+        return r.ok ? null : r.reason;
+      },
       control: appControl({ home, cliPath, log: err }),
       usage: async () => usageReport(warm?.contextUsage() ?? null, memoryTexts?.() ?? []),
+      ...(latency
+        ? {
+            latency: (days: number) => {
+              const report = buildReport(latency.read(days), days);
+              return { triggers: report.triggers, text: formatReport(report) };
+            },
+          }
+        : {}),
       log: err,
     });
     try {
@@ -690,6 +792,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       }
       out(`Heard: "${text}"`);
       const r = await assistant.handle(text, { source: 'cli', raw: text });
+      await finishing;  // bounded: finishCommand waits at most the 400 ms audit read, then one sync append
       return r === 'ok' ? 0 : 1;
     }
 
@@ -732,6 +835,18 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       err((e as Error).message);
       return 1;
     }
+    // Replay recorder (issue #48): off unless the owner turned it on, re-read on every F5 press. Saves only while a
+    // Stephen window is connected to app.sock to show "Recording on" (issue #208): no app.sock, no recording.
+    // start() purges clips older than 30 days even when it is off. Never awaited: it can't delay start-up.
+    const replayOn = (): boolean => parseVoiceConfig((env.loadConfig ?? loadConfig)().voice).replay.enabled;
+    const replay = args.dryRun
+      ? null
+      : new ReplayRecorder({
+          home,
+          enabled: () => app?.recordingAllowed() === true,
+          log: (code) => err(`Note: ${code}`),
+        });
+    void replay?.start();
     listener = new Listener(
       {
         wakePhrase: cfg.wakePhrase,
@@ -746,10 +861,35 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         once: args.once,
         cooldownSec: cfg.cooldownSec,
         wakeWord,
+        duckVolume: cfg.duckVolume,
       },
-      { source, ...engines, assistant, chimes, latency, names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined, status: out, onTranscript: env.onTranscript, helper: bridge, onState: (s) => app?.setState(s) },
+      {
+        source,
+        ...engines,
+        assistant,
+        chimes,
+        latency,
+        // A wake word over playing sound (issue #205). Tests with a fake helper never touch the real volume.
+        audit,
+        sound: env.sound !== undefined ? env.sound : !args.dryRun && !env.helper && process.platform === 'darwin' ? soundControl(defaultDesktopDeps(), () => bridge) : null,
+        names: memoryStore ? () => buildNameList(memoryStore.listSync().map((m) => m.text)) : undefined,
+        status: out,
+        onTranscript: env.onTranscript,
+        helper: bridge,
+        onState: (s) => app?.setState(s),
+        replay,
+      },
     );
-    if (loaded.app.enabled) app = await startApp(listener, assistant, bridge);
+    if (loaded.app.enabled) app = await startApp(listener, assistant, bridge, {
+        recorder: replay,
+        on: () => {
+          try {
+            return replayOn();
+          } catch {
+            return false;
+          }
+        },
+      });
     phone = await startPhone(listener, assistant);
     // Fire timers only while listening. The notification shows at once; the spoken alert waits in ONE queue until the
     // listener is idle (not recording, no command, nobody talking) and runs through listener.submit, so it counts as
@@ -788,7 +928,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     if (jobManager) {
       finishWatcher = new FinishWatcher({
         home,
-        list: () => jobManager.list(),
+        list: () => jobManager.listAsync(), // async ps: the audio loop never waits on it (#202 B2)
         notify: jobNotify,
         say: (text) => {
           out(`Job: ${text}`);

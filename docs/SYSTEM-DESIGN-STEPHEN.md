@@ -531,6 +531,7 @@ shown as New, saved only when the owner presses Keep (or edits, then keeps). Wir
 - **Sources.** This PR ships one source: the Tell Stephen box (`memory.propose`, origin `you`). Proposals from the end
   of a chat are a follow-up (see below). Every proposal carries its origin (`you`, `chat`, `email`, `canvas`, `web`);
   the last three are third-party text and are marked `untrusted`, and the page labels them ("From Canvas").
+  Not built: the other origins (end-of-chat proposals, email, canvas, web). Only origin `you` exists; any other origin in a file reads as absent.
 - **Keep is a UI action only.** `memory.keep {propId, text?}` and `memory.skip {propId}` exist only on app.sock (the
   owner's window, same trust as memory.json). Keep goes through `MemoryStore.add` (same lock, caps, cleaning and
   secret filter), records `origin` on the item ("From Canvas, you kept it"), ends the warm conversation like any

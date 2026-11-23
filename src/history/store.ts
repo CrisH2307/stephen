@@ -3,29 +3,28 @@
  * `<home>/history/YYYY-MM-DD.jsonl` (local date). A log for the owner only: it is never sent back to Claude.
  *
  *  - Folder 0700, files 0600, opened with O_NOFOLLOW; each entry is ONE O_APPEND write.
- *  - `retentionDays` (config `history.retentionDays`, default 1, 0 to 30): a rolling window (same time N days ago).
+ *  - `retentionDays` (config `history.retentionDays`, default 7, 0 to 30): a rolling window (same time N days ago).
  *    Older entries are deleted on every append, list() and purge() (listener start, `stephen history`).
  *    0 = history off: nothing is written and purge deletes every day file.
- *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 5 MB per day file (a full day drops new entries).
+ *  - Caps: said 2000 chars, reply 4000 chars, 100 tool calls, 40 steps of 160 chars, 5 MB per day file (a full day
+ *    drops new entries).
+ *  - Optional `conv` (conversation id) and `steps` (what chat.done showed), ADR-007. Old lines without them still read.
+ *  - Optional `editOf` (ADR-010): only on the first line of an edited branch, the conversation, command id and time of
+ *    the message that was edited. Parsed field by field; a bad one is dropped, never trusted, and so is one whose time
+ *    is outside the retention window when read.
+ *    Stored text is data for the owner to look at, never instructions: nothing reads it to decide anything.
  *  - Malformed lines are skipped when reading.
  */
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
-  closeSync,
-  constants as fsConstants,
-  fchmodSync,
-  fstatSync,
   lstatSync,
   mkdirSync,
-  openSync,
   readdirSync,
-  readFileSync,
   unlinkSync,
-  writeSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { writePrivateFileAtomicSync } from '../lib/fs.js';
+import { appendPrivateLineCapped, readPrivateRegularFile, writePrivateFileAtomicSync } from '../lib/fs.js';
 import { truncate } from '../safety/text.js';
 import { parseToolCallRecord, type ToolCallRecord } from '../server/tool-log.js';
 
@@ -33,6 +32,17 @@ export const HISTORY_SOURCES = ['voice-ptt', 'voice-wake', 'app', 'cli', 'phone'
 export type HistorySource = (typeof HISTORY_SOURCES)[number];
 export const HISTORY_OUTCOMES = ['ok', 'error', 'cancelled', 'memory'] as const;
 export type HistoryOutcome = (typeof HISTORY_OUTCOMES)[number];
+
+/** One line of a command's action chain (src/app/steps.ts builds them; chat.done and the history line carry them). */
+export interface ChatStep {
+  text: string;
+  status: 'ok' | 'refused' | 'failed';
+}
+export const CHAT_STEP_STATUSES = ['ok', 'refused', 'failed'] as const;
+/** At most this many steps per command (maxTurns bounds a command; this keeps one push small). */
+export const MAX_CHAT_STEPS = 40;
+/** Each step's text is cut to this many characters. */
+export const MAX_STEP_CHARS = 160;
 
 /** One command, exactly as stored (section 2). */
 export interface HistoryEntry {
@@ -50,6 +60,33 @@ export interface HistoryEntry {
   ms: number;
   /** Claude turns used (0 for memory commands handled locally). */
   turns: number;
+  /** Conversation id (newConversationId), the same on every line of one conversation. Absent on older lines. */
+  conv?: string;
+  /** The steps chat.done carried for this command (ADR-007 point 6). Absent when there were none or the audit read failed. */
+  steps?: ChatStep[];
+  /** ADR-010: on the first line of an edited branch only, the message it is a new version of. */
+  editOf?: EditOf;
+  /**
+   * Set on read only, never stored: this line was an edit whose editOf fell outside the retention window and was
+   * dropped. Its fields are not kept or trusted; it only makes the branch show "The earlier part ... has expired."
+   */
+  editExpired?: true;
+}
+
+/** The message a branch is an edit of (ADR-010): its conversation, its command id and its time (epoch ms). */
+export interface EditOf {
+  conv: string;
+  id: string;
+  /** The edited line's time: the branch view cuts the earlier conversation here, even after that line is deleted. */
+  ts: number;
+}
+
+/** A valid editOf from parsed JSON, or null (a bad one is dropped, never trusted). */
+export function parseEditOf(v: unknown): EditOf | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const { conv, id, ts } = v as Record<string, unknown>;
+  if (typeof ts !== 'number' || !Number.isFinite(ts) || ts < 0) return null;
+  return typeof conv === 'string' && CONV_RE.test(conv) && typeof id === 'string' && ID_RE.test(id) ? { conv, id, ts } : null;
 }
 
 /** What callers pass to append: id and ts are filled in when absent. */
@@ -64,6 +101,7 @@ export const DEFAULT_LIST_LIMIT = 20;
 
 const DAY_FILE_RE = /^(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const CONV_RE = /^c_[0-9a-f]{16}$/;
 
 /** `<home>/history` */
 export function historyDir(home: string): string {
@@ -73,6 +111,25 @@ export function historyDir(home: string): string {
 /** A fresh history entry id ("h_" + 16 hex digits). The Assistant picks it when a command starts (app chat.accepted). */
 export function newHistoryId(): string {
   return `h_${randomBytes(8).toString('hex')}`;
+}
+
+/** A fresh conversation id ("c_" + 16 hex digits). The Assistant mints it when a conversation starts. */
+export function newConversationId(): string {
+  return `c_${randomBytes(8).toString('hex')}`;
+}
+
+/** Valid steps from parsed JSON, cut to the caps (bad lines are dropped). */
+export function parseSteps(v: unknown): ChatStep[] {
+  if (!Array.isArray(v)) return [];
+  const out: ChatStep[] = [];
+  for (const s of v) {
+    if (out.length >= MAX_CHAT_STEPS) break;
+    if (!s || typeof s !== 'object') continue;
+    const { text, status } = s as Record<string, unknown>;
+    if (typeof text !== 'string' || !CHAT_STEP_STATUSES.includes(status as ChatStep['status'])) continue;
+    out.push({ text: truncate(text, MAX_STEP_CHARS), status: status as ChatStep['status'] });
+  }
+  return out;
 }
 
 /** Local calendar date as YYYY-MM-DD. */
@@ -116,6 +173,8 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
   if (typeof o.said !== 'string' || typeof o.reply !== 'string') return null;
   if (!Array.isArray(o.tools)) return null;
   const tools = o.tools.map(parseToolCallRecord).filter((t): t is ToolCallRecord => t !== null);
+  const steps = parseSteps(o.steps);
+  const editOf = parseEditOf(o.editOf);
   return {
     id: o.id,
     ts: o.ts,
@@ -127,7 +186,19 @@ export function parseHistoryEntry(v: unknown): HistoryEntry | null {
     followUp: o.followUp === true,
     ms: nonNegInt(o.ms),
     turns: nonNegInt(o.turns),
+    ...(typeof o.conv === 'string' && CONV_RE.test(o.conv) ? { conv: o.conv } : {}),
+    ...(steps.length > 0 ? { steps } : {}),
+    ...(editOf ? { editOf } : {}),
   };
+}
+
+/** One stored line, or null when it is not a valid entry. */
+function parseLine(l: string): HistoryEntry | null {
+  try {
+    return parseHistoryEntry(JSON.parse(l));
+  } catch {
+    return null;
+  }
 }
 
 export class HistoryStore {
@@ -175,23 +246,12 @@ export class HistoryStore {
     });
     if (!stored) throw new HistoryError('invalid history entry');
     const line = `${JSON.stringify(stored)}\n`;
-    const bytes = Buffer.byteLength(line);
     this.ensureDir();
     const file = join(this.dir, `${localDate(now)}.jsonl`);
-    let fd: number;
     try {
-      fd = openSync(file, fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW, 0o600);
+      if (!appendPrivateLineCapped(file, line, MAX_DAY_FILE_BYTES)) return null;
     } catch (e) {
-      throw new HistoryError(`cannot open ${file}: ${(e as Error).message}`);
-    }
-    try {
-      const st = fstatSync(fd);
-      if (!st.isFile()) throw new HistoryError(`${file} is not a regular file`);
-      if ((st.mode & 0o777) !== 0o600) fchmodSync(fd, 0o600);
-      if (st.size + bytes > MAX_DAY_FILE_BYTES) return null;
-      writeSync(fd, line);
-    } finally {
-      closeSync(fd);
+      throw new HistoryError((e as Error).message);
     }
     return stored;
   }
@@ -217,11 +277,66 @@ export class HistoryStore {
           e = null;
         }
         if (!e || Date.parse(e.ts) < oldestMs || (before !== null && Date.parse(e.ts) >= before)) continue;
-        out.push(e);
+        out.push(this.inWindow(e, oldestMs));
         if (out.length >= limit) return out;
       }
     }
     return out;
+  }
+
+  /**
+   * Every stored entry inside retention, oldest first (file order). For the branch view and versions (ADR-010).
+   * ponytail: reads every day file (7 days, 5 MB each at most) per call; index by conv if edits get slow.
+   */
+  all(): HistoryEntry[] {
+    this.purge();
+    if (!this.enabled) return [];
+    const oldestMs = this.cutoffMs();
+    const out: HistoryEntry[] = [];
+    for (const name of this.dayFiles().sort()) {
+      for (const l of this.readDayFile(join(this.dir, name))) {
+        const e = parseLine(l);
+        if (e && Date.parse(e.ts) >= oldestMs) out.push(this.inWindow(e, oldestMs));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * "Delete this version" (ADR-010), the owner's click behind a confirm: deletes the lines of conversation `conv`
+   * from its line `fromId` on (that line and every later one of the same conversation). Nothing of another
+   * conversation, and no earlier line, is touched. Returns how many lines were deleted (0 when `fromId` is not a line
+   * of `conv`).
+   */
+  deleteVersion(conv: string, fromId: string): number {
+    const from = this.all().find((e) => e.id === fromId && e.conv === conv);
+    if (!from) return 0;
+    const fromMs = Date.parse(from.ts);
+    let n = 0;
+    for (const name of this.dayFiles()) {
+      const file = join(this.dir, name);
+      const lines = this.readDayFile(file);
+      const keep = lines.filter((l) => {
+        const e = parseLine(l);
+        return !(e && e.conv === conv && (e.id === fromId || Date.parse(e.ts) > fromMs));
+      });
+      if (keep.length === lines.length) continue;
+      n += lines.length - keep.length;
+      try {
+        if (keep.length) writePrivateFileAtomicSync(file, keep.map((l) => `${l}\n`).join(''));
+        else unlinkSync(file);
+      } catch (e) {
+        throw new HistoryError((e as Error).message);
+      }
+    }
+    return n;
+  }
+
+  /** The entry without its editOf when that time is outside the retention window (older than kept, or in the future). */
+  private inWindow(e: HistoryEntry, oldestMs: number): HistoryEntry {
+    if (!e.editOf || (e.editOf.ts >= oldestMs && e.editOf.ts <= this.now().getTime())) return e;
+    const { editOf: _dropped, ...rest } = e;
+    return { ...rest, editExpired: true };
   }
 
   /** Delete every day file. Returns how many were deleted. */
@@ -318,19 +433,8 @@ export class HistoryStore {
 
   /** Lines of one day file; a missing, symlinked, non-regular or oversized file reads as empty. */
   private readDayFile(file: string): string[] {
-    let text: string;
-    try {
-      const fd = openSync(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      try {
-        const st = fstatSync(fd);
-        if (!st.isFile() || st.size > MAX_DAY_FILE_BYTES) return [];
-        text = readFileSync(fd, 'utf8');
-      } finally {
-        closeSync(fd);
-      }
-    } catch {
-      return [];
-    }
+    const text = readPrivateRegularFile(file, MAX_DAY_FILE_BYTES);
+    if (text === null) return [];
     return text.split('\n').filter((l) => l.trim());
   }
 }

@@ -7,7 +7,7 @@
  * (same server, old name) so Claude Code does not start two copies — and says so. Without --run it only prints
  * the commands. Everything goes through `execFile` with argv arrays (no shell).
  */
-import { execFile } from 'node:child_process';
+import { execNoThrow } from './lib/process.js';
 import { SERVER_NAME } from './server/index.js';
 
 /** The MCP server name used before the rename; `install --run` removes a user-scope registration under it. */
@@ -55,18 +55,15 @@ function isNotRegistered(r: ClaudeResult): boolean {
 
 const firstLine = (s: string) => s.trim().split('\n')[0] ?? '';
 
-export const defaultRunClaude: RunClaude = (args) =>
-  new Promise((resolve) => {
-    execFile('claude', args, { timeout: 60_000 }, (err, stdout, stderr) => {
-      const raw = err ? (err as NodeJS.ErrnoException & { code?: unknown }).code : 0;
-      resolve({
-        code: typeof raw === 'number' ? raw : err ? null : 0,
-        stdout: String(stdout ?? ''),
-        stderr: String(stderr ?? '') || (err && typeof raw !== 'number' ? err.message : ''),
-        notFound: raw === 'ENOENT',
-      });
-    });
-  });
+export const defaultRunClaude: RunClaude = async (args) => {
+  const r = await execNoThrow('claude', args, 60_000);
+  return {
+    code: r.code,
+    stdout: r.stdout,
+    stderr: r.stderr || (r.error && r.code === null ? r.error.message : ''),
+    notFound: r.error?.code === 'ENOENT',
+  };
+};
 
 /** Run `stephen install` (print only) or `stephen install --run`. Returns the exit code. */
 export async function runInstall(opts: { run: boolean; cliPath: string }, deps: InstallDeps): Promise<number> {
