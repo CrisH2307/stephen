@@ -314,12 +314,31 @@ private struct ModelSettingsPane: View {
   var body: some View {
     Form {
       Section {
-        Segmented("Model", options: Self.aliases.map { ($0, $0.capitalized) } + [("default", "Default"), ("other", "Other")], selection: $choice.onSet { saved = false }, caption: true)
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Caption("Model")
+          Picker("Model", selection: $choice.onSet { saved = false }) {
+            ForEach(Self.aliases, id: \.self) { Text(verbatim: $0.capitalized).tag($0) }
+            Text("Default").tag("default")
+            Text("Other").tag("other")
+          }
+          .labelsHidden().pickerStyle(.menu)
+        }
         if choice == "other" {
           TextField("Model name, for example claude-haiku-5-5", text: $custom).textFieldStyle(.roundedBorder).font(TypeScale.body)
             .accessibilityLabel("Model name").onChange(of: custom) { _ in saved = false }
         }
-        Segmented("Effort", options: [("default", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra"), ("max", "Max")], selection: $effort.onSet { saved = false }, caption: true)
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Caption("Effort")
+          Picker("Effort", selection: $effort.onSet { saved = false }) {
+            Text("Default").tag("default")
+            Text("Low").tag("low")
+            Text("Medium").tag("medium")
+            Text("High").tag("high")
+            Text("Extra").tag("xhigh")
+            Text("Max").tag("max")
+          }
+          .labelsHidden().pickerStyle(.menu)
+        }
       }
       Section {
         HStack(spacing: Space.m) {
