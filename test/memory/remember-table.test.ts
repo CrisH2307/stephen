@@ -5,6 +5,7 @@
  * - cli: cleanTypedCommand(raw) as text and raw (`stephen listen --text`, src/voice/index.ts);
  * - voice-ptt and voice-wake: normalizeTranscript(raw) and the raw transcript (src/voice/listener.ts).
  * S = saved, N = nothing saved (goes to Claude), C = refused as a code.
+ * phone: always N, the router refuses every phone memory (ADR-005).
  * A row where typed and voice differ is on purpose today (voice-only refusals). Change a row only with a dev-lane decision.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -84,6 +85,16 @@ const TABLE: [string, Want, Want, Want][] = [
   ['Remember I parked on level 3', 'S', 'S', 'S'],
   ["Remember that my sister's name is Ana", 'S', 'S', 'S'],
   ['Remember I have a dentist appointment on Friday', 'S', 'S', 'S'],
+  // names and plain statements that start with an auxiliary or modal word (fixes narrowed the opener rule)
+  ["Remember Will's birthday is March 3", 'S', 'S', 'S'],
+  ['Remember May is my sister', 'S', 'S', 'S'],
+  ['Remember do not park on Main St', 'S', 'S', 'S'],
+  ['Remember that has to be done by Friday', 'S', 'S', 'S'],
+  ['Remember my gym should be open on Sundays', 'S', 'S', 'S'],
+  // a question with odd spacing, quotes or a zero-width space
+  ["Remember isn't my gym open", 'N', 'N', 'N'],
+  ['Remember  "is my gym open today"', 'N', 'N', 'N'],
+  ['Remember\u200bis my gym open today', 'N', 'N', 'N'],
 ];
 
 /** What the real caller of `source` passes to MemoryRouter.route for `phrase`. */
@@ -105,12 +116,13 @@ async function outcome(phrase: string, source: MemorySource): Promise<Want> {
 }
 
 describe('#202 H3 one remember guard: the same table for typed and voice', () => {
-  it.each(TABLE)('%j: typed %s, voice-ptt %s, voice-wake %s', async (phrase, typed, ptt, wake) => {
+  it.each(TABLE)('%j: typed %s, voice-ptt %s, voice-wake %s (phone always N)', async (phrase, typed, ptt, wake) => {
     expect({
       app: await outcome(phrase, 'app'),
       cli: await outcome(phrase, 'cli'),
       'voice-ptt': await outcome(phrase, 'voice-ptt'),
       'voice-wake': await outcome(phrase, 'voice-wake'),
-    }).toEqual({ app: typed, cli: typed, 'voice-ptt': ptt, 'voice-wake': wake });
+      phone: await outcome(phrase, 'phone'),
+    }).toEqual({ app: typed, cli: typed, 'voice-ptt': ptt, 'voice-wake': wake, phone: 'N' });
   });
 });
