@@ -58,10 +58,14 @@ struct AppearanceSettings: View {
           }
         }
         .padding(.vertical, Space.xs)
-        FormRow("Follow the Mac", detail: "Light by day, Dark at night. The window and the Ask box change together.") {
-          Toggle("Follow the Mac", isOn: Binding(get: { store.choice.followMac }, set: { store.setFollowMac($0) }))
-            .labelsHidden().toggleStyle(StephenSwitch())
+        Toggle(isOn: Binding(get: { store.choice.followMac }, set: { store.setFollowMac($0) })) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: "Follow the Mac").font(TypeScale.body).foregroundColor(t.ink)
+            Text(verbatim: "Light by day, Dark at night. The window and the Ask box change together.")
+              .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+          }
         }
+        .tint(t.accent)
       } header: {
         Text(verbatim: "Theme")
       }
