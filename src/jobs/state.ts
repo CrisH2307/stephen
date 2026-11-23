@@ -174,7 +174,7 @@ function claudeRuns(s: Pick<JobState, 'sessionId'>, pid: number, alive?: (pid: n
 
 /**
  * A job that says queued/running but whose supervisor is gone: mark it failed (and stop a Claude Code it left
- * behind, only while that pid can still be ours: before the deadline + OVERDUE_MS). Returns the state to use.
+ * behind: proven ours by its --session-id, or before the deadline + OVERDUE_MS). Returns the state to use.
  */
 export function reconcile(home: string, s: JobState, o: ReconcileOptions = {}): JobState {
   if (isFinal(s.status)) return s;
@@ -185,7 +185,7 @@ export function reconcile(home: string, s: JobState, o: ReconcileOptions = {}): 
     if (now - s.createdAt > QUEUED_STALE_MS) why = RUNNER_NOT_STARTED;
   } else if (s.pid === null || !supervisorRuns(s, s.pid, o.alive) || now > deadline) {
     why = RUNNER_GONE;
-    if (s.claudePid !== null && now <= deadline && claudeRuns(s, s.claudePid, o.alive)) (o.kill ?? killGroup)(s.claudePid, 'SIGKILL');
+    if (s.claudePid !== null && (now <= deadline || !o.alive) && claudeRuns(s, s.claudePid, o.alive)) (o.kill ?? killGroup)(s.claudePid, 'SIGKILL');
   }
   return why ? markFailed(home, s, now, why, o) : s;
 }
@@ -223,7 +223,8 @@ export async function reconcileAsync(home: string, s: JobState, o: ReconcileOpti
     if (runs !== false) return s; // still running, or ps did not answer: look again next poll
   }
   const claudePid = s.claudePid;
-  if (claudePid !== null && now <= deadline && (o.alive || s.sessionId)) {
+  // Past the deadline only with the --session-id match: then the pid is still ours, whatever the time (#296).
+  if (claudePid !== null && (now <= deadline || !o.alive) && (o.alive || s.sessionId)) {
     // Fresh check, then the kill at once: no cache, no other await in between (R8-5).
     const claude = await runsAsync(claudePid, o.alive, (cmd) => cmd.includes(`--session-id ${s.sessionId}`));
     if (claude === null) return s; // ps did not answer: Claude may still run, so look again next poll
