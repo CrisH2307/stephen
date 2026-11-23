@@ -96,7 +96,7 @@ const VOICE_FACT_VERBS = new Set([
 const SUBJECT_WORDS = new Set(['i', 'we', 'you', 'they', 'he', 'she', 'it']);
 function voiceFactShape(body: string): boolean {
   // A to-do ("i need to pay the rent") or a shared memory ("that time we went to the lake") is not a fact.
-  if (/\b(?:need|needs|have|has|got) to\b/.test(body)) return false;
+  if (/\b(?:need|needs|have|has|got) to\b|\b(?:should|must)\b|\bsupposed to\b/.test(body)) return false;
   if (/^(?:the )?(?:last |one |first |good old )?(?:time|times|night|day|days|summer)\b/.test(body)) return false;
   const w = body.split(' ');
   // "i teach grade five", "we live downtown": a first-person statement.
@@ -176,7 +176,7 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
   if (QUESTION_RE.test(command) || (opts.raw !== undefined && QUESTION_RE.test(opts.raw))) return null;
   // A "?" anywhere ("remember that? that was crazy", a curly quote after it, a full-width one) is a question too,
   // typed or spoken (dev lane, 2026-11-21).
-  if (/[?？¿]/.test(opts.raw ?? command)) return null;
+  if (/[?？¿❓❔﹖⁇⁈‽⸮]/.test(opts.raw ?? command)) return null;
   let body: string | null = null;
   let opener = '';
   for (const [i, re] of REMEMBER_RES.entries()) {
@@ -192,8 +192,9 @@ export function parseDetailed(command: string, opts: ParseOpts): { intent: Memor
     }
   }
   if (body !== null) {
-    // "remember to call mom" is a reminder, not a fact; "remember when …" is a question.
-    if (/^(?:to|when|what|where|who|how|why|if|me)\b/.test(body)) return null;
+    // "remember to call mom" is a reminder, not a fact; "remember when …" is a question. An auxiliary, modal or
+    // wh-word opener ("remember is my gym open today", "remember whose car is that") is a question too, on every source.
+    if (/^(?:to|when|what|where|who|how|why|if|me|is|are|was|were|am|do|does|did|have|has|had|can|could|will|would|should|shall|may|might|must|whose|which|whether)\b/.test(body)) return null;
     const split = splitRememberTail(body);
     const rest = split?.rest;
     if (split) body = split.text;
