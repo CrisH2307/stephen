@@ -73,7 +73,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
 | R10a-1 | R10a | Medium | Action chain shows steps carrying another command's id | closed (#110; issue #93 closed; release #279) | dev | #93, `fix/steps-other-command` |
-| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | fixed (#111 merged), Mac check pending; issue #94 still open | dev | #94, `fix/retry-trust-esc-deny` |
+| R10a-2 | R10a | Medium | "Try again" re-sends wake or phone speech as a trusted typed command | closed (#111; Mac check passed 2026-11-23; issue #94 closed; release #279) | dev | #94, `fix/retry-trust-esc-deny` |
 | R10a-3 | R10a | Low | A failed tool call reads as done in the step list | fixed (#134 merged), Mac check pending | dev | `fix/review-10a-lows` |
 | R10a-4 | R10a | Low | Home Allow and Deny delay starts when the view appears, not when the window is shown | open | dev | none |
 | R10a-5 | R10a | Low | "Esc in the box means Deny" may not hold while the text field has focus | fixed (#111 merged), Mac check pending | dev | `fix/retry-trust-esc-deny` |
@@ -88,7 +88,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | fixed in code by #108, Mac check pending (checked 2026-11-17, see #10) | dev | #86, `fix/mic-stop-f5` |
+| R86-F1 | #86 review | Medium | Esc in the Ask box sends the recording when the key listener is off (should cancel) | closed (#108; Mac check passed 2026-11-23; release #279) | dev | #86, `fix/mic-stop-f5` |
 | R86-F2 | #86 review | Low | A recording the listener drops by itself leaves the helper's press down (next F5 lost once, box still says Listening) | fixed (#152 merged), Mac check pending | dev | #106, #152 |
 | R86-F3 | #86 review | Low | Clicking outside an unpinned Ask box sends the recording | fixed (#129 merged; owner chose cancel, 2026-11-16), Mac check pending | dev | #107, #129 |
 | R10a-5 | R10a, owner Mac check 2026-11-12 | Low | Esc did not dismiss an Allow or Deny question in the main window (fails closed) | fixed (#111 merged), Mac check pending | dev | `fix/retry-trust-esc-deny` |
@@ -99,7 +99,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 |---|---|---|---|---|---|---|
 | I-109 | tracker #10 | Low | Full test suite flaky under CPU load (fixed sleeps in the clicks eval; two suites at once) | in progress: #131, #178, #242, #247 and #262 fixed races; macOS CI had 10 green runs (#195); a new macOS flake on 2026-11-22 is #263 (row I-263) | dev | #109, #131 |
 | I-121 | Linux run for #112 | Low | Linux: `ps` start time reads 1 s early; a job's first-second process may be left running | closed (#132 merged; Linux only, Docker: 5 of 5) | dev | #121, #132 |
-| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | fixed (#162 merged), Mac check pending. Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
+| I-137 | review of #128 | Medium | By voice, "remember that song" and "remember the milk" still save (older than #128) | closed (#162; Mac check passed 2026-11-23; release #279). Cost: by voice a name or label with no verb ("my daughter Lily") needs "is" or typing. Ad lines with a real verb still need the wake dialog | dev | #137, `fix/remember-fact-shape` |
 
 ## F. Requests from the dev lane (tracker #10, 2026-11-12)
 
@@ -115,7 +115,7 @@ Refreshed 2026-11-21 for the first `qa` to `main` release: every open row checke
 
 | ID | Source | Severity | Title | Status | Lane | Issue or branch |
 |---|---|---|---|---|---|---|
-| R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | fixed (#128 merged), Mac check pending | dev | #122 |
+| R10b-1 | R10b | Medium | The "?" guard of #114 never runs for speech: spoken questions save memory | closed (#128; Mac check passed 2026-11-23; release #279) | dev | #122 |
 | R10b-2 | R10b | Medium | `mac-checks` 13.1d false FAIL on the latency fields added by #117 | closed (#125) | review | `fix/mac-checks-latency-fields` |
 | R10b-3 | R10b | Low | "don't forget my keys" saves a reminder as a fact | fixed (#128 merged), Mac check pending | dev | #122 |
 | R10b-4 | R10b | Low | New openers match video lines; the wake dialog says you said "remember" | fixed (#128 merged), Mac check pending | dev | #122 |
@@ -148,7 +148,7 @@ Severity "not rated" means the review named the problem but gave no level.
 | R254-1 | review of #254 | not rated | A failed job could move to Earlier; Return in the inspector kept a suggestion; Keep on an empty edit | closed (#254, tests pinned) | dev | #254 |
 | R255-1 | review of #255 | not rated | VoiceOver label type, what you said not copyable, palette query not cleared by the sidebar and Cmd+2 | closed (#255) | dev | #255 |
 | R257-1 | review of #257 | not rated | `finishCommand` could reject and drop the history line; line time; `--text` could hang on an audit read | closed (#257) | dev | #257 |
-| I-248 | tester intern, Mac test 0.2 and 0.4 | Medium | `swiftc` cannot find `SwiftUIMacros.StateMacro` on macOS 27.2.1, so `install-helper` fails | fixed (#251 merged: fall back to an older SDK), Mac check pending; issue still open | dev | #248 |
+| I-248 | tester intern, Mac test 0.2 and 0.4 | Medium | `swiftc` cannot find `SwiftUIMacros.StateMacro` on macOS 27.2.1, so `install-helper` fails | closed (#251: fall back to an older SDK; Mac check passed 2026-11-23; issue closed; release #279) | dev | #248 |
 | I-249 | tester intern | Low | `npx vitest run` fails on Node 21.5.0 but `doctor` passes it | closed (#250: engines `^20.19.0 \|\| >=22.12.0`, doctor checks the same) | dev | #249 |
 | I-262 | macOS CI | Low | Two macOS CI flakes: Zen early exit race, cross-site iframe click read too early | closed (#262) | dev | #109, #262 |
 | I-263 | macOS CI on qa `cd8027e` | Low | `test/drivers/review1.test.ts` D4 "defaults to a 60 s Allow wait" got "Not connected." | open (flake, not rerun alone yet) | dev | #263, #109 |
