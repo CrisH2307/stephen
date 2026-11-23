@@ -1197,6 +1197,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const chat = read('Components/ChatThread.swift');
     expect(chat).toContain('Text(verbatim: "Needs your OK").safetyLabelStyle(t)');
     expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // #185: the eyebrow role is 12 pt regular ink-2, and the safety labels never use it.
+    const theme = read('Theme.swift');
+    expect(theme).toContain('static let eyebrow = Font.system(size: 12)');
+    expect(theme).toContain('return self.font(TypeScale.eyebrow).foregroundColor(t.ink2)');
+    expect(chat).not.toMatch(/"Needs your OK"\)\.eyebrowStyle|problemLabel\(bubble\.steps\)\)\.eyebrowStyle/);
     // UI v4 step b (#139, [DEV REVIEW]): the question card has a 1.5 pt warn outline all round, solid fill, no glass.
     const card = chat.match(/struct ConfirmMessage: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(card).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))');
