@@ -1,0 +1,61 @@
+name: Bug
+description: Something in Stephen does not work.
+title: "Bug: "
+labels: ["bug", "status: to do"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste passwords, keys, private page text, transcripts or audio.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: stephen-version
+    attributes:
+      label: Stephen version
+      description: Run `stephen --version` in Terminal.
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu, About This Mac.
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part?
+      options:
+        - Voice
+        - Window
+        - Browser control
+        - Memory
+        - Jobs and timers
+        - Setup
+        - Other
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else?
