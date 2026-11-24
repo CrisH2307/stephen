@@ -359,6 +359,8 @@ export interface ISafetyGate {
    * wasRead(url) is true; otherwise it hides the title (review #2 finding 1).
    */
   wasRead(url: string): boolean;
+  /** Hosts whose private content was read this session (page reads and Stephen's own account tools). Empty = no taint. */
+  taintedHosts(): string[];
 }
 
 export interface AuditEntry {
