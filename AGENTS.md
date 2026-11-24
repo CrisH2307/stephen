@@ -16,6 +16,11 @@ Stephen is Cris's Mac voice and browser assistant. The repo is public. New here?
   Allow and Deny are clicks only. Changes to `src/safety/`, `helper/AppConfirm.swift`, the memory, timer and job
   write paths, or the app.sock protocol need `[DEV REVIEW]` and an independent review.
 - Checks before a PR: `npm run build && npm run typecheck && npx vitest run`.
+- **Cheapest model that can do the job, with a precise spec.** Every chat and every brief: free agents first
+  (OpenCode, freellm) for drafts, docs, tests and planned non-safety code, then a cheaper model (Haiku or Sonnet) for
+  read-only checks and mechanical steps. Opus only for safety code, design and reviews. The cheaper the model, the
+  more precise the spec: exact files, steps, acceptance test and done check (`docs/AGENT-LOOP.md`). Claude reviews
+  every result and checks every number. Put this rule in every brief you write.
 - **Multi-agent work, and the 50% rule.** We work mainly with many agents. When your context window goes past
   50%, move to a fresh session automatically (write a full hand-over: state, open PRs, rules, next step), or hand
   pieces to subagents or side sessions. Don't wait to be asked. Accuracy drops in long contexts.
