@@ -180,6 +180,8 @@ describe('announce after a private read', () => {
     ['a private page (Zen or Chrome, by URL)', (g) => g.noteRead('https://mail.google.com/mail/u/0/#inbox')],
     ['an account tool (gmail)', (g) => g.notePrivateData('gmail')],
     ['an account tool (calendar)', (g) => g.notePrivateData('calendar')],
+    ['an account tool (canvas)', (g) => g.notePrivateData('canvas')],
+    ['an account tool (notion)', (g) => g.notePrivateData('notion')],
     ['a resumed chat (--assume-private-read)', (g) => g.notePrivateData('private')],
   ];
   for (const trust of [undefined, 'wake'] as const) {
@@ -202,16 +204,19 @@ describe('announce after a private read', () => {
     }
   }
 
-  it('a public page read does not turn it off, and announce never asks the gate (no gate.check, no confirmation)', async () => {
-    const sp = new ControlledSpeaker();
-    sp.auto = true;
-    const { call, gate } = await setup({ speaker: sp });
-    const g = gate as FakeGate;
-    g.noteRead('https://www.youtube.com/results?search_query=lofi');
-    expect((await call({ text: 'Playing lofi beats' })).isError).toBeFalsy();
-    expect(g.checks).toEqual([]);
-    expect(sp.said).toEqual(['Playing lofi beats']);
-  });
+  for (const realGate of [false, true]) {
+    it(`a public page read does not turn it off, and announce never asks the gate (${realGate ? 'real' : 'fake'} gate)`, async () => {
+      const sp = new ControlledSpeaker();
+      sp.auto = true;
+      const { call, gate, audit } = await setup({ speaker: sp }, { realGate });
+      gate.noteRead('https://www.youtube.com/results?search_query=lofi');
+      expect(gate.taintedHosts()).toEqual([]);
+      expect((await call({ text: 'Playing lofi beats' })).isError).toBeFalsy();
+      if (gate instanceof FakeGate) expect(gate.checks).toEqual([]);
+      expect(audit.entries.map((e) => e.tool)).toEqual(['announce']); // no gate decision entry
+      expect(sp.said).toEqual(['Playing lofi beats']);
+    });
+  }
 
   it('steering words are refused first, private read or not', async () => {
     const sp = new ControlledSpeaker();
