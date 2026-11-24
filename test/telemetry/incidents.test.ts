@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { LatencyMonitor } from '../../src/telemetry/latency.js';
 import { incidentDir, parseIncidentRecord, recordIncident, readIncidents, purgeIncidents, lastStage } from '../../src/telemetry/incidents.js';
 
-const T0 = Date.parse('2026-11-10T15:00:00Z');
+const T0 = new Date(2026, 10, 10, 15, 0).getTime(); // local time: day files are named by the local day
 
 function setup() {
   const home = mkdtempSync(join(tmpdir(), 'stephen-inc-'));
@@ -148,7 +148,7 @@ describe('parseIncidentRecord', () => {
 describe('recordIncident', () => {
   it('writes one line to <home>/incidents/YYYY-MM-DD.jsonl', () => {
     const { home } = setup();
-    const now = new Date('2026-11-10T15:30:00Z');
+    const now = new Date(2026, 10, 10, 15, 30);
     const result = recordIncident(home, { part: 'listen', code: 'command_error' }, now);
 
     expect(result).not.toBeNull();
@@ -174,7 +174,7 @@ describe('recordIncident', () => {
     if (process.platform === 'win32') return;
 
     const { home } = setup();
-    const now = new Date('2026-11-10T15:30:00Z');
+    const now = new Date(2026, 10, 10, 15, 30);
     recordIncident(home, { part: 'listen', code: 'uncaught' }, now);
 
     const dir = incidentDir(home);
@@ -197,8 +197,8 @@ describe('recordIncident', () => {
 describe('readIncidents', () => {
   it('returns newest first across two day files, last caps count', () => {
     const { home } = setup();
-    const now1 = new Date('2026-11-10T10:00:00Z');
-    const now2 = new Date('2026-11-11T10:00:00Z');
+    const now1 = new Date(2026, 10, 10, 10, 0);
+    const now2 = new Date(2026, 10, 11, 10, 0);
 
     recordIncident(home, { part: 'listen', code: 'command_error', id: 'c1' }, now1);
     recordIncident(home, { part: 'serve', code: 'uncaught', id: 'c2' }, now1);
@@ -217,7 +217,7 @@ describe('readIncidents', () => {
 
   it('skips bad lines', () => {
     const { home } = setup();
-    const now = new Date('2026-11-10T10:00:00Z');
+    const now = new Date(2026, 10, 10, 10, 0);
 
     // Write a valid record
     recordIncident(home, { part: 'listen', code: 'command_error', id: 'good' }, now);
@@ -236,7 +236,7 @@ describe('readIncidents', () => {
 describe('purgeIncidents', () => {
   it('deletes a day file older than 30 days and keeps a recent one', () => {
     const { home } = setup();
-    const now = new Date('2026-11-10T10:00:00Z');
+    const now = new Date(2026, 10, 10, 10, 0);
 
     // Old incident
     const oldDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 31);
