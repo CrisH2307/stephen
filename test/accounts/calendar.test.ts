@@ -178,6 +178,7 @@ describe('calendar_events over MCP', () => {
     expect(text).toContain('<untrusted_account_data source="calendar">');
     expect(text).not.toContain('SECRETKEY');
     expect(h.gate.dataReads).toEqual(['calendar']);
+    expect(h.gate.dataTools).toEqual(['calendar_events']);
   });
 
   it('not connected → a notice, no taint', async () => {

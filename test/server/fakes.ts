@@ -330,8 +330,11 @@ export class FakeGate implements ISafetyGate {
     this.reads.push(url);
   }
   dataReads: string[] = [];
-  notePrivateData(source: string): void {
+  /** The tool named on each notePrivateData call (for its private-read audit line). */
+  dataTools: Array<string | undefined> = [];
+  notePrivateData(source: string, tool?: string): void {
     this.dataReads.push(source);
+    this.dataTools.push(tool);
   }
   accountCalls = 0;
   /** Refusal text countAccountCall returns (null = allowed). */
