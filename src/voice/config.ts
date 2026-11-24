@@ -192,6 +192,11 @@ const VoiceConfigSchema = z
      * on every F5 press, so turning it off stops saving at once.
      */
     replay: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+    /**
+     * Daily cost limit (docs/NFR-STEPHEN.md section 6): the most model cost in USD per local day. On by default.
+     * At 80% Stephen warns once a day; at 100% it starts no new model run until midnight. Routers stay free.
+     */
+    dailyLimit: z.strictObject({ enabled: z.boolean().default(true), usd: z.number().min(0.01).max(1000).default(1) }).default({ enabled: true, usd: 1 }),
     /** Voice output: `tts` (auto|elevenlabs|kokoro|say), `elevenlabs` {voiceId, modelId, apiKeyFile, timeoutSec}, `kokoro` {speaker, speed}. */
     ...TTS_CONFIG_SHAPE,
   })
@@ -232,7 +237,7 @@ export class VoiceConfigError extends ConfigError {
 function describe(err: z.ZodError): string {
   return err.issues
     .map((i) => {
-      if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"voice.${k}"`).join(', ')}`;
+      if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"voice.${[...i.path, k].join('.')}"`).join(', ')}`;
       const key = i.path.map(String).join('.');
       return `"voice${key ? `.${key}` : ''}": ${i.message}`;
     })
