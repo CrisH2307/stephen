@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | report | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
@@ -73,6 +73,8 @@ Usage:
                          Show your recent commands (kept on this Mac only), or delete them
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
+  stephen report [--last N]
+                         Show recent crashes and failed commands; send them to GitHub only if you type y
   stephen replay delete --all | <id>
                          Delete saved F5 recordings (saved only when voice.replay.enabled is on)
   stephen mac-checks [--json]
@@ -514,6 +516,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./history/cli.js')).runHistoryCli(rest);
     case 'latency':
       return (await import('./telemetry/cli.js')).runLatencyCli(rest);
+    case 'report':
+      return (await import('./telemetry/report.js')).runReportCli(rest);
     case 'replay':
       return (await import('./replay/recorder.js')).runReplayCli(rest, loadConfig().home);
     case 'mac-checks':
