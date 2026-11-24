@@ -221,7 +221,7 @@ export function readIncidents(home: string, last: number): IncidentRecord[] {
         /* skip */
       }
     }
-    out.push(...day.sort((a, b) => b.ts.localeCompare(a.ts)));
+    out.push(...day.reverse().sort((a, b) => b.ts.localeCompare(a.ts))); // reverse first: a tie keeps the later line first
     if (out.length >= last) break;
   }
   return out.slice(0, last);
