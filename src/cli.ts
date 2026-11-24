@@ -34,6 +34,7 @@ import { pageEngine } from './page/index.js';
 import { createSafety } from './safety/index.js';
 import { SELFTEST_USAGE, emergencyCleanup, parseSelftestArgs, runSelftest } from './selftest/index.js';
 import { packageVersion, serveStdio } from './server/index.js';
+import { recordIncident } from './telemetry/incidents.js';
 import type { ResolvedConfig } from './types.js';
 import {
   ZEN_LAUNCHER_USAGE,
@@ -556,11 +557,30 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
+/** The incident part of a command's process: the long-running ones by name, the rest 'other'. */
+export function incidentPart(cmd: string | undefined): 'listen' | 'serve' | 'job' | 'other' {
+  return cmd === undefined || cmd === 'serve' ? 'serve' : cmd === 'listen' ? 'listen' : cmd === 'jobs' ? 'job' : 'other';
+}
+
+/** Write an incident line for a crash: the error's code word only, never its message (docs/NFR-STEPHEN.md section 9). */
+function crashIncident(cmd: string | undefined, e: unknown): void {
+  try {
+    recordIncident(resolveStephenHome().dir, { part: incidentPart(cmd), code: (e as { code?: unknown } | null)?.code as string | undefined, stage: 'run' });
+  } catch {
+    /* never in the way of the crash itself */
+  }
+}
+
+const argv0 = process.argv[2];
+// A monitor only watches: Node still prints the error and exits as before.
+process.on('uncaughtExceptionMonitor', (e) => crashIncident(argv0, e));
 main(process.argv.slice(2)).then(
   (code) => {
     if (code >= 0) process.exitCode = code;
   },
   (e: unknown) => {
+    // A long-running part that failed is an incident; a one-shot command's error is shown to the person already.
+    if (incidentPart(argv0) !== 'other') crashIncident(argv0, e);
     console.error(`stephen: ${errorMessage(e)}`);
     process.exit(1);
   },
