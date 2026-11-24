@@ -23,7 +23,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 
-const { listJobStatesAsync, readJobState, writeJobState } = await import('../../src/jobs/state.js');
+const { listJobStates, listJobStatesAsync, readJobState, writeJobState } = await import('../../src/jobs/state.js');
 type JobState = import('../../src/jobs/state.js').JobState;
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-rcp-')));
@@ -68,6 +68,51 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('u
     } finally {
       hang.clear();
       claude.kill();
+    }
+  });
+
+  it('#296: past the deadline, a Claude proven ours by its --session-id is still killed before the job fails', async () => {
+    const h = home('c');
+    const claude = sleeper('--', '--session-id', 'sess-123');
+    await new Promise((r) => setTimeout(r, 200));
+    const kills: number[] = [];
+    try {
+      writeJobState(h, job({ pid: null, claudePid: claude.pid!, deadlineAt: Date.now() - 3_600_000 }));
+      const [out] = await listJobStatesAsync(h, { kill: (pid) => (kills.push(pid), true) });
+      expect(out!.status).toBe('failed');
+      expect(kills).toEqual([claude.pid]);
+    } finally {
+      claude.kill();
+    }
+  });
+
+  it('#296 sibling: the sync reconcile also kills a Claude proven ours past the deadline', async () => {
+    const h = home('e');
+    const claude = sleeper('--', '--session-id', 'sess-123');
+    await new Promise((r) => setTimeout(r, 200));
+    const kills: number[] = [];
+    try {
+      writeJobState(h, job({ pid: null, claudePid: claude.pid!, deadlineAt: Date.now() - 3_600_000 }));
+      const [out] = listJobStates(h, { kill: (pid) => (kills.push(pid), true) });
+      expect(out!.status).toBe('failed');
+      expect(kills).toEqual([claude.pid]);
+    } finally {
+      claude.kill();
+    }
+  });
+
+  it('#296: past the deadline, a live pid without our --session-id is never killed', async () => {
+    const h = home('d');
+    const other = sleeper('--', '--session-id', 'someone-else');
+    await new Promise((r) => setTimeout(r, 200));
+    const kills: number[] = [];
+    try {
+      writeJobState(h, job({ pid: null, claudePid: other.pid!, deadlineAt: Date.now() - 3_600_000 }));
+      const [out] = await listJobStatesAsync(h, { kill: (pid) => (kills.push(pid), true) });
+      expect(out!.status).toBe('failed');
+      expect(kills).toEqual([]);
+    } finally {
+      other.kill();
     }
   });
 
