@@ -2,6 +2,8 @@
 
 <!-- One or two plain sentences. Link the issue: "Fixes #123" or "Part of #123". -->
 
+Closes #
+
 ## Sibling cases (fixes only)
 
 <!-- H1 in docs/BRANCHING.md. List the cases next to the reported one and say which test covers each.
