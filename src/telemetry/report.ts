@@ -9,7 +9,7 @@
 import { execFile } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { loadConfig } from '../config.js';
-import { readIncidents, type IncidentRecord } from './incidents.js';
+import { purgeIncidents, readIncidents, type IncidentRecord } from './incidents.js';
 
 export const REPORT_REPO = 'CrisH2307/stephen';
 export const REPORT_LABEL = 'incident';
@@ -82,6 +82,7 @@ export async function runReport(argv: string[], d: ReportDeps): Promise<number> 
     d.out(args.error);
     return 2;
   }
+  purgeIncidents(d.home); // expired days are deleted before anything is shown or sent
   const records = readIncidents(d.home, args.last);
   if (!records.length) {
     d.out('No incidents recorded. Nothing to report.');
