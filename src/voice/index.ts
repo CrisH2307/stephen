@@ -20,7 +20,7 @@ import { appSettings } from '../app/settings.js';
 import { writeReplaySwitch } from '../app/replay-switch.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
-import { HistoryStore } from '../history/store.js';
+import { HistoryStore, localDate } from '../history/store.js';
 import { ResumeArm, conversationEntries, quotePrompt } from '../history/resume.js';
 import { branchView } from '../history/branch.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
@@ -33,6 +33,7 @@ import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/inst
 import { commandFilePath, toolLogPath } from '../server/tool-log.js';
 import { buildReport, formatReport } from '../telemetry/cli.js';
 import { LatencyMonitor } from '../telemetry/latency.js';
+import { DailyLimit } from './daily-limit.js';
 import { defaultDesktopDeps } from '../desktop/system.js';
 import { listApps } from '../desktop/resolve.js';
 import { classify } from './grammar/classify.js';
@@ -623,6 +624,24 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         ...(env.now ? { now: env.now } : {}),
       })
     : null;
+  // Daily cost limit (docs/NFR-STEPHEN.md section 6). The config is read again on every check, so an edit applies at
+  // once; a config that no longer parses keeps the value Stephen started with. A dry run costs nothing: no limit.
+  const dailyLimit = latency
+    ? new DailyLimit({
+        limit: () => {
+          try {
+            return parseVoiceConfig((env.loadConfig ?? loadConfig)().voice).dailyLimit;
+          } catch (e) {
+            err(`Note: config could not be read, so the daily limit stays at the start value (${(e as Error).message}).`);
+            return cfg.dailyLimit;
+          }
+        },
+        records: () => latency.read(1),
+        // A job's cost counts on the day it ended (or started, while it runs). Jobs keep their own budget too.
+        jobSpend: (day) => (jobManager?.list() ?? []).reduce((sum, j) => (j.costUsd !== null && localDate(new Date(j.endedAt ?? j.startedAt ?? j.createdAt)) === day ? sum + j.costUsd : sum), 0),
+        log: err,
+      })
+    : null;
   let finishWatcher: FinishWatcher | null = null;
   const makeAssistant = (bridge: HelperBridge | null) => {
     const hooks = assistantHooks(bridge);
@@ -635,6 +654,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       memory: memoryRouter,
       timers: timerRouter,
       jobs: jobRouter,
+      limit: dailyLimit,
       onDone,
       onStart,
       ...hooks,
