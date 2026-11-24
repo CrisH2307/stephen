@@ -108,6 +108,8 @@ export const CLOSE_TIMEOUT_MS = 10_000;
 export interface ReadTicket {
   url: string;
   frames: string[];
+  /** The reading tool, for the private-read audit line. */
+  tool: string;
 }
 
 /**
@@ -211,7 +213,7 @@ export class Hub {
     if (!this.safetyInst) {
       const elicit = this.makeElicit();
       this.elicitSupported = elicit !== undefined;
-      const sdeps: SafetyDeps = elicit ? { elicit } : {};
+      const sdeps: SafetyDeps = { ...(elicit ? { elicit } : {}), ...(this.deps.trust ? { trust: this.deps.trust } : {}) };
       this.safetyInst = this.deps.safetyFactory(this.cfg, sdeps);
     }
     return this.safetyInst;
@@ -263,11 +265,15 @@ export class Hub {
    * that is a read of the page, so it must arm the cross-site taint exactly like snapshot does (review #2
    * verification N4: press_key Tab on an unread Gmail returned a row label holding a 2FA code).
    */
-  noteShown(...urls: Array<string | null | undefined>): void {
+  noteShown(tool: string, ...urls: Array<string | null | undefined>): void {
+    let audited = false; // one audit line per call
     for (const u of urls) {
       if (!u || !/^https?:/i.test(u)) continue;
       try {
-        this.safety().gate.noteRead(u);
+        const gate = this.safety().gate;
+        const t = !audited && gate.isPrivate(u) ? tool : undefined;
+        if (t) audited = true;
+        gate.noteRead(u, t);
       } catch (e) {
         log('noteRead failed:', errorMessage(e));
       }
@@ -275,7 +281,7 @@ export class Hub {
   }
 
   dialogNotice(tab: TabId, d: PendingDialog, prefix?: string): string {
-    this.noteShown(d.url);
+    this.noteShown('dialog', d.url);
     const head = prefix
       ? `${prefix} — then a ${d.type} dialog opened on ${tab}.`
       : `A ${d.type} dialog is open on ${tab}.`;
@@ -293,7 +299,7 @@ export class Hub {
 
   alertNotes(tab: TabId): string {
     const alerts = this.dialogs.drainAlerts(tab);
-    this.noteShown(...alerts.map((a) => a.url));
+    this.noteShown('alert', ...alerts.map((a) => a.url));
     return alerts
       .map((a) => `\nThe page showed an alert (auto-accepted):\n${wrapUntrusted(tab, a.url, a.message)}`)
       .join('');
@@ -442,7 +448,7 @@ export class Hub {
         );
       }
     }
-    return { url, frames };
+    return { url, frames, tool };
   }
 
   /**
@@ -453,8 +459,12 @@ export class Hub {
   async noteReads(tab: TabId, page: Page, ticket: ReadTicket, readUrl?: string): Promise<void> {
     const after = await this.frameUrls(tab, page);
     const gate = this.safety().gate;
+    let audited = false; // one audit line per read, however many private frames it had
     for (const u of new Set([ticket.url, ...(readUrl ? [readUrl] : []), ...ticket.frames, ...after])) {
-      if (u) gate.noteRead(u);
+      if (!u) continue;
+      const tool = !audited && gate.isPrivate(u) ? ticket.tool : undefined;
+      if (tool) audited = true;
+      gate.noteRead(u, tool);
     }
   }
 
@@ -696,7 +706,7 @@ export class Hub {
     const detail = r.value ? ` ${r.value}` : '';
     const facts = [...(spec.facts ?? [])];
     if (spec.element) {
-      this.noteShown(urlBefore, spec.element.frameUrl);
+      this.noteShown(spec.tool, urlBefore, spec.element.frameUrl);
       facts.unshift(`${spec.kind === 'press' ? 'focused element' : 'element'}: ${elementLabel(spec.element)}`);
     }
     return okResult(await this.outcomeText(tab, page, `${spec.done}${spec.doneNamesTab ? '' : ` in ${tab}`}${detail}`, urlBefore, spec.includeSnapshot, facts));

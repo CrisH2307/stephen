@@ -103,6 +103,8 @@ export interface SafetyGateOptions {
   now?: () => number;
   /** Where audit-write failures are reported (never stdout: that is the MCP channel). */
   onAuditError?: (e: unknown) => void;
+  /** `serve --trust wake`: the trust tier written on private-read audit lines (absent = trusted). */
+  trust?: 'wake';
 }
 
 /** 'button "Send"' — role + accessible name, never values. */
@@ -138,6 +140,7 @@ export class SafetyGate implements ISafetyGate {
   private readonly audit: IAuditLog;
   private readonly now: () => number;
   private readonly onAuditError: (e: unknown) => void;
+  private readonly trust: 'wake' | 'trusted';
   private mutationTimes: number[] = [];
   private readonly privateReads = new Map<string, PrivateRead>();
   private readonly trustedHosts = new Set<string>();
@@ -150,6 +153,7 @@ export class SafetyGate implements ISafetyGate {
     this.confirmer = opts.confirmer;
     this.audit = opts.audit;
     this.now = opts.now ?? Date.now;
+    this.trust = opts.trust ?? 'trusted';
     this.onAuditError =
       opts.onAuditError ??
       ((e) => {
@@ -197,9 +201,11 @@ export class SafetyGate implements ISafetyGate {
     return isSecretField(el);
   }
 
-  noteRead(url: string): void {
+  noteRead(url: string, tool?: string): void {
     const r = privateReadOf(url, this.lists, this.now());
-    if (r) this.remember(r);
+    if (!r) return;
+    this.remember(r);
+    if (tool) this.auditPrivateRead(tool);
   }
 
   /**
@@ -207,9 +213,25 @@ export class SafetyGate implements ISafetyGate {
    * exactly like a private page read, under a synthetic host (`canvas.private.stephen.invalid`). Call BEFORE the
    * data goes back to Claude; throws (fail closed) if the session state can't be saved.
    */
-  notePrivateData(source: PrivateDataSource): void {
+  notePrivateData(source: PrivateDataSource, tool?: string): void {
     const host = privateDataHost(source);
     this.remember({ host, scope: host, at: this.now() });
+    if (tool) this.auditPrivateRead(tool);
+  }
+
+  /**
+   * One audit line per private read: the tool, the trust tier and that it was private. Never the URL, host, title
+   * or text (the read itself is the private part). Written after the taint is armed; a failed write is reported,
+   * not thrown, like the gate's other entries.
+   */
+  private auditPrivateRead(tool: string): void {
+    try {
+      this.audit
+        .append({ tool: clean(tool, 50), kind: 'read', outcome: 'ok', args: { private: true, trust: this.trust } })
+        .catch((e: unknown) => this.onAuditError(e));
+    } catch (e) {
+      this.onAuditError(e); // an append that throws instead of rejecting
+    }
   }
 
   countAccountCall(): string | null {

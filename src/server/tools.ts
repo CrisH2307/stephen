@@ -818,7 +818,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
           }
           await hub.audit({ ...base, urlAfter: safeUrl(page), outcome: 'ok' } satisfies Omit<AuditEntry, 'ts'>);
           done.push(`${p.target} ← ${shown}`);
-          hub.noteShown(urlBefore, p.el.frameUrl);
+          hub.noteShown('fill_form', urlBefore, p.el.frameUrl);
           facts.push(`field ${i + 1} (${p.target}): ${elementLabel(p.el)}`);
           if (r.dialog) {
             return okResult(hub.dialogNotice(tab, r.dialog, `Filled ${done.length} of ${plan.length} fields in ${tab}`));
