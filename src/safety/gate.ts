@@ -225,9 +225,13 @@ export class SafetyGate implements ISafetyGate {
    * not thrown, like the gate's other entries.
    */
   private auditPrivateRead(tool: string): void {
-    this.audit
-      .append({ tool: clean(tool, 50), kind: 'read', outcome: 'ok', args: { private: true, trust: this.trust } })
-      .catch((e: unknown) => this.onAuditError(e));
+    try {
+      this.audit
+        .append({ tool: clean(tool, 50), kind: 'read', outcome: 'ok', args: { private: true, trust: this.trust } })
+        .catch((e: unknown) => this.onAuditError(e));
+    } catch (e) {
+      this.onAuditError(e); // an append that throws instead of rejecting
+    }
   }
 
   countAccountCall(): string | null {
