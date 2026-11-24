@@ -19,16 +19,20 @@ import { localDate } from '../history/store.js';
 import { loadConfig } from '../config.js';
 import { percentile } from '../lib/step-timer.js';
 import { LATENCY_MODEL_FIELDS, LatencyMonitor, type LatencyRecord, type LatencyStage, type LatencyTrigger } from './latency.js';
+import { parseVoiceConfig } from '../voice/config.js';
 
 export const LATENCY_HELP = `stephen latency: how long Stephen takes, from the local latency log (ids and numbers only)
 
   stephen latency [--days 1|7|30] [--json]   default: the last 7 days
 
 Per trigger and route: p50 and p95 of each step, measured from end of speech.
-"OVER" marks a group that is slower than the plan's target. Then the 10 slowest commands by id.`;
+"OVER" marks a group that is slower than the plan's target. Then the 10 slowest commands by id.
+Cost per day shows the daily limit (voice.dailyLimit) and the percent used.`;
 
 export const LATENCY_DAYS = [1, 7, 30] as const;
 export const SLOWEST = 10;
+
+export type DailyLimit = { enabled: boolean; usd: number };
 
 export type LatencyArgs = { days: number; json: boolean };
 
@@ -118,14 +122,16 @@ export interface LatencyReport {
   groups: LatencyGroup[];
   slowest: { id: string; ts: string; trigger: string; route: string; outcome: string; ms: number }[];
   /** Model cost per local day (USD, 2 decimals), newest first; n = records with a cost. */
-  cost: { day: string; n: number; usd: number }[];
+  cost: { day: string; n: number; usd: number; pct: number | null }[];
   costTotal: number;
+  /** The daily cost limit from config (null when the config could not be read). */
+  limit: DailyLimit | null;
 }
 
 const stats = (v: number[]): SpanStats => ({ n: v.length, p50: percentile(v, 50), p95: percentile(v, 95) });
 const bump = (m: Record<string, number>, k: string) => (m[k] = (m[k] ?? 0) + 1);
 
-export function buildReport(records: readonly LatencyRecord[], days: number): LatencyReport {
+export function buildReport(records: readonly LatencyRecord[], days: number, limit: DailyLimit | null = null): LatencyReport {
   const outcomes: Record<string, number> = {};
   const ignored: Record<string, number> = {};
   const tiers: Record<string, number> = {};
@@ -188,9 +194,14 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
     .slice(0, SLOWEST);
   const usd = (n: number) => Math.round(n * 100) / 100;
   const byDay = [...costByDay.entries()].sort(([a], [b]) => b.localeCompare(a));
-  const cost = byDay.map(([day, c]) => ({ day, n: c.n, usd: usd(c.usd) }));
+  const cost = byDay.map(([day, c]) => {
+    const unroundedUsd = c.usd;
+    const usdRounded = usd(c.usd);
+    const pct = limit?.enabled ? Math.round(unroundedUsd / limit.usd * 100) : null;
+    return { day, n: c.n, usd: usdRounded, pct };
+  });
   const costTotal = usd(byDay.reduce((sum, [, c]) => sum + c.usd, 0));
-  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest, cost, costTotal };
+  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest, cost, costTotal, limit };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -226,8 +237,13 @@ export function formatReport(r: LatencyReport): string {
   }
   if (r.cost.length) {
     lines.push('', 'Cost per day (model runs, USD):');
-    for (const c of r.cost) lines.push(`  ${c.day}  ${String(c.n).padStart(4)} runs  ${c.usd.toFixed(2).padStart(8)} USD`);
+    const limitLine = r.limit === null ? '  daily limit unknown (config could not be read)' : r.limit.enabled ? `  daily limit ${r.limit.usd.toFixed(2)} USD` : '  daily limit off';
+    for (const c of r.cost) {
+      const pctSuffix = c.pct !== null ? `  ${c.pct}% of limit` : '';
+      lines.push(`  ${c.day}  ${String(c.n).padStart(4)} runs  ${c.usd.toFixed(2).padStart(8)} USD${pctSuffix}`);
+    }
     lines.push(`  ${'total'.padEnd(10)}  ${''.padStart(9)}  ${r.costTotal.toFixed(2).padStart(8)} USD`);
+    lines.push(limitLine);
   }
   if (r.slowest.length) {
     lines.push('', `Slowest ${r.slowest.length} (${TOTAL_SPAN}):`);
@@ -240,6 +256,7 @@ export interface LatencyEnv {
   monitor?: Pick<LatencyMonitor, 'read'>;
   out?: (l: string) => void;
   err?: (l: string) => void;
+  limit?: DailyLimit | null;
 }
 
 export async function runLatencyCli(argv: string[], e: LatencyEnv = {}): Promise<number> {
@@ -254,7 +271,17 @@ export async function runLatencyCli(argv: string[], e: LatencyEnv = {}): Promise
     err(`${a.error}\n\n${LATENCY_HELP}`);
     return 2;
   }
-  const report = buildReport((e.monitor ?? new LatencyMonitor({ home: loadConfig().home })).read(a.days), a.days);
+  let limit: DailyLimit | null;
+  if (e.limit !== undefined) {
+    limit = e.limit;
+  } else {
+    try {
+      limit = parseVoiceConfig(loadConfig().voice).dailyLimit;
+    } catch {
+      limit = null;
+    }
+  }
+  const report = buildReport((e.monitor ?? new LatencyMonitor({ home: loadConfig().home })).read(a.days), a.days, limit);
   out(a.json ? JSON.stringify(report, null, 2) : formatReport(report));
   return 0;
 }
