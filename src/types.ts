@@ -335,7 +335,7 @@ export interface ISafetyGate {
   /** Pure policy evaluation (no confirmation, no audit). */
   evaluate(req: ActionRequest): PolicyDecision;
   /**
-   * Record that content from `url` was read (snapshot/read_text/find/screenshot) — feeds cross-site typing rule.
+   * Record that content from `url` was read (snapshot/read_text/find/screenshot). Feeds the cross-site typing rule.
    * With `tool`, a private read also writes one redacted audit line (tool, trust tier, private; no URL or text).
    */
   noteRead(url: string, tool?: string): void;
