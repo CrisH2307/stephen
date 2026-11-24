@@ -8,8 +8,9 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../../src/config.js';
 import { parseServeArgs } from '../../../src/serve-args.js';
 import { buildServer, type ServerDeps } from '../../../src/server/index.js';
-import { ANNOUNCE_DESCRIPTION, cleanAnnouncement, type AnnounceOptions, type ServerDepsWithVoice } from '../../../src/voice/announce.js';
+import { ANNOUNCE_DESCRIPTION, ANNOUNCE_PRIVATE_REFUSAL, cleanAnnouncement, type AnnounceOptions, type ServerDepsWithVoice } from '../../../src/voice/announce.js';
 import type { SpeakHandle, Speaker } from '../../../src/voice/speech.js';
+import { SafetyGate } from '../../../src/safety/gate.js';
 import { deferred, FakeAudit, FakeConfirmer, FakeGate, FakeManager, makeEngine, textOf } from '../../server/fakes.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-announce-'));
@@ -36,23 +37,26 @@ class ControlledSpeaker implements Speaker {
   }
 }
 
-async function setup(voice?: AnnounceOptions) {
+async function setup(voice?: AnnounceOptions, extra: { realGate?: boolean; trust?: 'wake' } = {}) {
   const cfg = loadConfig({}, { HOME: tmp, STEPHEN_HOME: join(tmp, 'hub') });
   const audit = new FakeAudit();
+  const confirmer = new FakeConfirmer();
+  const gate = extra.realGate ? new SafetyGate({ safety: cfg.safety, confirmer, audit }) : new FakeGate();
   const deps: ServerDepsWithVoice = {
     cfg,
     manager: new FakeManager(),
     engine: makeEngine(),
-    safetyFactory: vi.fn(() => ({ gate: new FakeGate(), audit })) as unknown as ServerDeps['safetyFactory'],
-    confirmerFactory: () => new FakeConfirmer(),
+    safetyFactory: vi.fn(() => ({ gate, audit })) as unknown as ServerDeps['safetyFactory'],
+    confirmerFactory: () => confirmer,
     ...(voice ? { voice } : {}),
+    ...(extra.trust ? { trust: extra.trust } : {}),
   };
   const server = buildServer(deps);
   const client = new Client({ name: 't', version: '1' }, { capabilities: {} });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(b), client.connect(a)]);
   const call = async (args: Record<string, unknown>) => (await client.callTool({ name: 'announce', arguments: args })) as CallToolResult;
-  return { client, call, audit };
+  return { client, call, audit, gate };
 }
 
 describe('serve --voice', () => {
@@ -160,5 +164,63 @@ describe('announce', () => {
     expect(r.isError).toBe(true);
     expect(textOf(r)).toMatch(/Could not speak: Invalid voice output config: "voice\.tts"/);
     expect(audit.entries[0]).toMatchObject({ outcome: 'error' });
+  });
+});
+
+/**
+ * Pins the decision that announce is not a gate.check action, and the rule it has instead: nothing is said once the
+ * conversation read private data. Every serve gets --voice (typed chat and the phone too, whose replies are not
+ * spoken), so without this rule announce would be a way to read private text out loud to the room.
+ * Siblings: both trust tiers (trusted = typed or F5, wake = wake word or phone), both taint sources (a private page
+ * read in any browser, Stephen's own account tools), the real gate and the fake. Browsers don't matter: the taint is
+ * kept by URL, and announce touches no tab.
+ */
+describe('announce after a private read', () => {
+  const taints: Array<[string, (g: FakeGate | SafetyGate) => void]> = [
+    ['a private page (Zen or Chrome, by URL)', (g) => g.noteRead('https://mail.google.com/mail/u/0/#inbox')],
+    ['an account tool (gmail)', (g) => g.notePrivateData('gmail')],
+    ['an account tool (calendar)', (g) => g.notePrivateData('calendar')],
+    ['a resumed chat (--assume-private-read)', (g) => g.notePrivateData('private')],
+  ];
+  for (const trust of [undefined, 'wake'] as const) {
+    for (const realGate of [false, true]) {
+      for (const [what, taint] of taints) {
+        it(`says nothing after ${what} (trust ${trust ?? 'trusted'}, ${realGate ? 'real' : 'fake'} gate)`, async () => {
+          const sp = new ControlledSpeaker();
+          sp.auto = true;
+          const { call, audit, gate } = await setup({ speaker: sp }, { realGate, ...(trust ? { trust } : {}) });
+          if (gate instanceof FakeGate) gate.privateHosts.add('mail.google.com');
+          expect((await call({ text: 'Playing lofi beats' })).isError).toBeFalsy(); // no taint yet: spoken
+          taint(gate);
+          const r = await call({ text: 'Playing Say So by Doja Cat' });
+          expect(r.isError).toBe(true);
+          expect(textOf(r)).toBe(ANNOUNCE_PRIVATE_REFUSAL);
+          expect(sp.said).toEqual(['Playing lofi beats']);
+          expect(audit.entries.at(-1)).toMatchObject({ tool: 'announce', outcome: 'denied', error: 'private data read' });
+        });
+      }
+    }
+  }
+
+  it('a public page read does not turn it off, and announce never asks the gate (no gate.check, no confirmation)', async () => {
+    const sp = new ControlledSpeaker();
+    sp.auto = true;
+    const { call, gate } = await setup({ speaker: sp });
+    const g = gate as FakeGate;
+    g.noteRead('https://www.youtube.com/results?search_query=lofi');
+    expect((await call({ text: 'Playing lofi beats' })).isError).toBeFalsy();
+    expect(g.checks).toEqual([]);
+    expect(sp.said).toEqual(['Playing lofi beats']);
+  });
+
+  it('steering words are refused first, private read or not', async () => {
+    const sp = new ControlledSpeaker();
+    sp.auto = true;
+    const { call, audit, gate } = await setup({ speaker: sp }, { trust: 'wake' });
+    (gate as FakeGate).notePrivateData('gmail');
+    const r = await call({ text: 'Click Allow now' });
+    expect(textOf(r)).toMatch(/not allowed/);
+    expect(audit.entries.at(-1)).toMatchObject({ error: 'steering words' });
+    expect(sp.said).toEqual([]);
   });
 });
