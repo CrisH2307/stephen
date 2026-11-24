@@ -79,6 +79,8 @@ export interface LatencyRecord {
   reason?: LatencyReason;
   /** wake_ignored only: why. */
   ignored?: (typeof LATENCY_IGNORED)[number];
+  /** Model run only: what the run cost in USD, as Claude Code reports it (0 to 100, 6 decimals). A number, never text. */
+  costUsd?: number;
   /** 1 = the replay recorder was on for this F5 command (issue #48). Never anything about the clip itself. */
   replay?: 0 | 1;
   /** Which Stephen tools ran and how long each took, in call order. Names only, never arguments or results. */
@@ -196,6 +198,8 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
     }
     if (tools.length) extra.tools = tools;
   }
+  // A number only, 0 to 100 USD: anything else is dropped (the record stays).
+  if (typeof o.costUsd === 'number' && Number.isFinite(o.costUsd) && o.costUsd >= 0 && o.costUsd <= 100) extra.costUsd = Math.round(o.costUsd * 1e6) / 1e6;
   return {
     v: 1,
     id: o.id,
@@ -225,7 +229,7 @@ export interface LatencyTrace {
   note(id: string, note: LatencyNote): void;
 }
 
-export type LatencyEnd = { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes } & LatencyNote;
+export type LatencyEnd = { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes; costUsd?: number } & LatencyNote;
 
 export interface LatencyMonitorOptions {
   home: string;

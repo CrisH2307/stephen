@@ -93,7 +93,7 @@ describe('stephen latency', () => {
 
   it('no records, a bad option, help', async () => {
     expect(await run(['--days', '1'], monitor(false))).toMatchObject({ code: 0, out: 'No latency records in the last day.' });
-    expect(JSON.parse((await run(['--json'], monitor(false))).out)).toEqual({ days: 7, triggers: 0, outcomes: {}, ignored: {}, tiers: {}, reasons: {}, silence: null, groups: [], slowest: [] });
+    expect(JSON.parse((await run(['--json'], monitor(false))).out)).toEqual({ days: 7, triggers: 0, outcomes: {}, ignored: {}, tiers: {}, reasons: {}, silence: null, groups: [], slowest: [], cost: [], costTotal: 0 });
     const bad = await run(['--days', '3']);
     expect(bad).toMatchObject({ code: 2, out: '' });
     expect(bad.err).toContain('--days must be 1, 7 or 30');
@@ -104,6 +104,27 @@ describe('stephen latency', () => {
 describe('buildReport', () => {
   const rec = (i: number, stages: LatencyRecord['stages'], over: Partial<LatencyRecord> = {}): LatencyRecord =>
     parseLatencyRecord({ v: 1, id: `h_${String(i).padStart(16, '0')}`, ts: new Date(NOW - i * 1000).toISOString(), trigger: 'ptt', route: 'model', outcome: 'ok', stages, ...over })!;
+
+  it('cost per local day: sums, newest first, and no cost line when nothing has a cost', () => {
+    const day = 86_400_000;
+    const rep = buildReport(
+      [
+        rec(1, { speechEnd: 0, replyReady: 100 }, { costUsd: 0.0123 }),
+        rec(2, { speechEnd: 0, replyReady: 100 }, { costUsd: 0.02, outcome: 'error' }),
+        rec(3, { speechEnd: 0, replyReady: 100 }, { ts: new Date(NOW - 2 * day).toISOString(), costUsd: 0.5 }),
+        rec(4, { speechEnd: 0, replyReady: 100 }),
+      ],
+      7,
+    );
+    expect(rep.cost.map((c) => c.n)).toEqual([2, 1]);
+    expect(rep.cost.map((c) => c.usd)).toEqual([0.03, 0.5]);
+    expect(rep.cost[0]!.day > rep.cost[1]!.day).toBe(true);
+    expect(rep.costTotal).toBe(0.53);
+    const text = formatReport(rep);
+    expect(text).toContain('Cost per day (model runs, USD):');
+    expect(text).toMatch(/total\s+0\.53 USD/);
+    expect(formatReport(buildReport([rec(5, { speechEnd: 0, replyReady: 100 })], 7))).not.toContain('Cost per day');
+  });
 
   it(`keeps the ${SLOWEST} slowest`, () => {
     const rep = buildReport(Array.from({ length: 12 }, (_, i) => rec(i, { speechEnd: 0, replyReady: (i + 1) * 100 })), 7);

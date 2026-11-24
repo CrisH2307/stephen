@@ -144,6 +144,8 @@ export interface CommandReport {
   replyMs: number;
   /** The model run's own times, when the runner measured them (warm process). Numbers only. */
   model?: ModelTimes;
+  /** Model run cost in USD (Claude Code's number), when it said. */
+  costUsd?: number;
   /** The spoken reply was cut short: ms from the cancel until the speech process ended (a number, for the latency log). */
   silenceMs?: number;
   /** Conversation id (ADR-007): the same for every command of one conversation, a new one when a conversation starts. */
@@ -339,7 +341,7 @@ export class Assistant {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
       replyAt = now();
-      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}) };
+      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}), ...(out.kind === 'ok' && typeof out.costUsd === 'number' ? { costUsd: out.costUsd } : {}) };
       if (out.kind === 'cancelled' || this.cancelled) {
         this.o.status('Cancelled.');
         this.o.chimes.play('done');

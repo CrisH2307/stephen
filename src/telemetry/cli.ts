@@ -15,6 +15,7 @@
  * group are shown as counts. Wake triggers get TRIGGER_EXTRA_MS on top of the base target. Also shown: wake_ignored by
  * reason, tool names with p50, cold versus warm, Esc to silence, wake to chime, and the tier labels (shadow mode).
  */
+import { localDate } from '../history/store.js';
 import { loadConfig } from '../config.js';
 import { percentile } from '../lib/step-timer.js';
 import { LATENCY_MODEL_FIELDS, LatencyMonitor, type LatencyRecord, type LatencyStage, type LatencyTrigger } from './latency.js';
@@ -116,6 +117,9 @@ export interface LatencyReport {
   silence: SpanStats | null;
   groups: LatencyGroup[];
   slowest: { id: string; ts: string; trigger: string; route: string; outcome: string; ms: number }[];
+  /** Model cost per local day (USD, 2 decimals), newest first; n = records with a cost. */
+  cost: { day: string; n: number; usd: number }[];
+  costTotal: number;
 }
 
 const stats = (v: number[]): SpanStats => ({ n: v.length, p50: percentile(v, 50), p95: percentile(v, 95) });
@@ -127,6 +131,7 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
   const tiers: Record<string, number> = {};
   const reasons: Record<string, number> = {};
   const byGroup = new Map<string, LatencyRecord[]>();
+  const costByDay = new Map<string, { n: number; usd: number }>();
   for (const r of records) {
     bump(outcomes, r.outcome);
     if (r.outcome === 'wake_ignored') bump(ignored, r.ignored ?? 'unknown');
@@ -134,6 +139,11 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
     if (r.reason) bump(reasons, r.reason);
     const key = `${r.trigger}/${r.route ?? 'none'}`;
     byGroup.set(key, [...(byGroup.get(key) ?? []), r]);
+    if (r.costUsd !== undefined) {
+      const day = localDate(new Date(r.ts));
+      const c = costByDay.get(day) ?? { n: 0, usd: 0 };
+      costByDay.set(day, { n: c.n + 1, usd: c.usd + r.costUsd });
+    }
   }
   const groups = [...byGroup.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -176,7 +186,11 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
     })
     .sort((a, b) => b.ms - a.ms)
     .slice(0, SLOWEST);
-  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest };
+  const usd = (n: number) => Math.round(n * 100) / 100;
+  const byDay = [...costByDay.entries()].sort(([a], [b]) => b.localeCompare(a));
+  const cost = byDay.map(([day, c]) => ({ day, n: c.n, usd: usd(c.usd) }));
+  const costTotal = usd(byDay.reduce((sum, [, c]) => sum + c.usd, 0));
+  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest, cost, costTotal };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -209,6 +223,11 @@ export function formatReport(r: LatencyReport): string {
     for (const [name, s] of Object.entries(g.spans)) lines.push(row(name, s));
     for (const [name, s] of Object.entries(g.tools)) lines.push(row(`tool ${name}`.slice(0, 15), s));
     for (const [name, s] of Object.entries(g.starts)) lines.push(row(`${name} start`, s));
+  }
+  if (r.cost.length) {
+    lines.push('', 'Cost per day (model runs, USD):');
+    for (const c of r.cost) lines.push(`  ${c.day}  ${String(c.n).padStart(4)} runs  ${c.usd.toFixed(2).padStart(8)} USD`);
+    lines.push(`  ${'total'.padEnd(10)}  ${''.padStart(9)}  ${r.costTotal.toFixed(2).padStart(8)} USD`);
   }
   if (r.slowest.length) {
     lines.push('', `Slowest ${r.slowest.length} (${TOTAL_SPAN}):`);
