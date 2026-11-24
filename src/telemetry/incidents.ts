@@ -15,7 +15,16 @@ import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'nod
 import { release } from 'node:os';
 import { join } from 'node:path';
 import { appendPrivateLineCapped, readPrivateRegularFile } from '../lib/fs.js';
-import { LATENCY_MODEL_FIELDS, LATENCY_STAGES, type LatencyModelTimes, type LatencyStage } from './latency.js';
+// Types only: `stephen serve` loads this file, and latency.ts pulls in history code that serve must never load.
+import type { LATENCY_MODEL_FIELDS as LatencyModelFields, LatencyModelTimes, LatencyStage } from './latency.js';
+
+/** The latency stages and model fields (latency.ts), copied so serve stays light. The checks below catch drift. */
+const STAGES = ['speechEnd', 'captureEnd', 'asrDone', 'commandStart', 'replyReady', 'firstAudio', 'done', 'chime'] as const satisfies readonly LatencyStage[];
+const MODEL_FIELDS = ['modelMs', 'toolMs', 'firstTokenMs'] as const satisfies readonly (typeof LatencyModelFields)[number][];
+const stagesCovered: [Exclude<LatencyStage, (typeof STAGES)[number]>] extends [never] ? true : never = true;
+const fieldsCovered: [Exclude<(typeof LatencyModelFields)[number], (typeof MODEL_FIELDS)[number]>] extends [never] ? true : never = true;
+void stagesCovered;
+void fieldsCovered;
 
 /** Which part of Stephen failed. `job` is the `stephen jobs` supervisor. */
 export const INCIDENT_PARTS = ['listen', 'serve', 'helper', 'job', 'other'] as const;
@@ -34,7 +43,7 @@ export const INCIDENT_CODES = [
 export type IncidentCode = (typeof INCIDENT_CODES)[number];
 
 /** Where it failed: the last latency stage a command reached, or the phase of a process (start, run). */
-export const INCIDENT_STAGES = [...LATENCY_STAGES, 'trigger', 'start', 'run', 'other'] as const;
+export const INCIDENT_STAGES = [...STAGES, 'trigger', 'start', 'run', 'other'] as const;
 export type IncidentStage = (typeof INCIDENT_STAGES)[number];
 
 export interface IncidentRecord {
@@ -108,13 +117,13 @@ export function parseIncidentRecord(v: unknown): IncidentRecord | null {
   if (o.stages && typeof o.stages === 'object' && !Array.isArray(o.stages)) {
     const src = o.stages as Record<string, unknown>;
     const stages: Partial<Record<LatencyStage, number>> = {};
-    for (const s of LATENCY_STAGES) {
+    for (const s of STAGES) {
       const n = ms(src[s]);
       if (n !== null) stages[s] = n;
     }
     if (Object.keys(stages).length) rec.stages = stages;
   }
-  for (const f of LATENCY_MODEL_FIELDS) {
+  for (const f of MODEL_FIELDS) {
     const n = ms(o[f]);
     if (n !== null) rec[f] = n;
   }
