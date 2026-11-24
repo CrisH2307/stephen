@@ -341,6 +341,9 @@ export class FakeGate implements ISafetyGate {
     this.accountCalls += 1;
     return null;
   }
+  taintedHosts(): string[] {
+    return [...new Set([...this.reads.filter((u) => this.isPrivate(u)).map(hostOf), ...this.dataReads])];
+  }
   isPrivate(url: string): boolean {
     return this.privateHosts.has(hostOf(url));
   }
