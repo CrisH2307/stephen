@@ -1,0 +1,44 @@
+name: Crash
+description: Stephen quit or crashed.
+title: "Crash: "
+labels: ["crash", "incident", "status: to do"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do NOT paste transcripts, audio, memory items or text from private pages. The incident report is enough.
+  - type: textarea
+    id: report
+    attributes:
+      label: Incident report
+      description: Run `stephen report` in Terminal and paste what it prints. It holds only ids, versions and error codes, nothing private. Or paste just the crash id.
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: What were you doing when it crashed?
+    validations:
+      required: true
+  - type: input
+    id: stephen-version
+    attributes:
+      label: Stephen version
+      description: Run `stephen --version` in Terminal.
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu, About This Mac.
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often?
+      options:
+        - Once
+        - Sometimes
+        - Every time
