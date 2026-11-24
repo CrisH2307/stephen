@@ -16,6 +16,8 @@ export interface SafetyDeps {
   platform?: NodeJS.Platform;
   /** Clock for rate limiting (tests). */
   now?: () => number;
+  /** `serve --trust wake`: written on the private-read audit lines (absent = trusted). */
+  trust?: 'wake';
   /**
    * `serve --command-file`: the listener's command id, asked by the audit log for each entry it writes (`cmd`).
    * A label only. It goes to the audit log and nowhere else: the gate is built without it.
@@ -27,7 +29,7 @@ export function createSafety(cfg: ResolvedConfig, deps?: SafetyDeps): { gate: IS
   const audit = new AuditLog({ path: cfg.auditLogPath, ...(deps?.commandId ? { commandId: deps.commandId } : {}) });
   const confirmer =
     deps?.confirmer ?? buildConfirmer(cfg.safety, { elicit: deps?.elicit, platform: deps?.platform, home: cfg.home });
-  const gate = new SafetyGate({ safety: cfg.safety, confirmer, audit, now: deps?.now });
+  const gate = new SafetyGate({ safety: cfg.safety, confirmer, audit, now: deps?.now, ...(deps?.trust ? { trust: deps.trust } : {}) });
   return { gate, audit };
 }
 

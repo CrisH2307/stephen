@@ -334,13 +334,16 @@ export interface ISafetyGate {
   check(req: ActionRequest): Promise<GateResult>;
   /** Pure policy evaluation (no confirmation, no audit). */
   evaluate(req: ActionRequest): PolicyDecision;
-  /** Record that content from `url` was read (snapshot/read_text/find/screenshot) — feeds cross-site typing rule. */
-  noteRead(url: string): void;
+  /**
+   * Record that content from `url` was read (snapshot/read_text/find/screenshot) — feeds cross-site typing rule.
+   * With `tool`, a private read also writes one redacted audit line (tool, trust tier, private; no URL or text).
+   */
+  noteRead(url: string, tool?: string): void;
   /**
    * Record that private data from one of Stephen's own tools (canvas, gmail, notion, calendar, or "private" for
    * `serve --assume-private-read`) is about to reach the model: arms the cross-site taint like noteRead.
    */
-  notePrivateData(source: 'canvas' | 'gmail' | 'notion' | 'calendar' | 'private'): void;
+  notePrivateData(source: 'canvas' | 'gmail' | 'notion' | 'calendar' | 'private', tool?: string): void;
   /**
    * Count one account-tool call (gmail_search, canvas_due…) as one action in the rate limit (review 7, R7-11).
    * Returns null when it may run, else the refusal text (and nothing is counted).
