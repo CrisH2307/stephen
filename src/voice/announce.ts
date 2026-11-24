@@ -7,6 +7,12 @@
  * Guards: ≤ 120 characters of plain text (control/format characters and markdown removed), at most
  * ANNOUNCE_MAX_PER_MINUTE calls per minute per server process (each voice command starts its own server, so
  * that is also a per-command cap), every call audited.
+ *
+ * Not a gate.check action: it touches no page and sends nothing off the Mac. Its one risk is the room. Every serve
+ * gets --voice, including typed chat and the phone, whose replies are NOT spoken. So once this conversation has read
+ * private data (the gate's taint: a private page, mail, calendar, Canvas, Notion, or a resumed chat), announce says
+ * nothing: a prompt-injected model must not read private text out loud to whoever is near the Mac. Same rule in
+ * both trust tiers. Steering words are refused before that (ANNOUNCE_FORBIDDEN_RE).
  */
 import type { McpServer, ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -22,6 +28,8 @@ export const ANNOUNCE_TOOL = 'announce';
 export const ANNOUNCE_MAX_CHARS = 120;
 export const ANNOUNCE_MAX_PER_MINUTE = 3;
 export const ANNOUNCE_MAX_WAIT_MS = 8000;
+export const ANNOUNCE_PRIVATE_REFUSAL =
+  'announce is off once private data (mail, calendar, a private page) was read in this conversation: a line said out loud could reach people near the Mac. Nothing was said; go ahead without announcing.';
 
 export const ANNOUNCE_DESCRIPTION =
   "Say a short line out loud BEFORE doing something that will play sound (music, a video), e.g. 'Playing Say So by Doja Cat'. Don't use it for anything else. " +
@@ -82,6 +90,10 @@ export function registerAnnounceTool(mcp: McpServer, hub: Hub, names: string[], 
     if (refusal) {
       await hub.audit({ tool: ANNOUNCE_TOOL, args: { text: line }, outcome: 'denied', error: 'steering words' });
       throw new NoticeError(refusal);
+    }
+    if (hub.safety().gate.taintedHosts().length > 0) {
+      await hub.audit({ tool: ANNOUNCE_TOOL, args: { text: line }, outcome: 'denied', error: 'private data read' });
+      throw new NoticeError(ANNOUNCE_PRIVATE_REFUSAL);
     }
     const t = now();
     while (recent.length && t - recent[0]! >= 60_000) recent.shift();
