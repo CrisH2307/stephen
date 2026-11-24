@@ -576,7 +576,8 @@ function crashIncident(cmd: string | undefined, e: unknown): void {
 }
 
 const argv0 = process.argv[2];
-// A monitor only watches: Node still prints the error and exits as before.
+// A monitor only watches: Node still prints the error and exits as before. An uncaught crash is an incident for
+// every command, one-shot ones too (part "other"); a one-shot command that fails normally is not (below).
 process.on('uncaughtExceptionMonitor', (e) => crashIncident(argv0, e));
 main(process.argv.slice(2)).then(
   (code) => {
