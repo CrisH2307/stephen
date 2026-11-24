@@ -4,6 +4,7 @@
  */
 import { newConversationId, newHistoryId } from '../history/store.js';
 import type { ClaudeOutcome, ModelTimes } from './claude.js';
+import { LIMIT_REACHED, LIMIT_WARNING, type DailyLimit } from './daily-limit.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
 
@@ -178,6 +179,11 @@ export interface AssistantOptions {
    * (src/jobs/router.ts). Claude has no job tool: a start always goes through the router's native dialog.
    */
   jobs?: LocalRouter | null;
+  /**
+   * Daily cost limit (src/voice/daily-limit.ts). Checked only right before a model run, after the local routers, so
+   * memory, timers and jobs always work. Absent: no limit.
+   */
+  limit?: Pick<DailyLimit, 'allowed' | 'add' | 'warnNow'> | null;
   /** Called once per command with its report (history). A throwing hook is logged, never fails the command. */
   onDone?: (r: CommandReport) => void;
   /** Called when a command starts, before the memory router (the Stephen app shows voice commands live). Same rules. */
@@ -315,6 +321,18 @@ export class Assistant {
         prefix = route.reply;
         prompt = route.rest;
       }
+      // Daily cost limit: at 100% no new model run starts. The routers above already had their turn. Fail open.
+      let allowed = true;
+      try {
+        allowed = this.o.limit?.allowed() ?? true;
+      } catch (e) {
+        this.o.status(`Note: could not check the daily limit (${(e as Error).message}).`);
+      }
+      if (!allowed) {
+        const reply = [prefix, LIMIT_REACHED].filter(Boolean).join(' ');
+        await this.deliver(reply, false, opts.speak, t0);
+        return report({ result: 'error', outcome: 'error', reply, ranClaude: false, followUp: false, turns: 0 });
+      }
       let followUp = false;
       try {
         followUp = opts.resume ? false : (this.o.runner.followUp?.(trust) ?? false);
@@ -342,13 +360,24 @@ export class Assistant {
       }
       replyAt = now();
       const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}), ...(out.kind === 'ok' && typeof out.costUsd === 'number' ? { costUsd: out.costUsd } : {}) };
+      try {
+        this.o.limit?.add(id, claude.costUsd); // also a run cancelled after it finished: its cost was spent
+      } catch (e) {
+        this.o.status(`Note: could not count the cost (${(e as Error).message}).`);
+      }
       if (out.kind === 'cancelled' || this.cancelled) {
         this.o.status('Cancelled.');
         this.o.chimes.play('done');
         return report({ result: 'cancelled', outcome: 'cancelled', reply: '', ...claude });
       }
       const raw = out.kind === 'ok' ? out.text : out.message;
-      const spoken = [prefix, stripForSpeech(raw) || (out.kind === 'ok' ? 'Done.' : 'Something went wrong.')].filter(Boolean).join(' ');
+      let warn = false;
+      try {
+        warn = this.o.limit?.warnNow() ?? false;
+      } catch (e) {
+        this.o.status(`Note: could not check the daily limit (${(e as Error).message}).`);
+      }
+      const spoken = [prefix, stripForSpeech(raw) || (out.kind === 'ok' ? 'Done.' : 'Something went wrong.'), warn ? LIMIT_WARNING : ''].filter(Boolean).join(' ');
       await this.deliver(spoken, out.kind === 'ok', opts.speak, t0);
       if (out.kind === 'ok' && !this.cancelled) this.o.runner.commandEnded?.();
       const result: CommandResult = out.kind === 'ok' ? 'ok' : 'error';
