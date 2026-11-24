@@ -12,7 +12,8 @@
  * gets --voice, including typed chat and the phone, whose replies are NOT spoken. So once this conversation has read
  * private data (the gate's taint: a private page, mail, calendar, Canvas, Notion, or a resumed chat), announce says
  * nothing: a prompt-injected model must not read private text out loud to whoever is near the Mac. Same rule in
- * both trust tiers. Steering words are refused before that (ANNOUNCE_FORBIDDEN_RE).
+ * both trust tiers. Steering words are refused before that (ANNOUNCE_FORBIDDEN_RE). The taint covers the gate's
+ * private sources only (mail, private apps, sensitive domains); private text on an unlisted site is not caught.
  */
 import type { McpServer, ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
