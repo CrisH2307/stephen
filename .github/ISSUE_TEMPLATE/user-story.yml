@@ -1,0 +1,52 @@
+name: User story
+description: Something you want Stephen to do or do better.
+title: "Story: "
+labels: ["user story", "status: to do"]
+body:
+  - type: input
+    id: as-a
+    attributes:
+      label: As a ...
+      placeholder: friend who uses Stephen every day
+    validations:
+      required: true
+  - type: input
+    id: i-want
+    attributes:
+      label: I want ...
+    validations:
+      required: true
+  - type: input
+    id: so-that
+    attributes:
+      label: so that ...
+    validations:
+      required: true
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: What you can see when it works. One line each.
+      placeholder: |
+        - [ ]
+    validations:
+      required: true
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who takes this?
+      description: Leave as "Not picked yet" if you do not know. The team will pick it up.
+      options:
+        - Not picked yet
+        - review lane
+        - opencode lane
+        - dev lane
+        - ui lane
+      default: 0
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Does it touch safety?
+      description: Allow and Deny, trust, memory, audit or the recorder.
+      options:
+        - label: Yes, it touches safety
