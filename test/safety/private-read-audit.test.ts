@@ -4,14 +4,14 @@
  * Siblings: both browsers (Zen z1, Chrome c1), both trust tiers (trusted = typed or F5, wake = wake word or phone),
  * page reads and Stephen's own account tools, a page with private frames (still one line), public pages (no line).
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
 import { SafetyGate } from '../../src/safety/gate.js';
 import { createSafety, type SafetyDeps } from '../../src/safety/index.js';
-import type { AuditEntry, ResolvedConfig } from '../../src/types.js';
+import type { AuditEntry, IAuditLog, ResolvedConfig } from '../../src/types.js';
 import { FakeAudit, FakeConfirmer, FakePage, setup } from '../server/fakes.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-private-read-audit-'));
@@ -74,27 +74,41 @@ describe('SafetyGate: private-read audit line', () => {
     expect(errors).toHaveLength(1);
     expect(gate.wasRead(MAIL)).toBe(true);
   });
+
+  it('an append that throws instead of rejecting is reported too, never thrown', () => {
+    const errors: unknown[] = [];
+    const gate = new SafetyGate({
+      safety: SAFETY,
+      confirmer: new FakeConfirmer(),
+      audit: {
+        append: () => {
+          throw new Error('boom');
+        },
+        recent: async () => [],
+      },
+      onAuditError: (e) => errors.push(e),
+    });
+    expect(() => gate.notePrivateData('gmail', 'gmail_read')).not.toThrow();
+    expect(errors).toHaveLength(1);
+    expect(gate.taintedHosts()).toHaveLength(1);
+  });
 });
 
 /** The whole path: tool call, hub, real gate, real audit file on disk. */
 async function realSetup(trust?: 'wake') {
-  let cfgSeen: ResolvedConfig | undefined;
+  let log: IAuditLog | undefined;
   const h = await setup({
     extraDeps: {
       ...(trust ? { trust } : {}),
       safetyFactory: (c: ResolvedConfig, d?: SafetyDeps) => {
-        cfgSeen = c;
-        return createSafety(c, { ...d, confirmer: new FakeConfirmer() });
+        const s = createSafety(c, { ...d, confirmer: new FakeConfirmer() });
+        log = s.audit;
+        return s;
       },
     },
   });
-  const lines = (): AuditEntry[] => {
-    try {
-      return readFileSync(cfgSeen!.auditLogPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as AuditEntry);
-    } catch {
-      return [];
-    }
-  };
+  // AuditLog.recent waits for every queued write, so no timing guess is needed.
+  const lines = async (): Promise<AuditEntry[]> => (await log!.recent(100)).reverse();
   return { ...h, lines };
 }
 
@@ -107,8 +121,7 @@ describe('private-read audit line over MCP (real gate, real audit log)', () => {
         p.frameList = [MAIL, 'https://mail.google.com/frame/a', 'https://accounts.google.com/frame/b'];
         const res = await h.call('snapshot', { tab });
         expect(res.isError).toBeFalsy();
-        await flush();
-        const reads = h.lines().filter((e) => e.kind === 'read');
+        const reads = (await h.lines()).filter((e) => e.kind === 'read');
         expect(reads).toHaveLength(1);
         expect(reads[0]).toMatchObject({ tool: 'snapshot', outcome: 'ok', args: { private: true, trust: trust ?? 'trusted' } });
         expect(JSON.stringify(reads[0])).not.toMatch(/mail\.google|accounts\.google|SECRET|secret subject|Inbox/);
@@ -116,11 +129,13 @@ describe('private-read audit line over MCP (real gate, real audit log)', () => {
     }
   }
 
-  it('snapshot of a public page: no read line', async () => {
+  it('snapshot of a public page: no read line (then a private one does write, so the log works)', async () => {
     const h = await realSetup();
     h.manager.addPage('c1', new FakePage('https://www.example.com/', 'Example'));
     expect((await h.call('snapshot', { tab: 'c1' })).isError).toBeFalsy();
-    await flush();
-    expect(h.lines().filter((e) => e.kind === 'read')).toEqual([]);
+    expect((await h.lines()).filter((e) => e.kind === 'read')).toEqual([]);
+    h.manager.addPage('c2', new FakePage(MAIL, 'Inbox'));
+    expect((await h.call('snapshot', { tab: 'c2' })).isError).toBeFalsy();
+    expect((await h.lines()).filter((e) => e.kind === 'read')).toHaveLength(1);
   });
 });
