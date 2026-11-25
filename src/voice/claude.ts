@@ -4,7 +4,6 @@
  * buildClaudeArgs and src/voice/conversation.ts). Always spawned with an argv array (never a shell), in its own
  * process group so a cancel kills Claude and the `stephen serve` child it started.
  */
-import { ACCOUNT_ENV_NAMES } from '../accounts/secrets.js';
 import { existsSync, unlinkSync } from 'node:fs';
 import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
@@ -19,6 +18,8 @@ import { commandFileServeArgs, toolLogServeArgs } from '../server/tool-log.js';
 import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
 import { DEFAULT_TALK, EXPLAIN_LINE, LENGTH_LINES, TONE_LINES, type TalkPrefs } from './talk.js';
+import { withoutSecrets } from '../lib/claude-env.js';
+export { KEPT_ANTHROPIC_ENV, KEPT_BASE_ENV, KEPT_CLAUDE_CODE_ENV, droppedEndpointEnv, withoutSecrets } from '../lib/claude-env.js';
 
 /** The MCP server name. Tools appear to Claude as mcp__stephen__<tool>. */
 export const MCP_SERVER_NAME = 'stephen';
@@ -764,38 +765,6 @@ export function stephenCliBuilt(cliPath: string = stephenCliPath()): boolean {
 }
 
 /**
- * The CLAUDE_CODE_* variables the voice Claude keeps: how it signs in and which provider it uses (an owner who runs
- * Claude Code through a token, Bedrock, Vertex or Foundry). Every other CLAUDE_CODE_* variable, and CLAUDECODE, belongs
- * to a Claude Code session `stephen listen` was started from (CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_ENTRYPOINT…): the
- * voice Claude must not run as part of that session (review 7, R7-12).
- */
-export const KEPT_CLAUDE_CODE_ENV: ReadonlySet<string> = new Set([
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
-  'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
-  'CLAUDE_CODE_SKIP_VERTEX_AUTH',
-  'CLAUDE_CODE_SKIP_FOUNDRY_AUTH',
-  'CLAUDE_CODE_CLIENT_CERT',
-  'CLAUDE_CODE_CLIENT_KEY',
-  'CLAUDE_CODE_CLIENT_KEY_PASSPHRASE',
-]);
-
-/**
- * The ANTHROPIC_* variables the voice Claude keeps: sign-in only (an API key or a token) and the Vertex project. Every
- * other ANTHROPIC_* variable from the shell is dropped, above all the ones that move the endpoint (ANTHROPIC_BASE_URL
- * and the provider base URLs): a changed endpoint would see every prompt, tool result and reply (R23). There is no
- * setting for another endpoint today; ADR-016 may add one explicit setting later.
- */
-export const KEPT_ANTHROPIC_ENV: ReadonlySet<string> = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_VERTEX_PROJECT_ID']);
-
-/** ANTHROPIC_* variables in `env` that Stephen drops before it starts Claude (for the doctor note). */
-export function droppedAnthropicEnv(env: NodeJS.ProcessEnv): string[] {
-  return Object.keys(env).filter((k) => k.startsWith('ANTHROPIC_') && !KEPT_ANTHROPIC_ENV.has(k)).sort();
-}
-
-/**
  * Spawn options for both Claude wrappers (this one and warm-claude). The env scrub lives here only: the ElevenLabs key
  * and account secrets have no business in claude or the server it starts (review #4 finding 7).
  * detached: own process group, so a kill takes claude AND the stephen serve it started.
@@ -807,18 +776,6 @@ export function claudeSpawnOptions(o: { cwd: string; env?: NodeJS.ProcessEnv }, 
 /** What both wrappers say when the claude program is missing (spawn ENOENT). */
 export function claudeNotFound(claudePath: string): string {
   return `Claude Code was not found ("${claudePath}"). Install it, or set "voice": {"claudePath": "…"}.`;
-}
-
-/** Child-process environment without Stephen's own secrets and without a parent Claude Code session's variables. */
-export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out = { ...env };
-  delete out.ELEVENLABS_API_KEY;
-  // Account secrets exported in the shell (review 6, R6-9): Stephen's serve reads them from the Keychain / .env.
-  for (const k of ACCOUNT_ENV_NAMES) delete out[k];
-  delete out.CLAUDECODE;
-  for (const k of Object.keys(out)) if (k.startsWith('CLAUDE_CODE_') && !KEPT_CLAUDE_CODE_ENV.has(k)) delete out[k];
-  for (const k of droppedAnthropicEnv(out)) delete out[k];
-  return out;
 }
 
 /** Lock-down flags without which Stephen refuses to run a voice command (they keep built-in tools and user settings out). */
