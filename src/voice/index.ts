@@ -32,6 +32,7 @@ import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
 import { commandFilePath, toolLogPath } from '../server/tool-log.js';
 import { buildReport, formatReport } from '../telemetry/cli.js';
+import { purgeIncidents, recordIncident } from '../telemetry/incidents.js';
 import { LatencyMonitor } from '../telemetry/latency.js';
 import { DailyLimit } from './daily-limit.js';
 import { defaultDesktopDeps } from '../desktop/system.js';
@@ -177,6 +178,10 @@ async function connectHelper(env: ListenEnv, home: string): Promise<{ bridge: He
     return { reason: (e as Error).message };
   }
   if (!link) return { reason: 'Stephen Helper is not installed' };
+  // A dropped helper connection is an incident (code word only). onConnection(false) never fires on our own close.
+  link.onConnection?.((up) => {
+    if (!up) recordIncident(home, { part: 'helper', code: 'helper_lost', stage: 'run' });
+  });
   return HelperBridge.connect(link);
 }
 
@@ -495,6 +500,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     : new LatencyMonitor({ home, log: err, loop: { reset: () => loopDelay.reset(), p99Ms: () => loopDelay.percentile(99) / 1e6 } });
   try {
     latency?.purge();
+    if (!args.dryRun) purgeIncidents(home);
   } catch (e) {
     err(`Note: couldn't clear old latency logs (${(e as Error).message}).`);
   }

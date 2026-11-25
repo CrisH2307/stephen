@@ -12,6 +12,7 @@
 import { lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendPrivateLineCapped, readPrivateRegularFile } from '../lib/fs.js';
+import { lastStage, recordIncident } from './incidents.js';
 import { localDate } from '../history/store.js';
 import { ASR_MODELS } from '../voice/config.js';
 import type { Reason } from '../voice/grammar/classify.js';
@@ -293,6 +294,11 @@ export class LatencyMonitor implements LatencyTrace {
       ...extra.model,
     });
     if (!rec) return;
+    // A failed command is an incident too (docs/NFR-STEPHEN.md section 9): its id, last stage and numbers, nothing else.
+    if (outcome === 'error') {
+      const model = Object.fromEntries(LATENCY_MODEL_FIELDS.flatMap((f) => (rec[f] === undefined ? [] : [[f, rec[f]]])));
+      recordIncident(this.o.home, { part: 'listen', code: 'command_error', id, stage: lastStage(rec.stages), stages: rec.stages, model }, new Date(this.now()));
+    }
     try {
       this.append(rec, new Date(t.t0));
     } catch (e) {

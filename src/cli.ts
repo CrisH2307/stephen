@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | report | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
 import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
@@ -34,6 +34,7 @@ import { pageEngine } from './page/index.js';
 import { createSafety } from './safety/index.js';
 import { SELFTEST_USAGE, emergencyCleanup, parseSelftestArgs, runSelftest } from './selftest/index.js';
 import { packageVersion, serveStdio } from './server/index.js';
+import { recordIncident } from './telemetry/incidents.js';
 import type { ResolvedConfig } from './types.js';
 import {
   ZEN_LAUNCHER_USAGE,
@@ -72,6 +73,8 @@ Usage:
                          Show your recent commands (kept on this Mac only), or delete them
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
+  stephen report [--last N]
+                         Show recent crashes and failed commands; send them to GitHub only if you type y
   stephen replay delete --all | <id>
                          Delete saved F5 recordings (saved only when voice.replay.enabled is on)
   stephen mac-checks [--json]
@@ -513,6 +516,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./history/cli.js')).runHistoryCli(rest);
     case 'latency':
       return (await import('./telemetry/cli.js')).runLatencyCli(rest);
+    case 'report':
+      return (await import('./telemetry/report.js')).runReportCli(rest);
     case 'replay':
       return (await import('./replay/recorder.js')).runReplayCli(rest, loadConfig().home);
     case 'mac-checks':
@@ -556,11 +561,31 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
+/** The incident part of a command's process: the long-running ones by name, the rest 'other'. */
+export function incidentPart(cmd: string | undefined): 'listen' | 'serve' | 'job' | 'other' {
+  return cmd === undefined || cmd === 'serve' ? 'serve' : cmd === 'listen' ? 'listen' : cmd === 'jobs' ? 'job' : 'other';
+}
+
+/** Write an incident line for a crash: the error's code word only, never its message (docs/NFR-STEPHEN.md section 9). */
+function crashIncident(cmd: string | undefined, e: unknown): void {
+  try {
+    recordIncident(resolveStephenHome().dir, { part: incidentPart(cmd), code: (e as { code?: unknown } | null)?.code as string | undefined, stage: 'run' });
+  } catch {
+    /* never in the way of the crash itself */
+  }
+}
+
+const argv0 = process.argv[2];
+// A monitor only watches: Node still prints the error and exits as before. An uncaught crash is an incident for
+// every command, one-shot ones too (part "other"); a one-shot command that fails normally is not (below).
+process.on('uncaughtExceptionMonitor', (e) => crashIncident(argv0, e));
 main(process.argv.slice(2)).then(
   (code) => {
     if (code >= 0) process.exitCode = code;
   },
   (e: unknown) => {
+    // A long-running part that failed is an incident; a one-shot command's error is shown to the person already.
+    if (incidentPart(argv0) !== 'other') crashIncident(argv0, e);
     console.error(`stephen: ${errorMessage(e)}`);
     process.exit(1);
   },
