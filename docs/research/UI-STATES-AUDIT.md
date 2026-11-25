@@ -16,16 +16,14 @@ Defined in `helper/Core.swift:119-142`
 - `.speaking`: Playing audio response
 
 ### AppConnectionState
-Defined in `helper/AppClient.swift` (see line 50-55 for enum definition)
-- `.connecting`: Initial connection in progress
-- `.online`: Connected to app.sock
-- `.offline`: Connection lost or not established
+Defined in `helper/AppClient.swift:20-24`
+- `.connecting`: first connection attempt to app.sock
+- `.online`: connected to app.sock
+- `.offline`: not connected (listener stopped or the connection dropped)
 
-### OfflineState
-Defined in `helper/AppClient.swift` (see line 50-55 for enum definition)
-- `.connecting`: First-time connection attempt
-- `.offline`: Connection established but listener offline
-- `.retrying`: Reconnecting after disconnect
+### AskBoxMode
+Defined in `helper/AskBox.swift:34-37`
+- `.offline`, `.listening`, `.chat`: what the Ask box shows; a waiting question always shows as `.chat`
 
 ---
 
@@ -93,9 +91,8 @@ Handled at window level via `OfflineView` (see MainWindow.swift). Memory page sh
 - Page renders history entries from `model.history`
 
 ### Empty State
-**Lines:** 63-85 (empty state helper)
-- `historyView` for empty state shows greeting and action chips
-- When history is empty, shows placeholder content
+**Lines:** 141
+- "Nothing yet. Ask Stephen something and it shows here."
 
 ### Chat/Conversation State
 **Lines:** 6-211
@@ -210,7 +207,7 @@ No explicit loading state. Composer takes input, thread shows responses.
 
 ### Offline State
 **Lines:** 172-203
-- `AskBoxContent` shows `OfflineView` when `model.connection != .online`
+- `AskBoxMode.of` returns `.offline` when `model.connection != .online` (`helper/AskBox.swift:41`)
 - Offline view includes:
   - Connecting state with "Connecting..." text
   - Offline state with retry button
@@ -233,8 +230,6 @@ enum AppConnectionState {
 ### Offline Handling
 **Lines:** 56-75
 - `connection` published property tracks `AppConnectionState`
-- `connectionText` computed property returns localized text
-- `connectionState` computed property returns `OfflineState`
 
 ---
 
@@ -289,10 +284,10 @@ enum Page: String, CaseIterable, Identifiable {
 
 | Page/Component | Empty State | Loading | Error State | Offline |
 |----------------|-------------|---------|-------------|---------|
-| Home | Lines 63-79 (greeting, chips, recent) | None (instant render) | None | MainWindow:104-120 |
-| Memory | Lines 269-272, 313-316 | Lines 144-146 (notice) | None | MainWindow:104-120 |
-| Conversations | Lines 63-85 (empty view) | None | None | MainWindow:104-120 |
-| Jobs | None | None | Rows show error status | MainWindow:104-120 |
+| Home | Lines 63-79 (greeting, chips, recent) | None (instant render) | None | MainWindow:164-169 |
+| Memory | Lines 269-272, 313-316 | Lines 144-146 (notice) | None | MainWindow:164-169 |
+| Conversations | Line 141 (empty line) | None | None | MainWindow:164-169 |
+| Jobs | None | None | Rows show error status | MainWindow:164-169 |
 | Settings | Lines 87-95 (pane placeholders) | None | None | Lines 345-352 (Connected pane) |
 | Ask Box | Lines 13-19 (empty thread) | None (instant render) | None | Lines 172-203 |
 
@@ -300,7 +295,7 @@ enum Page: String, CaseIterable, Identifiable {
 
 ## Key Observations
 
-1. **Consistent offline pattern**: All pages (except Settings Connected pane) use `OfflineView` from MainWindow.swift overlay
+1. **Consistent offline pattern**: All pages (except Settings Connected pane) show `OfflineView` (helper/AppWindow.swift:17) from MainWindow.swift:164-169
 2. **No global loading states**: Most views render immediately with data from `AppModel`
 3. **Status-based error handling**: Jobs page shows status words; other pages lack explicit error UI
 4. **Connection state feedback**: AskBox has a connection state strip; other views rely on window-level OfflineView
