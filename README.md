@@ -23,6 +23,49 @@ Everything stays on your Mac: Stephen only talks to browsers on `127.0.0.1` and 
 
 You can use just one of the two browsers.
 
+## Install for friends
+
+Two commands, then three permission clicks. If something is wrong, setup stops and says what to do. You can run it again safely.
+
+### Before you start
+
+- A Mac, with Node 22 or 24.
+- Claude Code installed and signed in.
+- Apple's command line tools (if they are missing, setup tells you the one command to run).
+
+### Install
+
+```bash
+git clone https://github.com/CrisH2307/stephen.git && cd stephen && npm install && npm run build && npm link
+```
+
+```bash
+stephen setup
+```
+
+### What setup does
+
+1. Checks Node and Claude Code.
+2. Registers Stephen with Claude Code.
+3. Creates the "Zen for Stephen" app (drag it to your Dock).
+4. Builds the Stephen Helper app.
+5. Runs `stephen doctor`.
+6. Lists the three Mac permissions: Microphone, Input Monitoring and Accessibility. Each one is in System Settings > Privacy & Security. Turn on "Stephen Helper".
+
+Setup never asks for a password or a key.
+
+### Your first command
+
+The last line setup prints is: Hold F5 and say: what time is it
+
+### Update
+
+```bash
+stephen update
+```
+
+It needs a clean folder. It tells you if Input Monitoring must be clicked again (only when the helper was rebuilt). It prints the previous commit id, so you can go back.
+
 ## Install
 
 ```bash
