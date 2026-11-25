@@ -38,7 +38,7 @@ export function parseReportArgs(argv: string[]): { last: number } | { error: str
   return { last };
 }
 
-function incidentLine(r: IncidentRecord): string {
+export function incidentLine(r: IncidentRecord): string {
   const where = r.darwin ? `Node ${r.node}, Darwin ${r.darwin}` : `Node ${r.node}`;
   const lines = [`- ${r.ts}  ${r.part}  ${r.code}  at ${r.stage}  (Stephen ${r.stephen}, ${where})  id ${r.id}`];
   const nums = [
