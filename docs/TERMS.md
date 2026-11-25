@@ -9,8 +9,9 @@ Short and plain, on purpose. By using Stephen you agree to this page.
 2. **It is a beta.** Stephen is still being built. Things can break, change or be removed. Keep your own copies of
    anything important.
 3. **Your Claude account.** Stephen runs on your own Claude account, through Claude Code. Anthropic's terms for that
-   account apply, and any usage or cost on it is yours. Stephen's daily limit helps, but it does not replace your own
-   care. Stephen is not made by, or connected with, Anthropic.
+   account apply, and any usage or cost on it is yours. Stephen's daily cost limit (`voice.dailyLimit`, 1 USD a
+   day by default) and its limit of 10 background job starts a day help, but they do not replace your own care.
+   Stephen is not made by, or connected with, Anthropic.
 4. **Your other accounts.** When you connect Gmail, Google Calendar, Canvas or Notion, their own terms apply too. Only
    connect accounts you are allowed to use.
 5. **You are responsible for what you ask.** Stephen acts on your Mac and in your browser when you ask it to. Do not
