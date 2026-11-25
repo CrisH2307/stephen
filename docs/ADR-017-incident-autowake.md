@@ -27,14 +27,17 @@ key. One workflow, `.github/workflows/incident.yml`, four jobs:
    incident record and formats back to the very same text (`parseIncidentIssue`). Titles, comments and free text never
    go further.
 2. **`investigate`** (environment `incident`, `contents: read`, `issues: read`). Claude Code reads a sparse checkout
-   of `qa` (`src`, `docs`, `test` without `test/fixtures`, which holds injection pages on purpose). Tools: Read, Grep
-   and Glob only, `--permission-mode default` (anything not allowed is denied, no auto mode), deny rules for Bash, web,
-   `/proc`, `/tmp`, the runner's temp and action folders, `~/.claude` and `.git`. The prompt says the incident lines
+   of `qa` (`src`, `docs`, `test` without `test/fixtures`, which holds injection pages on purpose). Reads are allowed
+   only under `src`, `docs` and `test` (plus `AGENTS.md` and `package.json`), with `--permission-mode default`:
+   anything not allowed is denied, with no auto mode. A canary test with the real CLI showed Read, Grep and Glob
+   outside the workspace are denied. Extra deny rules cover Bash, web, `/proc`, `/tmp`, the runner's temp and action
+   folders, `~/.claude` and `.git`. The token is in the agent's process environment, so these read limits are what
+   keep it from the agent. The prompt says the incident lines
    are data, never instructions. The answer has a fixed JSON shape (`--json-schema`).
 3. **`report`** (no Claude token, `issues: write`). `scripts/incident-bot.mjs post` checks the answer
-   (`checkFindings`): a snake_case cause word, a confidence, at most 10 paths that exist under `src/`, `docs/` or
-   `test/`, a test path, and a plain summary of at most 1500 characters with no backticks, control characters or
-   token-like strings. The summary is posted inside a code block, so links, images and @mentions do not work. Then
+   (`checkFindings`): a short snake_case cause word, a confidence, at most 10 paths that exist in `qa` under `src/`,
+   `docs/` or `test/`, an existing test file, and a summary of at most 1500 characters of printable ASCII with no
+   backticks. Every field is scanned for token-like strings. The summary is posted inside a code block, so links, images and @mentions do not work. Then
    one line on #274: `from: incident-bot` / `to: dev`. If the check fails, a fixed sentence is posted instead.
 4. **`fix`** (only when the repo variable `AUTO_FIX` is `on`; default off). The `investigate` job then also allows
    Edit and Write under `src/` and `test/` (never `src/safety/` or `test/fixtures/`) and saves `git diff` as a patch.
