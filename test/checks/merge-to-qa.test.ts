@@ -16,7 +16,7 @@ const approve = { author: { login: 'CrisH2307' }, body: `**Independent review: a
 function run(pr: Record<string, unknown>, arg = '42') {
   const dir = mkdtempSync(join(tmpdir(), 'merge-to-qa-'));
   dirs.push(dir);
-  const view = { baseRefName: 'qa', state: 'OPEN', title: 'fix: thing', headRefOid: SHA, statusCheckRollup: green, comments: [], ...pr };
+  const view = { baseRefName: 'qa', state: 'OPEN', title: 'fix: thing', headRefOid: SHA, statusCheckRollup: green, comments: [], labels: [{ name: 'merge-ready' }], ...pr };
   writeFileSync(join(dir, 'view.json'), JSON.stringify(view));
   writeFileSync(join(dir, 'gh'), `#!/bin/bash
 if [ "$2" = "view" ]; then cat "${dir}/view.json"; exit 0; fi
@@ -41,6 +41,12 @@ describe('scripts/merge-to-qa.sh', () => {
     expect(r.code).not.toBe(0);
     expect(r.err).toContain('not qa');
     expect(r.merged).toBeNull();
+  });
+
+  it('refuses a PR without the merge-ready label', () => {
+    expect(run({ labels: [] }).merged).toBeNull();
+    expect(run({ labels: [{ name: 'wip' }] }).merged).toBeNull();
+    expect(run({ labels: [{ name: 'merge-ready' }] }).code).toBe(0);
   });
 
   it('refuses a closed PR', () => {
