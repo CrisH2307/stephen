@@ -16,7 +16,7 @@ p, ul, ol { margin:0 0 16px; }
 li { margin-bottom:6px; }
 a { color:var(--accent); }
 code, pre { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:15px; }
-pre { background:var(--box); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; margin:0 0 16px; }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--box); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; margin:0 0 16px; }
 .lede { font-size:20px; color:var(--ink2); }
 .note { background:var(--box); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
 .table { overflow-x:auto; }
