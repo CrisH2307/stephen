@@ -1,0 +1,69 @@
+name: merge-qa
+
+# Merges a PR into qa when it has the label merge-ready, its linux and macos checks passed on the head commit, and,
+# for a [DEV REVIEW] PR, CrisH2307 approved the head commit. The checks are in scripts/merge-to-qa.sh.
+# This workflow never checks out or runs PR code. It checks out the default branch only, and runs the script from there,
+# so a PR cannot change what runs. Merges use GITHUB_TOKEN, so they do not start new workflow runs (for example the CI
+# run on qa).
+
+on:
+  # Label added by an agent: runs once the checks may already be green. Runs the workflow file from the PR base (qa).
+  pull_request_target:
+    types: [labeled]
+  # CI finished: covers a PR that got the label before its checks were done. Runs the default branch's file.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+# No token rights by default. The job asks for what the merge needs.
+permissions: {}
+
+concurrency:
+  # One merge per PR at a time. Never cancel a merge in progress.
+  group: merge-qa-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.label.name == 'merge-ready') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+    steps:
+      # Default branch only, never the PR. Same pinned checkout as ci.yml.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      # Event text is never put in run:. Values come in through env and are only read as data.
+      - name: Find the PR number (qa only)
+        id: pr
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_PULLS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          PR_NUMBER=""
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            PR_NUMBER="$EVENT_PR_NUMBER"
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
+            PR_NUMBER=$(printf '%s' "$RUN_PULLS" | jq -r --arg sha "$RUN_HEAD_SHA" \
+              '[.[] | select(.base.ref == "qa" and .head.sha == $sha)][0].number // empty')
+          fi
+          if [ -z "$PR_NUMBER" ]; then echo "No open qa PR for this run. Nothing to merge."; fi
+          echo "pr=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+      # The script refuses anything that does not meet the rules, and pins the merge to the head commit it checked.
+      - name: Merge through scripts/merge-to-qa.sh
+        if: steps.pr.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr }}
+        run: bash scripts/merge-to-qa.sh "$PR_NUMBER"
