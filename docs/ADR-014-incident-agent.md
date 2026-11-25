@@ -1,6 +1,9 @@
 # ADR-014: Incident loop phases 2 and 3: an event workflow, a strict parser, a read-only agent, Cris's Auto-fix switch
 
 **Status:** Proposed 2026-11-25. Adds a CI trigger and a secret, so Cris must OK it. Needs decision D3 (who pays).
+**Cris, 2026-11-25 (D3):** no paid key. The agent runs through `claude-code-action` (pinned to a full SHA) with
+Cris's own Claude sign-in token as a secret in the `incident` environment, which Cris adds himself. All the limits
+below stay (allow-list, edit window, strict parser, path limits, output parser, Auto-fix off by default).
 **Deciders:** Cris (owner), dev lane.
 **Sources:** `docs/NFR-STEPHEN.md` section 9 (Cris's incident loop, 2026-11-23), `src/telemetry/incidents.ts`
 (`INCIDENT_PARTS`, `INCIDENT_CODES`, `INCIDENT_STAGES`, `parseIncidentRecord`), `src/telemetry/report.ts`

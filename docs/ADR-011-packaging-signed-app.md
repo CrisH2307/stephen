@@ -1,6 +1,8 @@
 # ADR-011: Ship Stephen as one signed and notarized app with Node inside
 
 **Status:** Proposed 2026-11-25. Needs Cris's decision D1 (Apple Developer Program) in `docs/ARCHITECTURE-PLAN.md`.
+**Cris, 2026-11-25:** approved, but it waits for D1 (the Apple Developer Program), later, when there is budget. Until
+then the beta is unsigned and installed with `stephen setup`.
 **Deciders:** Cris (owner), dev lane.
 **Sources:** `src/helper/install.ts` (ad hoc signing today), `src/voice/models.ts` (pinned model downloads),
 `helper/StephenControl.swift` (`launch.json`), `package.json`, `docs/NFR-STEPHEN.md` sections 7 and 8,
