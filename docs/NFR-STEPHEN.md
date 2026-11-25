@@ -21,8 +21,8 @@ and from `docs/ADR-008-MEASUREMENTS.md`.
 
 | | Value |
 |---|---|
-| Today | Audio and speech to text stay on the Mac. Secrets stay in the Keychain, never in the model's env. History 7 days by default (0 to 30), Claude transcripts deleted when a conversation ends, latency 30 days, recordings opt-in and 30 days. Files 0600 in 0700 folders. Data leaves the Mac only for: the voice command to Claude (after wake word), account APIs the owner connected (Gmail readonly, Notion readonly, Canvas readonly, Weather from Open-Meteo), TTS text to ElevenLabs, and incident reports to GitHub after explicit "y" confirmation (src/telemetry/report.ts). |
-| Target | Same rules for friends, plus: a friend can see and delete everything Stephen keeps in one place. A friend can see exactly what leaves their Mac in one table. No data ever leaves the Mac except the command to Claude and the account APIs the friend connected. |
+| Today | Audio and speech to text stay on the Mac. Secrets stay in the Keychain, never in the model's env. History 7 days by default (0 to 30), Claude transcripts deleted when a conversation ends, latency 30 days, recordings opt-in and 30 days. Files 0600 in 0700 folders. What leaves the Mac, and when, is one table in `docs/DATA-STORES.md` ("Everything that leaves the Mac"). Above all, every model run sends the command, the memory block and every tool result (page and email text) to Anthropic under the person's own account. |
+| Target | Same rules for friends, plus: a friend can see and delete everything Stephen keeps in one place. A friend can see exactly what leaves their Mac in one table. Nothing leaves the Mac that is not in that table, and the table matches the code. |
 | Gap | No single "what Stephen keeps" view; it is spread over Memory, Conversations, Jobs and files. No single "what leaves the Mac" table in docs. |
 | Next step | A `stephen data` command that lists each store, its size, its retention and how to delete it. Add "what leaves the Mac" table to docs/DATA-STORES.md. Docs only first. |
 
