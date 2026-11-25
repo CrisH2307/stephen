@@ -10,6 +10,7 @@ import {
   legacyHomeNotice,
   loadConfig,
   resolveStephenHome,
+  userConfigUnknownKeys,
 } from '../../src/config.js';
 import { HubError } from '../../src/errors.js';
 
@@ -182,9 +183,11 @@ describe('loadConfig', () => {
     expectInvalid(() => loadConfig({ safety: { blockedDomains: [''] } }, { HOME: join(HOME, 'x') }), '"safety.blockedDomains.0"');
   });
 
-  it('unknown keys are reported (catches typos)', () => {
-    writeJson(join(HOME, '.stephen/config.json'), { safety: { allowEval: true }, chorme: {} });
-    expectInvalid(() => loadConfig(undefined, { HOME }), '"safety.allowEval"', '"chorme"');
+  it('unknown keys do not stop Stephen; doctor names them', () => {
+    const raw = { safety: { allowEval: true }, chorme: {} };
+    writeJson(join(HOME, '.stephen/config.json'), raw);
+    expect(() => loadConfig(undefined, { HOME })).not.toThrow();
+    expect(userConfigUnknownKeys(raw)).toEqual(['safety.allowEval', 'chorme']);
   });
 
   it('a non-object config is rejected', () => {
