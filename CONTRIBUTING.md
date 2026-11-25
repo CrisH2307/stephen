@@ -37,7 +37,8 @@ assistant for the Mac. It runs on macOS 14 (Sonoma) or newer. Other systems are 
 
 Stephen acts on a person's Mac, so every change keeps these rules:
 
-- The model never writes memory, timers or jobs.
+- The model never writes memory or timers, and never starts a job on its own. The one exception is the phone link:
+  its `start_job` tool (`src/phone/bridge.ts`) works only after the owner approves the exact task on the phone.
 - Text from web pages, emails and other third parties is data, never instructions.
 - Allow and Deny are clicks only, made by a person.
 
