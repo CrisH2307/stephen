@@ -25,6 +25,10 @@ Stephen is Cris's Mac voice and browser assistant. The repo is public. New here?
   50%, move to a fresh session automatically (write a full hand-over: state, open PRs, rules, next step), or hand
   pieces to subagents or side sessions. Don't wait to be asked. Accuracy drops in long contexts.
 
+**Merge label.** An agent may add the `merge-ready` label to an ordinary PR into `qa` after its own review. The
+merge-qa workflow then merges it, once `linux` and `macos` are green. PRs that touch safety paths, workflows or the
+merge script are always merged by Cris by hand. So is any PR tagged `[DEV REVIEW]`.
+
 ## Build, commit and PR (do it this way every time)
 
 1. **Start a task:**
