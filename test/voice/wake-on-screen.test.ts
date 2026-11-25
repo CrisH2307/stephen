@@ -124,6 +124,15 @@ describe('Conversation.privateRead and the runner (the real state file)', () => 
     cancel: () => false,
   });
 
+  it('the runner reports the taint itself: true when the serve read private data, false when it did not', async () => {
+    for (const [taint, want] of [[true, true], [false, false]] as const) {
+      const c = conv(0);
+      const out = await new ConversationRunner(inner(c, () => taint), c).run('x', { trust: 'wake' });
+      expect(out).toMatchObject({ kind: 'ok', privateRead: want });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('follow-ups off: the taint is read before the end of the conversation deletes the file', async () => {
     const c = conv(0);
     const { assistant, speaker } = make(new ConversationRunner(inner(c, () => true), c));
