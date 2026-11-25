@@ -1,3 +1,7 @@
+import { lstatSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, relative, resolve } from 'node:path';
+
 /**
  * The environment Stephen gives every `claude` it starts (voice, phone): an allow-list, never the whole shell (R23).
  * Kept in src/lib (imports nothing) so model-reachable code such as src/phone/bridge.ts can use it without reaching
@@ -45,17 +49,20 @@ export const KEPT_ANTHROPIC_ENV: ReadonlySet<string> = new Set(['ANTHROPIC_API_K
 export const KEPT_BASE_ENV: ReadonlySet<string> = new Set([
   'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'TERM',
   'CLAUDE_CONFIG_DIR',
-  'STEPHEN_HOME', 'STEPHEN_CONFIG', 'BROWSER_HUB_HOME', 'BROWSER_HUB_CONFIG', 'STEPHEN_EVAL_YOUTUBE', 'STEPHEN_TEST_CHROME',
+  'STEPHEN_HOME', 'STEPHEN_CONFIG', 'BROWSER_HUB_HOME', 'BROWSER_HUB_CONFIG',
   'AWS_REGION', 'AWS_DEFAULT_REGION', 'AWS_PROFILE', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_BEARER_TOKEN_BEDROCK',
   'CLOUD_ML_REGION', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT',
 ]);
 
-/** FAKE_*: settings of the test fakes that stand in for `claude` (test/). Claude Code ignores them; none moves an endpoint. */
+/**
+ * FAKE_*: settings of the test fakes that stand in for `claude` (test/). The one prefix on the lists, on purpose: Claude
+ * Code reads no FAKE_ name, and none can move an endpoint, load code or change TLS. Every other name is listed one by one.
+ */
 const keptForClaude = (k: string) => KEPT_BASE_ENV.has(k) || KEPT_CLAUDE_CODE_ENV.has(k) || KEPT_ANTHROPIC_ENV.has(k) || k.startsWith('FAKE_');
 
 /** Shell variables that could move Claude's endpoint or trust, and that Stephen drops (names only, for the doctor note). */
 export function droppedEndpointEnv(env: NodeJS.ProcessEnv): string[] {
-  const risky = /^(ANTHROPIC_|AWS_ENDPOINT_URL)|^(HTTPS?_PROXY|ALL_PROXY|NODE_OPTIONS|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED)$/i;
+  const risky = /^(ANTHROPIC_|AWS_ENDPOINT_URL|DYLD_|LD_)|^(HTTPS?_PROXY|ALL_PROXY|NO_PROXY|NODE_OPTIONS|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|SSL_CERT_FILE|REQUESTS_CA_BUNDLE|AWS_CA_BUNDLE|AWS_CONFIG_FILE|AWS_SHARED_CREDENTIALS_FILE)$/i;
   return Object.keys(env).filter((k) => risky.test(k) && !keptForClaude(k)).sort();
 }
 
@@ -64,8 +71,30 @@ export function droppedEndpointEnv(env: NodeJS.ProcessEnv): string[] {
  * serve reads them from the Keychain or .env), no variable of a parent Claude Code session (R7-12), and nothing that
  * moves the endpoint or the trust. A name not on a list never reaches Claude.
  */
-export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function withoutSecrets(env: NodeJS.ProcessEnv, home: string = homedir()): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(env)) if (v !== undefined && keptForClaude(k)) out[k] = v;
+  // One value for Claude and for transcript cleanup (src/voice/transcripts.ts): a CLAUDE_CONFIG_DIR that is not safe is
+  // dropped here, and cleanup then uses ~/.claude too, so the two always agree (R23 review, L1).
+  const dir = claudeConfigDir(env, home);
+  if (dir) out.CLAUDE_CONFIG_DIR = dir;
+  else delete out.CLAUDE_CONFIG_DIR;
   return out;
+}
+
+/**
+ * The shell's CLAUDE_CONFIG_DIR when it is safe to use, else undefined (then Claude uses ~/.claude): an absolute path,
+ * inside the person's home folder, and a real folder (not a symlink). Returned resolved.
+ */
+export function claudeConfigDir(env: NodeJS.ProcessEnv, home: string = homedir()): string | undefined {
+  const v = env.CLAUDE_CONFIG_DIR?.trim();
+  if (!v || !isAbsolute(v)) return undefined;
+  const dir = resolve(v);
+  const rel = relative(resolve(home), dir);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined;
+  try {
+    return lstatSync(dir).isDirectory() ? dir : undefined;
+  } catch {
+    return undefined;
+  }
 }
