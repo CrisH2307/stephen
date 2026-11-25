@@ -460,8 +460,10 @@ export type ClaudeOutcome =
       apiMs?: number | null;
       /** Where the turn's time went, from the stream lines (warm process only). Numbers only. */
       model?: ModelTimes;
+      /** Set by the conversation runners: private data read in this conversation (null: state unreadable). */
+      privateRead?: boolean | null;
     }
-  | { kind: 'error'; message: string; sessionId: string | null }
+  | { kind: 'error'; message: string; sessionId: string | null; privateRead?: boolean | null }
   | { kind: 'cancelled' };
 
 /** One command's model run, measured from its stream lines (src/voice/warm-claude.ts). All in ms. */
