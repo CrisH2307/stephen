@@ -376,14 +376,18 @@ export function deleteReplayClips(home: string, which: { all: true } | { id: str
   const dir = realReplayDir(home);
   if (!dir) return 0;
   if ('id' in which) {
-    const had = readdirSync(dir).some((n) => CLIP_RE.exec(n)?.[1] === which.id);
+    if (!validCommandId(which.id)) throw new Error('not a recording id');
+    const had = readdirSync(dir).some((n) => {
+      const m = CLIP_RE.exec(n);
+      return m?.[1] === which.id && m[2] !== 'label.json';
+    });
     removeClip(dir, which.id);
     return had ? 1 : 0;
   }
   const ids = new Set<string>();
   for (const name of readdirSync(dir)) {
     const m = CLIP_RE.exec(name);
-    if (m) ids.add(m[1]!);
+    if (m && m[2] !== 'label.json') ids.add(m[1]!); // a label alone is not a recording
     if (m || TEMP_RE.test(name)) unlinkQuiet(join(dir, name));
   }
   return ids.size;
