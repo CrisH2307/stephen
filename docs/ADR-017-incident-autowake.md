@@ -22,10 +22,12 @@ key. One workflow, `.github/workflows/incident.yml`, four jobs:
 1. **`parse`** (no secret, `contents: read`). Starts only on `issues` opened, edited or labeled, with the label
    `incident`, and only when the issue author's GitHub **user id** is in the allow-list in the job's `if:` (ids never
    change; logins can be renamed and taken). Anyone else: no job starts. It sleeps 10 minutes. The workflow has one
-   `concurrency` group per issue with `cancel-in-progress`, so each edit restarts the wait. Then
+   `concurrency` group per issue with `cancel-in-progress`, so each edit restarts the wait. A daily cap stops it after
+   5 finished runs in a day (`actions: read` to count them). Then
    `scripts/incident-bot.mjs parse` keeps only lines that `stephen report` writes, and only when a line parses to an
    incident record and formats back to the very same text (`parseIncidentIssue`). Titles, comments and free text never
-   go further.
+   go further. This parser is the real defense, so it has a seeded fuzz test (injection phrases, unicode and zero
+   width characters, markdown, @names, URLs).
 2. **`investigate`** (environment `incident`, `contents: read`, `issues: read`). Claude Code reads a sparse checkout
    of `qa` (`src`, `docs`, `test` without `test/fixtures`, which holds injection pages on purpose). Reads are allowed
    only under `src`, `docs` and `test` (plus `AGENTS.md` and `package.json`), with `--permission-mode default`:
@@ -40,9 +42,9 @@ key. One workflow, `.github/workflows/incident.yml`, four jobs:
    backticks. Every field is scanned for token-like strings. The summary is posted inside a code block, so links, images and @mentions do not work. Then
    one line on #274: `from: incident-bot` / `to: dev`. If the check fails, a fixed sentence is posted instead.
 4. **`fix`** (only when the repo variable `AUTO_FIX` is `on`; default off). The `investigate` job then also allows
-   Edit and Write under `src/` and `test/` (never `src/safety/` or `test/fixtures/`) and saves `git diff` as a patch.
-   This job holds no Claude token and runs no repo code: it checks the patch paths again (no links, renames,
-   safety code or fixtures; at most 200 KB), applies it on a new branch and opens a `[DEV REVIEW]` PR to `qa`. It
+   Edit and Write under `src/` and `test/` (never `src/safety/`, `test/fixtures/`, `test/global-setup.ts`, config
+   files or setup files) and saves `git diff` as a patch. This job holds no Claude token and runs no repo code: it
+   checks the patch paths again (no links, renames, safety code, fixtures, setup or config files; at most 200 KB), applies it on a new branch and opens a `[DEV REVIEW]` PR to `qa`. It
    never merges. With `AUTO_FIX` off, nothing gets write access to code.
 
 `issues` workflows run from the default branch, so all this acts only after the release PR reaches `main`.
@@ -61,8 +63,11 @@ key. One workflow, `.github/workflows/incident.yml`, four jobs:
 - Risk: the token is Cris's personal sign-in. It lives in the `incident` environment limited to `main`, reaches only
   the `investigate` job, and that job cannot write to GitHub or run commands. If it leaks: revoke it in
   Cris's Claude account settings and run `claude setup-token` again.
-- Limit: a tester who is not a collaborator cannot add labels, so their `gh issue create --label incident` may arrive
-  without the label. Cris adding the label later starts the run (`labeled`). Task F12 (issue form) fixes this.
+- Limit: the action's own check (write access to the repo) stays on; `allowed_non_write_users` is not set. Today every
+  report is filed from Cris's account. A tester without write access, even on the id allow-list, would fail at the
+  action. Letting one through is a later change with its own review.
+- The action runs in agent mode (a prompt, `track_progress` off): no tracking comment, and its token stays read-only.
+  If it ever fails on `issues` events, it stays read-only; never widen it to write.
 - Limit: CI does not start on a PR that a workflow token opens. A lane pushes an empty commit to start it.
 - Lanes act only on comments by `CrisH2307`. The bot's comments are a notice, never an instruction.
 
