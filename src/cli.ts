@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | report | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | report | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | setup | help | --version
 import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
@@ -30,6 +30,8 @@ import {
 import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import { errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
+import { runSetup } from './setup.js';
+import { execNoThrow } from './lib/process.js';
 import { pageEngine } from './page/index.js';
 import { createSafety } from './safety/index.js';
 import { SELFTEST_USAGE, emergencyCleanup, parseSelftestArgs, runSelftest } from './selftest/index.js';
@@ -62,6 +64,8 @@ Usage:
   stephen selftest       Prove each browser works end to end, safely (temporary agent profile,
                          local test pages only; closes what it opened). Options:
                          --browser chrome|zen|all (default all)  --keep-open  --json
+  stephen setup          First-time setup in one command: checks, install, launcher, helper, doctor, then the 3 Mac
+                         permissions. Stops at the first problem and says what to do. Safe to run twice.
   stephen install        Print the "claude mcp add" command for this install
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
@@ -445,6 +449,24 @@ async function install(run: boolean): Promise<number> {
   );
 }
 
+async function setup(): Promise<number> {
+  const cliPath = distCliPath();
+  const runStephen = async (args: string[]) => {
+    const r = await execNoThrow(process.execPath, [cliPath, ...args], 600_000);
+    return { code: r.code, stdout: r.stdout, stderr: r.stderr };
+  };
+  return runSetup({
+    nodeOk: nodeSupported(process.versions.node),
+    nodeVersion: process.versions.node,
+    runClaude: defaultRunClaude,
+    runStephen,
+    exists: existsSync,
+    launcherPath: zenLauncherAppPath(),
+    cliPath,
+    log: (l) => console.log(l),
+  });
+}
+
 // ───────────────────────────── zen-launch ─────────────────────────────
 
 async function zenLaunch(argv: string[]): Promise<number> {
@@ -493,6 +515,8 @@ async function main(argv: string[]): Promise<number> {
       return selftest(rest);
     case 'install':
       return install(rest.includes('--run'));
+    case 'setup':
+      return setup();
     case 'zen-launch':
       return zenLaunch(rest);
     case 'install-zen-launcher':
