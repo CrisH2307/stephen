@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stephen: a voice assistant for your Mac</title>
+<meta name="description" content="Stephen is a voice assistant for your Mac and browser. It asks before anything risky.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div class="wrap">
+<strong>Stephen</strong>
+<nav aria-label="Main" style="display:flex;gap:18px;flex-wrap:wrap">
+<a href="index.html" aria-current="page">Home</a>
+<a href="beta.html">Get the beta</a>
+<a href="privacy.html">Privacy</a>
+<a href="https://github.com/CrisH2307/stephen">GitHub</a>
+</nav>
+</div></header>
+<main><div class="wrap">
+<h1>Stephen is a voice assistant for your Mac and browser. It asks before anything risky.</h1>
+<p class="lede">Say "Hey Stephen, open YouTube." Or hold F5 and talk.</p>
+<p class="note">Stephen is in a friends beta. It is early, and some things are slow. <a href="beta.html">How to get the beta</a>.</p>
+
+<h2>Voice control of your Mac and browser</h2>
+<ul>
+<li>Say "Hey Stephen", or hold F5, then speak.</li>
+<li>Stephen works in your own Zen or Chrome, signed in as you.</li>
+<li>It can do several steps from one sentence, like "what's due on Canvas this week, and put on some lofi".</li>
+<li>It answers in one or two spoken sentences.</li>
+<li>It can read Canvas, your calendar, Notion and Gmail. These reads are read-only.</li>
+<li>Honest limit: "Hey Stephen" is slow today (about 9.6 seconds, median). Holding F5 is faster (about 2 seconds, median).</li>
+</ul>
+
+<h2>It asks first, and page text is never an order</h2>
+<ul>
+<li>Risky actions stop at a Mac dialog. A spoken "yes" never counts. Allow and Deny are clicks only.</li>
+<li>Web pages, emails and Canvas posts are treated as data. The model cannot write memory, timers or jobs, because no such tool exists.</li>
+<li>After Stephen reads something private, it asks before it sends anything out.</li>
+<li>The wake word gets less trust than F5, because a video could say "Hey Stephen".</li>
+</ul>
+<p>Stephen is designed and tested to resist prompt injection. It has thousands of automated tests, an attack test with a real model, and independent reviews. We do not claim it cannot be tricked. The open safety items are listed in the repo.</p>
+
+<h2>Your speech stays on your Mac</h2>
+<ul>
+<li>The wake word, end-of-sentence detection and transcription run on your Mac. Your audio does not leave it.</li>
+<li>Claude gets the text of your command, plus what Stephen reads to answer it (a page, an email).</li>
+<li>Nothing is sent to us. Stephen has no server.</li>
+<li>Passwords and tokens stay in the macOS Keychain and are never shown to the model.</li>
+</ul>
+<p>The full list of what is stored, for how long, and how to delete it is on the <a href="privacy.html">privacy page</a>.</p>
+
+<h2>What Stephen is not</h2>
+<ul>
+<li>Not a chatbot. One spoken request, one short spoken answer.</li>
+<li>Not for Windows or Linux. It needs macOS 14 or newer.</li>
+<li>Not one-click yet. Setup is a few Terminal commands and three Mac permission screens.</li>
+<li>Not free of cost. It runs on your own Claude plan.</li>
+<li>Not signed or notarized yet. After an update, macOS may ask for permissions again.</li>
+<li>Not an official Anthropic product. The AI behind Stephen is Claude.</li>
+</ul>
+<p>The code is on <a href="https://github.com/CrisH2307/stephen">GitHub</a> under the MIT license.</p>
+</div></main>
+<footer><div class="wrap">Stephen is open source under the MIT license. It is not an official Anthropic product.</div></footer>
+</body>
+</html>
