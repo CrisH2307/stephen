@@ -9,10 +9,10 @@
  *
  * Recording never fails a command: every error goes to `log`.
  */
-import { lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendPrivateLineCapped, readPrivateRegularFile } from '../lib/fs.js';
-import { lastStage, recordIncident } from './incidents.js';
+import { lastStage, purgeDayFiles, recordIncident } from './incidents.js';
 import { localDate } from '../history/store.js';
 import { ASR_MODELS } from '../voice/config.js';
 import type { Reason } from '../voice/grammar/classify.js';
@@ -315,19 +315,7 @@ export class LatencyMonitor implements LatencyTrace {
 
   /** Delete day files older than LATENCY_RETENTION_DAYS (call at listener start). Returns how many were deleted. */
   purge(): number {
-    const n = new Date(this.now());
-    const cutoff = localDate(new Date(n.getFullYear(), n.getMonth(), n.getDate() - LATENCY_RETENTION_DAYS));
-    let removed = 0;
-    for (const { name, date } of this.files()) {
-      if (date >= cutoff) continue;
-      try {
-        unlinkSync(join(this.dir, name));
-        removed++;
-      } catch {
-        /* best effort */
-      }
-    }
-    return removed;
+    return purgeDayFiles(this.dir, this.files(), LATENCY_RETENTION_DAYS, new Date(this.now()));
   }
 
   /** Records of the last `days` days (1 to LATENCY_RETENTION_DAYS), oldest first. Bad lines are skipped. */
