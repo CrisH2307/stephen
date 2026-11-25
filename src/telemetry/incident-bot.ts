@@ -64,14 +64,14 @@ export interface Findings {
 }
 
 export const SUMMARY_MAX = 1500;
-const CAUSE_RE = /^[a-z][a-z0-9_]{1,40}$/;
-const PATH_RE = /^(src|docs|test)\/[A-Za-z0-9._/-]{1,200}$/;
-const TEST_RE = /^test\/[A-Za-z0-9._/-]{1,200}\.test\.ts$/;
+const CAUSE_RE = /^[a-z][a-z0-9_]{1,23}$/;
+const PATH_RE = /^(src|docs|test)\/[A-Za-z0-9._/-]{1,120}$/;
+const TEST_RE = /^test\/[A-Za-z0-9._/-]{1,120}\.test\.ts$/;
 /** Anything that looks like a key or token: an Anthropic or GitHub prefix, or a long unbroken run of key characters. */
 const SECRET_RE = /sk-ant-|gh[pousr]_|github_pat_|[A-Za-z0-9+/=_-]{40,}/;
 
-function okPath(p: unknown, re: RegExp): p is string {
-  return typeof p === 'string' && re.test(p) && !p.split('/').some((s) => s === '..' || s === '.' || s === '') && !p.startsWith('test/fixtures/');
+function okPath(p: unknown, re: RegExp, fileExists: (path: string) => boolean): p is string {
+  return typeof p === 'string' && re.test(p) && !SECRET_RE.test(p) && fileExists(p) && !p.split('/').some((s) => s === '..' || s === '.' || s === '') && !p.startsWith('test/fixtures/');
 }
 
 /** Checks the agent's answer. Returns null when anything is off: then nothing the agent wrote is posted. */
@@ -79,13 +79,13 @@ export function checkFindings(raw: unknown, fileExists: (path: string) => boolea
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   if (Object.keys(o).some((k) => !['cause', 'confidence', 'files', 'test', 'summary'].includes(k))) return null;
-  if (typeof o.cause !== 'string' || !CAUSE_RE.test(o.cause)) return null;
+  if (typeof o.cause !== 'string' || !CAUSE_RE.test(o.cause) || SECRET_RE.test(o.cause)) return null;
   if (o.confidence !== 'low' && o.confidence !== 'medium' && o.confidence !== 'high') return null;
-  if (!Array.isArray(o.files) || o.files.length > 10 || !o.files.every((f) => okPath(f, PATH_RE) && fileExists(f))) return null;
-  if (typeof o.test !== 'string' || (o.test !== '' && !okPath(o.test, TEST_RE))) return null;
+  if (!Array.isArray(o.files) || o.files.length > 10 || !o.files.every((f) => okPath(f, PATH_RE, fileExists))) return null;
+  if (typeof o.test !== 'string' || (o.test !== '' && !okPath(o.test, TEST_RE, fileExists))) return null;
   if (typeof o.summary !== 'string' || !o.summary.trim() || o.summary.length > SUMMARY_MAX || SECRET_RE.test(o.summary)) return null;
-  // Plain text only: no control characters (new lines aside) and no backticks, so it cannot leave the code block.
-  if (/[\u0000-\u0009\u000b-\u001f\u007f`]/.test(o.summary)) return null;
+  // Printable ASCII and new lines only, no backticks: it cannot leave the code block or hide text (bidi, zero width).
+  if (!/^[\n\x20-\x5f\x61-\x7e]*$/.test(o.summary)) return null;
   return { cause: o.cause, confidence: o.confidence, files: o.files as string[], test: o.test, summary: o.summary.trim() };
 }
 
