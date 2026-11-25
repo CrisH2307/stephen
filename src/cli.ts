@@ -21,6 +21,7 @@ import {
   configFilePath,
   legacyHomeNotice,
   loadConfig,
+  looksLikeSecretKey,
   readUserConfigFile,
   resolveStephenHome,
   userConfigUnknownKeys,
@@ -36,7 +37,7 @@ import {
   resolveZenRealProfile,
 } from './drivers/macos.js';
 import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
-import { errorMessage } from './errors.js';
+import { HubError, errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
 import { runSetup } from './setup.js';
 import { execNoThrow } from './lib/process.js';
@@ -123,6 +124,26 @@ Config: ${configFilePath()}  (env STEPHEN_HOME, STEPHEN_CONFIG)`;
 
 // ───────────────────────────── serve ─────────────────────────────
 
+/** One start-time line that names the ignored keys (names only, never values). */
+export function ignoredKeysNotice(keys: string[]): string {
+  return `[stephen] config: ignored keys ${keys.join(', ')} (run stephen doctor)`;
+}
+
+/**
+ * Start check (serve and listen). A key whose name looks like a secret stops the start, and its name is not shown:
+ * secrets belong in the Keychain. Other unknown keys are ignored, and each start names them on stderr.
+ */
+export async function startConfigCheck(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const ignored = await configUnknownKeys(env);
+  if (ignored.some(looksLikeSecretKey)) {
+    throw new HubError(
+      'INVALID_ARG',
+      'config.json has a key whose name looks like a secret (key, token, secret or password). Secrets belong in the macOS Keychain, not in config.json. Remove that key and start again.',
+    );
+  }
+  if (ignored.length) console.error(ignoredKeysNotice(ignored));
+}
+
 async function serve(argv: string[] = []): Promise<void> {
   // stdout carries MCP JSON-RPC only — route all console output to stderr before anything can log.
   console.log = console.error.bind(console);
@@ -160,6 +181,7 @@ async function serve(argv: string[] = []): Promise<void> {
   }
   // --trust wake: a wake-word conversation (R7-2). Logged here; each refused email read is in the audit log.
   if (opts.trust) console.error('[stephen] trust: wake word (email: who and when only; gmail_read refused)');
+  await startConfigCheck();
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
   if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
   // Profiles, state and saved page output are private to this user (mode 0700).
@@ -602,6 +624,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'listen':
       // Loaded on demand: `stephen serve` (the process Claude talks to) never loads memory, app or history code.
+      await startConfigCheck();
       return (await import('./voice/index.js')).runListen(rest);
     case 'eval':
       return (await import('./eval/cli.js')).runEvalCli(rest);

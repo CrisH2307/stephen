@@ -1,9 +1,10 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { configUnknownKeys } from '../../src/cli.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { configUnknownKeys, ignoredKeysNotice, startConfigCheck } from '../../src/cli.js';
 import { loadConfig, looksLikeSecretKey } from '../../src/config.js';
+import { HubError } from '../../src/errors.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
 
 let env: NodeJS.ProcessEnv;
@@ -18,6 +19,29 @@ function useConfig(raw: unknown) {
 
 beforeEach(() => {
   env = {};
+});
+
+describe('start check', () => {
+  it('a secret-looking key stops the start, and the message does not name it', async () => {
+    useConfig({ voice: { elevenlabs: { apiKey: 'sk-SECRET-VALUE-9' } } });
+    const err = await startConfigCheck(env).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HubError);
+    expect((err as Error).message).toMatch(/Keychain/);
+    expect((err as Error).message).not.toMatch(/apiKey|sk-SECRET/);
+  });
+  it('an ordinary unknown key prints the notice on stderr and starts', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    useConfig({ fooBar: 1 });
+    await expect(startConfigCheck(env)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith('[stephen] config: ignored keys fooBar (run stephen doctor)');
+    log.mockRestore();
+  });
+});
+
+describe('start-time notice', () => {
+  it('names the ignored keys on one line, by name only', () => {
+    expect(ignoredKeysNotice(['safety.blockedDomain', 'chorme'])).toBe('[stephen] config: ignored keys safety.blockedDomain, chorme (run stephen doctor)');
+  });
 });
 
 describe('secret-looking key names', () => {
