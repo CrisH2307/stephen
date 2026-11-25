@@ -229,6 +229,14 @@ describe('WarmConversationRunner (in-memory process, fake timers)', () => {
     expect(h.stateExists()).toBe(false);
   });
 
+  it('a clean run reports no private read; a tainted one reports it (read from the state file)', async () => {
+    const h = harness();
+    expect(await h.runner.run('one')).toMatchObject({ kind: 'ok', privateRead: false });
+    h.runner.commandEnded();
+    h.plantState();
+    expect(await h.runner.run('two')).toMatchObject({ kind: 'ok', privateRead: true });
+  });
+
   it.each([
     ['an error result', { kind: 'error', message: 'I ran out of steps before finishing.', sessionId: 'sess-1' } as ClaudeOutcome],
     ['MCP not connected', { kind: 'error', message: "Stephen's tools are not connected (MCP status: failed).", sessionId: null } as ClaudeOutcome],
