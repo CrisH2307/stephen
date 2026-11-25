@@ -103,11 +103,11 @@ export class FakeRunner implements CommandRunner {
   run(prompt: string): Promise<ClaudeOutcome> {
     this.prompts.push(prompt);
     this.calls.push(`run:${prompt}`);
-    if (!this.hold) return Promise.resolve({ kind: 'ok', text: `**Opened** ${prompt}.`, sessionId: 's', costUsd: 0, turns: 1 });
+    if (!this.hold) return Promise.resolve({ kind: 'ok', text: `**Opened** ${prompt}.`, sessionId: 's', costUsd: 0, turns: 1, privateRead: false });
     return new Promise((r) => (this.release = r));
   }
   finish(text = 'ok.') {
-    this.release?.({ kind: 'ok', text, sessionId: 's', costUsd: 0, turns: 1 });
+    this.release?.({ kind: 'ok', text, sessionId: 's', costUsd: 0, turns: 1, privateRead: false });
     this.release = null;
   }
   cancel() {

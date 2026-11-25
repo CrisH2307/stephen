@@ -239,7 +239,7 @@ describe('WarmConversationRunner (in-memory process, fake timers)', () => {
     h.plantState();
     h.w.next.push(outcome);
     const out = await h.runner.run('two');
-    expect(out).toEqual(outcome);
+    expect(out).toEqual({ ...outcome, privateRead: true }); // the taint is read before the reset deletes it
     await settle();
     expectEndedInOrder(h.w.events, 1);
     expect(h.stateExists()).toBe(false);
