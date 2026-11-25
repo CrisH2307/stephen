@@ -33,12 +33,21 @@ Option C. One app, `Stephen.app`, bundle id kept stable forever (today `dev.step
 - `Contents/MacOS/Stephen`: the Swift helper, the app's main program.
 - `Contents/Resources/node/bin/node`: the official Node 24 binary, pinned by version and sha256, re-signed with our ID.
 - `Contents/Resources/app/`: `dist/` and production `node_modules` (`npm ci --omit=dev`).
-- `Contents/Resources/models/`: the wake word and VAD models (about 19 MB). The speech to text model downloads on
-  first run through the existing sha256-pinned downloader into `~/.stephen/models`.
+- `Contents/Resources/models/`: the wake word and VAD models (archives about 18 MB). The speech to
+  text model downloads on first run through the existing sha256-pinned downloader into `~/.stephen/models`.
 - Signed with a Developer ID Application certificate, hardened runtime, every Mach-O signed inside out, notarized and
-  stapled. Entitlements start from Node's own entitlements file plus `com.apple.security.device.audio-input` and
-  `com.apple.security.automation.apple-events`, then shrink to what experiment E2 shows is needed.
-- The helper starts the listener from its own bundle. `launch.json` stays only for developer installs.
+  stapled. Entitlements start minimal: `com.apple.security.cs.allow-jit`,
+  `com.apple.security.cs.allow-unsigned-executable-memory`, `com.apple.security.device.audio-input` and
+  `com.apple.security.automation.apple-events`. Any other key is added only with a written reason from experiment
+  E2. Never `get-task-allow` (notarization refuses it), `allow-dyld-environment-variables` or
+  `disable-library-validation`: every `.node` and `.dylib` inside is re-signed with our Team ID instead.
+- The helper starts the listener from its own bundle. The release build never reads `launch.json` (a build-time
+  switch): it runs only `Bundle.main` paths, checks that Node carries our Team ID, and starts it with a clean
+  environment (no `NODE_OPTIONS`, no `DYLD_*`, a fixed PATH plus the found `claude`) and `--disable-sigusr1`.
+  Otherwise any process of the user could get its own program run with the app's mic grant. Developer installs
+  keep `launch.json`.
+- One-time move: today's ad hoc `~/Applications/Stephen Helper.app` is removed on first run of the new app. Its
+  permissions do not carry over (different signature), so every current install grants them once more.
 - Apple Silicon only for the beta (decision D6). Option D (a cask) can follow for developers at almost no cost.
 
 ## Consequences
