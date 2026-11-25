@@ -17,7 +17,15 @@ import { REPO_ROOT } from './lib/repo.js';
 import { access, constants, mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configFilePath, legacyHomeNotice, loadConfig, resolveStephenHome, type HubConfig } from './config.js';
+import {
+  configFilePath,
+  legacyHomeNotice,
+  loadConfig,
+  readUserConfigFile,
+  resolveStephenHome,
+  userConfigUnknownKeys,
+  type HubConfig,
+} from './config.js';
 import { createBrowserManager } from './drivers/index.js';
 import { securePrivateDirs } from './drivers/util.js';
 import {
@@ -190,6 +198,48 @@ async function serve(argv: string[] = []): Promise<void> {
 
 // ───────────────────────────── doctor ─────────────────────────────
 
+/**
+ * Keys in config.json that no reader uses, top level and in each section Stephen reads. The readers ignore them;
+ * doctor warns with the key name only. [] when the file cannot be read or is not valid JSON.
+ */
+export async function configUnknownKeys(env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
+  let raw: unknown;
+  try {
+    raw = readUserConfigFile(env);
+  } catch {
+    return [];
+  }
+  const found = new Set(userConfigUnknownKeys(raw));
+  const section = (name: string) => (raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[name] : undefined);
+  // On demand, like the other owner-only readers: the start-up graph stays free of these modules.
+  const [voice, memory, history, jobs, app, desktop] = await Promise.all([
+    import('./voice/config.js'),
+    import('./memory/config.js'),
+    import('./history/config.js'),
+    import('./jobs/config.js'),
+    import('./app/config.js'),
+    import('./desktop/config.js'),
+  ]);
+  const readers: [string, (v: unknown, unknownKeys: string[]) => unknown][] = [
+    ['voice', voice.parseVoiceConfig],
+    ['memory', memory.parseMemoryConfig],
+    ['history', history.parseHistoryConfig],
+    ['jobs', jobs.parseJobsConfig],
+    ['app', app.parseAppConfig],
+    ['desktop', desktop.parseDesktopConfig],
+  ];
+  for (const [name, read] of readers) {
+    const sink: string[] = [];
+    try {
+      read(section(name), sink);
+    } catch {
+      // A bad value in this section is reported by the check that reads it.
+    }
+    for (const key of sink) found.add(key);
+  }
+  return [...found];
+}
+
 interface Check {
   ok: boolean;
   label: string;
@@ -255,6 +305,9 @@ async function doctor(network = false, json = false): Promise<number> {
   try {
     cfg = loadConfig();
     add({ ok: true, label: 'Config loads', detail: existsSync(configFilePath()) ? configFilePath() : `defaults (no ${configFilePath()})` });
+    for (const key of await configUnknownKeys()) {
+      add({ ok: false, label: 'Unknown config key', detail: `"${key}" is ignored (not a Stephen setting)`, fix: `Remove "${key}" from ${configFilePath()}, or fix its spelling.` });
+    }
   } catch (e) {
     add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
   }
