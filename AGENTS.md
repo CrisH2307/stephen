@@ -61,6 +61,16 @@ Every commit counts on Cris's GitHub profile, so keep them correct:
   commit, never squash. So never squash, rebase away or rewrite commits that are already pushed.
 - PRs Cris's account opens count on his profile right away.
 
+## Team roles (Cris, 2026-11-25)
+
+- Chat titles are "STATUS | Role | job". Status words: WORKING, INREVIEW, WAITING (needs Cris), DONE, CLOSED. Rename the chat when the status changes.
+- Every agent has one role, one split task, a list of files it owns and must not touch, and the skills or model that fit. No two agents share files or a task.
+- Every coder reads the code first and follows the ponytail ladder: reuse before adding, smallest correct change, root-cause fixes, one runnable check.
+- Every code PR gets a code review as well as any safety review: `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit` (Sonnet for normal code, Opus for safety code).
+- After each batch of merges, a code health audit runs on the touched folders: `ponytail:ponytail-audit`, `ponytail:ponytail-debt`, `engineering:tech-debt`. Findings become small queue tasks.
+- A feature bigger than one file gets a short design note first: `engineering:system-design`, `engineering:architecture` (ADRs), Fable or Opus, with an independent review.
+- The top lead keeps the roster in `team-roster.md` in the shared notes folder: role, session, responsibility, model, task, status.
+
 ## Lane inboxes (how lanes talk)
 
 Lanes talk through GitHub issues, not through Cris pasting chats.
