@@ -6,8 +6,8 @@ assistant for the Mac. It runs on macOS 14 (Sonoma) or newer. Other systems are 
 ## Report a problem
 
 - Bugs and crashes: open an issue with the Bug or Crash template. Blank issues are off.
-- Security problems: do not open a public issue. Use the private report link in the issue chooser (GitHub security
-  advisories for this repository).
+- Security problems: do not open a public issue. Follow `SECURITY.md`: report privately from the repository's
+  Security tab (GitHub private vulnerability reporting).
 - Never post secrets, API keys, tokens, passwords or personal data. That includes logs and screenshots. Remove them
   first.
 
@@ -21,7 +21,8 @@ assistant for the Mac. It runs on macOS 14 (Sonoma) or newer. Other systems are 
 - Every pull request targets `qa`. Never target `main`.
 - One change per pull request. Make small commits, one clear change in each.
 - Fill in `.github/pull_request_template.md`.
-- Use Node 20.19 or newer. Install with `npm ci`, not `npm install`.
+- Use Node 20.19 or later on 20, or 22.12 or newer (`engines` in `package.json`). Install with `npm ci`, not
+  `npm install`.
 - Run these checks before you open the pull request:
 
   ```bash
