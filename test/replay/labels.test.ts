@@ -2,7 +2,7 @@
  * Recorder PR 3 (issue #48): `stephen replay label` and `stephen replay accuracy`. A label is one fixed code and a
  * time, written atomically next to a clip that exists; it goes with its clip; accuracy is numbers only.
  */
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -128,6 +128,44 @@ describe('a label goes with its clip', () => {
   });
 });
 
+describe('links never lead outside the folder', () => {
+  it('a link at the label path is replaced, never written through; purge and delete leave its target alone', async () => {
+    const t = await withClips(1);
+    const outside = join(tmp, `outside-label${n}.json`);
+    writeFileSync(outside, 'keep me');
+    symlinkSync(outside, join(t.dir, `${id(1)}.label.json`));
+    labelReplayClip(t.home, id(1), 'ok');
+    expect(readFileSync(outside, 'utf8')).toBe('keep me');
+    expect(lstatSync(join(t.dir, `${id(1)}.label.json`)).isSymbolicLink()).toBe(false);
+    symlinkSync(outside, join(t.dir, `${id(5)}.label.json`)); // a link with no clip: purged as an orphan
+    await t.r.start();
+    t.r.stop();
+    expect(existsSync(join(t.dir, `${id(5)}.label.json`))).toBe(false);
+    expect(run(['delete', '--all'], t.home)).toMatchObject({ code: 0, out: ['Deleted 1 recording.'] });
+    expect(readFileSync(outside, 'utf8')).toBe('keep me');
+  });
+
+  it('a link in place of the audio is not a clip: label refuses it, delete removes the link only', async () => {
+    const t = await withClips(1);
+    const outside = join(tmp, `outside-wav${n}.wav`);
+    writeFileSync(outside, 'keep me');
+    rmSync(join(t.dir, `${id(1)}.wav`));
+    symlinkSync(outside, join(t.dir, `${id(1)}.wav`));
+    expect(run(['label', id(1), 'ok'], t.home).code).toBe(1);
+    expect(labelsIn(t.dir)).toEqual([]);
+    expect(run(['delete', id(1)], t.home).code).toBe(0);
+    expect(readFileSync(outside, 'utf8')).toBe('keep me');
+  });
+
+  it('a label alone is not counted as a deleted recording', async () => {
+    const t = await withClips(1);
+    writePrivateJsonFileSync(join(t.dir, `${id(6)}.label.json`), { v: 1, code: 'ok', at: NOW });
+    expect(run(['delete', id(6)], t.home).out).toEqual(['No recording with that id.']);
+    writePrivateJsonFileSync(join(t.dir, `${id(6)}.label.json`), { v: 1, code: 'ok', at: NOW });
+    expect(run(['delete', '--all'], t.home).out).toEqual(['Deleted 1 recording.']);
+  });
+});
+
 describe('stephen replay accuracy', () => {
   it('sums: share ok of the labelled, each wrong code, and the unlabelled count', async () => {
     const t = await withClips(10);
@@ -184,5 +222,16 @@ describe('stephen replay list', () => {
     expect(r.out[0]).toMatch(new RegExp(`^${id(1)} .* not labelled\\n  > command 1$`));
     expect(r.out[1]).toMatch(new RegExp(`^${id(2)} .* wrong_trigger\\n  > command 2$`));
     expect(run(['list'], join(tmp, 'nobody')).out).toEqual(['No saved recordings.']);
+  });
+
+  it('what was heard is printed without control characters (escape codes, bidi overrides, newlines)', async () => {
+    const home = join(tmp, `home${++n}`);
+    const r = new ReplayRecorder({ home, enabled: () => true, now: () => NOW, userHome: join(tmp, 'user'), excludeFromBackups: async () => {} });
+    r.capture({ id: id(1), source: 'voice-ptt', startedAt: NOW, audio: new Float32Array(160), transcript: 'open \u001b[31mred\u001b[0m \u202eevil\nsecond line\u0007' });
+    await r.idle();
+    const line = run(['list'], home).out[0]!;
+    const heard = line.split('\n  > ')[1]!;
+    expect(heard).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/);
+    expect(heard).toContain('second line');
   });
 });
