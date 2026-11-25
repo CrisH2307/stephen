@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | report | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | setup | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | report | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | setup | update | help | --version
 import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
@@ -32,6 +32,7 @@ import { errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
 import { runSetup } from './setup.js';
 import { execNoThrow } from './lib/process.js';
+import { runUpdate } from './update.js';
 import { pageEngine } from './page/index.js';
 import { createSafety } from './safety/index.js';
 import { SELFTEST_USAGE, emergencyCleanup, parseSelftestArgs, runSelftest } from './selftest/index.js';
@@ -66,6 +67,8 @@ Usage:
                          --browser chrome|zen|all (default all)  --keep-open  --json
   stephen setup          First-time setup in one command: checks, install, launcher, helper, doctor, then the 3 Mac
                          permissions. Stops at the first problem and says what to do. Safe to run twice.
+  stephen update         Update to the newest version: git pull (fast-forward only), npm install, build, helper.
+                         Refuses a dirty folder. Says when Input Monitoring must be clicked again, and how to go back.
   stephen install        Print the "claude mcp add" command for this install
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
@@ -467,6 +470,21 @@ async function setup(): Promise<number> {
   });
 }
 
+async function update(): Promise<number> {
+  return runUpdate({
+    run: (cmd, args) =>
+      new Promise((res) => {
+        // 15 minutes: npm install and the Swift build are slow on a first run. No shell, argv arrays only.
+        execFile(cmd, args, { cwd: REPO_ROOT, timeout: 900_000, maxBuffer: 20_000_000 }, (err, stdout, stderr) =>
+          res({ code: err ? (typeof err.code === 'number' ? err.code : null) : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }),
+        );
+      }),
+    version: packageVersion,
+    cliPath: distCliPath(),
+    log: (l) => console.log(l),
+  });
+}
+
 // ───────────────────────────── zen-launch ─────────────────────────────
 
 async function zenLaunch(argv: string[]): Promise<number> {
@@ -517,6 +535,8 @@ async function main(argv: string[]): Promise<number> {
       return install(rest.includes('--run'));
     case 'setup':
       return setup();
+    case 'update':
+      return update();
     case 'zen-launch':
       return zenLaunch(rest);
     case 'install-zen-launcher':
