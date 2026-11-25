@@ -35,18 +35,18 @@ import { encodeWav16 } from '../voice/wav.js';
 
 export const REPLAY_MAX_AGE_MS = 30 * 24 * 3600_000;
 /** How often a running listener purges, so clips expire on time with the switch off or no F5 for weeks (#169). */
-export const REPLAY_PURGE_EVERY_MS = 6 * 3600_000;
+const REPLAY_PURGE_EVERY_MS = 6 * 3600_000;
 const FUTURE_SLACK_MS = 24 * 3600_000;
 export const REPLAY_MAX_CLIPS = 100;
 /** Clips that may wait in memory for the disk; more are dropped (a stuck write must not hold them all). */
 export const REPLAY_MAX_WAITING = 5;
 /** Time limit per write or purge. */
-export const REPLAY_JOB_TIMEOUT_MS = 30_000;
+const REPLAY_JOB_TIMEOUT_MS = 30_000;
 export const REPLAY_MAX_DAY_BYTES = 50 * 1024 * 1024;
 /** The one source that records (F5). */
-export const REPLAY_SOURCE = 'voice-ptt';
+const REPLAY_SOURCE = 'voice-ptt';
 /** The code word a failed write is counted as. */
-export const REPLAY_WRITE_FAILED = 'replay_write_failed';
+const REPLAY_WRITE_FAILED = 'replay_write_failed';
 const MAX_TRANSCRIPT_CHARS = 2000;
 const NEVER_INDEX = '.metadata_never_index';
 
