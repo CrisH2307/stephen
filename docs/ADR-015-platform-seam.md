@@ -11,8 +11,11 @@
 - macOS calls found today: `osascript` in `src/safety/confirm.ts`, `src/timers/notify.ts`, `src/desktop/sound.ts`,
   `src/desktop/system.ts`, `src/drivers/macos.ts`, `src/zen-launcher.ts`; `security` in `src/lib/keychain.ts` and
   `src/connect/keychain-write.ts`; `say` and `afplay` in `src/voice/speech.ts` and `src/voice/tts/`; `/usr/bin/open`
-  in `src/desktop/system.ts`, `src/zen-launcher.ts`, `src/app/cli.ts`; `caffeinate` in `src/jobs/runner.ts`; the
-  Swift helper for keys, the Ask box and the menu bar.
+  in `src/desktop/system.ts`, `src/zen-launcher.ts`, `src/app/cli.ts`, `src/helper/install.ts`, `src/helper/client.ts`;
+  `caffeinate` in `src/jobs/runner.ts`; `osacompile` and `codesign` in `src/zen-launcher.ts`; `codesign`, `plutil` and
+  `ioreg` in `src/desktop/system.ts`; `xcrun` and `codesign` in `src/helper/install.ts`; `xattr` in
+  `src/replay/recorder.ts`; `pgrep` in `src/drivers/macos.ts`; the Swift helper for keys, the Ask box and the menu
+  bar. `ps` and `lsof` (`src/lib/process.ts`) exist on Linux too.
 - Many places already check `process.platform === 'darwin'` and do nothing elsewhere.
 
 ## Options
@@ -27,7 +30,8 @@
 
 Option C.
 - **Step 1 (now, task W0):** `test/platform-calls.test.ts` scans the program names passed to `execFile` and `spawn` in
-  `src/` (not comments or messages) and fails when a file outside the allow-list calls `osascript`, `security`, `say`, `afplay`, `/usr/bin/open` or `caffeinate`. Moving a call is a normal PR.
+  `src/` (not comments or messages) and fails when a file outside the allow-list runs one of the programs above.
+  Moving a call is a normal PR.
 - **Step 2 (later, task W1):** one interface per concern (key listener, secret store, speaker, app launcher, dialogs
   and notifications, file permissions and sockets, keep awake), each with a macOS and a Windows implementation,
   chosen once at start. The secret store, dialogs and file permissions are safety paths: `[DEV REVIEW]`.
