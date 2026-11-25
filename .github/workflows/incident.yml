@@ -38,13 +38,14 @@ jobs:
       - name: Edit window
         run: sleep 600
       # Daily cap: at most 5 finished runs a day (success or failure; skipped and cancelled waits do not count).
+      # Cost control only: runs that finish in the same 10 minutes can all pass it. A gh failure fails closed.
       - name: Daily run cap
         id: cap
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          n=$(gh run list --workflow incident.yml --created ">=$(date -u +%F)" --limit 100 --json conclusion \
+          n=$(gh run list --workflow incident.yml --created ">=$(date -u +%F)" --limit 1000 --json conclusion \
             --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")] | length')
           if [ "$n" -lt 5 ]; then echo "ok=yes" >> "$GITHUB_OUTPUT"
           else echo "Daily cap reached ($n runs today). Not investigating; a lane can look by hand." >> "$GITHUB_STEP_SUMMARY"; fi
@@ -234,6 +235,7 @@ jobs:
           path: ${{ runner.temp }}/fix
       - name: Check the patch touches only src and test, never safety code, fixtures, setup or config files, or links
         run: |
+          set -o pipefail
           p="$RUNNER_TEMP/fix/fix.patch"
           [ "$(wc -c < "$p")" -le 200000 ] || { echo "Patch too big."; exit 1; }
           if grep -qE '^(new file mode|new mode|old mode|deleted file mode) 120000|^(rename|copy) (from|to) ' "$p"; then echo "No links, renames or copies."; exit 1; fi
