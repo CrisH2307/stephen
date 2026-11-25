@@ -31,12 +31,12 @@ not measured yet; each has an experiment in section 10.
    command line tools, and resets the Mac permissions on every helper rebuild.
 3. Target: one signed and notarized `Stephen.app`. The helper is the app. Node, the built code and the small speech
    models are inside. The big speech model downloads on first run, pinned by sha256 like today (ADR-011).
-4. Updates through Sparkle 2, with a stable and a beta channel, two signatures checked, and one-click "go back"
-   (ADR-012). Signing with one Developer ID keeps the Mac permissions across updates.
+4. Updates through Sparkle 2, with a stable and a beta channel, a signed feed, signed updates, and one-click "go back"
+   (ADR-012). The update key is as valuable as the Developer ID key. Signing with one Developer ID keeps the Mac permissions across updates.
 5. A release job in GitHub Actions builds, tests, signs and notarizes. Secrets live only in a protected `release`
    environment that waits for Cris's approval click (ADR-013).
-6. Incidents: phase 2 is a GitHub workflow that waits 10 minutes, parses the issue strictly, and lets a read-only
-   agent investigate. Phase 3 is the Auto-fix switch, a repository variable only Cris changes (ADR-014).
+6. Incidents: phase 2 is a GitHub workflow that waits 10 minutes, parses the issue strictly, and first only hands it
+   to a lane (no agent, no secret); an agent in GitHub comes later, boxed in. Phase 3 is the Auto-fix switch, a repository variable only Cris changes (ADR-014).
 7. Strangers change the threat model: shared Macs, other local users, a public repo, a signing key worth stealing.
    Section 7 lists each change and its answer.
 8. Windows later: one module per OS concern now, enforced by a test; real interfaces only when Windows work starts
@@ -44,7 +44,8 @@ not measured yet; each has an experiment in section 10.
 9. The biggest decision: buy the Apple Developer ID **before** the friends beta, not after (section 12, D1). Without
    it a friend needs about 2 GB of Apple tools and loses permissions every update, so the 15-minute setup target
    cannot be met.
-10. GitHub does not protect `main` today (the `production` ruleset is disabled; only `qa` has an active ruleset).
+10. GitHub does not protect `main` today (the `production` ruleset is disabled; only `qa` has an active ruleset, and
+    it requires the checks but not a PR).
     Turning it on is the first task, and it is a settings click for Cris.
 
 ## 2. Architecture today and target
@@ -99,9 +100,9 @@ or jobs (boundary tests); Allow and Deny are clicks in the helper or a native di
 | Helper and the listener are two installs (`~/Applications/Stephen Helper.app` plus the repo) | Two things to keep in step; `launch.json` points into a checkout | One app; the helper starts the Node inside its own bundle |
 | Listener is started by the helper's Start, and not restarted after a crash | A friend does not know to press Start again | The helper restarts it with a crash-loop limit, and Stephen starts at login (SMAppService) |
 | `claude` found on the listener's PATH | A friend may not have Claude Code, or has it somewhere else | First-run check, the official install command shown, `doctor` checks a tested version range |
-| Defaults fit Cris (weather Toronto, school Canvas URL in examples) | Wrong for others | First-run asks for the city; accounts stay opt-in |
+| Defaults fit Cris (weather Toronto; `DEFAULT_CANVAS_URL` is Cris's school in `src/accounts/canvas.ts`) | Wrong for others | First-run asks for the city; no default Canvas URL; accounts stay opt-in |
 | Data in `~/.stephen` | Fine | Keep. Do not move it (a move is a migration that can lose data) |
-| Speech models in `<home>/models`, downloaded and sha256-checked | Fine | Keep. The small models (wake word 18 MB, VAD 0.6 MB) ship inside the app |
+| Speech models in `<home>/models`, downloaded and sha256-checked | Fine | Keep. The small models (wake word archive 18 MB, VAD 0.6 MB) ship inside the app |
 
 ### 2.4 Target process model
 
@@ -119,7 +120,10 @@ The same processes, packaged differently:
 ```
 
 - The helper starts `Contents/Resources/node/bin/node Contents/Resources/app/dist/cli.js listen` from its own
-  bundle. It no longer needs `launch.json` for this (dev installs keep `launch.json`).
+  bundle. **The release build never reads `launch.json`** (a build-time switch, not a setting): any process of the
+  user could write that file and get its program run by a notarized app that holds the mic grant. It starts only
+  `Bundle.main` paths, checks the Node binary carries our Team ID, and uses a clean environment (no `NODE_OPTIONS`,
+  no `DYLD_*`, a fixed PATH plus the found `claude`), with `--disable-sigusr1`. Dev installs keep `launch.json`.
 - `claude` stays the user's own install. Stephen never ships Claude Code: it updates itself, it holds the user's
   sign-in, and its license is not ours to redistribute.
 - `serve` is still spawned by `claude` from a strict MCP config, now pointing at the bundled Node and `cli.js`.
@@ -131,7 +135,7 @@ What could go wrong, and how we would know:
 | Risk | Sign | Answer |
 |---|---|---|
 | Mic permission is not attributed to the app when Node opens the mic | `pvrecorder` gets silence or an error on a fresh Mac account; `mac-checks` mic line fails | Experiment E2 before any packaging code. Sign Node with the `audio-input` entitlement too |
-| Hardened runtime blocks V8 or the native add-ons | Node crashes at start (`EXC_BAD_ACCESS`) or `dlopen` fails for `sherpa-onnx.node` | Experiment E2 starts from Node's own entitlements file, then removes what is not needed |
+| Hardened runtime blocks V8 or the native add-ons | Node crashes at start (`EXC_BAD_ACCESS`) or `dlopen` fails for `sherpa-onnx.node` | Experiment E2 starts from `allow-jit` and `allow-unsigned-executable-memory` only (plus `audio-input`, `apple-events`) and adds keys one by one with a written reason. Never `get-task-allow` (notarization refuses it), `allow-dyld-environment-variables` or `disable-library-validation` (every `.node` and `.dylib` is re-signed with our Team ID instead) |
 | A friend moves the app | MCP config points at an old path | The listener writes the MCP config per run from `process.execPath`, so voice keeps working; `doctor` flags a stale user-scope registration |
 
 ## 3. Packaging: how a friend gets Stephen
@@ -142,7 +146,7 @@ Sizes are estimates until experiment E2 measures them. "Setup" means from downlo
 
 | Option | Setup for a friend | Download / disk | Update path | Signing cost | Permissions after update |
 |---|---|---|---|---|---|
-| A. Today plus `stephen setup` (git, npm, swiftc) | 30 to 60 min: Apple tools are about 2 GB, then 8 steps | About 1.1 GB of `node_modules` with dev tools, plus models | `stephen update` (git pull, build) | 0 | Reset whenever the helper is rebuilt |
+| A. Today plus `stephen setup` (git, npm, swiftc) | 30 to 60 min: Apple tools are about 2 GB, then 8 steps | About 1.1 GB of `node_modules` with dev tools (measured on Cris's checkout), plus models | `stephen update` (git pull, build) | 0 | Reset whenever the helper is rebuilt |
 | B. Homebrew formula that builds from source | Same as A plus Homebrew | Same as A | `brew upgrade` | 0 | Reset (ad hoc) |
 | C. **Signed and notarized `Stephen.app` with Node inside, in a DMG** | About 10 min plus the model download | About 90 MB download, 250 MB on disk, 636 MB model on first run (`whisper-small.en`) | In-app updater (Sparkle) | 99 USD a year | **Kept** (same Team ID) |
 | D. Homebrew cask that installs the DMG of C | Same as C, but needs Homebrew | Same as C | `brew upgrade --cask` or the in-app updater | Same as C | Kept |
@@ -182,28 +186,42 @@ security-critical piece in our hands. Sparkle is a new dependency, so Cris decid
 
 | Step | What happens | Checked by |
 |---|---|---|
-| Check | Once a day and from the menu: GET the appcast (an XML file) from GitHub Pages | HTTPS |
+| Check | Once a day and from the menu: GET the appcast (an XML file) from GitHub Pages, deployed only by the release and promote jobs through `actions/deploy-pages` | HTTPS, and the feed itself is EdDSA-signed (`SURequireSignedFeed`) |
 | Channel | Each item is stable or beta. Settings: "Get beta updates" (off by default; on for beta friends) | Sparkle channels |
 | Download | The signed zip from the GitHub Release | |
 | Verify 1 | The zip's EdDSA signature against the public key inside the running app | Sparkle |
-| Verify 2 | The new app is signed with the same Developer ID Team as the running app | Sparkle and macOS |
-| Before install | The helper stops the listener (Stop, as today), waits for jobs to be in a safe state (a running job keeps running; it is detached), keeps a copy of the current app as "previous" | Our code in the helper |
+| Verify 2 | The new app's code signature is valid (`SUVerifyUpdateBeforeExtraction` on) | Sparkle and macOS |
+| Before install | The helper stops the listener (Stop, as today). A running job keeps running (it is detached) | Our code in the helper |
 | Install | Sparkle swaps the app and relaunches it | Sparkle |
 | After | The helper starts the listener; `doctor` runs; the version is in the latency and incident records | Our code |
 
+**Honest limit:** Sparkle lets a release rotate either the EdDSA key or the code signing identity (not both) when the
+other one still matches. So someone holding our EdDSA key may be able to ship an app signed by a different Developer
+ID. The two checks are not independent: **the EdDSA key is as valuable as the Developer ID key** and gets the same
+care. Experiment E9 tests that exact case before F7 claims anything about it.
+
 **Data rule (N minus 1):** a release may add fields, never change their meaning, and the release before it must still
-read every file it writes. Every parser already drops unknown fields (for example `parseLatencyRecord`). A test
-keeps fixtures of the last release's files (task B10). This is what makes "go back" safe.
+read every file it writes. Today only the record parsers (`parseLatencyRecord`, `parseIncidentRecord`) drop unknown
+fields. `config.json` and its sections are strict (`z.strictObject` in `src/config.ts` and each section's config
+file): an unknown key stops Stephen from starting. So **task B11 ships first**: config readers that warn about an
+unknown key (in `doctor`) instead of refusing, while still checking the types of known keys. B11 must be in a
+release before any release adds a config key. Settings that only the helper uses (beta channel, start at login) live
+in the helper's own `UserDefaults`, not in `config.json`. A test keeps fixtures of the last release's files (task
+B10). This is what makes "go back" safe.
 
 ### 4.3 Rollback
 
-- The helper keeps one copy: `~/Library/Application Support/Stephen/previous/Stephen.app`.
-- Menu: "Go back to the previous version" and `stephen rollback`: stop the listener, swap the two apps, relaunch.
+- One app serves every account on the Mac (`/Applications/Stephen.app`). An update or a "go back" changes it for
+  everyone, and needs an admin password when the user is not an admin. So rollback goes through the same installer
+  path as an update (Sparkle's installer, with its admin prompt), never a file swap done by Node.
+- The previous version is kept once per Mac, next to the update cache, not per user.
+- Menu: "Go back to the previous version" (and `stephen rollback`, which asks the helper to do it).
 - Because both copies carry the same Developer ID, the permissions stay.
 - If the new version cannot start at all, the friend downloads the previous DMG from the GitHub Releases page. The
   "First 5 minutes" guide says how.
-- Sparkle does not install an older version on its own; a bad release is fixed forward by a new version, and the
-  bad one is removed from the appcast at once.
+- Sparkle does not install an older version on its own; a bad release is fixed forward by a new version. Order
+  matters: first remove the bad item from the appcast, then tell friends to go back (otherwise Sparkle offers the bad
+  version again).
 
 ### 4.4 Keeping the Mac permissions
 
@@ -246,7 +264,7 @@ Details: `docs/ADR-013-release-pipeline.md`.
 - **The tag** `v<version>` is made by the release job itself, after the build, on the merge commit.
 - **Weekly:** unchanged from `docs/RELEASE-CHECKLIST.md`. The only new step: after the merge, Cris approves the
   `release` environment (one click on the run page). A release that should not reach friends (a docs-only week) is
-  simply not approved; the run expires.
+  rejected with one click (a pending run waits up to 30 days, so do not leave it pending).
 - **The release job never runs for a PR, a fork, or `qa`.** It runs on `push` to `main` and `workflow_dispatch` on
   `main` only, and the environment's branch rule allows `main` only.
 
@@ -261,7 +279,8 @@ Details: `docs/ADR-013-release-pipeline.md`.
 
 A backup of the certificate and the Sparkle key lives offline with Cris (an encrypted disk image or a password
 manager), never in the repo, never on an agent's disk. If the Sparkle key is lost, updates stop and every friend must
-download the app again by hand. If it leaks, an attacker still needs our Developer ID signature to pass verify 2.
+download the app again by hand. If it leaks, treat it like a leaked Developer ID key: it may be enough to ship an update (section 4.2). Rotate it at
+once with a release signed by our Developer ID, and tell friends.
 
 What could go wrong: notarization takes long or Apple's service is down (the job waits up to 60 minutes, then fails;
 re-run later), the certificate expires (Developer ID certificates last 5 years; a calendar note), a macOS runner
@@ -294,9 +313,14 @@ Phase 2 in short (details in ADR-014). It starts without any secret: the workflo
 - Strict parse first, in a job with no secret: `scripts/incident-parse.mjs` keeps only lines that match the exact
   format `formatReport` writes and the code words in `INCIDENT_PARTS`, `INCIDENT_CODES` and `INCIDENT_STAGES`. Anything else is dropped.
   The agent never sees the raw issue text, comments, or titles.
-- The agent job: Claude Code with Read, Grep and Glob only (no Bash, no web, no MCP), a turn cap and a cost cap,
-  `contents: read`, `issues: write` for one comment. Its comment is filtered for key-shaped strings before posting.
-- The dev and review lanes see the comment through their inbox routine.
+- The agent job (later, D3): Claude Code with Read, Grep and Glob limited to `src/` and `docs/` (deny rules for
+  `test/fixtures/**`, which holds injection pages on purpose, `/proc/**`, `~/.claude/**` and the runner's temp
+  folder), no Bash, no web, no MCP, a turn cap and a cost cap. Its answer has a fixed shape (a cause code word,
+  existing file paths, a test name) and a strict output parser posts only what passes. `issues: write` lets the job
+  edit any issue, so only the posting step holds it.
+- How the lanes see it: a lane acts only on comments by `CrisH2307` (AGENTS.md), so a `github-actions[bot]` comment
+  is never an instruction. The workflow adds the label `incident-ready` instead; the lanes list that label at the
+  start of a session and read the issue's parsed fields themselves.
 
 What could go wrong: prompt injection through a crafted issue (answered by the allow-list plus the strict parser:
 there is no free text left to inject), the agent posts something wrong (it only comments; a person decides), cost
@@ -318,14 +342,14 @@ A free agent fills the sheet from the command output; the review lane checks eve
 | Change | New risk | Answer | How we would know it fails |
 |---|---|---|---|
 | Shared Macs with several user accounts | Each account runs its own Stephen; with fast user switching a background account's listener may still hear the room | The helper tells the listener to close the mic when its session leaves the console, and to reopen it on return (task B4). Experiment E3 first | Listener log line "mic closed: session inactive"; E3 result |
-| Other local users and the browser debug port | "Zen for Stephen" opens a debug port on localhost with no password. Every local user can reach it and drive the signed-in browser | `doctor` warns when the Mac has other user accounts and a debug port is open (task B5). The real fix is the Zen add-on, ADR-009 (native messaging, no port) | Doctor line; ADR-009 build |
+| Other local users and the browser debug port | "Zen for Stephen" opens a debug port on localhost with no password. Every local user can reach it and drive the signed-in browser | `doctor` warns when the Mac has other user accounts and a debug port is open (task B5). For the beta, when the Mac has other user accounts, the helper refuses to start "Zen for Stephen" with a port and says why (Chrome asks per connection, so it still works). The real fix is the Zen add-on, ADR-009 (native messaging, no port) | Doctor line; ADR-009 build |
 | Friends who are not technical | They click Allow to make a box go away | Wording of every Ask box stays plain and specific (already the rule); the first-run guide explains Allow and Deny with one picture | Beta feedback; audit log shows Allow rates per rule (counts only) |
 | A public repo | Anyone can read the code, file issues, open PRs, try workflow injection | Already: `pull_request` only, pinned actions, no PR text in `run:`, no secrets in CI. New: incident allow-list, strict parse, environments with required reviewer, "Require approval for all external contributors" on | Audit log; any run started by a non-allow-listed author is a bug |
 | Supply chain: npm packages | A bad version of a dependency | `npm ci` from the lockfile only; Dependabot to `qa`; 5 runtime dependencies today; every new one needs Cris's OK (AGENTS.md); `npm audit signatures` in the release job | Dependabot alerts; release job fails |
 | Supply chain: Node binary, models | A swapped download | Node pinned by sha256 from the signed `SHASUMS256.txt`; models already pinned by sha256 | Build fails on mismatch |
 | Supply chain: our own release | Someone ships a build that is not from `main` | Only `release.yml` on `main` can sign; build provenance attestation (task P7); the appcast lists only releases the job made | `gh attestation verify` on the DMG |
-| A signing key worth stealing | With the Developer ID key, an attacker can sign malware as Cris | Key only in the `release` environment and in Cris's offline backup; no agent ever handles it; Apple can revoke it | GitHub audit log of environment use |
-| The update channel | A fake update | Two checks: EdDSA signature and same Team ID (section 4.2) | Sparkle refuses and logs; a test with a wrongly signed zip (task F7) |
+| Signing keys worth stealing | With the Developer ID key, an attacker can sign malware as Cris. With the Sparkle key, they may ship an update to every friend (section 4.2) | Key only in the `release` environment and in Cris's offline backup; no agent ever handles it; Apple can revoke it | GitHub audit log of environment use |
+| The update channel | A fake update or a hijacked feed | Signed feed, signed update, valid code signature; both keys guarded the same way (section 4.2) | Sparkle refuses and logs; a test with a wrongly signed zip (task F7) |
 | Friends' accounts and data | A bug that leaks one friend's data | Nothing is sent to us; each friend's data stays on their Mac | Privacy policy and `stephen data` list |
 
 Same-user malware stays out of scope (it can already do everything the user can), as `SYSTEM-DESIGN-STEPHEN.md`
@@ -370,10 +394,11 @@ each). Do make sure each macOS call lives in one known module, and a test keeps 
 | Key listener (F5, chord, Esc) | Helper event tap (`helper/main.swift`, `helper/Core.swift`) over `helper.sock` | A small native tray app with a low-level keyboard hook, same `helper.sock` protocol on a named pipe |
 | Secret store | `security` CLI: `src/lib/keychain.ts` (read), `src/connect/keychain-write.ts` (write) | Windows Credential Manager |
 | Speaker and chimes | `say` and `afplay`: `src/voice/speech.ts`, `src/voice/tts/say.ts`, `src/voice/tts/player.ts` | Kokoro (already cross-platform through sherpa-onnx) plus a WAV player |
-| App launcher, URLs, app quit | `/usr/bin/open`, `osascript`: `src/desktop/system.ts`, `src/zen-launcher.ts`, `src/drivers/macos.ts`, `src/app/cli.ts` | `start`, Shell APIs |
+| App launcher, URLs, app quit | `/usr/bin/open`, `osascript`: `src/desktop/system.ts`, `src/zen-launcher.ts`, `src/drivers/macos.ts`, `src/app/cli.ts`, `src/helper/install.ts`, `src/helper/client.ts` | `start`, Shell APIs |
 | Volume and media players | JXA through `osascript`: `src/desktop/sound.ts` | Core Audio APIs in the tray app |
 | Confirm dialogs and notifications | `osascript`: `src/safety/confirm.ts`, `src/timers/notify.ts`; the Ask box in the helper | The tray app's own dialog. A safety path: `[DEV REVIEW]` |
 | File permissions and sockets | 0600/0700, `O_NOFOLLOW`, Unix sockets, peer uid and pid: `src/lib/fs.ts`, `src/lib/private-socket.ts`, the helper | ACLs for the current user, named pipes with a user check. A safety path |
+| Other system tools | `osacompile` and `codesign` (`src/zen-launcher.ts`), `codesign`, `plutil`, `ioreg` (`src/desktop/system.ts`), `xcrun` and `codesign` (`src/helper/install.ts`), `xattr` (`src/replay/recorder.ts`), `pgrep` (`src/drivers/macos.ts`). `ps` and `lsof` in `src/lib/process.ts` also exist on Linux | Per tool: most have no Windows twin and their feature stays macOS-only |
 | Keep awake during jobs | `caffeinate`: `src/jobs/runner.ts` | `SetThreadExecutionState` |
 | Job sandbox | Claude Code's Seatbelt sandbox | Not available: jobs stay off on Windows. They already refuse to start without a sandbox (fail closed) |
 
@@ -413,12 +438,13 @@ Each is small and comes before the code it protects.
 | # | Question | Smallest experiment | Who, time | Blocks |
 |---|---|---|---|---|
 | E1 | Do permissions survive an update when both builds carry the same Developer ID? | Sign two builds of the helper (versions 0.0.1 and 0.0.2) with the Developer ID. Install 1, grant Input Monitoring and Microphone, replace with 2, check System Settings and `mac-checks` | Cris with the dev lane, 15 min, needs D1 | F3, F7 |
-| E2 | Does Node with our native add-ons run under the hardened runtime, pass notarization, and get the mic? | A script that puts Node, `dist` and production `node_modules` in a test bundle, signs every Mach-O with Node's own entitlements file plus `audio-input` and `apple-events`, notarizes, then runs `doctor --json` and a 5 s mic test on a fresh macOS user account. Write down the bundle size | Sonnet on the macOS runner, then Cris on the Mac, 1 day | F2, F4 |
+| E2 | Does Node with our native add-ons run under the hardened runtime, pass notarization, and get the mic? | A script that puts Node, `dist` and production `node_modules` in a test bundle, signs every Mach-O with only `allow-jit`, `allow-unsigned-executable-memory`, `audio-input` and `apple-events`, notarizes, then runs `doctor --json` and a 5 s mic test on a fresh macOS user account. Write down the bundle size | Sonnet on the macOS runner, then Cris on the Mac, 1 day | F2, F4 |
 | E3 | Does a background user session still get mic audio with fast user switching? | Two accounts, Stephen listening in account A, switch to B, speak, read A's listener log (levels only) | Cris, 10 min | B4 |
 | E4 | Does Sparkle's relaunch leave the listener or a job in a bad state? | Update a test build while a long command and a job run | Sonnet plus Cris, 30 min | F7 |
 | E5 | Does `concurrency` with `cancel-in-progress` restart the 10-minute wait on each issue edit? | A throwaway workflow on a test label, edit the issue twice | Sonnet, 30 min | F11 |
 | E6 | Real setup time | One friend with a stopwatch, every stall written down (already NFR section 7) | Cris, 30 min | Beta gate |
 | E7 | What does `total_cost_usd` mean for a friend on a Claude subscription, not an API key? | Compare the daily cost line with the plan's usage page for one day | Cris, 5 min | Daily limit wording |
+| E9 | Does Sparkle accept an update with a valid EdDSA signature but another team's code signature? | A test appcast and two test builds: one signed with our ID, one ad hoc or with another ID, both EdDSA-signed with a test key | Sonnet plus Cris, 1 hour | F7 |
 | E8 | Does the Claude Code CLI keep the flags Stephen uses? | A weekly CI job: install the latest Claude Code, run `claude --help`, check each flag in `buildClaudeArgs` and `buildJobArgs` | Sonnet, half a day | B2 |
 
 ## 11. Roadmap with phases and dependencies
@@ -485,7 +511,7 @@ Only goals, requirements, strategy and money. Everything else the lanes decide a
 |---|---|---|---|---|
 | D1 | **When to join the Apple Developer Program (99 USD a year)** | a) Now, before the friends beta. b) After the beta, as you said on 2026-11-23. c) Never; friends build from git | (b) and (c) mean every friend installs about 2 GB of Apple tools, setup takes 30 to 60 minutes, the build can break on a new macOS (#248), and permissions reset at every update. (a) costs 99 USD a year and about one hour of your time for the sign-up and the certificates | **a) Now.** It is the one change that makes the 15-minute setup and "permissions kept" possible. This changes your earlier answer, so please confirm |
 | D2 | **Friends need their own paid Claude plan** | a) Yes, say so in the invite. b) Look for a way to pay for them | Claude Code needs a Claude Pro or Max plan or an API account. We do not hold anyone's money today; paying for friends means an API key we manage, a bill, and a new server | **a) Yes.** Each friend uses their own plan; the daily limit protects them |
-| D3 | **Incident agent: who pays and how much** | a) An Anthropic API key with a monthly spend limit (for example 20 USD) in the `incident` environment. b) Your Claude subscription token. c) No agent in GitHub; the lanes pick up incident issues from their inbox | (a) is separate from your own use and capped. (b) costs nothing extra but shares your usage limit with your own work. (c) is free but slower (hours, not minutes) | **Start with c) during the friends beta**, move to a) when incident issues come more than a few times a week |
+| D3 | **Incident agent: who pays and how much** | a) An Anthropic API key with a monthly spend limit (for example 20 USD) in the `incident` environment. b) Your Claude subscription token. c) No agent in GitHub; the workflow labels the issue `incident-ready` and the lanes pick it up | (a) is separate from your own use and capped. (b) costs nothing extra but shares your usage limit with your own work. (c) is free but slower (hours, not minutes) | **Start with c) during the friends beta**, move to a) when incident issues come more than a few times a week |
 | D4 | **Sparkle as a new dependency for updates** | a) Sparkle 2. b) Our own updater. c) No in-app updates; friends download each version | (a) is the tested standard, MIT licensed, and adds one framework. (b) is security code we would have to write, review and maintain. (c) means friends stay on old versions | **a) Sparkle 2** |
 | D5 | **Website, domain and support** | a) GitHub Pages at `crish2307.github.io/stephen`, GitHub Discussions for support, GitHub private vulnerability reports for security. b) The same plus your own domain (about 15 USD a year) | (a) is free and enough for friends. A domain looks more serious for the public, and you can add it later without breaking links if the app's update address points to a domain we control from day one | **a) for the beta; b) before public.** If you buy the domain anyway, buy it before the first friends build, so the update address never changes |
 | D6 | **Which Macs to support** | a) Apple Silicon only, macOS 14 and up. b) Also Intel Macs | Intel doubles the builds and the hand checks, and you cannot test Intel yourself | **a) for the beta.** Ask the friends what they have first |
@@ -505,16 +531,17 @@ rule and the usage rule from section 9.
 
 | ID | Task | Files or area | Size | Model | Safety | Acceptance test |
 |---|---|---|---|---|---|---|
-| B1 | Protect `main`: activate a ruleset like `qa`'s (PR required, `linux` and `macos` required, no force-push, no deletion, no bypass) | GitHub settings (Cris's click); the dev lane writes the exact steps | S | Haiku writes steps | No | `gh api repos/CrisH2307/stephen/rulesets` shows a `main` ruleset `active`; a test push to `main` is refused |
-| B2 | Claude Code contract check: a list of tested Claude Code versions in `doctor`, and a weekly workflow that checks `claude --help` for every flag Stephen uses (E8) | `src/cli.ts` doctor section, new `scripts/claude-contract.mjs`, new `.github/workflows/claude-contract.yml` | M | Sonnet | Workflow change: Cris OKs the new schedule trigger | Doctor warns on a version outside the list (unit test); the workflow fails when a flag is removed (test with a fake `--help` text) |
-| B3 | Helper restarts a crashed listener, at most 3 times in 5 minutes, then shows "Stephen stopped, press Start"; each crash writes an incident | `helper/StephenControl.swift`, `src/telemetry/incidents.ts` callers | M | Sonnet | No (helper PR: Mac click check) | `kill -9` of the listener: back within 10 s; 4th crash in 5 min: stays stopped with the message; `stephen report` shows the crashes |
+| B1 | Protect `main`: an active ruleset with a `pull_request` rule, `linux` and `macos` required, no force-push, no deletion, no bypass. Decide if `qa` gets the `pull_request` rule too (today it has only the checks, no deletion and no force-push) | GitHub settings (Cris's click); the dev lane writes the exact steps | S | Haiku writes steps | No | `gh api repos/CrisH2307/stephen/rulesets` shows a `main` ruleset `active` with `pull_request`; a test push to `main` is refused |
+| B2 | Weekly Claude Code contract workflow. The version range (`TESTED_CLAUDE_MIN`, `TESTED_CLAUDE_MAX`, `claudeVersionCheck` in `src/voice/claude.ts`) and the flag check (`checkClaudeFlags`, `test/voice/claude-contract.test.ts`) already exist; the workflow runs `checkClaudeFlags` on the live `claude --help` of the latest release (E8) | New `.github/workflows/claude-contract.yml`, a tiny script calling `checkClaudeFlags` | S | Sonnet | Workflow change: Cris OKs the schedule trigger | The workflow fails on a fake `--help` text with one flag removed, passes on today's |
+| B3 | Helper restarts a crashed listener, at most 3 times in 5 minutes, then shows "Stephen stopped, press Start"; each crash writes an incident | `helper/StephenControl.swift`, `src/telemetry/incidents.ts` callers | M | Sonnet, Opus reviews | **[DEV REVIEW]** (what runs with the mic grant; helper PR: Mac click check) | `kill -9` of the listener: back within 10 s; 4th crash in 5 min: stays stopped with the message; `stephen report` shows the crashes |
 | B4 | Mic off while the Mac session is not active (fast user switching), after E3 | `helper/main.swift` (session notifications), `src/helper/protocol.ts`, `src/voice/listener.ts` | M | Opus | **[DEV REVIEW]** (privacy, helper protocol) | Unit test of the new protocol message; Mac check: switch user, log says mic closed within 2 s, back on return |
-| B5 | `doctor` warns when other user accounts exist and a browser debug port is open | `src/cli.ts` doctor, a small check module | S | Sonnet | No | Unit tests with a fake user list and fake port state |
+| B5 | Shared Macs: `doctor` warns, and the helper refuses to start "Zen for Stephen" with a debug port when other user accounts exist (until ADR-009) | `src/cli.ts` doctor, `src/zen-launcher.ts`, a small check module | S | Sonnet, Opus reviews | **[DEV REVIEW]** | Unit tests with a fake user list: one account starts, two accounts refuse with a reason |
 | B6 | `stephen data`: list each store, size, retention, how to delete (from `docs/DATA-STORES.md`) | New `src/app/data-cli.ts` or `src/cli.ts` case, tests | S | Free agent (OpenCode) from a precise spec | No | Test: every row of DATA-STORES.md appears; sizes come from the real files |
 | B7 | Correct "what leaves the Mac" in `docs/NFR-STEPHEN.md` section 2 and add the table of section 7.2 to `docs/DATA-STORES.md` | Docs only | S | Free agent draft, Haiku checks each row against the code | No | Each row cites a file that exists and does what it says |
-| B8 | Move Cris-specific defaults out: weather city asked at first run (keep Toronto only as the last fallback), example Canvas URL neutral | `src/accounts/weather.ts`, `src/accounts/config.ts` comments, docs | S | Free agent | No | Tests pass; `rg -i "ontariotechu\|toronto" src` only in a fallback constant and its test |
-| B9 | CI check: a PR touching safety paths needs `[DEV REVIEW]` in its title | New `scripts/safety-paths.mjs`, a step in `.github/workflows/ci.yml` (title through `env:` only) | S | Sonnet | Workflow change: Cris OKs | A test PR touching `src/safety/` without the tag fails; with the tag passes; title text never reaches `run:` |
-| B10 | N minus 1 data fixtures: save today's files (`config.json`, `memory.json`, `timers.json`, a history line, a latency line, an incident line, a job state) and a test that the current code reads them | `test/fixtures/v0.1/`, `test/compat.test.ts` | M | Free agent from a precise spec, Sonnet reviews | No | The test passes; deleting a parser field makes it fail |
+| B8 | Move Cris-specific defaults out: no default Canvas URL (`DEFAULT_CANVAS_URL` in `src/accounts/canvas.ts`; ask instead), weather city asked at first run (Toronto stays only as `DEFAULT_WEATHER`), neutral comments and tool text (`src/accounts/index.ts` says "Toronto by default") | `src/accounts/`, `src/memory/intent.ts` comment, `src/eval/dry-server.ts` | S | Free agent from a precise spec | No | Tests pass; `rg -i "ontariotechu|toronto" src` hits only `DEFAULT_WEATHER` |
+| B9 | CI check: a PR touching safety paths needs `[DEV REVIEW]` in its title | New `scripts/safety-paths.mjs`, a step in `.github/workflows/ci.yml` (title through `env:` only) | S | Sonnet, Opus reviews | **[DEV REVIEW]** (workflow change: Cris OKs) | A test PR touching `src/safety/` without the tag fails; with the tag passes; title text never reaches `run:` |
+| B10 | N minus 1 data fixtures: save today's files (`config.json`, `memory.json`, `timers.json`, a history line, a latency line, an incident line, a job state) and a test that the current code reads them, plus a config with an extra unknown key | `test/fixtures/v0.1/`, `test/compat.test.ts` | M | Free agent from a precise spec, Sonnet reviews | No | The test passes; deleting a parser field makes it fail; after B11, the extra-key config loads with a warning |
+| B11 | Tolerant config readers: an unknown key in `config.json` or a section is a `doctor` warning, not a start failure; known keys keep strict types. Must ship before any release adds a config key | `src/config.ts` and the section config files (`src/voice/config.ts`, `src/voice/tts/config.ts`, `src/memory/config.ts`, `src/history/config.ts`, `src/jobs/config.ts`, `src/app/config.ts`, `src/desktop/config.ts`) | M | Sonnet, Opus reviews | **[DEV REVIEW]** (config decides safety settings such as `safety.confirm`) | A config with an unknown key starts and `doctor` names the key; a known key with a wrong type still refuses; safety keys keep their checks |
 
 ### Phase F: friends beta
 
@@ -522,17 +549,17 @@ rule and the usage rule from section 9.
 |---|---|---|---|---|---|---|
 | F1 | Apple Developer Program sign-up, Developer ID Application certificate, App Store Connect API key, offline backup | Cris (D1); dev lane writes the steps | S | Haiku writes steps | No | `security find-identity -p codesigning` on a test run shows "Developer ID Application" |
 | F1b | Experiments E1 and E2 | Scratch scripts, results in `docs/research/` | M | Sonnet, Cris on the Mac | No | Written results with numbers (bundle size, permission state after update) |
-| F2 | `scripts/build-app.mjs`: build `dist`, `npm ci --omit=dev` into a staging folder, fetch Node by pinned version and sha256, compile the helper, assemble `Stephen.app` | New script, `helper/Info.plist` (name, `SUFeedURL`, `SUPublicEDKey`) | L | Sonnet | No | On the macOS runner: the app's Node runs `cli.js --version` and `doctor --json`; size within 20% of E2 |
-| F3 | The helper starts the listener from its own bundle; `launch.json` stays for dev installs; PATH includes the usual `claude` places, or `voice.claudePath` | `helper/StephenControl.swift`, `src/app/control.ts` | M | Opus | **[DEV REVIEW]** (decides what program runs with the mic permission) | Unit tests for path choice; Mac check: fresh account, Start works without Terminal |
-| F4 | `scripts/sign-app.sh`: sign every Mach-O inside out with hardened runtime and the entitlements from E2, notarize with `notarytool`, staple, build DMG and zip | New script, `helper/Stephen.entitlements` | M | Sonnet | No | `codesign --verify --deep --strict` and `spctl -a -t exec -vv` pass; DMG opens on a fresh Mac with no warning |
+| F2 | `scripts/build-app.mjs`: build `dist`, `npm ci --omit=dev` into a staging folder, fetch Node by pinned version and sha256, compile the helper, assemble `Stephen.app`; drop the repo `.env` lookup in the app build (`REPO_ROOT` points inside the bundle); remove or replace the old `~/Applications/Stephen Helper.app` on first run (one permission re-grant expected, said in the guide) | New script, `helper/Info.plist` (name, `SUFeedURL`, `SUPublicEDKey`), `src/accounts/secrets.ts` | L | Sonnet | No | On the macOS runner: the app's Node runs `cli.js --version` and `doctor --json`; size within 20% of E2 |
+| F3 | The helper starts the listener from its own bundle. Release build: never reads `launch.json` (build-time switch), only `Bundle.main` paths, checks Node's Team ID, clean environment (no `NODE_OPTIONS`, no `DYLD_*`, fixed PATH plus the found `claude`), `--disable-sigusr1`. Dev build keeps `launch.json` | `helper/StephenControl.swift`, `src/app/control.ts` | M | Opus | **[DEV REVIEW]** (decides what program runs with the mic permission) | Unit tests for path choice; a planted `launch.json` and `NODE_OPTIONS` are ignored by the release build; Mac check: fresh account, Start works without Terminal |
+| F4 | `scripts/sign-app.sh`: sign every Mach-O inside out with hardened runtime and the minimal entitlements from E2, notarize with `notarytool`, staple, build DMG and zip | New script, `helper/Stephen.entitlements` | M | Sonnet, Opus reviews | **[DEV REVIEW]** (entitlements set the runtime's protections) | `codesign --verify --deep --strict` and `spctl -a -t exec -vv` pass; `codesign -d --entitlements` shows no `get-task-allow`, `allow-dyld-environment-variables` or `disable-library-validation`; DMG opens on a fresh Mac with no warning |
 | F5 | Login item through SMAppService, a Settings switch "Start Stephen at login" | `helper/SettingsPage.swift`, `helper/main.swift` | S | Sonnet | No | Mac check: log out and in, Stephen is in the menu bar |
-| F6 | `.github/workflows/release.yml` and the `release` environment (required reviewer Cris, branch `main` only), per ADR-013 | New workflow, repo settings | L | Opus | **[DEV REVIEW]** (secrets, CI trigger: Cris OKs) | A dry run on a test tag signs nothing without approval; with approval it publishes a draft release with DMG, zip, checksums; the job never runs on a PR |
-| F7 | Sparkle 2 in the helper: channels, "Check for updates", "Get beta updates" switch, stop the listener before install (E4) | `helper/`, `src/helper/install.ts` for dev builds, appcast generation in `release.yml` | L | Sonnet, Opus reviews | **[DEV REVIEW]** (update verification is a trust boundary) | 0.2.0 updates to 0.2.1 from a test appcast; permissions kept (E1); a zip signed with a wrong key is refused; a build signed by another team is refused |
-| F8 | Rollback: keep the previous app, "Go back" menu item and `stephen rollback` | `helper/`, `src/cli.ts` | M | Sonnet | No | After an update, go back restores the old version; B10 fixtures still read; permissions kept |
+| F6 | `.github/workflows/release.yml` and the `release` environment (required reviewer Cris, branch `main` only), per ADR-013: job 2 runs no `npm`, no dependency code, no cache; `concurrency: release`; permissions written per job; Pages deploy through `actions/deploy-pages` | New workflow, repo settings (Pages on) | L | Opus | **[DEV REVIEW]** (secrets, CI trigger: Cris OKs) | A dry run signs nothing without approval; job 2 never starts for a PR; two pending runs cannot both sign; with approval: a draft release with DMG, zip, checksums and a signed appcast item |
+| F7 | Sparkle 2 in the helper: signed feed (`SURequireSignedFeed`), `SUVerifyUpdateBeforeExtraction`, channels, "Check for updates", "Get beta updates" (in `UserDefaults`), stop the listener before install (E4) | `helper/`, appcast generation in `release.yml` | L | Sonnet, Opus reviews | **[DEV REVIEW]** (update verification is a trust boundary) | 0.2.0 updates to 0.2.1 from a test appcast; permissions kept (E1); a zip with a wrong EdDSA key is refused; a tampered feed is refused; the E9 case is written down with its result |
+| F8 | Rollback through the installer path: the previous version kept once per Mac, "Go back" menu item, `stephen rollback` asks the helper (no Node file swap) | `helper/`, `src/cli.ts` | M | Sonnet, Opus reviews | **[DEV REVIEW]** (replaces the signed app) | After an update, go back restores the old version; B10 fixtures and a B11-era config still load; permissions kept; a non-admin user gets the admin prompt; a shared-Mac case is written down |
 | F9 | First-run onboarding in the app: Claude Code present and signed in (show the official install command, never run a script for them), model download with progress and retry, permission walkthrough, city | `helper/` (UI lane), `src/app/` requests that already exist where possible | L | Sonnet (UI lane) | No, unless it adds an app.sock request: then **[DEV REVIEW]** | E6: a friend reaches the first spoken command in 15 minutes |
 | F10 | "First 5 minutes" guide | `docs/FIRST-5-MINUTES.md` | S | Free agent draft, Haiku checks against the app | No | Every step matches the app; no step needs Terminal |
-| F11 | Incident phase 2: `incident.yml` and `scripts/incident-parse.mjs`, per ADR-014. First without a secret (post on #274); the agent and the `incident` environment only after D3 | New workflow and script | L | Opus | **[DEV REVIEW]** (public repo trigger, secret, untrusted input) | E5 passes; an issue by a non-allow-listed author runs nothing; a crafted body with free text reaches the agent as nothing; the agent comments once |
-| F12 | `stephen report` without `gh`: copy the shown text, open the empty incident form; "Report a problem" menu item | `src/telemetry/report.ts`, `helper/` menu | S | Sonnet | No | Tests: no `gh` means copy plus open; nothing is ever put in a URL |
+| F11 | Incident phase 2: `incident.yml` and `scripts/incident-parse.mjs`, per ADR-014. First without a secret (label `incident-ready`); the agent and the `incident` environment only after D3, with path limits and an output parser | New workflow and script | L | Opus | **[DEV REVIEW]** (public repo trigger, untrusted input) | E5 passes; an issue by a non-allow-listed author runs nothing; a crafted body with free text parses to nothing; with the agent: a read of `test/fixtures/` or `/proc` is denied, and a free-text answer is not posted |
+| F12 | `stephen report` without `gh`: copy the shown text, open the empty incident form; "Report a problem" menu item | `src/telemetry/report.ts`, `helper/` menu | S | Sonnet, Opus reviews the "nothing in a URL" rule | No | Tests: no `gh` means copy plus open; the opened URL has no query and no fragment |
 | F13 | `stephen report --week`: the content-free weekly summary | `src/telemetry/cli.ts` | S | Free agent from a precise spec | No | Test: the output has only numbers, code words, versions and dates (a test with planted words in the records) |
 | F14 | Release notes and appcast text from `CHANGELOG.md` | `scripts/`, `release.yml` step | S | Free agent | No | The appcast item shows the release's changelog section |
 | F15 | Nonce on `helper.sock` (the open hardening item) | `helper/`, `src/helper/` | M | Opus | **[DEV REVIEW]** | A client without the nonce is refused (test), the helper protocol fixtures updated |
@@ -542,7 +569,7 @@ rule and the usage rule from section 9.
 
 | ID | Task | Files or area | Size | Model | Safety | Acceptance test |
 |---|---|---|---|---|---|---|
-| P1 | Website: download, guide, privacy policy, security contact (start from `docs/site/`) | `docs/site/`, GitHub Pages | M | Free agent draft, Sonnet builds | No | Pages live; the download link is the notarized DMG; no tracking script |
+| P1 | Website: download, guide, privacy policy, security contact (start from `docs/site/`). The appcast lives on the same Pages site, deployed only by the release job | `docs/site/`, GitHub Pages | M | Free agent draft, Sonnet builds, Opus reviews anything that touches the feed | **[DEV REVIEW]** if it changes the Pages deploy | Pages live; the download link is the notarized DMG; no tracking script; the feed is not writable by the site build |
 | P2 | Privacy policy from section 7.3 | `docs/PRIVACY.md`, the site | S | Free agent draft, Opus checks every claim against the code | No | Every row of 7.2 is in it; reviewer sign-off |
 | P3 | `SECURITY.md`, GitHub private vulnerability reporting on | Repo root, settings (Cris) | S | Free agent | No | The Security tab shows the policy and the report button |
 | P4 | Third-party notices: Node, npm packages, models (Whisper, Silero VAD, Parakeet, Moonshine, Kokoro, the keyword model: check each license, some need attribution) | `THIRD-PARTY-NOTICES.md`, inside the app | M | Haiku collects, free agent writes, Opus checks | No | Every file inside the app has a license entry |
@@ -557,5 +584,5 @@ rule and the usage rule from section 9.
 
 | ID | Task | Files or area | Size | Model | Safety | Acceptance test |
 |---|---|---|---|---|---|---|
-| W0 | Platform call test: only the files in section 8 may call `osascript`, `security`, `say`, `afplay`, `/usr/bin/open`, `caffeinate` (can start now, it is cheap) | New `test/platform-calls.test.ts` | S | Free agent | No | Passes on `qa`; fails when another file adds such a call |
+| W0 | Platform call test: only the files in section 8 may run the macOS programs listed in ADR-015 (`osascript`, `osacompile`, `security`, `say`, `afplay`, `open`, `caffeinate`, `codesign`, `plutil`, `ioreg`, `xcrun`, `xattr`, `pgrep`); matches the program passed to `execFile` and `spawn`, not comments | New `test/platform-calls.test.ts` | S | Free agent from a precise spec | No | Passes on `qa`; fails when another file adds such a call |
 | W1 | ADR-015 step 2: interfaces with a macOS and a Windows implementation | `src/platform/` | L | Opus design, Sonnet code | **[DEV REVIEW]** for the secret store, dialogs and file permissions | Starts only after Cris's go |
