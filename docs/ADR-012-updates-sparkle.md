@@ -1,6 +1,8 @@
 # ADR-012: In-app updates with Sparkle 2, two channels, two signatures, one-step rollback
 
 **Status:** Proposed 2026-11-25. Sparkle is a new dependency, so it needs Cris's decision D4 in
+**Cris, 2026-11-25:** approved, but it waits for D1 (the Apple Developer Program), later, when there is budget. Until
+then the beta is unsigned and installed with `stephen setup`.
 `docs/ARCHITECTURE-PLAN.md`. Depends on ADR-011.
 **Deciders:** Cris (owner), dev lane.
 **Sources:** `docs/NFR-STEPHEN.md` section 8 (update target), `docs/RELEASE-CHECKLIST.md` ("Going back"),

@@ -1,6 +1,8 @@
 # ADR-013: Release pipeline: build on `main`, sign only after Cris approves, promote beta to stable by hand
 
 **Status:** Proposed 2026-11-25. Adds a workflow, a CI trigger and secrets, so Cris must OK it (AGENTS.md).
+**Cris, 2026-11-25:** approved, but it waits for D1 (the Apple Developer Program), later, when there is budget. Until
+then the beta is unsigned and installed with `stephen setup`.
 Depends on ADR-011 and ADR-012.
 **Deciders:** Cris (owner), dev lane, review lane.
 **Sources:** `.github/workflows/ci.yml`, `docs/CI-CD-PROPOSAL.md` (sections 4, 5, 9), `docs/RELEASE-CHECKLIST.md`,
