@@ -259,6 +259,11 @@ async function doctor(network = false, json = false): Promise<number> {
     add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
   }
 
+  const dropped = (await import('./voice/claude.js')).droppedAnthropicEnv(process.env);
+  if (dropped.length) {
+    add({ ok: true, info: true, label: 'Claude endpoint', detail: `${dropped.join(', ')} set in this shell: Stephen does not pass it to Claude, so Claude uses Anthropic's own endpoint.` });
+  }
+
   const homeInfo = resolveStephenHome();
   if (homeInfo.legacy) {
     add({ ok: true, info: true, label: 'Home folder', detail: legacyHomeNotice(homeInfo.dir) });
