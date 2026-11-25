@@ -7,6 +7,7 @@
  * Every program runs through `deps`, so the tests never touch git, npm or the helper.
  */
 
+import { HELPER_UNCHANGED } from './helper/install.js';
 import { firstLine } from './lib/process.js';
 
 export interface RunResult {
@@ -97,7 +98,7 @@ export async function runUpdate(deps: UpdateDeps): Promise<number> {
   if (helper.code !== 0) {
     return stop(`The helper did not build. Run \`stephen install-helper\` and read the error. To go back: git checkout ${prev}`, firstLine(helper.stderr || helper.stdout));
   }
-  const rebuilt = !/Nothing changed/.test(helper.stdout);
+  const rebuilt = !helper.stdout.includes(HELPER_UNCHANGED);
 
   const after = deps.version();
   log(`\nUpdated: Stephen ${before} (${prev}) to ${after} (${out(nowR)}).`);

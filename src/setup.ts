@@ -6,6 +6,7 @@
  * Every program runs through `deps` so the tests never start a real install.
  */
 
+import { HELPER_UNCHANGED } from './helper/install.js';
 import { firstLine } from './lib/process.js';
 
 export interface RunResult {
@@ -100,7 +101,7 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
   if (h.code !== 0) {
     return stop(`Install Apple's command line tools with \`xcode-select --install\`, ${AGAIN}`, firstLine(h.stderr || h.stdout));
   }
-  if (/Nothing changed/.test(h.stdout)) skip();
+  if (h.stdout.includes(HELPER_UNCHANGED)) skip();
   else ok('built');
 
   head('Check the setup (stephen doctor)');
