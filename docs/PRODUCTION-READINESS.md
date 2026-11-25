@@ -5,7 +5,7 @@ on #10.
 **Goes with:** `docs/ARCHITECTURE-PLAN.md` (PR #318; task ids B, F, P, W and experiments E come from there),
 `docs/RELEASE-PLAN.md`, `docs/NFR-STEPHEN.md`, `docs/AGENT-LOOP.md`, `docs/DATA-STORES.md`.
 **Rule for this doc:** every claim about today was checked against `qa` at `881b5cf`. New tasks here have ids R1 to
-R22. Tasks already planned in #318 keep their ids and are not repeated in full.
+R23. Tasks already planned in #318 keep their ids and are not repeated in full.
 
 ## How to read this
 
@@ -27,33 +27,36 @@ does it apply, what exists today, the gap, and a phase.
 | 1 | CI/CD | Yes | CI: `.github/workflows/ci.yml` runs `linux` and `macos` on every PR to `qa` and `main`, pinned actions, no secrets, no `pull_request_target`. `qa` ruleset requires both checks. No CD: releases are a manual merge plus a build on each Mac | `main` is not protected (B1). No release job, no signing (F4, F6) | NOW (B1, F6) |
 | 2 | Unit tests | Yes | Vitest over `test/` (one folder per `src/` area), helper tests in `test/helper`, boundary tests (`test/memory/boundary.test.ts`), the lock in `test/global-setup.ts` | No test that last release's files still load (B10). Config is strict, so a new key breaks going back (B11) | NOW (B10, B11) |
 | 3 | Performance monitoring | Yes, local only | `stephen latency` (`src/telemetry/latency.ts`, `src/telemetry/cli.ts` with `TARGETS`), `scripts/measure-idle.sh`, the weekly number sheet (`docs/RELEASE-PLAN.md` section 4) | Idle CPU and memory never measured (R14). Wake word 2x over target (NFR section 3). No weekly summary a friend can send (F13) | NOW (R14, F13) |
-| 4 | Auth on every endpoint | Yes | `app.sock` and `phone.sock`: 0600 sockets in a 0700 folder, same user only (`src/lib/private-socket.ts`); `phone.sock` is off by default and rate limited (`src/phone/server.ts`). `helper.sock`: 0600 plus a `getpeereid` uid check (`helper/Core.swift`). MCP `serve`: stdio only, spawned by `claude` from a strict per-run config, no network port. Gmail sign-in: one-shot loopback server on 127.0.0.1 with `state` and PKCE (`src/connect/gmail-oauth.ts`). Browser debug port: **no auth**, any local user can reach it | Nonce on `helper.sock` (F15). Debug port on shared Macs (B5). No test stops a new network listener from appearing (R4) | NOW (R4, B5, F15) |
+| 4 | Auth on every endpoint | Yes | `app.sock` and `phone.sock`: 0600 sockets in a 0700 folder, same user only (`src/lib/private-socket.ts`); `phone.sock` is off by default and rate limited (`src/phone/server.ts`). `helper.sock`: 0600 plus a `getpeereid` uid check (`helper/Core.swift`). MCP `serve`: stdio only, spawned by `claude` from a strict per-run config, no network port. Gmail sign-in: one-shot loopback server on 127.0.0.1 with `state` and PKCE (`src/connect/gmail-oauth.ts`). Zen's debug port: **no auth**, any local user can reach it (`src/drivers/zen.ts`). Chrome asks for an Allow on each connection (`src/drivers/chrome.ts`) | Nonce on `helper.sock` (F15). Debug port on shared Macs (B5). No test stops a new network listener from appearing (R4) | NOW (R4, B5, F15) |
 | 5 | Dependency audit | Yes | `npm ci` from the lockfile, 5 runtime dependencies, every new one needs Cris's OK (`AGENTS.md`), pinned action SHAs | No Dependabot config (`.github/dependabot.yml` is missing), alerts not confirmed on, no audit step anywhere. License check not done (P4) | NOW (R1, R2; audit in F6), PUBLIC (P4) |
 | 6 | Spend caps and billing alerts | Yes, for the person's own account | Daily limit on by default, 1 USD (`src/voice/config.ts` `dailyLimit`), 80% warning and stop at 100% (#305, #309); job budget 5 USD (`src/jobs/config.ts`). We hold no paid key today | The 1 USD default is a guess; what cost means on a subscription is unknown (E7, R13). Our only future key (incident agent) needs a spend limit (D3, F11) | NOW (R13) |
 | 7 | Backups and a tested restore | Partly | Atomic 0600 writes (`src/lib/fs.ts`, temp file, fsync, rename), so a crash does not leave half a file. Time Machine covers `~/.stephen` if the person uses it. Keychain items are the person's own | No export or import, no restore test. Loss today is small (memory is at most 30 items) | NOW: N-1 reads (B10, B11). PUBLIC: R20 |
-| 8 | Rollback for bad updates | Yes | Going back by git in `docs/RELEASE-CHECKLIST.md`; `stephen update` (#317) | No one-click go back (F8); the N-1 data rule needs B10 and B11 first | NOW (B10, B11, F8) |
+| 8 | Rollback for bad updates | Yes | Going back by git in `docs/RELEASE-CHECKLIST.md`. `stephen update` is planned (#317), not on `qa` yet | No one-click go back (F8); the N-1 data rule needs B10 and B11 first | NOW (B10, B11, F8) |
 | 9 | Secrets out of the repo | Yes | `.env` in `.gitignore`; secrets live in the Keychain (`src/lib/keychain.ts`); `test/security/no-secret-leak.test.ts` proves no account secret reaches tool results, logs or history; CI holds no secret | GitHub secret scanning and push protection not confirmed on (R1) | NOW (R1) |
 | 10 | Rotate leaked keys | Yes, from F1 on | None. Today we hold no long-lived key in CI | A runbook for each key we will hold (Developer ID, notary key, Sparkle EdDSA key, incident key) and for the person's own tokens (R12). Must exist before F1 creates the first key | NOW (R12) |
-| 11 | Rate limiting | Yes, for local actions | SafetyGate `maxActionsPerMinute`, account reads included (`src/safety/gate.ts`); phone asks 6 a minute (`PHONE_ASKS_PER_MIN`); planned incident runs at most one per issue per 10 minutes (ADR-014). Model API limits are Anthropic's, on the person's account | None new. A model "rate limited" answer needs a plain spoken reason (R5) | NOW (done; R5 for the reply) |
+| 11 | Rate limiting | Yes, for local actions | SafetyGate `maxActionsPerMinute`, account reads included (`src/safety/gate.ts`); phone asks 6 a minute (`PHONE_ASKS_PER_MIN`); planned incident runs at most one per issue per edit window (ADR-014, in PR #318). Model API limits are Anthropic's, on the person's account | None new. A model "rate limited" answer needs a plain spoken reason (R5) | NOW (done; R5 for the reply) |
 | 12 | Error tracking | Yes, content-free | Incident file and `stephen report` (#303, `src/telemetry/incidents.ts`, `src/telemetry/report.ts`) | Friends have no `gh` (F12). Workflow that hands an incident to a lane (F11). Automatic reports off by default (P6) | NOW (F11, F12), PUBLIC (P6) |
 | 13 | Uptime monitoring | No server | | N/A: nothing of ours runs all the time. The local version is "the listener is alive": B3 restarts it. The appcast on GitHub Pages rides on GitHub's uptime | N/A (B3 covers the local part) |
 | 14 | Staging | Yes, as channels | `qa` is the staging branch; weekly release to `main` | A beta channel friends opt into, and promote to stable after 7 days (F7, D7) | NOW (F7) |
 | 15 | Custom domain SSL | Only if D5 b | GitHub Pages serves `github.io` over HTTPS already | If Cris picks a domain: Pages custom domain with "Enforce HTTPS" (R22). **The feed URL is baked into every installed app, so it must be fixed before F7 ships** | PUBLIC (only with D5 b); the URL choice is NOW |
 | 16 | SPF, DKIM, DMARC | No | Stephen sends no email | N/A: no sending domain. If D5 b adds a support mailbox, set them at the mail host then | N/A (LATER with own-domain mail) |
-| 17 | Real error, empty and loading states | Yes | Helper pages: Home, Memory, Conversations, Jobs, Settings, the Ask box (`helper/*.swift`). Spoken fallback "Something went wrong." (`src/voice/assistant.ts:386`) | Not audited page by page (R6, R7a to R7e). A generic spoken error breaks the "clear spoken reason" target of 98% (R5) | NOW (R5, R6, R7) |
+| 17 | Real error, empty and loading states | Yes | Helper pages: Home, Memory, Conversations, Jobs, Settings, the Ask box (`helper/*.swift`). Spoken fallbacks "Something went wrong." (`src/voice/assistant.ts:386`) and "Something went wrong while I was working on that." (`src/voice/claude.ts:493`) | Not audited page by page (R6, R7a to R7e). A generic spoken error breaks the "clear spoken reason" target of 98% (R5) | NOW (R5, R6, R7) |
 | 18 | Evals | Yes | `stephen eval` with 15 categories (`src/eval/cases.ts`, `src/eval/run.ts`, `src/eval/score.ts`); `test/eval/` tests the runner | Not run per release because it costs tokens (NFR section 1). Not in the release checklist (R8) | NOW (R8) |
 | 19 | Prompt-injection tests | Yes | 7 `inject` eval cases with fake pages (`serve --dry-run --fake-page`); injection fixtures in `test/fixtures/`; taint and egress in `src/safety/`; boundary tests | Inject cases not run per release (R8). Coverage per untrusted source (mail, calendar, Notion, Canvas, page) not listed (R9). The incident workflow is a new injection surface (F11 strict parse) | NOW (R8, R9, F11) |
-| 20 | Fallback when the model API is down | Yes | Speech to text, the routers (memory, timers, jobs) and the clicks are local and keep working. A failed run says "Something went wrong." | No plain reason (no network, signed out, usage limit, Claude busy) and no incident code word for it (R5). Running on a local model is ADR-016, LATER | NOW (R5), LATER (ADR-016) |
+| 20 | Fallback when the model API is down | Yes | Speech to text, the routers (memory, timers, jobs) and the clicks are local and keep working. A failed run says "Something went wrong" (`src/voice/assistant.ts:386`, `src/voice/claude.ts:493`) | No plain reason (no network, signed out, usage limit, Claude busy) and no incident code word for it (R5). Running on a local model is ADR-016, LATER | NOW (R5), LATER (ADR-016) |
 | 21 | Privacy policy and terms | Yes | Content planned in ARCHITECTURE-PLAN section 7.3; MIT license (no warranty) | No published policy (P2). "What leaves the Mac" is wrong in the NFR (B7). No short terms page (R21) | NOW (B7), PUBLIC (P2, R21) |
 | 22 | Delete all my data | Yes | Each store has its own delete in `docs/DATA-STORES.md`; `stephen history clear`; `stephen disconnect <account>` | No list in one place (B6) and no "delete everything" (R10). Uninstall steps not written (F10) | NOW (B6, R10, F10) |
 | 23 | Password reset | No | | N/A: Stephen has no accounts or passwords. Claude sign-in is Anthropic's, connected accounts are the providers' | N/A |
 | 24 | Penetration test | Yes, as reviews | Independent reviews `docs/REVIEW-1.md` to `REVIEW-10B.md`, findings in `docs/research/FINDINGS-LEDGER.md` | Review of the new packaging and updater (F16), full review before public (P10). A paid outside test costs money and fits a company, not a free app | NOW (F16), PUBLIC (P10), LATER (paid test) |
-| 25 | Google CASA | Not today | Each person makes their own "Desktop app" OAuth client, scope exactly `gmail.readonly` (`src/connect/gmail-oauth.ts`). A personal client in Testing mode needs no Google verification | CASA comes only if we ship one shared Google client for everyone (`gmail.readonly` is a restricted scope: verification plus a yearly security assessment) | LATER (trigger: a shared Google client) |
+| 25 | Google CASA | Not today | Each person makes their own "Desktop app" OAuth client, scope exactly `gmail.readonly` (`src/connect/gmail-oauth.ts`). A personal client in Testing mode needs no Google verification, but it is limited to its test-user list, Google expires its refresh tokens after 7 days (`docs/PLAN-2A-READ-MY-STUFF.md`), and each friend must make their own Google Cloud client | Setup cost for friends (F10 must explain it). CASA comes only if we ship one shared Google client for everyone (`gmail.readonly` is a restricted scope: verification plus a yearly security assessment) | LATER (trigger: a shared Google client) |
 | 26 | Microsoft audit | No | No Microsoft account connector | N/A until an Outlook or Microsoft 365 connector exists (then publisher verification) | N/A (LATER with an Outlook connector) |
 | 27 | DPA | No | Nothing reaches us; each person's data goes to Anthropic under their own account and its terms | N/A: we are not a processor of anyone's data. Only a business customer would ask | LATER (trigger: a business user) |
 | 28 | Security questionnaire | No | `docs/SYSTEM-DESIGN-STEPHEN.md`, `docs/DATA-STORES.md`, `SECURITY.md` (P3) answer most questions | N/A for friends and public individuals | LATER (trigger: a business user) |
 | 29 | SSO and audit logs | Partly | No accounts, so no SSO. A local safety audit log exists, redacted and size capped (`src/safety/audit.ts`) | SSO N/A. The audit log is for the person, not an admin | N/A (SSO); audit log done |
 | 30 | Sending domains off blocklists | No | Stephen sends no email; reports go through GitHub | N/A: no sending domain | N/A |
+| 31 | Claude Code version drift (added) | Yes, our main outside dependency | Tested range and flag check (`TESTED_CLAUDE_MIN`, `TESTED_CLAUDE_MAX`, `checkClaudeFlags` in `src/voice/claude.ts`); Stephen refuses a `claude` without the lock-down flags | No weekly check against the newest Claude Code (B2, E8) | NOW (B2) |
+| 32 | Mac permissions after an update (added) | Yes, hits every friend | Ad hoc signed helper: a rebuild resets Input Monitoring | Developer ID keeps them (E1, F2, F4); `doctor` and the incident record flag a lost permission | NOW (D1, E1, F4) |
+| 33 | Model endpoint from the shell (added) | Yes | `withoutSecrets` (`src/voice/claude.ts`) passes `ANTHROPIC_*` variables from the shell to `claude`, so `ANTHROPIC_BASE_URL` can send prompts elsewhere | Strip them unless Stephen's own setting names an endpoint (R23) | NOW (R23) |
 
 ## 2. Decisions this triage adds
 
@@ -83,6 +86,9 @@ Still open from #318: D1 (Developer ID) blocks F1 to F8 and the whole beta packa
 - **Done check, always:** `git diff --stat origin/qa...HEAD` shows only allowed files;
   `git log --format='%an <%ae> | %cn <%ce>' origin/qa..HEAD` shows only Cris; no em or en dashes;
   `npm run build && npm run typecheck && npx vitest run` passes (one suite at a time).
+- **No free agent on a Claude-only path.** A #318 row that edits a workflow or a memory path (F14's `release.yml`
+  step, B8's `src/memory/intent.ts` comment) is done by Sonnet or Haiku, not a free agent. The free agent keeps only
+  the other files of that row.
 - **`[DEV REVIEW]`** in the title for safety paths; it needs a dev-lane review and an independent Opus review.
 
 ### Queue, NOW (friends beta), in order
@@ -97,23 +103,24 @@ Rows on the same step can run in parallel (their files do not overlap). A later 
 | 1 | R14 idle measurement | | Cris on the Mac, free agent fills | No |
 | 2 | B11 tolerant config readers | | Per #318 | Per #318 |
 | 2 | R4 network listener test | | OpenCode, Sonnet reviews | No |
+| 2 | R23 no model endpoint from the shell | | Opus | **[DEV REVIEW]** |
 | 2 | R6 UI states audit | | Haiku | No |
 | 2 | B7 "what leaves the Mac" docs | | Per #318 | No |
 | 3 | B10 N-1 data fixtures | B11 | Per #318 | No |
-| 3 | R5 plain reasons when Claude fails | | Sonnet, Opus reviews | No |
+| 3 | R5 plain reasons when Claude fails | R23 (same file) | Sonnet, Opus reviews | **[DEV REVIEW]** |
 | 3 | R7a to R7e UI states, one page each | R6 | Sonnet (UI lane) | No |
 | 3 | B6 `stephen data` list | B7 | Per #318 | No |
 | 4 | R10 delete all my data | B6 | Opus | **[DEV REVIEW]** |
-| 4 | R8 inject eval per release | | Sonnet | No |
+| 4 | R8 inject eval per release | | Sonnet | Claude-only file (`docs/RELEASE-CHECKLIST.md`) |
 | 4 | R9 inject coverage per source | | Opus | **[DEV REVIEW]** |
 | 4 | R2 Dependabot config (after D10) | R1 | Sonnet | Cris OKs |
 | 5 | B2, B3, B4 (after E3), B5, B8, B9 | Per #318 | Per #318 | Per #318 |
 | 5 | R13 daily limit default | one week of cost lines, E7 | Sonnet | No |
 | 6 | F1 to F16, in #318 section 11 order | D1, D5 | Per #318 | Per #318 |
-| 6 | F6 adds `npm audit signatures` and `npm audit --omit=dev --audit-level=high` to the release build | F6 | Per #318 | Per #318 |
-| 6 | F10 adds "how to leave": quit, remove the app and the login item, then R10 | F10, R10 | Per #318 | No |
+| 6 | F6 adds `npm audit signatures` and `npm audit --omit=dev --audit-level=high` to the release build | Same PR as F6 | Per #318 | Per #318 |
+| 6 | F10 adds "how to leave" (quit, remove the app and the login item, then R10) and the Google Testing-mode limits | Same PR as F10; R10 | Per #318 | No |
 
-**Beta gate:** the #318 gate (F16 with no open High, E6 under 15 minutes) plus R5, R7, R8 and R10 merged.
+**Beta gate:** the #318 gate (F16 with no open High, E6 under 15 minutes) plus R5, R7, R8, R10 and R23 merged.
 
 ### Queue, PUBLIC, in order
 
@@ -121,7 +128,7 @@ Rows on the same step can run in parallel (their files do not overlap). A later 
 |---|---|---|---|---|
 | 1 | P2 privacy policy, R21 terms | B7 | Free agent, Opus checks | No |
 | 1 | P3 `SECURITY.md`, P4 notices, P9 `CONTRIBUTING.md` | | Per #318 | No |
-| 2 | R20 export and import with a restore test | B10 | Opus | **[DEV REVIEW]** |
+| 2 | R20 export and import with a restore test | B6, B10 | Opus | **[DEV REVIEW]** |
 | 2 | P1 website, R22 custom domain (only with D5 b) | P2, P3 | Per #318 | Per #318 |
 | 3 | P5, P6, P7, P8 | Per #318 | Per #318 | Per #318 |
 | 4 | P10 full review | all of the above | Opus, fresh reviewer | Review |
@@ -162,18 +169,22 @@ Steps:           1. Walk src/ for *.ts files. Find lines with "createServer(", "
                     src/phone/server.ts (through listenPrivateSocket), src/connect/gmail-oauth.ts,
                     src/selftest/fixtures.ts, src/eval/clicks.ts. Check each with grep before writing it down,
                     and add any other file that matches today only after the reviewer agrees.
-                 3. For an allowed file that uses node:http, the file must contain "127.0.0.1" and must not contain
+                 3. Key the list by file and the number of listener calls in it, so a second listener in an
+                    allowed file also fails.
+                 4. For an allowed file that uses node:http, the file must contain "127.0.0.1" and must not contain
                     "0.0.0.0".
-                 4. A second case with a planted fake file content proves the test fails on a new listener.
+                 5. A second case with a planted fake file content proves the test fails on a new listener.
 Acceptance test: npx vitest run test/security/listeners.test.ts
 Done check:      Standard.
 ```
 
 ```text
-R5  Plain reasons when Claude fails                Model: Sonnet, Opus reviews
+R5  Plain reasons when Claude fails                Model: Sonnet, Opus reviews   Safety: [DEV REVIEW]
 Goal:            When a model run fails, Stephen says why in one plain sentence and writes an incident code word.
 Files allowed:   src/voice/claude.ts (error classification only), src/voice/assistant.ts (the spoken line),
                  src/telemetry/incidents.ts (new code words), test/voice/claude-errors.test.ts (new)
+Files forbidden: claudeSpawnOptions, withoutSecrets and REQUIRED_CLAUDE_FLAGS in src/voice/claude.ts; formatReport
+                 in src/telemetry/
 Steps:           1. Classify a failed run into: claude_missing (no binary), claude_signed_out, claude_usage_limit,
                     claude_busy (overloaded or rate limited), claude_offline (no network), claude_other.
                     Use only the result subtype, the exit code and fixed error markers, never the text itself.
@@ -214,7 +225,7 @@ Done check:      Standard.
 R8  Inject eval per release                        Model: Sonnet
 Goal:            Every release runs the inject eval and records the score; less than 100% blocks the release.
 Files allowed:   docs/RELEASE-CHECKLIST.md, docs/RELEASE-PLAN.md (number sheet row)
-Steps:           1. Add step 4b: stephen eval --category inject on the release commit, on Cris's Mac.
+Steps:           1. Add step 4b: stephen eval --only inject on the release commit, on Cris's Mac.
                  2. Add a number sheet row: inject pass rate and the cost of the run.
 Acceptance test: The review lane follows the new step once on the next release.
 Done check:      Standard.
@@ -248,7 +259,7 @@ Done check:      Standard.
 ```
 
 ```text
-R12 Key rotation runbook                           Model: free agent draft, Opus checks every step
+R12 Key rotation runbook                           Model: Sonnet drafts, Opus checks every step (secrets: no free agent)
 Goal:            For each key: where it lives, signs of a leak, how to rotate, and who tells friends.
 Files allowed:   docs/KEY-ROTATION.md (new)
 Steps:           1. Our keys (from F1 on): Developer ID certificate, App Store Connect API key, Sparkle EdDSA key,
@@ -264,11 +275,11 @@ Done check:      Standard.
 R13 Daily limit default                            Model: Sonnet
 Goal:            The daily limit default comes from one week of real cost lines, not a guess.
 Files allowed:   src/voice/config.ts (the default only), docs/NFR-STEPHEN.md section 6, the test of the default
-Steps:           1. A free agent reads stephen latency cost lines for 7 days from Cris (numbers only).
+Steps:           1. Cris pastes 7 days of stephen latency cost lines (numbers only), or Haiku reads them.
                  2. Use E7 to say what the number means on a subscription.
                  3. Set the default near the 90th percentile day, rounded up. Write the numbers in the NFR.
 Acceptance test: npx vitest run test/voice
-Done check:      Standard. Sonnet checks every number the free agent wrote.
+Done check:      Standard. Sonnet checks every number.
 ```
 
 ```text
@@ -278,6 +289,21 @@ Files allowed:   docs/NFR-STEPHEN.md section 5
 Steps:           scripts/measure-idle.sh for 10 minutes, Stephen running, other Claude sessions closed.
 Acceptance test: Haiku checks the numbers in the doc match the script output.
 Done check:      Standard.
+```
+
+```text
+R23 No model endpoint from the shell              Model: Opus     Safety: [DEV REVIEW]
+Goal:            claude gets no ANTHROPIC_* variable from the shell; the endpoint is always Anthropic's default.
+Files allowed:   withoutSecrets in src/voice/claude.ts, the job spawn environment in src/jobs/ (step 2),
+                 their tests in test/voice/ and test/jobs/
+Steps:           1. In withoutSecrets, delete every key that starts with ANTHROPIC_. Keep the person's Claude
+                    sign-in working: check first which variables Claude Code needs (none today in KEPT_CLAUDE_CODE_ENV).
+                 2. Same for the job runner's environment (src/jobs/), if it does not already go through
+                    withoutSecrets.
+                 3. ADR-016 may later add one explicit endpoint setting; until then there is none.
+Acceptance test: npx vitest run test/voice test/jobs: ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY in the parent env are
+                 absent in the child env.
+Done check:      Standard. A doctor line if the shell had ANTHROPIC_BASE_URL set (so the person knows why).
 ```
 
 ```text
