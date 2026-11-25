@@ -12,6 +12,7 @@ import { createInterface } from 'node:readline';
 import { parseStreamLine } from '../lib/claude-stream.js';
 import { ensurePrivateDir, writePrivateFileAtomicSync } from '../lib/fs.js';
 import { commandOf } from '../lib/process.js';
+import { withoutSecrets } from '../lib/claude-env.js';
 
 export const PHONE_SERVER = 'stephen_phone';
 export const PHONE_AGENT = 'stephen-phone';
@@ -37,7 +38,7 @@ export const phoneConfigDir = (home: string): string => join(phoneDir(home), 'cl
  * there either (seen 2026-11-08: 12 plugin servers after `stephen phone login`).
  */
 export const phoneClaudeEnv = (home: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => ({
-  ...env,
+  ...withoutSecrets(env), // the same allow-list as the voice Claude (R23): no endpoint, proxy or secret from the shell
   CLAUDE_CONFIG_DIR: phoneConfigDir(home),
   CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: '1',
 });
