@@ -806,10 +806,10 @@ export function checkClaudeFlags(helpText: string): ClaudeFlagProbe {
 }
 
 /** Runs `claude --help` once (argv, no shell, 15 s timeout). Null if it couldn't run (then nothing is dropped). */
-export async function probeClaudeFlags(claudePath: string): Promise<ClaudeFlagProbe | null> {
+export async function probeClaudeFlags(claudePath: string, env: NodeJS.ProcessEnv = process.env): Promise<ClaudeFlagProbe | null> {
   const { execFile } = await import('node:child_process');
   return new Promise((res) => {
-    execFile(claudePath, ['--help'], { timeout: 15_000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+    execFile(claudePath, ['--help'], { env: withoutSecrets(env), timeout: 15_000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
       if (err && !stdout) return res(null);
       res(checkClaudeFlags(String(stdout)));
     });
