@@ -7,6 +7,8 @@
  * Every program runs through `deps`, so the tests never touch git, npm or the helper.
  */
 
+import { firstLine } from './lib/process.js';
+
 export interface RunResult {
   /** Exit code; null when the program could not start. */
   code: number | null;
@@ -24,7 +26,6 @@ export interface UpdateDeps {
   log: (line: string) => void;
 }
 
-const firstLine = (s: string) => s.trim().split('\n').find((l) => l.trim()) ?? '';
 const out = (r: RunResult) => r.stdout.trim();
 
 export const GOING_BACK_DOC = 'docs/RELEASE-CHECKLIST.md, "Going back"';

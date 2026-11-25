@@ -1,6 +1,6 @@
 /** #202 A10: one never-throwing execFile, and the zen-launcher mapping on top of it. */
 import { describe, expect, it } from 'vitest';
-import { execNoThrow } from '../../src/lib/process.js';
+import { execNoThrow, firstLine } from '../../src/lib/process.js';
 import { defaultRun } from '../../src/zen-launcher.js';
 
 describe('execNoThrow', () => {
@@ -19,6 +19,14 @@ describe('execNoThrow', () => {
     const r = await execNoThrow('/no/such/program-202', [], 10_000);
     expect(r.code).toBeNull();
     expect(r.error?.code).toBe('ENOENT');
+  });
+});
+
+describe('firstLine', () => {
+  it('returns the first non-blank line, skipping blank lines before it', () => {
+    expect(firstLine('\n\n  boom\nmore\n')).toBe('boom');
+    expect(firstLine('  \n  ')).toBe('');
+    expect(firstLine('')).toBe('');
   });
 });
 

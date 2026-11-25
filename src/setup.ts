@@ -6,6 +6,8 @@
  * Every program runs through `deps` so the tests never start a real install.
  */
 
+import { firstLine } from './lib/process.js';
+
 export interface RunResult {
   /** Exit code; null when the program could not start. */
   code: number | null;
@@ -37,7 +39,6 @@ interface Doctor {
 }
 
 const AGAIN = 'then run `stephen setup` again.';
-const firstLine = (s: string) => s.trim().split('\n').find((l) => l.trim()) ?? '';
 
 /** The three Mac permissions, with the exact place in System Settings. Shown at the end of a good setup. */
 export const PERMISSION_LINES = [
