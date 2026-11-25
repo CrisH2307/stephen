@@ -69,7 +69,7 @@ and compare turns. ADR-008 measurement 4 (F5 "open Safari" x20) is still open an
 |---|---|
 | Today | Each model run returns its cost (`costUsd` from Claude Code), but it is not saved or summed. Jobs have a budget (default 5 USD each). Routers (memory, timers, jobs) cost nothing. |
 | Target | A free daily limit, on by default (Cris, 2026-11-23). Each person runs Stephen on their own Claude account, so we pay nothing; the limit protects them. Default: a starting guess of 1 USD of model use a day, fixed after one week of real numbers. Stephen warns once at 80% ("You have used most of today's limit"), and at 100% says "Today's limit is used. It resets at midnight." and starts no new model run. Always free and never blocked: "stop", memory, timers, job status. Jobs count too and keep their own budget. The owner can change the limit in Settings. |
-| Gap | No daily sum, no limit, no warning. |
+| Gap | Built in `qa` (2026-11-24): cost per run in the latency record (#302), the daily limit setting and cost line (#305), the 80% warning and the stop at 100% (#309). Left: pick the default number from one week of real use. |
 | Next step | 1. Save each run's cost in the latency record (a number, no content). 2. A cost line per day in `stephen latency`, so we see real use for a week. 3. Then the limit, the 80% warning and the Settings field, with the number picked from that week. |
 
 ## 7. Setup time for a new friend
@@ -96,7 +96,7 @@ and compare turns. ADR-008 measurement 4 (F5 "open Safari" x20) is still open an
 |---|---|
 | Today | Latency records (ids, times, fixed code words, 30 days), the redacted audit log (size capped), `stephen doctor`, `stephen mac-checks`. Nothing leaves the Mac. No crash report. |
 | Target | A tester can send one file that explains a crash or a slow command, and it holds no words, URLs, page text, names or audio. |
-| Gap | No crash capture and no bundle. |
+| Gap | Phase 1 built in `qa` (2026-11-25, #303): a content-free incident log and `stephen report`, which shows the file and opens an `incident` issue only after "y". Left: the event workflow and agent (phase 2), and the two switches. |
 | Next step | Phase 1 of the incident loop below. |
 
 **Incident loop (Cris, 2026-11-23): Stephen reports, agents investigate, Cris decides how much they fix.** Like an
