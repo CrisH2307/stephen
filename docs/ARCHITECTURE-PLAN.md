@@ -41,9 +41,10 @@ not measured yet; each has an experiment in section 10.
    Section 7 lists each change and its answer.
 8. Windows later: one module per OS concern now, enforced by a test; real interfaces only when Windows work starts
    (ADR-015).
-9. The biggest decision: buy the Apple Developer ID **before** the friends beta, not after (section 12, D1). Without
-   it a friend needs about 2 GB of Apple tools and loses permissions every update, so the 15-minute setup target
-   cannot be met.
+9. Cris decided (2026-11-25, D1): the Apple Developer ID comes later, when there is budget. **For now the friends
+   beta is unsigned**: friends install from git with `stephen setup` and update with `stephen update`. That needs
+   Apple's command line tools (about 2 GB) and asks for permissions again whenever the helper is rebuilt, so setup
+   and update must say so clearly. Everything that needs signing (ADR-011 to ADR-013, tasks F1 to F8) waits for D1.
 10. GitHub does not protect `main` today (the `production` ruleset is disabled; only `qa` has an active ruleset, and
     it requires the checks but not a PR).
     Turning it on is the first task, and it is a settings click for Cris.
@@ -224,6 +225,9 @@ B10). This is what makes "go back" safe.
   version again).
 
 ### 4.4 Keeping the Mac permissions
+
+**Until D1 (later, when there is budget):** the beta is unsigned, so the permissions are asked again each time
+`stephen update` rebuilds the helper. `stephen update` must say so before it starts and name the permissions to grant.
 
 macOS stores each permission with the app's "designated requirement". With an ad hoc signature that is the exact code
 hash, so every rebuild is a new app. With a Developer ID it is "this bundle id, signed by this Team ID", so every
@@ -437,14 +441,14 @@ Each is small and comes before the code it protects.
 
 | # | Question | Smallest experiment | Who, time | Blocks |
 |---|---|---|---|---|
-| E1 | Do permissions survive an update when both builds carry the same Developer ID? | Sign two builds of the helper (versions 0.0.1 and 0.0.2) with the Developer ID. Install 1, grant Input Monitoring and Microphone, replace with 2, check System Settings and `mac-checks` | Cris with the dev lane, 15 min, needs D1 | F3, F7 |
-| E2 | Does Node with our native add-ons run under the hardened runtime, pass notarization, and get the mic? | A script that puts Node, `dist` and production `node_modules` in a test bundle, signs every Mach-O with only `allow-jit`, `allow-unsigned-executable-memory`, `audio-input` and `apple-events`, notarizes, then runs `doctor --json` and a 5 s mic test on a fresh macOS user account. Write down the bundle size | Sonnet on the macOS runner, then Cris on the Mac, 1 day | F2, F4 |
+| E1 | Do permissions survive an update when both builds carry the same Developer ID? (after D1, when there is budget) | Sign two builds of the helper (versions 0.0.1 and 0.0.2) with the Developer ID. Install 1, grant Input Monitoring and Microphone, replace with 2, check System Settings and `mac-checks` | Cris with the dev lane, 15 min, needs D1 | F3, F7 |
+| E2 | Does Node with our native add-ons run under the hardened runtime, pass notarization, and get the mic? (after D1, when there is budget) | A script that puts Node, `dist` and production `node_modules` in a test bundle, signs every Mach-O with only `allow-jit`, `allow-unsigned-executable-memory`, `audio-input` and `apple-events`, notarizes, then runs `doctor --json` and a 5 s mic test on a fresh macOS user account. Write down the bundle size | Sonnet on the macOS runner, then Cris on the Mac, 1 day | F2, F4 |
 | E3 | Does a background user session still get mic audio with fast user switching? | Two accounts, Stephen listening in account A, switch to B, speak, read A's listener log (levels only) | Cris, 10 min | B4 |
-| E4 | Does Sparkle's relaunch leave the listener or a job in a bad state? | Update a test build while a long command and a job run | Sonnet plus Cris, 30 min | F7 |
+| E4 | Does Sparkle's relaunch leave the listener or a job in a bad state? (after D1, when there is budget) | Update a test build while a long command and a job run | Sonnet plus Cris, 30 min | F7 |
 | E5 | Does `concurrency` with `cancel-in-progress` restart the 10-minute wait on each issue edit? | A throwaway workflow on a test label, edit the issue twice | Sonnet, 30 min | F11 |
 | E6 | Real setup time | One friend with a stopwatch, every stall written down (already NFR section 7) | Cris, 30 min | Beta gate |
 | E7 | What does `total_cost_usd` mean for a friend on a Claude subscription, not an API key? | Compare the daily cost line with the plan's usage page for one day | Cris, 5 min | Daily limit wording |
-| E9 | Does Sparkle accept an update with a valid EdDSA signature but another team's code signature? | A test appcast and two test builds: one signed with our ID, one ad hoc or with another ID, both EdDSA-signed with a test key | Sonnet plus Cris, 1 hour | F7 |
+| E9 | Does Sparkle accept an update with a valid EdDSA signature but another team's code signature? (after D1, when there is budget) | A test appcast and two test builds: one signed with our ID, one ad hoc or with another ID, both EdDSA-signed with a test key | Sonnet plus Cris, 1 hour | F7 |
 | E8 | Does the Claude Code CLI keep the flags Stephen uses? | A weekly CI job: install the latest Claude Code, run `claude --help`, check each flag in `buildClaudeArgs` and `buildJobArgs` | Sonnet, half a day | B2 |
 
 ## 11. Roadmap with phases and dependencies
@@ -460,7 +464,7 @@ flowchart TD
     B10[B10 N-1 data fixtures]
   end
   subgraph F[Phase F: friends beta]
-    D1{{D1 Developer ID}}
+    D1{{D1 Developer ID, later}}
     E1[E1 permissions survive]
     E2[E2 hardened Node]
     F2[F2 build the app]
@@ -496,16 +500,34 @@ flowchart TD
 | Phase | Goal | Gate to leave it |
 |---|---|---|
 | B: basics | The "basics are solid" checklist of `docs/RELEASE-PLAN.md` section 5, plus B1 to B10 here | Checklist green, 3 weekly releases done |
-| F: friends beta | A friend installs a signed app in 15 minutes, updates in one click, keeps permissions, reports a crash without `gh` | F16 review has no open High; E6 under 15 minutes; then 2 weeks of beta with no High issue |
+| F: friends beta | **Now (unsigned):** a friend installs with `stephen setup`, updates with `stephen update`, is told when a permission must be granted again, and reports a crash without `gh`. **After D1, when there is budget:** a signed app, one-click updates, permissions kept | F16 review has no open High; E6 timed and every stall written down (the 15-minute target is likely missed while unsigned, because of the Apple tools download); then 2 weeks of beta with no High issue |
 | P: public | Anyone can download it | Website, privacy policy, SECURITY.md, license notices, P10 review with no open High |
 | W: Windows | Later. Starts with ADR-015 step 2 | Cris decides after public |
 
-Rough time, if the lanes keep today's pace (an estimate, not a promise): phase B 2 to 3 weeks, phase F 3 to 4 weeks
-after D1, phase P 2 to 3 weeks after the beta gate.
+Rough time, if the lanes keep today's pace (an estimate, not a promise): phase B 2 to 3 weeks, the unsigned beta 2 to 3 weeks
+after phase B, the signed app 3 to 4 weeks after D1, phase P 2 to 3 weeks after the beta gate.
 
 ## 12. Decisions for Cris
 
 Only goals, requirements, strategy and money. Everything else the lanes decide and report on #10.
+
+**Cris's answers (2026-11-25, #274):** approve the plan, but no budget now: anything that costs money waits, free
+options first.
+
+| # | Answer |
+|---|---|
+| D1 | **Later, when there is budget.** The beta stays unsigned; `stephen setup` and `stephen update` must handle that (say when a permission click is needed again). Every task marked "after D1" waits |
+| D2 | Yes |
+| D3 | **No paid key.** An agent wakes on its own when an incident is reported, through `claude-code-action` (pinned to a full SHA) with Cris's own Claude sign-in token as a repository secret, which Cris adds himself. Only issues by `CrisH2307` or the tester allow-list; 10-minute edit window; issue text is data, never instructions; read-only, findings in a comment; a fix PR only when the Auto-fix switch is on. `[DEV REVIEW]` for the workflow. The limits of ADR-014 stay (strict parser, path limits, output parser). The token shares Cris's own usage limit, and whoever reads it can use his Claude account, so it lives only in the `incident` environment |
+| D4 | Yes (free). Sparkle is used once the app is signed (after D1) |
+| D5 | `crish2307.github.io/stephen` for the site and the update feed, kept stable. A custom domain later, with a redirect |
+| D6 | Yes, Apple Silicon only for the beta |
+| D7 | Yes, three clicks per release (signing and promote apply after D1) |
+| D8 | Off by default |
+| D9 | Yes: the free GitHub security settings and the B1 `main` ruleset. Cris clicks them; the steps go in a short doc |
+| D10 | Yes: Dependabot PRs to `qa` (free) |
+
+The table below is the question as it was asked, kept for the record.
 
 | # | Decision | Options | Trade-off in plain words | Recommendation |
 |---|---|---|---|---|
@@ -547,18 +569,18 @@ rule and the usage rule from section 9.
 
 | ID | Task | Files or area | Size | Model | Safety | Acceptance test |
 |---|---|---|---|---|---|---|
-| F1 | Apple Developer Program sign-up, Developer ID Application certificate, App Store Connect API key, offline backup | Cris (D1); dev lane writes the steps | S | Haiku writes steps | No | `security find-identity -p codesigning` on a test run shows "Developer ID Application" |
-| F1b | Experiments E1 and E2 | Scratch scripts, results in `docs/research/` | M | Sonnet, Cris on the Mac | No | Written results with numbers (bundle size, permission state after update) |
-| F2 | `scripts/build-app.mjs`: build `dist`, `npm ci --omit=dev` into a staging folder, fetch Node by pinned version and sha256, compile the helper, assemble `Stephen.app`; drop the repo `.env` lookup in the app build (`REPO_ROOT` points inside the bundle); remove or replace the old `~/Applications/Stephen Helper.app` on first run (one permission re-grant expected, said in the guide) | New script, `helper/Info.plist` (name, `SUFeedURL`, `SUPublicEDKey`), `src/accounts/secrets.ts` | L | Sonnet | No | On the macOS runner: the app's Node runs `cli.js --version` and `doctor --json`; size within 20% of E2 |
-| F3 | The helper starts the listener from its own bundle. Release build: never reads `launch.json` (build-time switch), only `Bundle.main` paths, checks Node's Team ID, clean environment (no `NODE_OPTIONS`, no `DYLD_*`, fixed PATH plus the found `claude`), `--disable-sigusr1`. Dev build keeps `launch.json` | `helper/StephenControl.swift`, `src/app/control.ts` | M | Opus | **[DEV REVIEW]** (decides what program runs with the mic permission) | Unit tests for path choice; a planted `launch.json` and `NODE_OPTIONS` are ignored by the release build; Mac check: fresh account, Start works without Terminal |
-| F4 | `scripts/sign-app.sh`: sign every Mach-O inside out with hardened runtime and the minimal entitlements from E2, notarize with `notarytool`, staple, build DMG and zip | New script, `helper/Stephen.entitlements` | M | Sonnet, Opus reviews | **[DEV REVIEW]** (entitlements set the runtime's protections) | `codesign --verify --deep --strict` and `spctl -a -t exec -vv` pass; `codesign -d --entitlements` shows no `get-task-allow`, `allow-dyld-environment-variables` or `disable-library-validation`; DMG opens on a fresh Mac with no warning |
+| F1 | Apple Developer Program sign-up, Developer ID Application certificate, App Store Connect API key, offline backup (after D1, when there is budget) | Cris (D1); dev lane writes the steps | S | Haiku writes steps | No | `security find-identity -p codesigning` on a test run shows "Developer ID Application" |
+| F1b | Experiments E1 and E2 (after D1, when there is budget) | Scratch scripts, results in `docs/research/` | M | Sonnet, Cris on the Mac | No | Written results with numbers (bundle size, permission state after update) |
+| F2 | `scripts/build-app.mjs`: build `dist`, `npm ci --omit=dev` into a staging folder, fetch Node by pinned version and sha256, compile the helper, assemble `Stephen.app`; drop the repo `.env` lookup in the app build (`REPO_ROOT` points inside the bundle); remove or replace the old `~/Applications/Stephen Helper.app` on first run (one permission re-grant expected, said in the guide) (after D1, when there is budget) | New script, `helper/Info.plist` (name, `SUFeedURL`, `SUPublicEDKey`), `src/accounts/secrets.ts` | L | Sonnet | No | On the macOS runner: the app's Node runs `cli.js --version` and `doctor --json`; size within 20% of E2 |
+| F3 | The helper starts the listener from its own bundle. Release build: never reads `launch.json` (build-time switch), only `Bundle.main` paths, checks Node's Team ID, clean environment (no `NODE_OPTIONS`, no `DYLD_*`, fixed PATH plus the found `claude`), `--disable-sigusr1`. Dev build keeps `launch.json` (after D1, when there is budget) | `helper/StephenControl.swift`, `src/app/control.ts` | M | Opus | **[DEV REVIEW]** (decides what program runs with the mic permission) | Unit tests for path choice; a planted `launch.json` and `NODE_OPTIONS` are ignored by the release build; Mac check: fresh account, Start works without Terminal |
+| F4 | `scripts/sign-app.sh`: sign every Mach-O inside out with hardened runtime and the minimal entitlements from E2, notarize with `notarytool`, staple, build DMG and zip (after D1, when there is budget) | New script, `helper/Stephen.entitlements` | M | Sonnet, Opus reviews | **[DEV REVIEW]** (entitlements set the runtime's protections) | `codesign --verify --deep --strict` and `spctl -a -t exec -vv` pass; `codesign -d --entitlements` shows no `get-task-allow`, `allow-dyld-environment-variables` or `disable-library-validation`; DMG opens on a fresh Mac with no warning |
 | F5 | Login item through SMAppService, a Settings switch "Start Stephen at login" | `helper/SettingsPage.swift`, `helper/main.swift` | S | Sonnet | No | Mac check: log out and in, Stephen is in the menu bar |
-| F6 | `.github/workflows/release.yml` and the `release` environment (required reviewer Cris, branch `main` only), per ADR-013: job 2 runs no `npm`, no dependency code, no cache; `concurrency: release`; permissions written per job; Pages deploy through `actions/deploy-pages` | New workflow, repo settings (Pages on) | L | Opus | **[DEV REVIEW]** (secrets, CI trigger: Cris OKs) | A dry run signs nothing without approval; job 2 never starts for a PR; two pending runs cannot both sign; with approval: a draft release with DMG, zip, checksums and a signed appcast item |
-| F7 | Sparkle 2 in the helper: signed feed (`SURequireSignedFeed`), `SUVerifyUpdateBeforeExtraction`, channels, "Check for updates", "Get beta updates" (in `UserDefaults`), stop the listener before install (E4) | `helper/`, appcast generation in `release.yml` | L | Sonnet, Opus reviews | **[DEV REVIEW]** (update verification is a trust boundary) | 0.2.0 updates to 0.2.1 from a test appcast; permissions kept (E1); a zip with a wrong EdDSA key is refused; a tampered feed is refused; the E9 case is written down with its result |
-| F8 | Rollback through the installer path: the previous version kept once per Mac, "Go back" menu item, `stephen rollback` asks the helper (no Node file swap) | `helper/`, `src/cli.ts` | M | Sonnet, Opus reviews | **[DEV REVIEW]** (replaces the signed app) | After an update, go back restores the old version; B10 fixtures and a B11-era config still load; permissions kept; a non-admin user gets the admin prompt; a shared-Mac case is written down |
+| F6 | `.github/workflows/release.yml` and the `release` environment (required reviewer Cris, branch `main` only), per ADR-013: job 2 runs no `npm`, no dependency code, no cache; `concurrency: release`; permissions written per job; Pages deploy through `actions/deploy-pages` (after D1, when there is budget) | New workflow, repo settings (Pages on) | L | Opus | **[DEV REVIEW]** (secrets, CI trigger: Cris OKs) | A dry run signs nothing without approval; job 2 never starts for a PR; two pending runs cannot both sign; with approval: a draft release with DMG, zip, checksums and a signed appcast item |
+| F7 | Sparkle 2 in the helper: signed feed (`SURequireSignedFeed`), `SUVerifyUpdateBeforeExtraction`, channels, "Check for updates", "Get beta updates" (in `UserDefaults`), stop the listener before install (E4) (after D1, when there is budget) | `helper/`, appcast generation in `release.yml` | L | Sonnet, Opus reviews | **[DEV REVIEW]** (update verification is a trust boundary) | 0.2.0 updates to 0.2.1 from a test appcast; permissions kept (E1); a zip with a wrong EdDSA key is refused; a tampered feed is refused; the E9 case is written down with its result |
+| F8 | Rollback through the installer path: the previous version kept once per Mac, "Go back" menu item, `stephen rollback` asks the helper (no Node file swap) (after D1, when there is budget) | `helper/`, `src/cli.ts` | M | Sonnet, Opus reviews | **[DEV REVIEW]** (replaces the signed app) | After an update, go back restores the old version; B10 fixtures and a B11-era config still load; permissions kept; a non-admin user gets the admin prompt; a shared-Mac case is written down |
 | F9 | First-run onboarding in the app: Claude Code present and signed in (show the official install command, never run a script for them), model download with progress and retry, permission walkthrough, city | `helper/` (UI lane), `src/app/` requests that already exist where possible | L | Sonnet (UI lane) | No, unless it adds an app.sock request: then **[DEV REVIEW]** | E6: a friend reaches the first spoken command in 15 minutes |
 | F10 | "First 5 minutes" guide | `docs/FIRST-5-MINUTES.md` | S | Free agent draft, Haiku checks against the app | No | Every step matches the app; no step needs Terminal |
-| F11 | Incident phase 2: `incident.yml` and `scripts/incident-parse.mjs`, per ADR-014. First without a secret (label `incident-ready`); the agent and the `incident` environment only after D3, with path limits and an output parser | New workflow and script | L | Opus | **[DEV REVIEW]** (public repo trigger, untrusted input) | E5 passes; an issue by a non-allow-listed author runs nothing; a crafted body with free text parses to nothing; with the agent: a read of `test/fixtures/` or `/proc` is denied, and a free-text answer is not posted |
+| F11 | Incident phase 2: `incident.yml` and `scripts/incident-parse.mjs`, per ADR-014. The agent runs through `claude-code-action` (pinned to a full SHA) with Cris's own sign-in token in the `incident` environment (D3), with the strict parser, path limits and an output parser | New workflow and script | L | Opus | **[DEV REVIEW]** (public repo trigger, untrusted input) | E5 passes; an issue by a non-allow-listed author runs nothing; a crafted body with free text parses to nothing; with the agent: a read of `test/fixtures/` or `/proc` is denied, and a free-text answer is not posted |
 | F12 | `stephen report` without `gh`: copy the shown text, open the empty incident form; "Report a problem" menu item | `src/telemetry/report.ts`, `helper/` menu | S | Sonnet, Opus reviews the "nothing in a URL" rule | No | Tests: no `gh` means copy plus open; the opened URL has no query and no fragment |
 | F13 | `stephen report --week`: the content-free weekly summary | `src/telemetry/cli.ts` | S | Free agent from a precise spec | No | Test: the output has only numbers, code words, versions and dates (a test with planted words in the records) |
 | F14 | Release notes and appcast text from `CHANGELOG.md` | `scripts/`, `release.yml` step | S | Free agent | No | The appcast item shows the release's changelog section |
