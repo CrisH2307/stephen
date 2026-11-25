@@ -2,7 +2,8 @@
 # Merge one PR into qa, only when it is safe. Agent sessions may run only this script, never plain `gh pr merge`.
 # Usage: scripts/merge-to-qa.sh <pr-number>
 # Refuses unless: the PR is open, its base is qa, the linux and macos checks passed on the head commit, and,
-# for a [DEV REVIEW] PR, CrisH2307 posted a comment that starts with "**Independent review: approve.**".
+# for a [DEV REVIEW] PR, CrisH2307 posted a comment that starts with "**Independent review: approve.**" and names the
+# head commit (its first 7 characters), so an approve for an older commit does not count after new pushes.
 # The merge pins the head commit, so a push after these checks makes the merge fail instead of merging untested code.
 set -eu
 
@@ -23,12 +24,13 @@ HEAD_SHA=$(printf '%s' "$JSON" | node -e '
     const runs = (pr.statusCheckRollup || []).filter((c) => c.name === name);
     if (runs.length === 0 || !runs.every((c) => c.conclusion === "SUCCESS")) fail("the " + name + " check is not green.");
   }
-  if (pr.title.includes("[DEV REVIEW]")) {
-    const ok = (pr.comments || []).some((c) => c.author && c.author.login === "CrisH2307" &&
-      c.body.startsWith("**Independent review: approve.**"));
-    if (!ok) fail("a [DEV REVIEW] PR needs an \"**Independent review: approve.**\" comment first.");
-  }
   if (!/^[0-9a-f]{40}$/.test(pr.headRefOid)) fail("no head commit.");
+  if (pr.title.includes("[DEV REVIEW]")) {
+    const short = pr.headRefOid.slice(0, 7);
+    const ok = (pr.comments || []).some((c) => c.author && c.author.login === "CrisH2307" &&
+      c.body.startsWith("**Independent review: approve.**") && c.body.includes(short));
+    if (!ok) fail("a [DEV REVIEW] PR needs an \"**Independent review: approve.**\" comment that names commit " + short + ".");
+  }
   console.log(pr.headRefOid);
 ')
 

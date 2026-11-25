@@ -11,7 +11,7 @@ const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 const green = [{ name: 'linux', conclusion: 'SUCCESS' }, { name: 'macos', conclusion: 'SUCCESS' }];
-const approve = { author: { login: 'CrisH2307' }, body: '**Independent review: approve.** Looks right.' };
+const approve = { author: { login: 'CrisH2307' }, body: `**Independent review: approve.** Reviewed ${SHA.slice(0, 7)}.` };
 
 function run(pr: Record<string, unknown>, arg = '42') {
   const dir = mkdtempSync(join(tmpdir(), 'merge-to-qa-'));
@@ -58,6 +58,7 @@ describe('scripts/merge-to-qa.sh', () => {
     expect(run({ title }).merged).toBeNull();
     expect(run({ title, comments: [{ author: { login: 'someone' }, body: approve.body }] }).merged).toBeNull();
     expect(run({ title, comments: [{ author: { login: 'CrisH2307' }, body: 'I said **Independent review: approve.**' }] }).merged).toBeNull();
+    expect(run({ title, comments: [{ author: { login: 'CrisH2307' }, body: '**Independent review: approve.** Reviewed 1234567.' }] }).merged).toBeNull();
     expect(run({ title, comments: [approve] }).code).toBe(0);
   });
 
