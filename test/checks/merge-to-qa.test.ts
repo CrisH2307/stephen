@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-// scripts/merge-to-qa.sh with a fake `gh` first on PATH: `pr view` prints a fixture, `pr merge` logs its arguments.
+// scripts/merge-to-qa.sh with a fake `gh` first on PATH: `pr view` prints a fixture, `api` prints the changed files
+// (one JSON object per line), `pr merge` logs its arguments.
 const SCRIPT = resolve('scripts/merge-to-qa.sh');
 const SHA = 'a'.repeat(40);
 const dirs: string[] = [];
@@ -16,18 +17,19 @@ const T2 = '2026-01-02T00:00:00Z';
 const check = (name: string, conclusion: string, at = T1, workflowName = 'ci') =>
   ({ name, workflowName, conclusion, startedAt: at, completedAt: conclusion ? at : null });
 const green = [check('linux', 'SUCCESS'), check('macos', 'SUCCESS')];
-const ordinary = [{ path: 'src/ordinary.ts' }];
+const docs = [{ filename: 'docs/ordinary.md', status: 'modified' }];
 
-function run(pr: Record<string, unknown>, arg = '42') {
+function run(pr: Record<string, unknown>, arg = '42', files: Record<string, unknown>[] = docs) {
   const dir = mkdtempSync(join(tmpdir(), 'merge-to-qa-'));
   dirs.push(dir);
   const view = {
-    baseRefName: 'qa', state: 'OPEN', title: 'fix: thing', headRefOid: SHA, statusCheckRollup: green,
-    labels: [{ name: 'merge-ready' }], isCrossRepository: false, changedFiles: ordinary.length, files: ordinary,
-    ...pr,
+    baseRefName: 'qa', state: 'OPEN', title: 'docs: thing', headRefOid: SHA, statusCheckRollup: green,
+    labels: [{ name: 'merge-ready' }], isCrossRepository: false, ...pr,
   };
   writeFileSync(join(dir, 'view.json'), JSON.stringify(view));
+  writeFileSync(join(dir, 'files.jsonl'), files.map((f) => JSON.stringify(f)).join('\n') + '\n');
   writeFileSync(join(dir, 'gh'), `#!/bin/bash
+if [ "$1" = "api" ]; then cat "${dir}/files.jsonl"; exit 0; fi
 if [ "$2" = "view" ]; then cat "${dir}/view.json"; exit 0; fi
 if [ "$2" = "merge" ]; then echo "$@" > "${dir}/merged"; exit 0; fi
 exit 9
@@ -38,13 +40,17 @@ exit 9
   return { code: r.status, err: r.stderr, merged: existsSync(mergedFile) ? readFileSync(mergedFile, 'utf8').trim() : null };
 }
 
-const touching = (...paths: string[]) => ({ changedFiles: paths.length, files: paths.map((path) => ({ path })) });
+const files = (...paths: string[]) => paths.map((filename) => ({ filename, status: 'modified' }));
 
 describe('scripts/merge-to-qa.sh', () => {
-  it('merges an ordinary green PR to qa, pinned to the head commit', () => {
+  it('merges a docs-only green PR to qa, pinned to the head commit', () => {
     const r = run({});
     expect(r.code).toBe(0);
     expect(r.merged).toBe(`pr merge 42 --merge --match-head-commit ${SHA}`);
+  });
+
+  it('merges a mixed-case docs path and a top-level markdown file', () => {
+    expect(run({}, '42', files('docs/Plan.md', 'site/index.html', 'README.md')).code).toBe(0);
   });
 
   it('refuses a PR whose base is main', () => {
@@ -70,35 +76,36 @@ describe('scripts/merge-to-qa.sh', () => {
     expect(run({ statusCheckRollup: [green[0], check('macos', '', T2)] }).merged).toBeNull();
   });
 
-  it('refuses a PR that touches a workflow file', () => {
-    const r = run(touching('src/a.ts', '.github/workflows/ci.yml'));
+  it('refuses a rename from a code path into docs, using previous_filename', () => {
+    const r = run({}, '42', [{ filename: 'docs/gate.ts', previous_filename: 'src/safety/gate.ts', status: 'renamed' }]);
     expect(r.merged).toBeNull();
-    expect(r.err).toContain('this PR touches .github/workflows/ci.yml. Cris merges it by hand.');
+    expect(r.err).toContain('src/safety/gate.ts is not a docs file. Cris merges it by hand.');
   });
 
-  it('refuses a PR that touches a safety path', () => {
-    const r = run(touching('src/safety/gate.ts'));
+  it.each([
+    'src/lib/fs.ts',
+    'test/safety/x.test.ts',
+    '.npmrc',
+    'tsconfig.json',
+    'AGENTS.md',
+    'CLAUDE.md',
+    'docs/agent-loop.md',
+    'docs/release-checklist.md',
+    'site/appcast.xml',
+    '.github/workflows/ci.yml',
+    '.claude/settings.json',
+    'Docs/../src/x.ts',
+    'SRC/Safety/gate.ts',
+    'notes.txt',
+    'docs/sub/../../package.json',
+  ])('refuses %s', (path) => {
+    const r = run({}, '42', files('docs/ok.md', path));
     expect(r.merged).toBeNull();
-    expect(r.err).toContain('src/safety/gate.ts');
+    expect(r.err).toContain(`${path} is not a docs file. Cris merges it by hand.`);
   });
 
-  it('refuses a PR that touches the merge script itself', () => {
-    expect(run(touching('scripts/merge-to-qa.sh')).merged).toBeNull();
-  });
-
-  it('refuses a PR that touches the other protected paths and globs', () => {
-    for (const path of ['helper/AppConfirm.swift', 'src/memory/store.ts', 'src/replay/recorder.ts',
-      'src/app/server.ts', 'package-lock.json', 'vitest.config.mts', 'test/global-setup.ts', 'docs/RELEASE-CHECKLIST.md']) {
-      expect(run(touching(path)).merged, path).toBeNull();
-    }
-  });
-
-  it('merges a PR whose paths only look like protected ones', () => {
-    expect(run(touching('src/safety-notes.md', 'src/app/client.ts')).code).toBe(0);
-  });
-
-  it('refuses a [DEV REVIEW] PR, even with an approve comment', () => {
-    const r = run({ title: '[DEV REVIEW] voice: thing', comments: [{ author: { login: 'CrisH2307' }, body: '**Independent review: approve.** Reviewed aaaaaaa.' }] });
+  it('refuses a PR tagged [DEV REVIEW]', () => {
+    const r = run({ title: '[DEV REVIEW] docs: thing' });
     expect(r.merged).toBeNull();
     expect(r.err).toContain('[DEV REVIEW]');
   });
@@ -107,6 +114,10 @@ describe('scripts/merge-to-qa.sh', () => {
     const r = run({ isCrossRepository: true });
     expect(r.merged).toBeNull();
     expect(r.err).toContain('fork');
+  });
+
+  it('refuses a PR with no changed files', () => {
+    expect(run({}, '42', []).merged).toBeNull();
   });
 
   it('does not count a linux or macos check from another workflow', () => {
@@ -124,16 +135,12 @@ describe('scripts/merge-to-qa.sh', () => {
     expect(run({ statusCheckRollup: [check('linux', 'SUCCESS', T1), check('linux', 'FAILURE', T2), green[1]] }).merged).toBeNull();
   });
 
-  it('merges a PR with 99 changed files and refuses 100', () => {
-    const files = (n: number) => Array.from({ length: n }, (_, i) => ({ path: `src/file${i}.ts` }));
-    expect(run({ changedFiles: 99, files: files(99) }).code).toBe(0);
-    const r = run({ changedFiles: 100, files: files(100) });
+  it('refuses at 3000 changed files and merges at 2999', () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ filename: `docs/f${i}.md`, status: 'added' }));
+    expect(run({}, '42', many(2999)).code).toBe(0);
+    const r = run({}, '42', many(3000));
     expect(r.merged).toBeNull();
-    expect(r.err).toContain('100 files');
-  });
-
-  it('refuses when the file list is incomplete', () => {
-    expect(run({ changedFiles: 2, files: ordinary }).merged).toBeNull();
+    expect(r.err).toContain('3000 files');
   });
 
   it('refuses a bad PR argument before calling gh', () => {
