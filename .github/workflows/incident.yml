@@ -30,22 +30,38 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      actions: read
     outputs:
       lines: ${{ steps.parse.outputs.lines }}
       has: ${{ steps.parse.outputs.has }}
     steps:
       - name: Edit window
         run: sleep 600
+      # Daily cap: at most 5 finished runs a day (success or failure; skipped and cancelled waits do not count).
+      - name: Daily run cap
+        id: cap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          n=$(gh run list --workflow incident.yml --created ">=$(date -u +%F)" --limit 100 --json conclusion \
+            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")] | length')
+          if [ "$n" -lt 5 ]; then echo "ok=yes" >> "$GITHUB_OUTPUT"
+          else echo "Daily cap reached ($n runs today). Not investigating; a lane can look by hand." >> "$GITHUB_STEP_SUMMARY"; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.cap.outputs.ok == 'yes'
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.cap.outputs.ok == 'yes'
         with:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts && npm run build
+        if: steps.cap.outputs.ok == 'yes'
       - name: Keep only the lines stephen report writes
         id: parse
+        if: steps.cap.outputs.ok == 'yes'
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
@@ -87,8 +103,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
-          # The action only runs for people with write access. The issue author passed the id allow-list above.
-          allowed_non_write_users: ${{ github.event.issue.user.login }}
+          # No allowed_non_write_users: the action's own check (write access) stays on. Today every report is filed
+          # from Cris's account. Letting a non-write tester through is a later change with its own review.
+          # Agent mode (a prompt, no track_progress) posts no tracking comment, and this job's token is read-only.
+          track_progress: 'false'
           display_report: 'false'
           settings: |
             {"permissions": {"deny": [
@@ -96,7 +114,9 @@ jobs:
               "Read(//proc/**)", "Read(//sys/**)", "Read(//etc/**)", "Read(//tmp/**)",
               "Read(//home/runner/work/_temp/**)", "Read(//home/runner/work/_actions/**)",
               "Read(~/.claude/**)", "Read(~/.claude.json)", "Read(~/.config/**)", "Read(./.git/**)",
-              "Edit(./src/safety/**)", "Write(./src/safety/**)", "Edit(./test/fixtures/**)", "Write(./test/fixtures/**)"
+              "Edit(./src/safety/**)", "Write(./src/safety/**)", "Edit(./test/fixtures/**)", "Write(./test/fixtures/**)",
+              "Edit(./test/global-setup.ts)", "Write(./test/global-setup.ts)", "Edit(./**/*.config.*)", "Write(./**/*.config.*)",
+              "Edit(./**/setup*)", "Write(./**/setup*)"
             ]}}
           claude_args: >-
             --model sonnet
@@ -212,7 +232,7 @@ jobs:
         with:
           name: incident-fix
           path: ${{ runner.temp }}/fix
-      - name: Check the patch touches only src and test, never safety code, fixtures or links
+      - name: Check the patch touches only src and test, never safety code, fixtures, setup or config files, or links
         run: |
           p="$RUNNER_TEMP/fix/fix.patch"
           [ "$(wc -c < "$p")" -le 200000 ] || { echo "Patch too big."; exit 1; }
@@ -223,6 +243,8 @@ jobs:
             f=${rec#*$'\t'}; f=${f#*$'\t'}
             case "$f" in
               *$'\t'*|*$'\n'*|src/safety/*|test/fixtures/*|*..*) echo "Not allowed: $f"; exit 1 ;;
+              # Files that run before or around every test: a change there could act on the CI runner.
+              test/global-setup.ts|*.config.*|setup*|*/setup*) echo "Not allowed: $f"; exit 1 ;;
               src/*|test/*) ;;
               *) echo "Not allowed: $f"; exit 1 ;;
             esac
