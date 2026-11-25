@@ -189,20 +189,25 @@ function dayFiles(home: string): { name: string; date: string }[] {
   });
 }
 
-/** Delete day files older than INCIDENT_RETENTION_DAYS. Returns how many were deleted. Never throws. */
-export function purgeIncidents(home: string, now: Date = new Date()): number {
-  const cutoff = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - INCIDENT_RETENTION_DAYS));
+/** Delete the day files in `files` (from `dir`) dated before `days` days ago. Returns how many were deleted. Never throws. */
+export function purgeDayFiles(dir: string, files: { name: string; date: string }[], days: number, now: Date): number {
+  const cutoff = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
   let removed = 0;
-  for (const { name, date } of dayFiles(home)) {
+  for (const { name, date } of files) {
     if (date >= cutoff) continue;
     try {
-      unlinkSync(join(incidentDir(home), name));
+      unlinkSync(join(dir, name));
       removed++;
     } catch {
       /* best effort */
     }
   }
   return removed;
+}
+
+/** Delete day files older than INCIDENT_RETENTION_DAYS. Returns how many were deleted. Never throws. */
+export function purgeIncidents(home: string, now: Date = new Date()): number {
+  return purgeDayFiles(incidentDir(home), dayFiles(home), INCIDENT_RETENTION_DAYS, now);
 }
 
 /** The newest `last` incidents, newest first. Bad lines are skipped. */
