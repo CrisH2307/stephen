@@ -45,7 +45,7 @@ Every release PR gets one table, compared with the targets in `docs/NFR-STEPHEN.
 | Number | Source | Status today |
 |---|---|---|
 | Speed: F5 and wake word, p50 and p95 | `stephen latency --days 7` | Measured |
-| Accuracy: share of F5 commands done right | Recorder plus labels plus scorer | Labels not built yet (recorder PR 3). Until then: ok and error counts from `stephen latency` |
+| Accuracy: share of F5 commands done right | Label the week's clips (`stephen replay list`, then `stephen replay label <id> <code>`), then `stephen replay accuracy --days 7` | Labels built (recorder PR 3). Report the ok share, the count of each wrong code and how many are not labelled yet |
 | Crashes and errors | Incident file, `stephen report` | Being built |
 | Idle CPU and memory | `scripts/measure-idle.sh` (10 minutes) | Script merged, first run due |
 | Daily cost | `stephen latency` cost lines | Measured from #302 on |

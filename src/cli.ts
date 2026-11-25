@@ -75,8 +75,8 @@ Usage:
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
   stephen report [--last N]
                          Show recent crashes and failed commands; send them to GitHub only if you type y
-  stephen replay delete --all | <id>
-                         Delete saved F5 recordings (saved only when voice.replay.enabled is on)
+  stephen replay list | label <id> <code> | accuracy [--days 7|30] | delete --all | <id>
+                         Saved F5 recordings (only when voice.replay.enabled is on): list, label, accuracy, delete
   stephen mac-checks [--json]
                          Pass or fail for the technical checks of the Mac test plan, section 13
   stephen jobs [list] | status <id> | show <id> | stop <id>
