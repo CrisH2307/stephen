@@ -78,7 +78,7 @@ Legend: ok means checked and fine. File lines are in the branch named.
 6. **Permissions. Good.** `permissions: {}` at top (line 15), narrow per job. `investigate` has `issues: read` only.
    Check that the action does not need `issues: write` to run (it may try to make a tracking comment). If the
    first run fails on that, do not widen it: set `track_progress: false` if the action has it.
-7. **Pinned actions. Good.** Six uses, all with hashes (lines 39, 42, 73, 85, 133, 157, 160, 166, 207, 211).
+7. **Pinned actions. Good.** Every `uses:` has a hash (lines 39, 42, 73, 85, 133, 157, 160, 166, 207, 211).
 8. **Auto fix path (lines 126 to 241). Good design.** The job with the token only makes a patch. The job that
    pushes has no token for Claude and checks the patch paths (lines 215 to 229). Two gaps:
    - The check allows `test/*`. A patch can add `test/setup.ts` or edit a vitest hook that runs on every test run.
