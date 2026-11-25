@@ -783,6 +783,19 @@ export const KEPT_CLAUDE_CODE_ENV: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The ANTHROPIC_* variables the voice Claude keeps: sign-in only (an API key or a token) and the Vertex project. Every
+ * other ANTHROPIC_* variable from the shell is dropped, above all the ones that move the endpoint (ANTHROPIC_BASE_URL
+ * and the provider base URLs): a changed endpoint would see every prompt, tool result and reply (R23). There is no
+ * setting for another endpoint today; ADR-016 may add one explicit setting later.
+ */
+export const KEPT_ANTHROPIC_ENV: ReadonlySet<string> = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_VERTEX_PROJECT_ID']);
+
+/** ANTHROPIC_* variables in `env` that Stephen drops before it starts Claude (for the doctor note). */
+export function droppedAnthropicEnv(env: NodeJS.ProcessEnv): string[] {
+  return Object.keys(env).filter((k) => k.startsWith('ANTHROPIC_') && !KEPT_ANTHROPIC_ENV.has(k)).sort();
+}
+
+/**
  * Spawn options for both Claude wrappers (this one and warm-claude). The env scrub lives here only: the ElevenLabs key
  * and account secrets have no business in claude or the server it starts (review #4 finding 7).
  * detached: own process group, so a kill takes claude AND the stephen serve it started.
@@ -804,6 +817,7 @@ export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   for (const k of ACCOUNT_ENV_NAMES) delete out[k];
   delete out.CLAUDECODE;
   for (const k of Object.keys(out)) if (k.startsWith('CLAUDE_CODE_') && !KEPT_CLAUDE_CODE_ENV.has(k)) delete out[k];
+  for (const k of droppedAnthropicEnv(out)) delete out[k];
   return out;
 }
 
