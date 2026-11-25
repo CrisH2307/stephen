@@ -3,6 +3,24 @@
 Every place Stephen keeps data, how long, and how to delete it. `<home>` is `~/.stephen` unless config says
 otherwise. Folders are 0700 and files 0600 (written through `src/lib/fs.ts`). Nothing here is sent to us.
 
+---
+
+# Everything that leaves the Mac
+
+Only these things leave the Mac. Each row names the destination, the API, the data sent, the auth method, and the
+source file that implements it. Nothing else leaves the Mac.
+
+| What | Destination | API | Data sent | Auth | Source |
+|---|---|---|---|---|---|
+| Voice command (after wake word) | Anthropic via Claude Code | `claude -p` | Transcript of what you said | Your Claude account | `src/voice/claude.ts` |
+| Voice reply (TTS) | ElevenLabs | `POST /v1/text-to-speech/{voiceId}` | Reply text only | `xi-api-key` header (Keychain) | `src/voice/tts/elevenlabs.ts` |
+| Gmail search and read | Google | `GET /gmail/v1/users/me/messages` | Query built from fields, message id | OAuth access token (refresh in Keychain) | `src/accounts/gmail.ts`, `src/connect/gmail-oauth.ts` |
+| Notion search and query | Notion | `POST /v1/search`, `POST /v1/databases/{id}/query` | Title query, database filter | Internal integration token (Keychain) | `src/accounts/notion.ts` |
+| Canvas planner, announcements, inbox | Canvas LMS | `GET /api/v1/planner/items`, `GET /api/v1/announcements`, `GET /api/v1/conversations` | None (window params only) | Personal access token (Keychain) | `src/accounts/canvas.ts` |
+| Weather | Open-Meteo | `GET /v1/forecast` | Latitude, longitude from config | No key | `src/accounts/weather.ts` |
+| Calendar events | Google Calendar | `GET {ical-url}` | None (full feed) | Secret iCal URL (Keychain) | `src/accounts/calendar.ts` |
+| Incident report | GitHub | `gh issue create` | Ids, times, versions, code words, numbers | Your `gh` sign-in, only after you type y | `src/telemetry/report.ts` |
+
 | What | Where | Kept for (source) | How to delete | Can hold your words |
 |---|---|---|---|---|
 | Memory | `<home>/memory.json` | Until you forget it; at most `MAX_MEMORY_ITEMS` = 30 (`src/memory/store.ts`) | "Forget ..." by voice, the Memory page, or `stephen memory` | Yes, what you asked it to remember (secret-looking text is refused) |
