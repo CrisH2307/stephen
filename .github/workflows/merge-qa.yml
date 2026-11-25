@@ -1,8 +1,8 @@
 name: merge-qa
 
-# Merges an ordinary PR into qa when it has the label merge-ready and its linux and macos checks are green on the head
-# commit. The rules are in scripts/merge-to-qa.sh. A PR that touches a protected path, or has the [DEV REVIEW] tag, is
-# refused. Cris merges those by hand.
+# Merges a docs-only PR into qa when it has the label merge-ready and its linux and macos checks are green on the head
+# commit. Only docs and site text files pass (an allow-list, in scripts/merge-to-qa.sh). Any other file, or the
+# [DEV REVIEW] tag, is refused. Cris merges those by hand.
 # This workflow never checks out or runs PR code. It checks out the default branch only, and runs the script from there,
 # so a PR cannot change what runs. Merges use GITHUB_TOKEN, so they do not start new workflow runs (for example the CI
 # run on qa).
