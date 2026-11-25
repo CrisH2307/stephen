@@ -1,0 +1,29 @@
+# Dependabot version updates (decision D10, 2026-11-25): weekly, grouped, PRs to qa only, never main.
+# A lane reviews each PR like any other: CI green, read the changelog, no new permission. Actions stay pinned to a
+# commit hash; Dependabot updates the hash and the version comment together.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: qa
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: qa
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
