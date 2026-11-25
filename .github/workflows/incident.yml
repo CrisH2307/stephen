@@ -32,6 +32,7 @@ jobs:
       contents: read
     outputs:
       lines: ${{ steps.parse.outputs.lines }}
+      has: ${{ steps.parse.outputs.has }}
     steps:
       - name: Edit window
         run: sleep 600
@@ -51,11 +52,12 @@ jobs:
           lines=$(node scripts/incident-bot.mjs parse)
           eof="EOF_$(openssl rand -hex 16)"
           { echo "lines<<$eof"; echo "$lines"; echo "$eof"; } >> "$GITHUB_OUTPUT"
-          [ -n "$lines" ] || echo "No incident lines in the issue. Nothing to investigate." >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$lines" ]; then echo "has=yes" >> "$GITHUB_OUTPUT"
+          else echo "No incident lines in the issue. Nothing to investigate." >> "$GITHUB_STEP_SUMMARY"; fi
 
   investigate:
     needs: parse
-    if: needs.parse.outputs.lines != ''
+    if: needs.parse.outputs.has == 'yes'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # Settings > Environments > incident holds CLAUDE_CODE_OAUTH_TOKEN, limited to the `main` branch.
@@ -100,9 +102,9 @@ jobs:
             --model sonnet
             --max-turns 40
             --permission-mode default
-            --allowedTools "Read,Grep,Glob${{ vars.AUTO_FIX == 'on' && ',Edit(./src/**),Edit(./test/**),Write(./src/**),Write(./test/**)' || '' }}"
+            --allowedTools "Read(./src/**),Read(./docs/**),Read(./test/**),Read(./AGENTS.md),Read(./package.json)${{ vars.AUTO_FIX == 'on' && ',Edit(./src/**),Edit(./test/**),Write(./src/**),Write(./test/**)' || '' }}"
             --disallowedTools "Bash,WebFetch,WebSearch,NotebookEdit,Task"
-            --json-schema '{"type":"object","additionalProperties":false,"required":["cause","confidence","files","test","summary"],"properties":{"cause":{"type":"string","description":"One snake_case code word for the cause"},"confidence":{"type":"string","enum":["low","medium","high"]},"files":{"type":"array","maxItems":10,"items":{"type":"string","description":"A repo path under src/, docs/ or test/"}},"test":{"type":"string","description":"A test file under test/ ending in .test.ts that would catch it, or empty"},"summary":{"type":"string","maxLength":1500,"description":"Plain sentences: what fails, why, the fix. No links, no backticks."}}}'
+            --json-schema '{"type":"object","additionalProperties":false,"required":["cause","confidence","files","test","summary"],"properties":{"cause":{"type":"string","description":"One snake_case code word for the cause"},"confidence":{"type":"string","enum":["low","medium","high"]},"files":{"type":"array","maxItems":10,"items":{"type":"string","description":"A repo path under src/, docs/ or test/"}},"test":{"type":"string","description":"An existing test file under test/ ending in .test.ts, or empty"},"summary":{"type":"string","maxLength":1500,"description":"Plain sentences: what fails, why, the fix. No links, no backticks."}}}'
           prompt: |
             You are the on-call maintainer of Stephen, a Mac voice assistant (this repo; AGENTS.md has the rules).
             A tester's Mac reported the incidents below on GitHub issue #${{ github.event.issue.number }}.
@@ -120,7 +122,7 @@ jobs:
 
             Answer only in the JSON schema. `summary`: short plain sentences (what fails, why, the fix), at most 1500
             characters, no links, no backticks, no code blocks, no secrets. `files`: existing paths you relied on.
-            `test`: a test file path that would catch it, or an empty string.
+            `test`: an existing test file that should catch it, or an empty string.
       - name: Collect the fix as a patch (AUTO_FIX on only)
         id: patch
         if: vars.AUTO_FIX == 'on'
@@ -160,10 +162,23 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts && npm run build
+      # The paths the agent names must exist in the code it read (qa), not in this checkout of main.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: qa
+          path: qa
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /src/
+            /docs/
+            /test/
+            !/test/fixtures/
       - name: Check the answer
         id: check
         env:
           FINDINGS: ${{ needs.investigate.outputs.findings }}
+          QA_DIR: qa
         run: |
           if node scripts/incident-bot.mjs post; then echo "ok=yes" >> "$GITHUB_OUTPUT"
           else printf 'The incident bot could not finish, or its answer failed the strict check. Nothing it wrote is posted. Run: %s\n' "$RUN_URL" > comment.md
@@ -192,6 +207,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: qa
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: incident-fix
@@ -202,10 +218,11 @@ jobs:
           [ "$(wc -c < "$p")" -le 200000 ] || { echo "Patch too big."; exit 1; }
           if grep -qE '^(new file mode|new mode|old mode|deleted file mode) 120000|^(rename|copy) (from|to) ' "$p"; then echo "No links, renames or copies."; exit 1; fi
           git apply --check "$p"
-          git apply --numstat -z "$p" | tr '\0' '\n' | cut -f3 | while IFS= read -r f; do
-            [ -n "$f" ] || continue
+          # -z records are "added<TAB>deleted<TAB>path"; the path is everything after the second tab.
+          git apply --numstat -z "$p" | while IFS= read -r -d '' rec; do
+            f=${rec#*$'\t'}; f=${f#*$'\t'}
             case "$f" in
-              src/safety/*|test/fixtures/*|*..*) echo "Not allowed: $f"; exit 1 ;;
+              *$'\t'*|*$'\n'*|src/safety/*|test/fixtures/*|*..*) echo "Not allowed: $f"; exit 1 ;;
               src/*|test/*) ;;
               *) echo "Not allowed: $f"; exit 1 ;;
             esac
@@ -217,6 +234,8 @@ jobs:
           git add -A
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             -c core.hooksPath=/dev/null commit -qm "incident #$ISSUE: fix proposed by the incident bot"
-          git push origin "$BRANCH"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" push origin "$BRANCH"
           gh pr create --base qa --head "$BRANCH" --title "[DEV REVIEW] incident #$ISSUE: fix proposed by the incident bot" \
             --body "Proposed by the incident bot for #$ISSUE (AUTO_FIX is on). Not reviewed and not run by anyone yet. CI does not start on a PR opened by a workflow token: push an empty commit to start it. Needs the normal reviews; do not merge without them."
