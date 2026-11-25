@@ -122,4 +122,12 @@ describe('stephen setup', () => {
     const h = harness({ results: { 'stephen doctor --json': { code: 0, stdout: 'garbage', stderr: '' } } });
     expect(await runSetup(h.deps)).toBe(1);
   });
+
+  it('non-JSON doctor output shows its first line as the detail, not a bare stop', async () => {
+    const h = harness({ results: { 'stephen doctor --json': { code: 1, stdout: 'Doctor crashed: no config\n  at load (stack)', stderr: '' } } });
+    expect(await runSetup(h.deps)).toBe(1);
+    expect(h.out).toContain('    Doctor crashed: no config');
+    expect(h.text()).not.toContain('at load');
+    expect(h.text()).toContain('Stopped. Run `stephen doctor`');
+  });
 });

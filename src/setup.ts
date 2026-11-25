@@ -111,7 +111,7 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
   } catch {
     // fall through: unreadable output counts as a red line
   }
-  if (!doc) return stop(`Run \`stephen doctor\` and read the first red line, ${AGAIN}`);
+  if (!doc) return stop(`Run \`stephen doctor\` and read the first red line, ${AGAIN}`, firstLine(d.stderr || d.stdout));
   const red = doc.checks.filter((c) => !c.ok && !c.info);
   const blocker = red.find((c) => c.blocking);
   if (blocker) return stop(blocker.fix ?? `Fix "${blocker.label}", ${AGAIN}`, `${blocker.label}${blocker.detail ? `: ${blocker.detail}` : ''}`);
