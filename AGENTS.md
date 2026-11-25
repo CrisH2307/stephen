@@ -69,6 +69,15 @@ Every commit counts on Cris's GitHub profile, so keep them correct:
 - Every code PR gets a code review as well as any safety review: `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit` (Sonnet for normal code, Opus for safety code).
 - After each batch of merges, a code health audit runs on the touched folders: `ponytail:ponytail-audit`, `ponytail:ponytail-debt`, `engineering:tech-debt`. Findings become small queue tasks.
 - A feature bigger than one file gets a short design note first: `engineering:system-design`, `engineering:architecture` (ADRs), Fable or Opus, with an independent review.
+- Coding agent responsibilities (copy into every coding brief):
+  1. Explore first: read the files you own, every caller of what you change (grep), the related ADR or design note, and the existing tests. No edit before you understand the flow.
+  2. Scope: the files you own, the files you must not touch (always the Claude-only list), one task only.
+  3. Design: follow the design note. For anything multi-file without one, ask the top lead first.
+  4. Code: ponytail ladder (reuse before adding, smallest correct change, root-cause fix), project style, no new dependency without asking.
+  5. Test: one runnable check per logic change, sibling cases (BRANCHING.md H1), then the tests of the touched folders. One full suite per machine.
+  6. Review: request the code review (`code-review`, `ponytail:ponytail-review`) and, for safety code, an independent review. Fix every finding.
+  7. Report: small commits as Cris, PR to qa, title and chat name updated, a short report: what changed, what was checked, what is left.
+  8. Skills: the brief names them (for example `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit`, `engineering:system-design`, `tdd`).
 - The top lead keeps the roster in `team-roster.md` in the shared notes folder: role, session, responsibility, model, task, status.
 
 ## Lane inboxes (how lanes talk)
