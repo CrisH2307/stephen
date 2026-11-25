@@ -78,6 +78,7 @@ Every commit counts on Cris's GitHub profile, so keep them correct:
   6. Review: request the code review (`code-review`, `ponytail:ponytail-review`) and, for safety code, an independent review. Fix every finding.
   7. Report: small commits as Cris, PR to qa, title and chat name updated, a short report: what changed, what was checked, what is left.
   8. Skills: the brief names them (for example `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit`, `engineering:system-design`, `tdd`).
+- Every UI PR, and any PR or issue where a picture helps, includes screenshots or images so a human can see the change. Commit them next to the work (for the site: `docs/site/screenshots/`) and embed them in the PR body. A screenshot never shows private data (no real mail, names, tokens, tabs or paths).
 - The top lead keeps the roster in `team-roster.md` in the shared notes folder: role, session, responsibility, model, task, status.
 
 ## Lane inboxes (how lanes talk)
