@@ -6,7 +6,7 @@ This file lists the third-party code and models that Stephen uses at runtime. It
 
 ## npm runtime packages
 
-The table lists every package that `npm ci --omit=dev` installs. It was generated from `package-lock.json` at commit `01e19f0` (the tip of `origin/qa` when this was written). A package can appear more than once when npm keeps a second copy under another package.
+The table lists every runtime package in the lockfile. The optional platform builds of `sherpa-onnx` (darwin-arm64, darwin-x64, linux-arm64, linux-x64, win-ia32, win-x64) are all listed, but npm installs only the one that matches the computer's system and CPU; on an Apple Silicon Mac that is `sherpa-onnx-darwin-arm64`. It was generated from `package-lock.json` at commit `01e19f0` (the tip of `origin/qa` when this was written). A package can appear more than once when npm keeps a second copy under another package.
 
 Every package in the lockfile has a license field, so no license is marked unknown.
 
