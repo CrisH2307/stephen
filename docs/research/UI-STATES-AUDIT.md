@@ -273,10 +273,9 @@ enum Page: String, CaseIterable, Identifiable {
 ```
 
 ### Offline View Placement
-**Lines:** 104-120
-- `OfflineView` rendered in page content area
-- Shows when `model.connection != .online`
-- Each page renders its own OfflineView overlay
+**Lines:** 158-170 (`detail`)
+- When `model.connection != .online`, the window shows `OfflineView` instead of the page: one place, not per page
+- Settings is the exception: it shows `OfflineView` above the Appearance pane, which needs no listener (#144)
 
 ---
 
