@@ -116,6 +116,12 @@ export interface EditedMessage {
   source: CommandSource;
 }
 
+/**
+ * Said instead of the reply after the wake word once the conversation read private data (Cris, #274, 2026-11-24):
+ * a bystander or a video can say the wake word, so the reply is shown, not spoken. Holds no reply text.
+ */
+export const ON_SCREEN_MESSAGE = 'I put the answer on screen.';
+
 /** A resume whose conversation is gone: the owner's message is not sent anywhere; this is the reply. */
 export const RESUME_GONE_MESSAGE = 'That conversation is no longer saved.';
 /** A resumed message a local router answered (timer, memory, job): the earlier chat was not used. */
@@ -378,7 +384,9 @@ export class Assistant {
         this.o.status(`Note: could not check the daily limit (${(e as Error).message}).`);
       }
       const spoken = [prefix, stripForSpeech(raw) || (out.kind === 'ok' ? 'Done.' : 'Something went wrong.'), warn ? LIMIT_WARNING : ''].filter(Boolean).join(' ');
-      await this.deliver(spoken, out.kind === 'ok', opts.speak, t0);
+      // Wake word + private data read in this conversation (or unknown: fail closed): show, never speak, the reply.
+      const onScreen = trust === 'wake' && out.privateRead !== false;
+      await this.deliver(spoken, out.kind === 'ok', opts.speak, t0, onScreen);
       if (out.kind === 'ok' && !this.cancelled) this.o.runner.commandEnded?.();
       const result: CommandResult = out.kind === 'ok' ? 'ok' : 'error';
       return report({ result, outcome: result, reply: spoken, ...claude });
@@ -387,8 +395,11 @@ export class Assistant {
     }
   }
 
-  /** Show the reply, speak it (unless sound is playing or speaking is off), chime, and print the time taken. */
-  private async deliver(spoken: string, ok: boolean, speakOverride: boolean | undefined, t0: number): Promise<void> {
+  /**
+   * Show the reply, speak it (unless sound is playing or speaking is off), chime, and print the time taken.
+   * `onScreen`: the reply is shown only, and ON_SCREEN_MESSAGE is spoken in its place.
+   */
+  private async deliver(spoken: string, ok: boolean, speakOverride: boolean | undefined, t0: number, onScreen = false): Promise<void> {
     const now = this.o.now ?? Date.now;
     this.o.status(ok ? `Stephen: ${spoken}` : `Problem: ${spoken}`);
     // A per-command override can only switch speaking off (typed chat); the global setting always applies.
@@ -405,9 +416,10 @@ export class Assistant {
         this.o.status('Sound is playing — reply shown here instead of spoken.');
       }
     }
+    if (speak && onScreen) this.o.status('Private data was read, so the reply is shown here instead of spoken.');
     if (speak && !this.cancelled) {
       this.phaseNow = 'speaking';
-      this.speech = this.o.speaker.speak(spoken);
+      this.speech = this.o.speaker.speak(onScreen ? ON_SCREEN_MESSAGE : spoken);
       await this.speech.done;
       if (this.silenceFrom !== null) this.silenceMs = Math.max(0, now() - this.silenceFrom);
       this.speech = null;
