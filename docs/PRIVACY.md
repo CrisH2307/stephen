@@ -11,11 +11,11 @@ and how to delete it. The short version: Stephen keeps your data on your Mac. It
 
 Stephen is free, open source software made by Cris Huynh. The code is public at
 `https://github.com/CrisH2307/stephen`. Stephen is not made by, or connected with, Anthropic, Google, Canvas
-(Instructure), Notion, ElevenLabs or Open-Meteo.
+(Instructure), Notion, ElevenLabs, YouTube or Open-Meteo.
 
 Questions about privacy: open an issue on the GitHub page above, or use GitHub Discussions once it is on. Security
-problems: use "Report a vulnerability" on the repository's Security tab once private reporting is turned on (decision
-D9; to be checked before this page is published), so the report stays private.
+problems: use "Report a vulnerability" on the repository's Security tab once private reporting is turned on (Cris's
+answer on #274, 2026-11-25; to be checked before this page is published), so the report stays private.
 
 ## 2. What Stephen keeps on your Mac
 
@@ -48,9 +48,10 @@ each row, goes into `docs/DATA-STORES.md` ("Everything that leaves the Mac", PR 
 | Anthropic, under your own Claude account | Your command as text, the things you asked Stephen to remember, and what the model reads to answer (page text, email text, Canvas, calendar, Notion) | Every command that needs the model |
 | Anthropic, background jobs | The job's task and what the job reads and writes in its folder | Each job you start |
 | Anthropic, phone link | The phone conversation, through Claude Code's Remote Control | Only while you have turned the phone link on |
-| Google (Gmail, Calendar), Canvas, Notion | Read requests, with your own sign-in. Stephen only reads these accounts | When you ask about that account |
+| Google (Gmail), Canvas, Notion | Read requests, with your own sign-in or token. Stephen only reads these accounts | When you ask about that account |
+| Your calendar feed (the secret iCal address you set, usually Google Calendar) | One request for the feed. The address itself is the key | When you ask about your calendar or your day |
 | ElevenLabs | The reply text to be spoken | Only if you added an ElevenLabs key and chose that voice |
-| YouTube | The words of what you asked to play, as a YouTube search | When you ask Stephen to play something |
+| YouTube and YouTube Music (`www.youtube.com`, `music.youtube.com`) | The words of what you asked to play, as a search | When you ask Stephen to play something |
 | Open-Meteo | The latitude and longitude of the place in your settings (Toronto when none is set) | When you ask for the weather or your day |
 | GitHub | Your IP address, when Stephen downloads a speech or voice model or you run `stephen update`. A crash report only after you type "y", posted with your own GitHub sign-in, so your GitHub name shows on it | First set-up, each update, each report you send |
 | The npm package registry | Your IP address and the package names Stephen needs | Each `stephen update` |
@@ -71,8 +72,8 @@ you first.
 Gmail, Google Calendar, Canvas and Notion are off until you connect them. Stephen's code only reads these accounts.
 For Gmail it asks Google for read-only access. A Canvas or Notion token, or a calendar address, is one you create
 yourself, and it may allow more than reading: Stephen still only reads with it. Tokens are kept in your macOS
-Keychain and are never given to the model. If you put a token in a `.env` file instead (`~/.stephen/.env`), it is
-stored there as plain text, readable only by your macOS account; the Keychain is safer.
+Keychain and are never given to the model. If you put a token in a `.env` file instead (`~/.stephen/.env`, or the older `.env` in the
+Stephen folder you installed from git), it is stored there as plain text; the Keychain is safer.
 
 To disconnect Gmail, run `stephen disconnect gmail <label>`: it asks Google to revoke the token and deletes it. For
 the others, delete the Keychain items named `stephen-canvas`, `stephen-canvas-url`, `stephen-notion`,
@@ -99,7 +100,7 @@ Stephen is not for children. You must be old enough to use Claude under your Cla
 ## 9. Deleting everything
 
 1. Run `stephen disconnect gmail <label>` for each Gmail account, and delete the other `stephen-...` Keychain items
-   (section 5). Also delete `stephen-elevenlabs` if you added an ElevenLabs key, and any `.env` file you made.
+   (section 5). Also delete `stephen-elevenlabs` if you added an ElevenLabs key, and any `.env` file you made (in `~/.stephen` or the Stephen folder).
 2. Delete the folder `~/.stephen` and your job folder (`~/Stephen Jobs` by default).
 3. Delete the Stephen app.
 
