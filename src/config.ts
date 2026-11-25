@@ -202,6 +202,15 @@ export function readUserConfigFile(env: NodeJS.ProcessEnv = process.env): unknow
   return readConfigFile(configFilePath(env));
 }
 
+/**
+ * A key name that looks like it holds a secret (key, token, secret or password). Secrets belong in the Keychain, never
+ * in config.json, so such a key stops the start. `apiKeyFile` is a path, not a secret. Takes a dotted path or a bare name.
+ */
+export function looksLikeSecretKey(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('.') + 1);
+  return name !== 'apiKeyFile' && /key|token|secret|password/i.test(name);
+}
+
 /** Strip null/undefined so they never overwrite a lower layer. */
 function compact<T extends Record<string, unknown>>(o: T | null | undefined): Partial<T> {
   const out: Record<string, unknown> = {};

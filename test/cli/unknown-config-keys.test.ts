@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { configUnknownKeys } from '../../src/cli.js';
-import { loadConfig } from '../../src/config.js';
+import { loadConfig, looksLikeSecretKey } from '../../src/config.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
 
 let env: NodeJS.ProcessEnv;
@@ -18,6 +18,15 @@ function useConfig(raw: unknown) {
 
 beforeEach(() => {
   env = {};
+});
+
+describe('secret-looking key names', () => {
+  it.each(['apiKey', 'voice.elevenlabs.apiKey', 'gmail.refreshToken', 'clientSecret', 'password', 'accessToken'])('%s looks like a secret', (k) => {
+    expect(looksLikeSecretKey(k)).toBe(true);
+  });
+  it.each(['apiKeyFile', 'voice.elevenlabs.apiKeyFile', 'voiceId', 'claudePath'])('%s does not', (k) => {
+    expect(looksLikeSecretKey(k)).toBe(false);
+  });
 });
 
 describe('unknown config keys are a doctor warning, not a start failure', () => {
