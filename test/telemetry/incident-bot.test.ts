@@ -41,7 +41,7 @@ describe('parseIncidentIssue', () => {
 
 describe('checkFindings', () => {
   const ok = { cause: 'socket_closed_early', confidence: 'medium', files: ['src/voice/claude.ts'], test: 'test/voice/claude-errors.test.ts', summary: 'The socket closes before the reply.\nRetry once.' };
-  const exists = (p: string) => p === 'src/voice/claude.ts';
+  const exists = (p: string) => p === 'src/voice/claude.ts' || p === 'test/voice/claude-errors.test.ts';
 
   it('passes a well-formed answer and formats it inside a code block', () => {
     const f = checkFindings(ok, exists)!;
@@ -66,6 +66,10 @@ describe('checkFindings', () => {
     ['a long unbroken run', { ...ok, summary: 'x'.repeat(45) }],
     ['a backtick that could close the block', { ...ok, summary: 'done ``` [link](https://evil.example)' }],
     ['a control character', { ...ok, summary: 'a\u001b[31m' }],
+    ['a bidi override', { ...ok, summary: 'a\u202eb' }],
+    ['a test file that does not exist', { ...ok, test: 'test/aaaa/bbbb.test.ts' }],
+    ['a token hidden in the test path', { ...ok, test: 'test/sk-ant-oat01.test.ts' }],
+    ['a too long cause', { ...ok, cause: 'a'.repeat(25) }],
     ['a too long summary', { ...ok, summary: 'word '.repeat(400) }],
     ['an empty summary', { ...ok, summary: '  ' }],
     ['not an object', 'text'],
