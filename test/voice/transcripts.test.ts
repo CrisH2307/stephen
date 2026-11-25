@@ -28,7 +28,11 @@ describe('claudeTranscriptDir', () => {
   it('uses Claude Code\'s slug (every non-alphanumeric → "-") under ~/.claude or CLAUDE_CONFIG_DIR', () => {
     expect(claudeProjectSlug('/Users/cris/.browser-hub/voice/workdir')).toBe('-Users-cris--browser-hub-voice-workdir');
     expect(claudeTranscriptDir('/h/voice/workdir', {}, '/Users/cris')).toBe('/Users/cris/.claude/projects/-h-voice-workdir');
-    expect(claudeTranscriptDir('/h/voice/workdir', { CLAUDE_CONFIG_DIR: '/cfg' }, '/Users/cris')).toBe('/cfg/projects/-h-voice-workdir');
+    // CLAUDE_CONFIG_DIR is used only when it is a real folder inside the home (the same check as Claude's env, R23 L1).
+    const home = join(tmp, 'home-cfg');
+    mkdirSync(join(home, '.claude-alt'), { recursive: true });
+    expect(claudeTranscriptDir('/h/voice/workdir', { CLAUDE_CONFIG_DIR: join(home, '.claude-alt') }, home)).toBe(join(home, '.claude-alt', 'projects', '-h-voice-workdir'));
+    expect(claudeTranscriptDir('/h/voice/workdir', { CLAUDE_CONFIG_DIR: '/cfg' }, home)).toBe(join(home, '.claude', 'projects', '-h-voice-workdir'));
   });
 });
 

@@ -2,10 +2,17 @@
  * R23: no model endpoint from the shell. Claude's environment (voice, phone and jobs) is built from an allow-list, so
  * no endpoint, proxy, trust or code-loading variable from the shell reaches it, and sign-in still works.
  */
-import { describe, expect, it } from 'vitest';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import { buildJobEnv } from '../../src/jobs/spec.js';
 import { phoneClaudeEnv, phoneConfigDir } from '../../src/phone/setup.js';
-import { KEPT_ANTHROPIC_ENV, KEPT_BASE_ENV, claudeSpawnOptions, droppedEndpointEnv, withoutSecrets } from '../../src/voice/claude.js';
+import { claudeConfigDir } from '../../src/lib/claude-env.js';
+import { KEPT_ANTHROPIC_ENV, KEPT_BASE_ENV, claudeSpawnOptions, droppedEndpointEnv, probeClaudeFlags, withoutSecrets } from '../../src/voice/claude.js';
+
+const tmp = mkdtempSync(join(tmpdir(), 'stephen-r23-'));
+afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 /** What must never reach Claude, whatever the shell has. */
 const RISKY = {
@@ -17,7 +24,22 @@ const RISKY = {
   HTTPS_PROXY: 'http://mitm.example:8080',
   https_proxy: 'http://mitm.example:8080',
   HTTP_PROXY: 'http://mitm.example:8080',
+  http_proxy: 'http://mitm.example:8080',
   ALL_PROXY: 'socks5://mitm.example:1080',
+  all_proxy: 'socks5://mitm.example:1080',
+  NO_PROXY: 'anthropic.com',
+  no_proxy: 'anthropic.com',
+  SSL_CERT_FILE: '/tmp/evil-ca.pem',
+  REQUESTS_CA_BUNDLE: '/tmp/evil-ca.pem',
+  AWS_CA_BUNDLE: '/tmp/evil-ca.pem',
+  AWS_CONFIG_FILE: '/tmp/evil-aws-config',
+  AWS_SHARED_CREDENTIALS_FILE: '/tmp/evil-aws-creds',
+  DYLD_INSERT_LIBRARIES: '/tmp/evil.dylib',
+  LD_PRELOAD: '/tmp/evil.so',
+  ANTHROPIC_FOUNDRY_BASE_URL: 'https://foundry-proxy.example',
+  CLAUDE_CODE_API_BASE_URL: 'https://proxy.example',
+  STEPHEN_EVAL_YOUTUBE: '1',
+  STEPHEN_TEST_CHROME: '/tmp/chrome',
   NODE_OPTIONS: '--require /tmp/evil.js',
   NODE_EXTRA_CA_CERTS: '/tmp/evil-ca.pem',
   NODE_TLS_REJECT_UNAUTHORIZED: '0',
@@ -33,7 +55,6 @@ const KEEP = {
   PATH: '/usr/bin',
   HOME: '/Users/me',
   LANG: 'en_US.UTF-8',
-  CLAUDE_CONFIG_DIR: '/Users/me/.claude-alt',
   STEPHEN_HOME: '/Users/me/.stephen',
   ANTHROPIC_API_KEY: 'sk-ant-fake',
   ANTHROPIC_AUTH_TOKEN: 'tok-fake',
@@ -87,11 +108,43 @@ describe('R23: the doctor note', () => {
   it('names every dropped endpoint, proxy and trust variable, sorted, values never', () => {
     const names = droppedEndpointEnv(shell);
     expect(names).toEqual([
-      'ALL_PROXY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_BEDROCK_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS', 'ANTHROPIC_MODEL', 'ANTHROPIC_VERTEX_BASE_URL',
-      'AWS_ENDPOINT_URL', 'AWS_ENDPOINT_URL_BEDROCK_RUNTIME', 'HTTPS_PROXY', 'HTTP_PROXY', 'NODE_EXTRA_CA_CERTS', 'NODE_OPTIONS',
-      'NODE_TLS_REJECT_UNAUTHORIZED', 'https_proxy',
+      'ALL_PROXY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_BEDROCK_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS', 'ANTHROPIC_FOUNDRY_BASE_URL', 'ANTHROPIC_MODEL',
+      'ANTHROPIC_VERTEX_BASE_URL', 'AWS_CA_BUNDLE', 'AWS_CONFIG_FILE', 'AWS_ENDPOINT_URL', 'AWS_ENDPOINT_URL_BEDROCK_RUNTIME', 'AWS_SHARED_CREDENTIALS_FILE',
+      'DYLD_INSERT_LIBRARIES', 'HTTPS_PROXY', 'HTTP_PROXY', 'LD_PRELOAD', 'NODE_EXTRA_CA_CERTS', 'NODE_OPTIONS', 'NODE_TLS_REJECT_UNAUTHORIZED',
+      'NO_PROXY', 'REQUESTS_CA_BUNDLE', 'SSL_CERT_FILE', 'all_proxy', 'http_proxy', 'https_proxy', 'no_proxy',
     ]);
     expect(names.join(' ')).not.toContain('mitm');
     expect(droppedEndpointEnv(KEEP)).toEqual([]);
+  });
+});
+
+describe('R23 review L1: one safe CLAUDE_CONFIG_DIR for Claude and for transcript cleanup', () => {
+  const home = join(tmp, 'home');
+  mkdirSync(join(home, '.claude-alt'), { recursive: true });
+  mkdirSync(join(tmp, 'outside'), { recursive: true });
+  symlinkSync(join(tmp, 'outside'), join(home, '.claude-link'));
+
+  it('a real folder inside the home is kept, resolved', () => {
+    expect(withoutSecrets({ CLAUDE_CONFIG_DIR: join(home, '.claude-alt', '..', '.claude-alt') }, home).CLAUDE_CONFIG_DIR).toBe(join(home, '.claude-alt'));
+  });
+
+  it('outside the home, relative, missing, a symlink or the home itself: dropped', () => {
+    for (const bad of [join(tmp, 'outside'), '.claude-alt', join(home, 'missing'), join(home, '.claude-link'), home, '']) {
+      expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: bad }, home), bad).toBeUndefined();
+      expect(withoutSecrets({ CLAUDE_CONFIG_DIR: bad }, home), bad).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+    }
+  });
+});
+
+describe('R23 review M1: the help probe also gets the allow-listed env', () => {
+  it('claude --help runs with no proxy, NODE_OPTIONS or endpoint variable', async () => {
+    const out = join(tmp, 'probe-env.txt');
+    const fake = join(tmp, 'fake-claude.sh');
+    writeFileSync(fake, `#!/bin/sh\nenv > "${out}"\necho "not claude help"\n`);
+    chmodSync(fake, 0o755);
+    await probeClaudeFlags(fake, shell);
+    const seen = readFileSync(out, 'utf8').split('\n').map((l) => l.split('=')[0]);
+    for (const k of Object.keys(RISKY)) expect(seen, k).not.toContain(k);
+    expect(seen).toContain('ANTHROPIC_API_KEY');
   });
 });
