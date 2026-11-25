@@ -45,15 +45,15 @@ Backup lines:
 - After Stephen reads something private, it asks before it sends anything out (`docs/SYSTEM-DESIGN-STEPHEN.md`,
   section 4.1).
 - The wake word gets less trust than F5, because a video could say "Hey Stephen" (same doc, section 4.2).
-- Checked by tests (about 2,500), a real-model attack eval, and independent reviews REVIEW-1 to REVIEW-10B
+- Checked by thousands of automated tests, a real-model attack eval, and independent reviews REVIEW-1 to REVIEW-10B
   (`docs/NFR-STEPHEN.md`, section 1).
 - Say it plainly: "designed and tested to resist prompt injection". Never say "unhackable" or "100% safe".
   The NFR doc lists open safety items.
 
 ### 3. Privacy: speech stays on your Mac
 
-- The wake word, end-of-sentence detection and transcription run on the Mac. Only the transcribed text goes to
-  Claude (`README.md`, Voice).
+- The wake word, end-of-sentence detection and transcription run on the Mac. Audio never leaves it. Claude gets
+  the transcribed text, plus what Stephen reads for that command (a page, an email) (`README.md`, Voice).
 - Nothing is sent to us. Stephen has no server (`docs/DATA-STORES.md`, `docs/NFR-STEPHEN.md`, section 2).
 - Secrets stay in the macOS Keychain and are never shown to the model (`docs/DATA-STORES.md`).
 - Every store has a retention time and a way to delete it. History is 7 days by default. Recordings are off

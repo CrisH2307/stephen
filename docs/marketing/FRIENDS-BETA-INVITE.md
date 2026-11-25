@@ -69,7 +69,7 @@ The full list, with how long each thing is kept and how to delete it, is `docs/D
 Everything is under `~/.stephen`, in folders only you can read.
 
 What does leave your Mac:
-- The text of your command goes to Claude, through your own Claude account.
+- The text of your command, and what Stephen reads to answer it (a page, an email), go to Claude, through your own Claude account.
 - Calls to accounts you connect (for example Gmail, Canvas), made from your Mac.
 
 Nothing is sent to Cris or to us. Your audio is never uploaded.
