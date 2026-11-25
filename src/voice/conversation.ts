@@ -20,6 +20,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readPrivateJsonFile, writePrivateJsonFileSync } from '../lib/fs.js';
+import { validateGateState } from '../safety/gate.js';
 import { SESSION_STATE_FILE, removeSessionStateFile } from '../safety/session-state.js';
 import type { CommandRunner, RunHooks, Trust } from './assistant.js';
 import { SESSION_ID_RE, type ClaudeOutcome, type ClaudeTiming, type RunOptions } from './claude.js';
@@ -215,6 +216,20 @@ export class Conversation {
     }
   }
 
+  /**
+   * Did this conversation read private data? Read fresh from the state file the serve writes before any private
+   * text reaches the model (src/safety/session-state.ts). Missing: nothing private was read (the serve exits rather
+   * than return private data it could not save). Unreadable or invalid: null, and the caller fails closed.
+   * Call it right after a run and before finish(): finish() deletes the file when the conversation ends.
+   */
+  privateRead(): boolean | null {
+    const r = readPrivateJsonFile(this.statePath);
+    if ('missing' in r) return false;
+    if ('error' in r) return null;
+    const v = validateGateState(r.state, this.now());
+    return 'error' in v ? null : v.privateReads.length > 0;
+  }
+
   /** Delete the session id FIRST (so a half-done reset never resumes), then the gate state. Throws on failure. */
   reset(): void {
     const old = this.load()?.sessionId ?? null;
@@ -222,6 +237,11 @@ export class Conversation {
     removeSessionStateFile(this.statePath);
     this.drop(old);
   }
+}
+
+/** The outcome with `privateRead` from the state file, read before the conversation can end and delete it. */
+function withPrivateRead(out: ClaudeOutcome, c: Conversation): ClaudeOutcome {
+  return out.kind === 'cancelled' ? out : { ...out, privateRead: c.privateRead() };
 }
 
 /** Minimal runner interface the conversation wraps (ClaudeRunner). */
@@ -269,6 +289,7 @@ export class ConversationRunner implements CommandRunner {
       this.conversation.end();
       throw e;
     }
+    out = withPrivateRead(out, this.conversation);
     this.conversation.finish(out, memory, trust);
     return out;
   }
@@ -426,7 +447,7 @@ export class WarmConversationRunner implements CommandRunner {
       const command = this.commands + 1;
       // Every earlier group is gone by now (awaited above), so nothing of a cancelled command can log after this.
       hooks.beforeSend?.();
-      const out = await p.turn(prompt);
+      const out = withPrivateRead(await p.turn(prompt), this.conversation);
       if (this.cancelRequested || out.kind === 'cancelled') return CANCELLED;
       if (out.kind === 'ok') {
         this.o.onTiming?.({
