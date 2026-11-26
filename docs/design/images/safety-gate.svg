@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 780" width="980" height="780" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="t">Stephen: safety gate flow</title>
+  <desc id="d">A tool request goes through one policy pass over all rules. The verdict is deny, confirm, or allow. Deny refuses at once with no prompt. Confirm runs the confirmer chain: MCP prompt, Ask box, or macOS dialog, depending on the mode. Deny-mode serves, such as phone commands, always decline. The answer is approved, declined, or unavailable. Approved and allowed actions run. Then bookkeeping: allowed actions count toward the rate limit, allowed reads set the taint mark, and every non-read action goes to the redacted audit log, allowed or refused.</desc>
+  <style>
+    .bg{fill:#ffffff}
+    .box{fill:#ffffff;stroke:#1d3557;stroke-width:1.4}
+    .deny{fill:#fbeaea;stroke:#a23b3b;stroke-width:1.4}
+    .conf{fill:#fdf6ea;stroke:#b7791f;stroke-width:1.4}
+    .allow{fill:#eaf6ee;stroke:#2f7a4a;stroke-width:1.4}
+    .chain{fill:#f1f5fb;stroke:#2f5d8a;stroke-width:1.4}
+    .band{fill:#f7f8fb;stroke:#8a8fa3;stroke-width:1.2}
+    .h{font-size:13px;font-weight:700;fill:#1d3557}
+    .s{font-size:12px;fill:#3a4256}
+    .lbl{font-size:11px;font-weight:700;fill:#5c6178}
+    .cap{font-size:12px;font-weight:700;fill:#2f5d8a}
+    .a{stroke:#1d3557;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+    @media (prefers-color-scheme: dark){
+      .bg{fill:#0f1726}
+      .box{fill:#0f1726;stroke:#a9c4e2}
+      .deny{fill:#2b1616;stroke:#e07a7a}
+      .conf{fill:#2b2215;stroke:#e0a84a}
+      .allow{fill:#132a1c;stroke:#6fbf8a}
+      .chain{fill:#16263d;stroke:#7fa7d1}
+      .band{fill:#16263d;stroke:#7d849b}
+      .h{fill:#e6eef8}.s{fill:#c4cede}.lbl{fill:#c4cede}.cap{fill:#9fc0e3}
+      .a{stroke:#a9c4e2}
+      #ar path{fill:#a9c4e2}
+    }
+  </style>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d3557"/></marker>
+  </defs>
+  <rect class="bg" width="980" height="780"/>
+
+  <text class="cap" x="35" y="24">Safety gate: one policy pass, one confirmer call, then bookkeeping</text>
+
+  <!-- Request and policy pass -->
+  <rect class="box" x="270" y="36" width="440" height="60" rx="9"/>
+  <text class="h" x="490" y="54" text-anchor="middle">Tool request</text>
+  <text class="s" x="490" y="70" text-anchor="middle">navigate, click, hover, type, select, press, scroll,</text>
+  <text class="s" x="490" y="84" text-anchor="middle">upload, dialog, evaluate, tab_open, tab_close, read</text>
+  <path class="a" d="M490,96 V108"/>
+
+  <rect class="box" x="300" y="108" width="380" height="58" rx="9"/>
+  <text class="h" x="490" y="130" text-anchor="middle">Policy pass: every rule runs once</text>
+  <text class="s" x="490" y="150" text-anchor="middle">each rule adds deny, confirm, or nothing</text>
+  <path class="a" d="M490,166 V190"/>
+
+  <!-- Verdict -->
+  <rect class="box" x="330" y="190" width="320" height="50" rx="9"/>
+  <text class="h" x="490" y="211" text-anchor="middle">Verdict: deny beats confirm</text>
+  <text class="s" x="490" y="229" text-anchor="middle">confirm beats allow; no rule fired means allow</text>
+
+  <path class="a" d="M330,215 H160 V290"/>
+  <text class="lbl" x="236" y="208">deny</text>
+  <path class="a" d="M490,240 V290"/>
+  <text class="lbl" x="498" y="268">confirm</text>
+  <path class="a" d="M650,215 H820 V290"/>
+  <text class="lbl" x="700" y="208">allow</text>
+
+  <!-- Three branches -->
+  <rect class="deny" x="40" y="290" width="240" height="56" rx="9"/>
+  <text class="h" x="160" y="313" text-anchor="middle">Deny: refused at once</text>
+  <text class="s" x="160" y="331" text-anchor="middle">no prompt is shown</text>
+
+  <rect class="conf" x="330" y="290" width="320" height="56" rx="9"/>
+  <text class="h" x="490" y="313" text-anchor="middle">Confirm: the confirmer chain runs</text>
+  <text class="s" x="490" y="331" text-anchor="middle">one prompt per request</text>
+  <path class="a" d="M490,346 V376"/>
+
+  <rect class="allow" x="700" y="290" width="240" height="56" rx="9"/>
+  <text class="h" x="820" y="313" text-anchor="middle">Allow: no prompt</text>
+  <text class="s" x="820" y="331" text-anchor="middle">the action is ready to run</text>
+
+  <!-- Confirmer chain -->
+  <rect class="chain" x="250" y="376" width="430" height="170" rx="9"/>
+  <text class="h" x="268" y="398">Confirmer chain</text>
+  <text class="s" x="268" y="416">first answer that is not unavailable wins</text>
+  <text class="s" x="268" y="440">auto: MCP prompt if supported, Ask box, macOS dialog</text>
+  <text class="s" x="268" y="458">elicit: MCP prompt only</text>
+  <text class="s" x="268" y="476">app: Ask box, then macOS dialog</text>
+  <text class="s" x="268" y="494">dialog: macOS dialog only</text>
+  <text class="s" x="268" y="512">deny: always declined (phone commands use it)</text>
+  <text class="s" x="268" y="532">Ask box: Deny first, Esc denies, Allow arms after 0.75 s</text>
+
+  <!-- Outcomes -->
+  <path class="a" d="M400,546 V600"/>
+  <path class="a" d="M605,546 V600"/>
+  <path class="a" d="M680,460 H760 V600"/>
+  <text class="lbl" x="686" y="452">approved</text>
+  <path class="a" d="M160,346 V600"/>
+
+  <rect class="deny" x="40" y="600" width="240" height="52" rx="9"/>
+  <text class="h" x="160" y="622" text-anchor="middle">Refused: no action runs</text>
+  <text class="s" x="160" y="640" text-anchor="middle">the model is told why</text>
+
+  <rect class="conf" x="300" y="600" width="200" height="52" rx="9"/>
+  <text class="h" x="400" y="622" text-anchor="middle">Unavailable: refused</text>
+  <text class="s" x="400" y="640" text-anchor="middle">no prompt could be shown</text>
+
+  <rect class="deny" x="520" y="600" width="170" height="52" rx="9"/>
+  <text class="h" x="605" y="622" text-anchor="middle">Declined: refused</text>
+  <text class="s" x="605" y="640" text-anchor="middle">the person said no</text>
+
+  <rect class="allow" x="720" y="600" width="220" height="52" rx="9"/>
+  <text class="h" x="830" y="622" text-anchor="middle">Run the action</text>
+  <text class="s" x="830" y="640" text-anchor="middle">approved or allowed</text>
+  <path class="a" d="M820,346 V600"/>
+
+  <!-- Bookkeeping -->
+  <path class="a" d="M160,652 V694"/>
+  <path class="a" d="M400,652 V694"/>
+  <path class="a" d="M605,652 V694"/>
+  <path class="a" d="M830,652 V694"/>
+
+  <rect class="band" x="40" y="694" width="900" height="70" rx="9"/>
+  <text class="h" x="60" y="716">Bookkeeping, after the verdict</text>
+  <text class="s" x="60" y="734">Rate limit: allowed actions count, reads do not (hover and scroll do). 60 s window, 40 per minute.</text>
+  <text class="s" x="60" y="752">Allowed reads arm taint (noteRead). Every non-read action, allowed or refused, goes to the audit log, redacted.</text>
+</svg>
