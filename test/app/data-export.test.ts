@@ -3,6 +3,7 @@
  * last release's files, a fake listener and a fake config key check.
  */
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -187,6 +188,37 @@ describe('stephen data import (R20)', () => {
     expect(readFileSync(join(home, 'memory.json'), 'utf8')).toBe('before');
     expect(d.lines.join()).toMatch(/Nothing was changed/);
   });
+
+  it('#388 review: a setting name with an escape code refuses the import, and the name is never printed', async () => {
+    const src = await exported();
+    writeFileSync(join(src, 'config.json'), JSON.stringify({ memory: { enabled: true }, safety: { ['\u001b[2J\u001b[Hx']: true } }));
+    const { home, configPath } = emptyHome();
+    const d = deps(home, configPath, { ask: async () => 'y' });
+    expect(await importData(src, { yes: false, config: true }, d)).toBe(1);
+    expect(d.lines.join()).toMatch(/unusual characters \(not shown\)/);
+    expect(d.lines.join()).not.toContain('\u001b');
+    expect(readdirSync(home)).toEqual([]);
+  });
+
+  it('#388 review: a history file name with an escape code is refused without printing it', async () => {
+    const src = await exported();
+    writeFileSync(join(src, 'history', '\u001b[2Jevil.jsonl'), '');
+    const { home, configPath } = emptyHome();
+    const d = deps(home, configPath);
+    expect(await importData(src, { yes: true, config: true }, d)).toBe(1);
+    expect(d.lines.join()).toMatch(/not a history day file \(name not shown\)/);
+    expect(d.lines.join()).not.toContain('\u001b');
+  });
+
+  it.skipIf(process.platform === 'win32')('#388 review: a FIFO in place of memory.json is refused, not waited on', async () => {
+    const src = await exported();
+    rmSync(join(src, 'memory.json'));
+    execFileSync('mkfifo', [join(src, 'memory.json')]);
+    const { home, configPath } = emptyHome();
+    const d = deps(home, configPath);
+    expect(await importData(src, { yes: true, config: true }, d)).toBe(1);
+    expect(d.lines.join()).toMatch(/memory\.json is not a plain file/);
+  }, 5_000);
 
   it('a linked export folder, or a folder without a manifest, is refused', async () => {
     const src = await exported();
