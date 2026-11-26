@@ -242,13 +242,19 @@ export class HelperClient implements IHelperClient {
         settle({ ok: false, reason: e.code ?? e.message });
       });
       // F15: the first line is the helper's per-launch nonce, or the helper drops this client before its hello.
+      let noNonce = false;
       socket.once('connect', () => {
         const nonce = readHelperNonce(this.socketPath);
         if (nonce) socket.write(`${JSON.stringify({ type: 'auth', nonce })}\n`);
-        else this.opts.log(`no readable ${helperNoncePath(this.socketPath)}: the helper will refuse this connection`);
+        else {
+          noNonce = true;
+          this.opts.log(`no readable ${helperNoncePath(this.socketPath)}: the helper will refuse this connection`);
+        }
       });
       socket.on('close', () => {
-        settle({ ok: false, reason: 'connection closed before hello' });
+        // An older helper has no nonce file and still says hello; a closed connection without one means the helper's
+        // key file is gone or unreadable (#392 review): say that plainly.
+        settle({ ok: false, reason: noNonce ? helperKeyMissing(this.socketPath) : 'connection closed before hello' });
         if (this.conn === conn) this.onDrop(conn);
       });
       socket.on('data', (data: Buffer) => {
@@ -347,6 +353,11 @@ function safe(fn: () => void, log: (l: string) => void): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Why the helper refused us when its key file could not be read. */
+export function helperKeyMissing(socketPath: string): string {
+  return `Stephen Helper refused the connection: its key file ${helperNoncePath(socketPath)} is missing or not readable. Quit Stephen Helper (menu bar, Quit), then start Stephen again. If that does not help, run \`stephen install-helper\`.`;
 }
 
 /** The nonce from helper.nonce (0600, this user's, never a link), or null. */
