@@ -51,8 +51,14 @@ describe('release notes (F14)', () => {
     expect(releaseNotes(SAMPLE, '0.1.9')).toContain('- Older fix.');
   });
 
-  it('plain() drops images, keeps link words, strips code and bold marks', () => {
+  it('plain() drops images, keeps link words, strips code, bold and italic marks, and keeps snake_case and 2*3*4', () => {
     expect(plain('![x](a.png) see [the guide](https://e.x) and `code` **now**')).toBe('see the guide and code now');
+    expect(plain('*really* fast, _very_ calm, a snake_case_name, 2*3*4')).toBe('really fast, very calm, a snake_case_name, 2*3*4');
+  });
+
+  it('a heading with no bullets is left out (no label alone)', () => {
+    const md = '## 1.0.0 (2026-12-10)\n\n### Added\n\n### Fixed\n- One fix.\n';
+    expect(releaseNotes(md, '1.0.0')).toBe('Stephen 1.0.0 (2026-12-10)\n\nFixed:\n- One fix.');
   });
 
   it('the CLI prints the notes, and fails with a plain reason when the version is missing', () => {
@@ -64,5 +70,8 @@ describe('release notes (F14)', () => {
     const bad = spawnSync(process.execPath, [join(ROOT, 'scripts/release-notes.mjs'), '9.9.9', f], { encoding: 'utf8' });
     expect(bad.status).toBe(1);
     expect(bad.stderr).toContain('has no notes for 9.9.9');
+    const none = spawnSync(process.execPath, [join(ROOT, 'scripts/release-notes.mjs')], { encoding: 'utf8' });
+    expect(none.status).toBe(2);
+    expect(none.stderr).toContain('Usage:');
   });
 });
