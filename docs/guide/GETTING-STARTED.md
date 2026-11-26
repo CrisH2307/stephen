@@ -18,20 +18,27 @@ You need:
 
 Open the **Terminal** app (press Cmd+Space, type "Terminal", press Return). You will paste a few commands here.
 
-1. **Node** (version 22 or 24). Download it from [nodejs.org](https://nodejs.org), or run `brew install node` if you
+1. **Apple's command line tools.** Do this first: `git` (the download step) needs them. Run:
+
+   ```bash
+   xcode-select --install
+   ```
+
+   A window opens. Click **Install** and wait until it finishes. If it says the tools are already installed, go on.
+
+2. **Node** (version 22 or 24). Download it from [nodejs.org](https://nodejs.org), or run `brew install node` if you
    use Homebrew. Check it with:
 
    ```bash
    node --version
    ```
 
-2. **Claude Code**, signed in. Check it with:
+3. **Claude Code**, signed in. Install it from [claude.com/claude-code](https://claude.com/claude-code). Then type
+   `claude`, press Return and sign in with your own account. Check it with:
 
    ```bash
    claude --version
    ```
-
-3. **Apple's command line tools.** If they are missing, setup tells you the one command to run.
 
 ## Step 3. Download and set up Stephen
 
@@ -41,20 +48,26 @@ Paste this into Terminal and press Return. It downloads Stephen and builds it:
 git clone https://github.com/CrisH2307/stephen.git && cd stephen && npm install && npm run build && npm link
 ```
 
+**`npm link` says "permission denied" or EACCES?** This happens with the Node from nodejs.org. Run `sudo npm link`
+and type your Mac password (Terminal shows nothing while you type). Stephen itself never asks for it.
+
 Then run setup:
 
 ```bash
 stephen setup
 ```
 
-Setup does six things, and stops at the first problem with a clear fix:
+Setup runs six steps, and stops at the first problem with a clear fix:
 
-1. Checks Node and Claude Code.
-2. Connects Stephen to Claude Code.
-3. Creates the "Zen for Stephen" app (for Zen users, see step 5).
-4. Builds the Stephen Helper app.
-5. Runs a health check (`stephen doctor`).
-6. Lists the three Mac permissions to turn on.
+1. Checks Node.
+2. Checks that Claude Code is installed and signed in.
+3. Connects Stephen to Claude Code.
+4. Creates the "Zen for Stephen" app (for Zen users, see step 5).
+5. Builds the Stephen Helper app. This takes a minute or two.
+6. Runs a health check (`stephen doctor`).
+
+Then it asks which city to use for the weather (press Return to skip), and lists the three Mac permissions to turn
+on.
 
 Setup never asks for a password or a key.
 
@@ -98,6 +111,9 @@ Stephen", click **Start**.
   <img src="../ui/paper/after-askbox-paper.png" alt="The real Ask box saying Offline and Can't reach Stephen, with a Start button." width="360">
   <br><sub>Real screenshot of the Ask box in the Paper look. Click Start.</sub>
 </p>
+
+The first time, the Stephen window opens a setup sheet. It downloads the voice models, which stay on this Mac.
+[Your first 5 minutes](../FIRST-5-MINUTES.md) walks through it.
 
 Then hold **F5**, say **"what time is it"**, and let go. Stephen answers out loud.
 
