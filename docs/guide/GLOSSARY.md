@@ -12,7 +12,8 @@ example. Words are in A to Z order. A word in *italics* inside an explanation ha
 ### Ad hoc signing
 
 Signing an app without a paid Apple developer ID. Stephen Helper is signed this way, so after a rebuild macOS may ask you to turn on Input Monitoring again.
-*Example:* After `stephen update` rebuilds the Helper, F5 stops working until you switch Input Monitoring off and on.
+*Example:* After `stephen update` rebuilds the Helper, F5 may stop working. In Input Monitoring, remove Stephen
+Helper with the minus button and add it again.
 
 ### ADR (architecture decision record)
 
@@ -71,7 +72,7 @@ Saving a file by writing a new copy first, then swapping it in, in one step. If 
 
 ### Attach-only
 
-Stephen uses the Zen you opened yourself (with Zen for Stephen) and never starts Zen on its own.
+By default, Stephen uses the Zen you opened yourself (with Zen for Stephen) and never starts Zen on its own.
 *Example:* If Zen is closed, Stephen tells you to open it with Zen for Stephen, instead of opening it for you.
 
 ### Audit log
@@ -84,8 +85,9 @@ it typed is saved only as a length, never the words, and web addresses are saved
 
 ### Barge-in
 
-Cutting off Stephen while it works, by saying "Hey Stephen" or "Stephen, stop" (or pressing Esc).
-*Example:* Stephen is reading a long page. You say "Stephen, stop" and it stops.
+Cutting Stephen off. "Stephen, stop" or Esc stops a running command or its spoken reply. "Hey Stephen" also
+cancels a running command, but is ignored while Stephen is talking.
+*Example:* Stephen is reading a long answer out loud. You say "Stephen, stop" and it stops.
 
 ### Beta
 
@@ -135,7 +137,9 @@ The Terminal app on your Mac, where you type commands instead of clicking. You n
 
 ### Confirmer chain
 
-The ways Stephen can ask you a question, in order: first the Ask box card, and if that can't show it, a normal macOS dialog. The first one that can show the question gets your answer.
+The ways Stephen can ask you a question, in order: a question in the Claude Code chat when that is where you are
+talking, then the Ask box card, then a normal macOS dialog. The first one that can show the question gets your
+answer.
 *Example:* If the Ask box isn't running, the Allow / Deny question appears as a macOS dialog instead.
 
 ### Context window
@@ -179,7 +183,8 @@ The key you hold to talk to Stephen without saying the *wake word*. Holding Fn a
 
 ### Fail open and fail closed
 
-What a check does when it can't decide. Fail open lets the action go ahead. Fail closed blocks it. Stephen's safety checks fail closed.
+What a check does when it can't decide. Fail open lets the action go ahead. Fail closed blocks it. Stephen's safety rules, its Allow / Deny
+questions and its note of private reads fail closed.
 *Example:* If Stephen can't save its note that it read your email, it stops instead of going on (fail closed).
 
 ### Follow-up
@@ -330,7 +335,8 @@ The short note that tells Claude how to behave as Stephen, for example to keep s
 ### Policy pass
 
 The safety gate checks a step against every rule at once. If any rule says refuse, it refuses. Otherwise, if any rule says ask, it asks you.
-*Example:* A click is both on a sensitive site (ask) and on a password field (refuse). The answer is refuse.
+*Example:* Typing a one-time code on a bank's page is both on a sensitive site (ask) and into a code field
+(refuse). The answer is refuse.
 
 ### Prompt
 
@@ -409,13 +415,14 @@ New code that only watches and takes notes, without changing what Stephen does. 
 
 ### Speech to text
 
-Turning spoken words into written words, also called ASR. Stephen does this on your Mac, with a model called Whisper (small, English) by default.
+Turning spoken words into written words, also called ASR. Stephen does this on your Mac, with a model called Whisper (small, English) by default. Until that model is downloaded it uses a smaller one.
 *Example:* You say "open YouTube". Stephen writes down "open YouTube" and sends only that text.
 
 ### STALE_REF
 
 A message that means the page changed, so a *ref* no longer points at anything. Claude looks at the page again and tries with a fresh ref.
-*Example:* A page reloads while you click Allow. Stephen does nothing and looks again.
+*Example:* A page reloads while you click Allow. Stephen does nothing, and Claude looks at the page again and
+tries again.
 
 ### System design
 
