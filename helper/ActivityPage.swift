@@ -149,7 +149,7 @@ struct ActivityPage: View {
       VStack(alignment: .leading, spacing: Space.xl) {
         Text(verbatim: "What Stephen did in the last 24 hours, newest first. Built from the logs on this Mac.")
           .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
-        if let n = model.auditNotice ?? model.jobsNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
+        if let n = model.auditNotice ?? model.jobsNotice ?? (model.jobsListOk == false ? JOBS_LIST_FAILED : nil) { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
         if model.audit.count >= AppModel.auditLimit {
           Text(verbatim: "Showing the last \(AppModel.auditLimit) actions.").font(TypeScale.secondary).foregroundColor(t.ink2)
         }
