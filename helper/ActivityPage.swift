@@ -98,23 +98,31 @@ func activityJobResult(_ status: String) -> (word: String, kind: StatusKind) {
  * The page's rows: audit and jobs of the last 24 h before `now`, newest first. Job audit lines are left out (the job
  * row says it). An allowed action writes two lines, the gate's decision and then the result (src/safety/gate.ts,
  * src/server/hub.ts). A decision line (ok, no urlAfter) is dropped when the newer line kept just before it is the same
- * action and has not taken a decision yet. ponytail: "same action" is tool, kind and host (the two lines write the
- * label and URL in different forms); two of the same action at the same moment could pair the wrong way round.
+ * action and has not taken a decision yet. "Before it" is in the same tab: two tabs can interleave their lines. "Same
+ * action" is tool, kind and host (the two lines write the label and URL in different forms). A new tab's decision line
+ * says tab "new", and older lines have none: those use the line kept just before, in any tab. ponytail: two of the
+ * same action in the same tab at the same moment could still pair the wrong way round.
  */
 func activityRows(audit: [AuditEntry], jobs: [JobRow], history: [HistoryEntry], now: Date,
                   parse: (String) -> Date?) -> [ActivityRow] {
   let since = now.addingTimeInterval(-24 * 3600)
   var rows: [ActivityRow] = []
   let ids = Set(history.map { $0.id })
-  var last: (a: AuditEntry, paired: Bool)? = nil
+  var kept: [Int: AuditEntry] = [:]
+  var paired = Set<Int>()
+  var last: Int? = nil
+  var lastInTab: [String: Int] = [:]
   for (i, a) in audit.enumerated() {  // audit arrives newest first
     guard let d = parse(a.ts), d >= since, !a.tool.hasPrefix("job_") else { continue }
-    if a.outcome == "ok", a.urlAfter.isEmpty, let n = last, !n.paired, n.a.tool == a.tool, n.a.kind == a.kind,
-       activityHost(n.a.urlBefore) == activityHost(a.urlBefore) {
-      last = (n.a, true)
+    let inTab = !a.tab.isEmpty && a.tab != "new"
+    if a.outcome == "ok", a.urlAfter.isEmpty, let j = inTab ? lastInTab[a.tab] : last, !paired.contains(j), let n = kept[j],
+       n.tool == a.tool, n.kind == a.kind, activityHost(n.urlBefore) == activityHost(a.urlBefore) {
+      paired.insert(j)
       continue
     }
-    last = (a, false)
+    kept[i] = a
+    last = i
+    if !a.tab.isEmpty { lastInTab[a.tab] = i }
     let r = activityResult(a)
     rows.append(ActivityRow(id: "a\(i)", date: d, text: activityText(a), result: r.word, kind: r.kind,
                             historyId: activityHistoryId(a, at: d, history: history, ids: ids, parse: parse)))
@@ -149,7 +157,7 @@ struct ActivityPage: View {
       VStack(alignment: .leading, spacing: Space.xl) {
         Text(verbatim: "What Stephen did in the last 24 hours, newest first. Built from the logs on this Mac.")
           .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
-        if let n = model.auditNotice ?? model.jobsNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
+        if let n = model.auditNotice ?? model.jobsNotice ?? (model.jobsListOk == false ? JOBS_LIST_FAILED : nil) { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
         if model.audit.count >= AppModel.auditLimit {
           Text(verbatim: "Showing the last \(AppModel.auditLimit) actions.").font(TypeScale.secondary).foregroundColor(t.ink2)
         }

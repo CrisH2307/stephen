@@ -381,12 +381,34 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(fn).toContain('guard listOk == true else { return nil }');
   });
 
-  it('R10a-2 (#94): Try again re-sends only a typed bubble; spoken and phone bubbles show where they came from', () => {
+  // R7: loading, error and empty in words. A failed list never reads as "Nothing yet", and never shows raw "error".
+  it('Conversations shows loading, error with Refresh, and empty only after a good list', () => {
+    const conv = read('ConversationsPage.swift');
+    expect(client).toContain('@Published private(set) var historyListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshHistory()'), client.indexOf('func loadOlderHistory('));
+    expect(refresh).toContain('self.assign(\\.historyListOk, true)');
+    expect(refresh).toContain('self.assign(\\.historyListOk, false)');
+    expect(refresh).not.toContain('msg.message ?? "error"');
+    // Clearing the history is a good empty list, not a failed one.
+    const clear = client.slice(client.indexOf('func clearHistory()'), client.indexOf('var historyDays'));
+    expect(clear).toContain('self.historyListOk = true');
+    // Loading only before the first answer with no rows; error with Refresh (ADR-007: no "Try again" on this page, it
+    // could read as re-running a command); empty only after a good list.
+    expect(conv).toContain('if model.history.isEmpty && model.historyListOk == nil {');
+    expect(conv).toMatch(/historyListOk == false \{[\s\S]*CONVERSATIONS_LIST_FAILED[\s\S]*QuietButton\("Refresh"[^\n]*model\.refreshHistory\(\)/);
+    expect(conv).toMatch(/if model\.historyListOk == true \{\s*Text\(verbatim: CONVERSATIONS_EMPTY\)/);
+    expect(conv).toContain('let CONVERSATIONS_LIST_FAILED = "Couldn\'t load your conversations right now."');
+    expect(conv).not.toMatch(/if model\.history\.isEmpty \{\s*Text\(verbatim: CONVERSATIONS_EMPTY\)/);
+  });
+
+  it('R10a-2 (#94): Try again re-sends only a typed bubble, by its source field, never its text or detail', () => {
     const chat = read('Components/ChatThread.swift');
-    // The one guard: the last said bubble, and only when it has no source label. No fallback to an older typed one.
+    // The one guard: the last said bubble, and only when its source is .typed. No fallback to an older typed one.
     expect(chat).toContain(
-      'guard let last = thread.last(where: { $0.kind == .said }), last.detail.isEmpty else { return nil }',
+      'guard let last = thread.last(where: { $0.kind == .said }), last.source == .typed else { return nil }',
     );
+    const retry = chat.match(/func retryableText\([^)]*\) -> String\? \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(retry).not.toContain('detail');
     // retry() reaches sendChat only through that guard; it is the file's only sendChat.
     expect(chat).toContain('if let typed = retryableText(model.thread) { model.sendChat(typed) }');
     expect(chat.match(/sendChat\(/g)).toHaveLength(1);
@@ -394,22 +416,35 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(chat).toContain('retry: canRetry ? { retry() } : nil');
     expect(chat).toContain('let canRetry = retryableText(thread) != nil');
     expect(chat).toContain('if isLast, let retry = retry { QuietButton("Try again", action: retry) }');
-    // Typed bubbles get an empty label; heard ones always a non-empty one, even for an unknown or missing source.
-    expect(client).toContain('addBubble(.said, text, detail: "")');
-    expect(client).toContain('addBubble(.said, text, detail: heardLabel(msg.source))');
-    const label = client.match(/func heardLabel\(_ source: String\?\) -> String \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    expect(label).toContain('default: return "Not typed here"');
-    const returns = [...label.matchAll(/return ([^\n]*)/g)].map((m) => m[1]);
-    expect(returns.length).toBeGreaterThanOrEqual(5);
-    for (const r of returns) expect(r, r).toMatch(/^"[^"]+"$/);
-    for (const s of ['voice-ptt', 'voice-wake', 'phone', 'cli']) expect(label).toContain(`case "${s}":`);
-    // UI v4 step b (#142, [DEV REVIEW]): the source line in #142's words.
-    for (const [s, w] of [['voice-ptt', 'From: F5'], ['voice-wake', 'From: Hey Stephen'], ['phone', 'From: Phone']]) {
-      expect(label).toContain(`case "${s}": return "${w}"`);
+  });
+
+  it('R10a-2 siblings: spoken, wake word, phone, cli and unknown bubbles are never typed; typed and edited ones are', () => {
+    // Every .said bubble names its source. Typed paths (sendChat, editMessage) are .typed; nothing else is.
+    const said = [...client.matchAll(/addBubble\(\.said, [^\n]*/g)].map((m) => m[0]);
+    expect(said).toHaveLength(3);
+    expect(said.filter((l) => l.endsWith('source: .typed)'))).toHaveLength(2);
+    expect(said).toContain('addBubble(.said, text, detail: "", source: heardSource(msg.source))');
+    // Heard sources map to their own case; unknown or missing maps to .other. No path returns .typed.
+    const map = client.match(/func heardSource\(_ source: String\?\) -> ChatBubble\.Source \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    for (const [s, c] of [['voice-ptt', 'spoken'], ['voice-wake', 'wakeWord'], ['phone', 'phone'], ['cli', 'cli']]) {
+      expect(map).toContain(`case "${s}": return .${c}`);
     }
-    // Shown under the bubble (verbatim) and read by VoiceOver.
-    expect(chat).toContain('if !bubble.detail.isEmpty {\n          Text(verbatim: bubble.detail)');
-    expect(chat).toContain('"You, \\(bubble.detail): \\(bubble.text)"');
+    expect(map).toContain('default: return .other');
+    expect(map).not.toContain('.typed');
+    // The source is optional: Stephen's bubbles (reply, problem, info) are nil, which is never .typed.
+    expect(client).toContain('var source: Source? = nil');
+    expect(client).toContain('case typed, spoken, wakeWord, phone, cli');
+  });
+
+  it('owner 2026-11-26: no source label under a said bubble ("From: F5" is gone), typed or spoken', () => {
+    const chat = read('Components/ChatThread.swift');
+    const said = chat.match(/case \.said:([\s\S]*?)case \.reply:/)?.[1] ?? '';
+    expect(said).toContain('Text(verbatim: bubble.text)');
+    expect(said).not.toContain('bubble.detail');
+    expect(said).not.toContain('bubble.source');
+    expect(said).toContain('.accessibilityLabel("You: \\(bubble.text)")');
+    expect(client).not.toContain('heardLabel');
+    expect(client).not.toContain('From: F5');
   });
 
   it('R10a-5: Esc with a waiting question denies the first one (Ask box panel, Ask box view, main window Home)', () => {
@@ -701,6 +736,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('return parts.joined(separator: " · ")');
   });
 
+  // R7d: loading, error and empty in words. A failed list never reads as "No jobs yet", and never shows raw "error".
+  it('Jobs page shows loading, error with Try again, and empty only after a good list', () => {
+    const jobs = read('JobsPage.swift');
+    expect(client).toContain('@Published private(set) var jobsListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshJobs()'), client.indexOf('func refreshPersonal()'));
+    expect(refresh).toContain('self.assign(\\.jobsListOk, true)');
+    expect(refresh).toContain('self.assign(\\.jobsListOk, false)');
+    expect(refresh).not.toContain('msg.message ?? "error"');
+    expect(jobs).toContain('switch model.jobsListOk');
+    expect(jobs).toMatch(/case nil:[\s\S]*JOBS_LOADING[\s\S]*case false\?:[\s\S]*JOBS_LIST_FAILED[\s\S]*QuietButton\("Try again"[\s\S]*model\.refreshJobs\(\)[\s\S]*case true\?:[\s\S]*JOBS_EMPTY/);
+    expect(jobs).toContain('let JOBS_LIST_FAILED = "Couldn\'t load your jobs right now."');
+    // Activity lists jobs too: a failed list is said there as well, never silent.
+    expect(read('ActivityPage.swift')).toContain('model.jobsListOk == false ? JOBS_LIST_FAILED : nil');
+  });
+
   // ADR-010 Edit request ([DEV REVIEW]): off while queued or running (with the line), the editor only sends the text,
   // the listener shows the job dialog; "Version N of M"; all verbatim; the palette never reaches it.
   it('ADR-010 Jobs: Edit request button and its disabled line, the editor, the version label, Text(verbatim:), not in the palette', () => {
@@ -810,7 +860,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('AppProtocol.swift')).not.toMatch(/struct AuditEntry[\s\S]*?\bargs\b[\s\S]*?\n\}/);
     expect(act).not.toMatch(/\.(intent|error|args)\b/);
     expect(act.match(/\.url(Before|After)\b(?!\.isEmpty)/g)?.length).toBe(act.match(/activityHost\([^)]*\.url(Before|After)\)/g)?.length);
-    expect(read('AppProtocol.swift')).toContain('case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd }');
+    expect(read('AppProtocol.swift')).toContain('case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd, tab }');
     expect(read('AppClient.swift')).toContain('static let auditLimit = 200');
   });
 
@@ -1428,7 +1478,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
     const conv = read('ConversationsPage.swift');
     expect(conv).toContain('Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")');
-    expect(conv).toContain('Text(verbatim: "Nothing yet. Ask Stephen something and it shows here.")');
+    expect(conv).toContain('let CONVERSATIONS_EMPTY = "Nothing yet. Ask Stephen something and it shows here."');
     // Chips: All, Refused, Failed, drawn with Memory's Tag.
     expect(conv).toMatch(/let CONVERSATION_FILTERS = \[\s*MemoryFilter\(id: "all", title: "All"\), MemoryFilter\(id: "refused", title: "Refused"\), MemoryFilter\(id: "failed", title: "Failed"\),\s*\]/);
     expect(conv).toContain('ForEach(CONVERSATION_FILTERS) { f in Tag(f.title, selected: filter == f.id) { filter = f.id }.fixedSize() }');

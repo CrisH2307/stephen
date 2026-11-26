@@ -25,7 +25,7 @@ enum AppConnectionState: Equatable {
 
 struct ChatBubble: Identifiable, Equatable {
   enum Kind: Equatable {
-    /** What the user typed (empty detail) or said (detail names where it came from, see heardLabel). Right side. */
+    /** What the user typed or said (source says which). Right side. */
     case said
     /** Stephen's reply (left side). */
     case reply
@@ -41,18 +41,26 @@ struct ChatBubble: Identifiable, Equatable {
   let detail: String
   /** What Stephen did for this reply, oldest first. */
   var steps: [ChatStep] = []
+  /** Where a .said bubble came from; nil for Stephen's bubbles. Not shown (owner, 2026-11-26). Try again reads this,
+   never the text or detail (R10a-2). */
+  var source: Source? = nil
+
+  enum Source: Equatable {
+    case typed, spoken, wakeWord, phone, cli
+    /** A heard command with an unknown or missing source: never treated as typed. */
+    case other
+  }
 }
 
-/// Where a spoken (not typed) command came from, shown under its bubble in #142's words ("From: F5"). Never empty,
-/// even for an unknown or missing source: an empty label would make the bubble look typed, and Try again re-sends only
-/// typed bubbles (R10a-2).
-func heardLabel(_ source: String?) -> String {
+/// Where a heard (not typed) command came from. Never .typed, even for an unknown or missing source: Try again
+/// re-sends only typed bubbles (R10a-2).
+func heardSource(_ source: String?) -> ChatBubble.Source {
   switch source {
-  case "voice-ptt": return "From: F5"
-  case "voice-wake": return "From: Hey Stephen"
-  case "phone": return "From: Phone"
-  case "cli": return "From: Command line"
-  default: return "Not typed here"
+  case "voice-ptt": return .spoken
+  case "voice-wake": return .wakeWord
+  case "phone": return .phone
+  case "cli": return .cli
+  default: return .other
   }
 }
 
@@ -108,6 +116,9 @@ final class AppModel: ObservableObject {
   private var editsInFlight: Set<String> = []
   @Published private(set) var historyMayHaveMore = false
   @Published private(set) var historyNotice: String? = nil
+  /** R7: nil until the first history.list answer, then whether the last one worked. Conversations shows loading, empty
+   *  and error from it, so a failed list never reads as "Nothing yet". */
+  @Published private(set) var historyListOk: Bool? = nil
 
   @Published private(set) var settingsText = ""
   @Published private(set) var configPath: String? = nil
@@ -139,6 +150,9 @@ final class AppModel: ObservableObject {
 
   @Published private(set) var jobs: [JobRow] = []
   @Published private(set) var jobsNotice: String? = nil
+  /** R7d: nil until the first jobs.list answer, then whether the last one worked. The Jobs page shows loading, empty
+   *  and error from it, so a failed list never reads as "No jobs yet". */
+  @Published private(set) var jobsListOk: Bool? = nil
   /// T6 step 2: the id of the last "Stopped." line. Under it the thread offers "Stop them too" while jobs run.
   @Published private(set) var stoppedBubble: Int? = nil
   /** ADR-010: "Job started: <id>" after an Edit request starts; the dialog never named the id (it is fixed at the start). */
@@ -360,10 +374,10 @@ final class AppModel: ObservableObject {
     case "resume":
       resumeArmed = msg.armed ?? false
     case "heard":
-      // Typed commands are already in the chat; only voice commands are added here. The label is never empty: an
-      // empty detail marks a typed bubble, the only kind Try again may re-send (R10a-2).
+      // Typed commands are already in the chat; only voice commands are added here, never as .typed: Try again
+      // re-sends only typed bubbles (R10a-2).
       if let text = msg.text, msg.source != "app" {
-        addBubble(.said, text, detail: heardLabel(msg.source))
+        addBubble(.said, text, detail: "", source: heardSource(msg.source))
       }
     case "chat.done":
       chatDone(msg)
@@ -386,7 +400,7 @@ final class AppModel: ObservableObject {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, connection == .online else { return false }
     let text = trimmed.count > APP_CHAT_MAX_CHARS ? String(trimmed.prefix(APP_CHAT_MAX_CHARS)) : trimmed
-    addBubble(.said, text, detail: "")
+    addBubble(.said, text, detail: "", source: .typed)
     request(AppRequest.chatSend(newId(), text: text)) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "chat.accepted", let entryId = msg.entryId {
@@ -442,7 +456,7 @@ final class AppModel: ObservableObject {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, connection == .online, !isWorking, !conv.isEmpty else { return false }
     let text = trimmed.count > APP_CHAT_MAX_CHARS ? String(trimmed.prefix(APP_CHAT_MAX_CHARS)) : trimmed
-    addBubble(.said, text, detail: "")
+    addBubble(.said, text, detail: "", source: .typed)
     request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), conv: conv, text: text)) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "chat.accepted", let entryId = msg.entryId {
@@ -519,8 +533,8 @@ final class AppModel: ObservableObject {
     addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "), steps: steps)
   }
 
-  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = []) {
-    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps))
+  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = [], source: ChatBubble.Source? = nil) {
+    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps, source: source))
     nextBubble += 1
     if chat.count > APP_MAX_BUBBLES { chat.removeFirst(chat.count - APP_MAX_BUBBLES) }
   }
@@ -641,8 +655,9 @@ final class AppModel: ObservableObject {
         self.assign(\.history, entries)
         self.assign(\.historyMayHaveMore, entries.count >= AppModel.historyPageSize)
         self.assign(\.historyNotice, nil)
+        self.assign(\.historyListOk, true)
       } else {
-        self.assign(\.historyNotice, msg.message ?? "error")
+        self.assign(\.historyListOk, false)
       }
     }
   }
@@ -668,6 +683,7 @@ final class AppModel: ObservableObject {
       if msg.type == "ok" {
         self.history = []
         self.historyMayHaveMore = false
+        self.historyListOk = true
         self.historyNotice = "History cleared."
       } else {
         self.historyNotice = msg.message ?? "error"
@@ -791,8 +807,9 @@ final class AppModel: ObservableObject {
       if msg.type == "jobs" {
         self.assign(\.jobs, msg.jobs ?? [])
         self.assign(\.jobsNotice, nil)
+        self.assign(\.jobsListOk, true)
       } else {
-        self.assign(\.jobsNotice, msg.message ?? "error")
+        self.assign(\.jobsListOk, false)
       }
     }
   }

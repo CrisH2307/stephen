@@ -83,10 +83,10 @@ struct ChatThreadView: View {
   }
 }
 
-/// The text Try again may re-send: your last message, only if you typed it (no source label). Spoken or phone words
+/// The text Try again may re-send: your last message, only if you typed it (its source, never its text). Spoken or phone words
 /// are never re-sent: chat.send runs as typed in the app, full trust, and the app must not claim another source (R10a-2).
 func retryableText(_ thread: [ChatBubble]) -> String? {
-  guard let last = thread.last(where: { $0.kind == .said }), last.detail.isEmpty else { return nil }
+  guard let last = thread.last(where: { $0.kind == .said }), last.source == .typed else { return nil }
   return last.text
 }
 
@@ -109,21 +109,16 @@ struct ChatBubbleRow: View {
   var body: some View {
     switch bubble.kind {
     case .said:
-      // Spoken or phone words carry where they came from, under the bubble; typed ones have no label.
-      VStack(alignment: .trailing, spacing: 2) {
-        HStack(spacing: 0) {
-          Spacer(minLength: Space.xxl)
-          Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
-            .padding(.horizontal, Space.m).padding(.vertical, Space.s)
-            .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.line))
-        }
-        if !bubble.detail.isEmpty {
-          Text(verbatim: bubble.detail).font(TypeScale.secondary).foregroundColor(t.ink2)
-        }
+      // No source label under the bubble, typed or spoken (owner, 2026-11-26). The source stays on the bubble for Try again.
+      HStack(spacing: 0) {
+        Spacer(minLength: Space.xxl)
+        Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
+          .padding(.horizontal, Space.m).padding(.vertical, Space.s)
+          .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.line))
       }
       .frame(maxWidth: .infinity, alignment: .trailing)
       .accessibilityElement(children: .combine)
-      .accessibilityLabel(bubble.detail.isEmpty ? "You: \(bubble.text)" : "You, \(bubble.detail): \(bubble.text)")
+      .accessibilityLabel("You: \(bubble.text)")
     case .reply:
       // The work first, small and folded; the answer after it, as the main text (owner, 2026-11-09).
       VStack(alignment: .leading, spacing: Space.s) {

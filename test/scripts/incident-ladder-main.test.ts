@@ -192,6 +192,7 @@ describe('free levels first (docs/design/INCIDENT-LADDER-FREE-FIRST.md)', () => 
     expect(opts.cwd).toMatch(/l1b-[^/]+\/cwd$/);
     expect(opts.env!.HOME).not.toBe(homedir());
     expect(opts.cwd!.startsWith(opts.env!.HOME!)).toBe(true);
+    expect(opts.env!.XDG_CONFIG_HOME!.startsWith(opts.env!.HOME!)).toBe(true);
     expect(opts.env!.XDG_DATA_HOME!.startsWith(opts.env!.HOME!)).toBe(true);
     for (const k of ['OPENCODE_DISABLE_CLAUDE_CODE', 'OPENCODE_DISABLE_CLAUDE_CODE_PROMPT', 'OPENCODE_DISABLE_CLAUDE_CODE_SKILLS', 'OPENCODE_DISABLE_PROJECT_CONFIG'])
       expect(opts.env![k]).toBe('1');
