@@ -5,7 +5,7 @@
  * the full app (helper/main.swift with AppKit/CoreAudio/CoreGraphics).
  */
 import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { type Socket, createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -173,6 +173,20 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     expect(Math.abs(got[1]!.type === 'esc' ? got[1]!.at - Date.now() : 1e9)).toBeLessThan(5_000);
   });
 
+  it('#392 review: a link in place of the run folder is refused, and its target keeps its permissions', async () => {
+    const sock = mk();
+    const elsewhere = join(dir, 'elsewhere');
+    mkdirSync(elsewhere, { mode: 0o755 });
+    mkdirSync(dirname(dirname(sock)), { recursive: true });
+    symlinkSync(elsewhere, dirname(sock));
+    const h = new Harness(sock);
+    kills.push(() => h.kill());
+    await until(() => h.exitCode !== null, 10_000, 'harness exits');
+    expect(h.lines.join('\n')).toMatch(/is a link or not a folder/);
+    expect(statSync(elsewhere).mode & 0o777).toBe(0o755);
+    expect(existsSync(join(elsewhere, 'helper.sock'))).toBe(false);
+  });
+
   it('F15: a fresh 0600 nonce per launch; no auth line, a wrong nonce, or junk first is dropped without a hello, and never replaces the current client', async () => {
     const sock = mk();
     const h = await start(sock);
@@ -213,6 +227,16 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     expect(existsSync(nonceFile)).toBe(false);
     await start(sock);
     expect(readHelperNonce(sock)).not.toBe(nonce);
+  });
+
+  it('#392 review: with the key file gone, the client says so plainly instead of "connection closed before hello"', async () => {
+    const sock = mk();
+    await start(sock);
+    rmSync(join(dirname(sock), 'helper.nonce'));
+    const c = new HelperClient({ home: dirname(dirname(sock)), socketPath: sock, launch: false, connectTimeoutMs: 1500 });
+    kills.push(() => c.close());
+    const r = await c.start();
+    expect(r).toMatchObject({ ok: false, reason: expect.stringMatching(/key file .*helper\.nonce is missing or not readable.*install-helper/) });
   });
 
   it('handles commands: state (incl. JSON escapes), query_audio; ignores malformed, unknown and over-long lines', async () => {
