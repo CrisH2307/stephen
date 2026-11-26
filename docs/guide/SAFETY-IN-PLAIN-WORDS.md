@@ -24,8 +24,16 @@ normal code with fixed rules. A web page cannot talk to it, and the AI cannot ar
 
 ## The Allow / Deny card
 
-When Stephen asks, a card appears. It shows facts Stephen checked itself, kept apart from what the AI and the page
-say.
+When Stephen asks, a card appears in the Ask box under the Stephen icon. (If the Ask box is not running, the same
+question shows as a normal macOS dialog.) This is what it looks like:
+
+<p align="center">
+  <img src="../ui/paper/after-confirm-paper.png" alt="The real Ask box with a card titled Needs your OK: Submit this form? It shows the site, the room and the time, with Deny and Allow buttons." width="360">
+  <br><sub>Real screenshot of the Ask box in the Paper look, with a made-up sample question.</sub>
+</p>
+
+It shows facts Stephen checked itself, kept apart from what the AI and the page say. A real question can have more
+lines than this sample. Here is every kind of line, explained:
 
 <p align="center">
   <img src="images/confirm-card.svg" alt="An Allow / Deny card with numbered labels: who wants to act and where, the facts Stephen checked, what Claude says, what the page says, and the Deny and Allow buttons." width="760">

@@ -91,8 +91,13 @@ When you don't need Stephen in Zen, quit Zen (Cmd+Q) and open it normally.
 
 ## Step 6. Your first command
 
-First make sure Stephen is running: click the Stephen icon in the menu bar. If the Ask box shows a **Start**
-button, click it.
+First make sure Stephen is running: click the Stephen icon in the menu bar. If the Ask box says "Can't reach
+Stephen", click **Start**.
+
+<p align="center">
+  <img src="../ui/paper/after-askbox-paper.png" alt="The real Ask box saying Offline and Can't reach Stephen, with a Start button." width="360">
+  <br><sub>Real screenshot of the Ask box in the Paper look. Click Start.</sub>
+</p>
 
 Then hold **F5**, say **"what time is it"**, and let go. Stephen answers out loud.
 
