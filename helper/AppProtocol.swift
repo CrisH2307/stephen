@@ -498,8 +498,10 @@ struct AuditEntry: Decodable, Equatable {
   var confirmation: String = ""
   /** The command id (`h_<16 hex>`), equal to the history id. "" on older lines. A label for joining, never an input. */
   var cmd: String = ""
+  /** The tab id ("z1"; "new" on a new tab's decision line). For Activity's fold only. */
+  var tab: String = ""
 
-  enum CodingKeys: String, CodingKey { case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd }
+  enum CodingKeys: String, CodingKey { case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd, tab }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -515,6 +517,7 @@ struct AuditEntry: Decodable, Equatable {
     error = (try? c.decodeIfPresent(String.self, forKey: .error)) ?? ""
     confirmation = (try? c.decodeIfPresent(String.self, forKey: .confirmation)) ?? ""
     cmd = (try? c.decodeIfPresent(String.self, forKey: .cmd)) ?? ""
+    tab = (try? c.decodeIfPresent(String.self, forKey: .tab)) ?? ""
   }
 }
 
