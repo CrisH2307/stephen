@@ -14,7 +14,7 @@ enum ThemeName: String, CaseIterable, Identifiable {
 
 /// What the user picked in Settings > Appearance. followMac = Light by day, Dark at night (system appearance).
 struct ThemeChoice: Equatable {
-  var name: ThemeName = .light
+  var name: ThemeName = .paper
   var followMac: Bool = false
 
   func resolved(_ scheme: ColorScheme) -> Theme {
@@ -234,7 +234,7 @@ private struct ThemeRoot: ViewModifier {
 }
 
 private struct ThemeKey: EnvironmentKey {
-  static let defaultValue = Theme.of(.light)
+  static let defaultValue = Theme.of(.paper)
 }
 
 extension EnvironmentValues {
