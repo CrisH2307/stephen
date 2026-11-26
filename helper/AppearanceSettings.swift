@@ -1,5 +1,6 @@
 // Stephen Helper: Settings > Appearance (UI-PLAN v3.1 section 8). The theme is stored in UserDefaults under the key
-// "theme" (light, dark, navy, rose, sun, or "mac" for Follow the Mac), as the temporary reading of it was. ThemeStore
+// "theme" (light, dark, navy, rose, sun, paper, or "mac" for Follow the Mac), as the temporary reading of it was. Nothing
+// saved (a new install) means Paper, the default since #350; a saved choice is kept. ThemeStore
 // is the one place that reads and writes it; the main window and the Ask box both observe it, so a change shows at once.
 
 import SwiftUI
@@ -16,10 +17,10 @@ final class ThemeStore: ObservableObject {
   init() {
     let raw = UserDefaults.standard.string(forKey: ThemeStore.key) ?? ""
     if raw == "mac" {
-      let last = ThemeName(rawValue: UserDefaults.standard.string(forKey: ThemeStore.lastKey) ?? "") ?? .light
+      let last = ThemeName(rawValue: UserDefaults.standard.string(forKey: ThemeStore.lastKey) ?? "") ?? .paper
       choice = ThemeChoice(name: last, followMac: true)
     } else {
-      choice = ThemeChoice(name: ThemeName(rawValue: raw) ?? .light, followMac: false)
+      choice = ThemeChoice(name: ThemeName(rawValue: raw) ?? .paper, followMac: false)
     }
   }
 
