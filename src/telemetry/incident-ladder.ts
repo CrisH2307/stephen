@@ -7,7 +7,6 @@
  * a body or use up the daily cap).
  */
 import { createHash } from 'node:crypto';
-import { JOB_DISALLOWED_TOOLS, jobSettings } from '../jobs/spec.js';
 import type { Findings } from './incident-bot.js';
 import type { IncidentRecord } from './incidents.js';
 
@@ -201,7 +200,10 @@ export const CLAUDE_LEVELS = {
   4: { model: 'opus', turns: 30, minutes: 20 },
 } as const;
 
-/** Read the repo and nothing else. No Bash, no edit, no web, no MCP, no settings from the user or the project. */
+/**
+ * Read the repo and nothing else. No Bash, no edit, no web, no MCP, no settings from the user or the project. The deny
+ * list copies the job list in src/jobs/spec.ts: this module may not import src/jobs (test/memory/boundary.test.ts).
+ */
 export function claudeArgs(level: 2 | 3 | 4, prompt: string, settingsFile: string): string[] {
   const c = CLAUDE_LEVELS[level];
   return [
@@ -211,7 +213,7 @@ export function claudeArgs(level: 2 | 3 | 4, prompt: string, settingsFile: strin
     '--max-turns', String(c.turns),
     '--tools', 'Read,Grep,Glob',
     '--allowedTools', 'Read,Grep,Glob',
-    '--disallowedTools', [...JOB_DISALLOWED_TOOLS, 'Bash', 'Edit', 'Write'].join(','),
+    '--disallowedTools', 'Bash,Edit,Write,WebFetch,WebSearch,Agent,NotebookEdit',
     '--permission-mode', 'dontAsk',
     '--setting-sources', '',
     '--settings', settingsFile,
@@ -223,9 +225,7 @@ export function claudeArgs(level: 2 | 3 | 4, prompt: string, settingsFile: strin
 
 const HOME_DENY = ['Read(~/**)', 'Grep(~/**)', 'Glob(~/**)'];
 
-/** settings.json for the Claude levels: the job sandbox and deny rules, plus no reads under the home folder. */
-export function ladderSettings(stephenHome: string, stephenRepo: string): Record<string, unknown> {
-  const base = jobSettings({ stephenHome, stephenRepo });
-  const perms = base.permissions as { deny: string[] };
-  return { ...base, permissions: { ...perms, deny: [...perms.deny, ...HOME_DENY] } };
+/** Adds the no-reads-under-home deny rules to a job settings object (the script builds it with jobSettings). */
+export function withHomeDeny<T extends { permissions: { deny: string[] } }>(s: T): T {
+  return { ...s, permissions: { ...s.permissions, deny: [...s.permissions.deny, ...HOME_DENY] } };
 }

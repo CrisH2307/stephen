@@ -13,13 +13,13 @@ import {
   isSafetyPath,
   l1Lines,
   ladderRunsToday,
-  ladderSettings,
   markerFor,
   nextLevel,
   parseModelJson,
   pickL1Model,
   resolves,
   type IssueComment,
+  withHomeDeny,
 } from '../../src/telemetry/incident-ladder.js';
 import { parseIncidentRecord } from '../../src/telemetry/incidents.js';
 
@@ -190,10 +190,8 @@ describe('Claude flags and settings', () => {
     expect(claudeArgs(4, 'p', 's')[claudeArgs(4, 'p', 's').indexOf('--model') + 1]).toBe('opus');
   });
 
-  it('the settings deny reads under the home folder and keep the job sandbox', () => {
-    const s = ladderSettings('/Users/x/.stephen', '/repo') as { sandbox: { enabled: boolean; filesystem: { denyRead: string[] } }; permissions: { deny: string[] } };
-    expect(s.sandbox.enabled).toBe(true);
-    expect(s.sandbox.filesystem.denyRead).toContain('/Users/x/.stephen');
-    expect(s.permissions.deny).toEqual(expect.arrayContaining(['Read(~/**)', 'Grep(~/**)', 'Glob(~/**)']));
+  it('withHomeDeny adds the home-folder deny rules and keeps the existing ones', () => {
+    const s = withHomeDeny({ permissions: { deny: ['Bash(git push *)'] } });
+    expect(s.permissions.deny).toEqual(['Bash(git push *)', 'Read(~/**)', 'Grep(~/**)', 'Glob(~/**)']);
   });
 });
