@@ -169,6 +169,8 @@ async function serve(argv: string[] = []): Promise<void> {
     await server.connect(new StdioServerTransport());
     return;
   }
+  // A refused start (secret-looking key) must claim nothing, so the check runs before the instance lock.
+  await startConfigCheck();
   // --instance: one serve per id. A second serve of the same id is Claude Code restarting a dead one behind the
   // listener's back (docs/REVIEW-7.md R7-1): it refuses every tool call and exits. Any other failure throws (no tools).
   let restarted: (() => void) | undefined;
@@ -183,7 +185,6 @@ async function serve(argv: string[] = []): Promise<void> {
   }
   // --trust wake: a wake-word conversation (R7-2). Logged here; each refused email read is in the audit log.
   if (opts.trust) console.error('[stephen] trust: wake word (email: who and when only; gmail_read refused)');
-  await startConfigCheck();
   if (opts.confirm) cfg.safety.confirm = opts.confirm;
   if (opts.voice) parseTtsConfig(cfg.voice); // fail fast on a bad voice-output config
   // Profiles, state and saved page output are private to this user (mode 0700).

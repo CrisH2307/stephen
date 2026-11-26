@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -112,6 +112,26 @@ describe('start check', () => {
     await expect(startConfigCheck(env)).resolves.toBeUndefined();
     expect(log).toHaveBeenCalledWith('[stephen] config: ignored keys fooBar (run stephen doctor)');
     log.mockRestore();
+  });
+});
+
+describe('serve start path', () => {
+  it('a refused serve claims no --instance lock', async () => {
+    const home = useConfig({ voice: { elevenlabs: { apiKey: 'sk-SECRET-VALUE-8' } } });
+    const keep = { STEPHEN_HOME: process.env.STEPHEN_HOME, STEPHEN_CONFIG: process.env.STEPHEN_CONFIG };
+    process.env.STEPHEN_HOME = join(home, '.stephen');
+    process.env.STEPHEN_CONFIG = join(home, '.stephen', 'config.json');
+    try {
+      const id = 'ab'.repeat(16);
+      const err = await main(['serve', '--instance', id]).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HubError);
+      expect(existsSync(join(home, '.stephen', 'run', `serve-${id}.lock`))).toBe(false);
+    } finally {
+      for (const [k, v] of Object.entries(keep)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 });
 
