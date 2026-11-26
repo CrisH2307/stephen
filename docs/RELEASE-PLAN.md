@@ -49,6 +49,7 @@ Every release PR gets one table, compared with the targets in `docs/NFR-STEPHEN.
 | Crashes and errors | Incident file, `stephen report` | Being built |
 | Idle CPU and memory | `scripts/measure-idle.sh` (10 minutes) | Script merged, first run due |
 | Daily cost | `stephen latency` cost lines | Measured from #302 on |
+| Inject eval: pass rate and cost of the run | `node dist/cli.js eval --only inject` on the release commit (release checklist step 4b); cost from the report file | New from R8. Below 7/7 blocks the release |
 
 A free agent fills the sheet from the command output; the review lane checks it.
 
