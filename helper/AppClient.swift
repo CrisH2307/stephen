@@ -116,6 +116,9 @@ final class AppModel: ObservableObject {
   private var editsInFlight: Set<String> = []
   @Published private(set) var historyMayHaveMore = false
   @Published private(set) var historyNotice: String? = nil
+  /** R7: nil until the first history.list answer, then whether the last one worked. Conversations shows loading, empty
+   *  and error from it, so a failed list never reads as "Nothing yet". */
+  @Published private(set) var historyListOk: Bool? = nil
 
   @Published private(set) var settingsText = ""
   @Published private(set) var configPath: String? = nil
@@ -647,8 +650,9 @@ final class AppModel: ObservableObject {
         self.assign(\.history, entries)
         self.assign(\.historyMayHaveMore, entries.count >= AppModel.historyPageSize)
         self.assign(\.historyNotice, nil)
+        self.assign(\.historyListOk, true)
       } else {
-        self.assign(\.historyNotice, msg.message ?? "error")
+        self.assign(\.historyListOk, false)
       }
     }
   }
@@ -674,6 +678,7 @@ final class AppModel: ObservableObject {
       if msg.type == "ok" {
         self.history = []
         self.historyMayHaveMore = false
+        self.historyListOk = true
         self.historyNotice = "History cleared."
       } else {
         self.historyNotice = msg.message ?? "error"
