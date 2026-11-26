@@ -7,7 +7,7 @@ import { createServer, type Server } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { deleteAllData, KEYCHAIN_SERVICES, socketAnswers, unsafeToDelete, type DeleteDeps } from '../../src/app/data-cli.js';
+import { deleteAllData, KEYCHAIN_SERVICES, socketAnswers, STORE_DIRS, unsafeToDelete, type DeleteDeps } from '../../src/app/data-cli.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-delete-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -205,5 +205,11 @@ describe('stephen data delete --all (R10)', () => {
     expect(existsSync(join(w.home, 'memory.json'))).toBe(true);
     expect(w.out.some((l) => l.startsWith('Deleted ~/.stephen'))).toBe(false);
     expect(w.out).toContain('  ~/.stephen: it is also your job folder, and you chose to keep that.');
+  });
+});
+
+describe('STORE_DIRS (health audit 5)', () => {
+  it('is derived from STORES: every store folder under the home, nothing else', () => {
+    expect([...STORE_DIRS].sort()).toEqual(['history', 'incidents', 'jobs', 'logs', 'replay', 'run', 'telemetry', 'voice']);
   });
 });
