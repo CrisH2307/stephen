@@ -15,7 +15,7 @@ Everything stays on your Mac: Stephen only talks to browsers on `127.0.0.1` and 
 
 | | |
 |---|---|
-| macOS | **14 (Sonoma) or newer**, Apple silicon or Intel |
+| macOS | **14 (Sonoma) or newer**, Apple silicon (M1 or newer) only for the beta |
 | Node.js | **20.19+ (20.x) or 22.12+; 24 is what CI uses** (Node 21 is out. Running the tests needs 22.12+ or 24, because vitest 5 does.) (`node --version`; install from [nodejs.org](https://nodejs.org) or `brew install node`) |
 | Claude Code | installed and working (`claude --version`) |
 | Google Chrome | **144 or newer** for real-profile mode (Chrome menu → *Help → About Google Chrome*) |
