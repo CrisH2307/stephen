@@ -44,7 +44,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     console.log('BASE must be a full commit sha.');
     process.exit(1);
   }
-  const files = execFileSync('git', ['diff', '--name-only', base, 'HEAD'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+  // --no-renames: a move out of a safety folder lists the old path too, so it cannot pass untagged (#386 review).
+  const files = execFileSync('git', ['diff', '--name-only', '--no-renames', base, 'HEAD'], { encoding: 'utf8' }).split('\n').filter(Boolean);
   const problem = safetyProblem(process.env.TITLE ?? '', files);
   if (problem) {
     console.log(problem);
