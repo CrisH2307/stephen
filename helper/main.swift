@@ -320,6 +320,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     menu.addItem(phoneItem)
     for (title, action) in [
       ("Open Zen for Stephen", #selector(zenClicked(_:))), ("Run doctor…", #selector(doctorClicked(_:))),
+      ("Report a problem…", #selector(reportClicked(_:))),
     ] {
       let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
       item.target = self
@@ -410,6 +411,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
   @objc func doctorClicked(_ sender: Any?) {
     control.runDoctor { [weak self] m in MainActor.assumeIsolated { self?.show("Stephen doctor", doctorText(m)) } }
+  }
+
+  @objc func reportClicked(_ sender: Any?) {
+    control.reportProblem { [weak self] text in MainActor.assumeIsolated { self?.show("Report a problem", text) } }
   }
 
   @objc func openSettings(_ sender: Any?) {
