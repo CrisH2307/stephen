@@ -96,6 +96,9 @@ let PHONE_LINK_FAILED = "Couldn't change the phone link right now."
 let ZEN_OPEN_FAILED = "Couldn't open Zen for Stephen right now."
 let SPEED_FAILED = "Couldn't load the speed report right now."
 let DOCTOR_FAILED = "Couldn't run the doctor checks right now."
+let LAUNCH_INFO_MISSING = "Stephen Helper doesn't know how to start Stephen. Run `stephen install-helper` once in Terminal."
+let LISTEN_START_FAILED = "Couldn't start Stephen right now. Try again in a moment."
+let REPORT_RUN_FAILED = "Couldn't make the problem report right now."
 
 /** Plain text for a `phone` answer (what `stephen phone on|off` printed) or an error. */
 func phoneText(_ msg: AppMessage) -> String {
@@ -234,7 +237,8 @@ final class StephenControl: ObservableObject {
     if case .running = listener { return done("Stephen is already running.") }
     if listener == .starting { return done(nil) }
     guard let info = readLaunchInfo() else {
-      return done("Stephen Helper doesn't know how to start Stephen: \(launchInfoPath) is missing or unsafe. Run `stephen install-helper` once in Terminal.")
+      log("start: \(launchInfoPath) is missing or unsafe")
+      return done(LAUNCH_INFO_MISSING)
     }
     try? makePrivateDir(home + "/logs")
     let fm = FileManager.default
@@ -243,7 +247,10 @@ final class StephenControl: ObservableObject {
       try? fm.moveItem(atPath: logPath, toPath: logPath + ".1")
     }
     let fd = Darwin.open(logPath, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0o600)
-    guard fd >= 0 else { return done("Couldn't open \(logPath): \(String(cString: strerror(errno)))") }
+    guard fd >= 0 else {
+      log("start: couldn't open \(logPath): \(String(cString: strerror(errno)))")
+      return done(LISTEN_START_FAILED)
+    }
     let out = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     let p = Process()
     p.executableURL = URL(fileURLWithPath: info.node)
@@ -267,7 +274,8 @@ final class StephenControl: ObservableObject {
     do {
       try p.run()
     } catch {
-      return done("Couldn't start stephen listen: \(error.localizedDescription)")
+      log("start: couldn't run stephen listen: \(error.localizedDescription)")
+      return done(LISTEN_START_FAILED)
     }
     try? out.close()  // the child has its own copy
     child = p
@@ -436,7 +444,8 @@ final class StephenControl: ObservableObject {
     do {
       try p.run()
     } catch {
-      done("Couldn't run stephen report: \(error.localizedDescription)")
+      log("report: couldn't run stephen report: \(error.localizedDescription)")
+      done(REPORT_RUN_FAILED)
     }
   }
   /** Settings > Speed: the latency report (ids and numbers only); quick, so a short timeout. */
