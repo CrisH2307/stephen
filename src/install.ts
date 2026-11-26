@@ -7,6 +7,7 @@
  * (same server, old name) so Claude Code does not start two copies — and says so. Without --run it only prints
  * the commands. Everything goes through `execFile` with argv arrays (no shell).
  */
+import { withoutSecrets } from './lib/claude-env.js';
 import { execNoThrow, firstLine } from './lib/process.js';
 import { SERVER_NAME } from './server/index.js';
 
@@ -54,7 +55,8 @@ function isNotRegistered(r: ClaudeResult): boolean {
 }
 
 export const defaultRunClaude: RunClaude = async (args) => {
-  const r = await execNoThrow('claude', args, 60_000);
+  // The same allow-listed env as every other claude Stephen starts (R23): `claude mcp` writes Claude's config.
+  const r = await execNoThrow('claude', args, 60_000, withoutSecrets(process.env));
   return {
     code: r.code,
     stdout: r.stdout,
