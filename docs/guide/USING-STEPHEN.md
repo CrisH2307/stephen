@@ -57,7 +57,7 @@ something, and it says how many things it remembers instead of reading them out 
 
 **Background jobs**
 - "While I'm cooking, write a first draft of my lab report"
-- Stephen shows a card first. The job starts only when you click **Start**. You can watch it, and stop it, in
+- Stephen asks first. The job starts only when you click **Allow**. You can watch it, and stop it, in
   the **Jobs** page of the Stephen window.
 
 ## Follow-ups

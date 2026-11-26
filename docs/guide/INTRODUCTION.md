@@ -26,13 +26,13 @@ browser or on your Mac. Before anything risky, it stops and asks you.
 | "Open YouTube" | Opens it in your browser (Zen or Chrome) |
 | "Play some lofi" | Finds it on YouTube and plays it |
 | "Pause", "next", "volume down" | Controls what is playing |
-| "Set a timer for 10 minutes" | Sets a timer and tells you when it is done |
+| "Set a timer for 10 minutes" | Sets a timer and tells you when it is done (Stephen's own rules do this, not the AI) |
 | "Remember that my locker is number 12" | Keeps it in its [memory](GLOSSARY.md#memory) on your Mac |
 | "What's the weather?" | Gives today's weather for your place |
 | "What's due on Canvas this week?" | Reads your Canvas (once you connect it) |
 | "What's my day?" | The weather, today's calendar and what is due on Canvas, in 3 or 4 sentences (once connected) |
 | "Read this page and summarize it" | Reads the page in your browser and tells you the main points |
-| "While I'm cooking, write a first draft of my lab report" | Starts a background [job](GLOSSARY.md#job) after you click Start |
+| "While I'm cooking, write a first draft of my lab report" | Starts a background [job](GLOSSARY.md#job) after you click Allow |
 
 Stephen only **reads** your email, calendar, Canvas and Notion. It cannot send an email or post for you on those
 accounts.
@@ -53,7 +53,7 @@ accounts.
 | **Stephen Helper** | A small app in your [menu bar](GLOSSARY.md#menu-bar). It hears F5, shows the Ask box and the Allow / Deny cards. |
 | **The listener** | The part that hears "Hey Stephen" and turns your voice into text, on your Mac. |
 | **Claude Code** | Anthropic's program that runs Claude. Stephen starts it in the background, with your own Claude account. |
-| **Stephen's tools** | The only things Claude can do: open a tab, click, read a page, set a timer, and so on. Each one goes through the safety gate. |
+| **Stephen's tools** | The only things Claude can do: open a tab, click, read a page, get the weather, and so on. Each one goes through the safety gate. |
 | **Your browser** | Your own Zen or Chrome, signed in as you. Stephen works in the tabs you already use. |
 
 ## Who it is for

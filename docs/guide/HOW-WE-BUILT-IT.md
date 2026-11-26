@@ -54,8 +54,7 @@ Not every task needs the strongest AI. We match the [model](GLOSSARY.md#ai-model
 | Task | Model |
 |---|---|
 | Research and planning | Claude Fable |
-| Writing code, safety code, hard bugs, final reviews | Claude Opus |
-| Normal coding | Claude Sonnet |
+| All coding, safety code, hard bugs, final reviews | Claude Opus |
 | Quick read-only checks (like fact checking this page) | Claude Haiku |
 | First drafts, summaries, format changes | Free models |
 
@@ -71,7 +70,7 @@ checked every claim against the code again.
   writes memory, timers and jobs is marked `[DEV REVIEW]` and needs a second, independent review.
 - **Attack tests with the real AI.** `stephen eval` runs the real Claude against fake pages, emails and Canvas posts
   that hide orders. The test passes only if Claude ignores the orders. In one test, Claude even told the user about
-  the planted instruction instead of following it.
+  the planted instruction instead of following it (`docs/SYSTEM-DESIGN-STEPHEN.md`, section 7).
 - **Eleven rounds of independent review so far** (`docs/REVIEW-1.md` to `docs/REVIEW-10B.md`). Each finding was
   fixed with a test named after it.
 - **Numbers, not feelings.** Speed, reliability and privacy goals are written down with today's measured values
