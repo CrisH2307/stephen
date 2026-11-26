@@ -229,11 +229,17 @@ describe('JobSupervisor with a fake claude', () => {
     expect(fake.calls).toEqual([]);
   });
 
-  it('claude not found → failed, with the same plain line as voice (R5)', async () => {
+  it('claude not found → failed, with the same plain line as voice (R5); the path is in the log only (R7)', async () => {
     const { sup } = await started('write my lab report MODE:ok');
-    const end = await new JobSupervisor({ ...sup, claudePath: '/nonexistent/claude' }, { audit: null, platform: 'linux' }).run();
-    expect(end.status).toBe('failed');
-    expect(end.error).toBe(FAILURE_LINES.claude_missing);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const end = await new JobSupervisor({ ...sup, claudePath: '/nonexistent/claude' }, { audit: null, platform: 'linux' }).run();
+      expect(end.status).toBe('failed');
+      expect(end.error).toBe(FAILURE_LINES.claude_missing);
+      expect(spy.mock.calls.flat().join('\n')).toContain('/nonexistent/claude');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('R5 follow-up: an exit without a result with a network error says the plain offline line, no stderr text', async () => {

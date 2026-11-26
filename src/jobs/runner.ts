@@ -288,7 +288,10 @@ export class JobSupervisor {
       this.stderrTail = (this.stderrTail + chunk).slice(-2000);
     });
     const exit = await new Promise<{ code: number | null; error?: string }>((res) => {
-      child.once('error', (e: NodeJS.ErrnoException) => res({ code: null, error: e.code === 'ENOENT' ? `Claude Code was not found ("${this.s.claudePath}")` : `Claude Code couldn't be started (${codeWord(e.code)})` }));
+      child.once('error', (e: NodeJS.ErrnoException) => {
+        logRaw(`claude start (${this.s.claudePath})`, e.message);
+        res({ code: null, error: e.code === 'ENOENT' ? 'Claude Code was not found' : `Claude Code couldn't be started (${codeWord(e.code)})` });
+      });
       child.once('close', (code) => res({ code }));
     });
     if (buf.trim()) this.onLine(buf.trim());
