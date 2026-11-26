@@ -17,7 +17,18 @@ import { REPO_ROOT } from './lib/repo.js';
 import { access, constants, mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configFilePath, legacyHomeNotice, loadConfig, resolveStephenHome, type HubConfig } from './config.js';
+import {
+  configFilePath,
+  legacyHomeNotice,
+  loadConfig,
+  looksLikeSecretKey,
+  showKeyName,
+  UNUSUAL_KEY_NAME,
+  readUserConfigFile,
+  resolveStephenHome,
+  userConfigUnknownKeys,
+  type HubConfig,
+} from './config.js';
 import { createBrowserManager } from './drivers/index.js';
 import { securePrivateDirs } from './drivers/util.js';
 import {
@@ -28,7 +39,7 @@ import {
   resolveZenRealProfile,
 } from './drivers/macos.js';
 import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
-import { errorMessage } from './errors.js';
+import { HubError, errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
 import { runSetup } from './setup.js';
 import { execNoThrow } from './lib/process.js';
@@ -115,6 +126,26 @@ Config: ${configFilePath()}  (env STEPHEN_HOME, STEPHEN_CONFIG)`;
 
 // ───────────────────────────── serve ─────────────────────────────
 
+/** One start-time line that names the ignored keys (names only, never values). */
+export function ignoredKeysNotice(keys: string[]): string {
+  return `[stephen] config: ignored keys ${keys.map(showKeyName).join(', ')} (run stephen doctor)`;
+}
+
+/**
+ * Start check (serve and listen). A key whose name looks like a secret stops the start, and its name is not shown:
+ * secrets belong in the Keychain. Other unknown keys are ignored, and each start names them on stderr.
+ */
+export async function startConfigCheck(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const ignored = await configUnknownKeys(env, true);
+  if (ignored.some(looksLikeSecretKey)) {
+    throw new HubError(
+      'INVALID_ARG',
+      'config.json has a key whose name looks like a secret (key, token, secret or password). Secrets belong in the macOS Keychain, not in config.json (ElevenLabs can also read apiKeyFile). Remove that key and start again.',
+    );
+  }
+  if (ignored.length) console.error(ignoredKeysNotice(ignored));
+}
+
 async function serve(argv: string[] = []): Promise<void> {
   // stdout carries MCP JSON-RPC only — route all console output to stderr before anything can log.
   console.log = console.error.bind(console);
@@ -138,6 +169,8 @@ async function serve(argv: string[] = []): Promise<void> {
     await server.connect(new StdioServerTransport());
     return;
   }
+  // A refused start (secret-looking key) must claim nothing, so the check runs before the instance lock.
+  await startConfigCheck();
   // --instance: one serve per id. A second serve of the same id is Claude Code restarting a dead one behind the
   // listener's back (docs/REVIEW-7.md R7-1): it refuses every tool call and exits. Any other failure throws (no tools).
   let restarted: (() => void) | undefined;
@@ -190,6 +223,58 @@ async function serve(argv: string[] = []): Promise<void> {
 
 // ───────────────────────────── doctor ─────────────────────────────
 
+/** Sections whose readers serve and listen never load: their code stays out of the start-up path (memory, history). */
+const COLD_SECTIONS = ['memory', 'history', 'jobs', 'app'];
+
+/** Every dotted path in a raw section whose key name looks like a secret (any depth). */
+function secretKeyPaths(value: unknown, prefix: string): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value).flatMap(([k, v]) => {
+    const path = `${prefix}.${k}`;
+    return [...(looksLikeSecretKey(path) ? [path] : []), ...secretKeyPaths(v, path)];
+  });
+}
+
+/**
+ * Keys in config.json that no reader uses, top level and in each section Stephen reads. The readers ignore them;
+ * doctor warns with the key name only. [] when the file cannot be read or is not valid JSON.
+ * `start` (serve, listen): only the readers that code already loads run. For the cold sections (COLD_SECTIONS) that
+ * means no reader at all; their raw keys are checked for a secret-looking name, the one thing the start refuses on.
+ */
+export async function configUnknownKeys(env: NodeJS.ProcessEnv = process.env, start = false): Promise<string[]> {
+  let raw: unknown;
+  try {
+    raw = readUserConfigFile(env);
+  } catch {
+    return [];
+  }
+  const found = new Set(userConfigUnknownKeys(raw));
+  const section = (name: string) => (raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[name] : undefined);
+  // On demand, like the other owner-only readers: the start-up graph stays free of these modules.
+  const [voice, desktop, accounts] = await Promise.all([import('./voice/config.js'), import('./desktop/config.js'), import('./accounts/config.js')]);
+  const readers: [string, (v: unknown, unknownKeys: string[]) => unknown][] = [
+    ['voice', voice.parseVoiceConfig],
+    ['desktop', desktop.parseDesktopConfig],
+    ['accounts', accounts.parseAccountsConfig],
+  ];
+  if (start) {
+    for (const name of COLD_SECTIONS) for (const path of secretKeyPaths(section(name), name)) found.add(path);
+  } else {
+    const [memory, history, jobs, app] = await Promise.all([import('./memory/config.js'), import('./history/config.js'), import('./jobs/config.js'), import('./app/config.js')]);
+    readers.push(['memory', memory.parseMemoryConfig], ['history', history.parseHistoryConfig], ['jobs', jobs.parseJobsConfig], ['app', app.parseAppConfig]);
+  }
+  for (const [name, read] of readers) {
+    const sink: string[] = [];
+    try {
+      read(section(name), sink);
+    } catch {
+      // A bad value in this section is reported by the check that reads it.
+    }
+    for (const key of sink) found.add(key);
+  }
+  return [...found];
+}
+
 interface Check {
   ok: boolean;
   label: string;
@@ -232,7 +317,7 @@ async function writable(dir: string): Promise<string | null> {
   }
 }
 
-async function doctor(network = false, json = false): Promise<number> {
+export async function doctor(network = false, json = false): Promise<number> {
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
 
@@ -255,6 +340,17 @@ async function doctor(network = false, json = false): Promise<number> {
   try {
     cfg = loadConfig();
     add({ ok: true, label: 'Config loads', detail: existsSync(configFilePath()) ? configFilePath() : `defaults (no ${configFilePath()})` });
+    for (const key of await configUnknownKeys()) {
+      if (looksLikeSecretKey(key)) {
+        // The name is never shown. A secret in config.json stops the start, so this one is a blocking problem.
+        add({ ok: false, blocking: true, label: 'Secret in config.json', detail: 'a key whose name looks like a secret (name not shown); `stephen serve` and `stephen listen` refuse to start', fix: `Remove it from ${configFilePath()}. Secrets belong in the macOS Keychain (ElevenLabs can also read apiKeyFile).` });
+      } else {
+        // Info only: Stephen ignores the key, so it is not a problem with the setup.
+        const shown = showKeyName(key);
+        const named = shown === UNUSUAL_KEY_NAME ? shown : `"${shown}"`;
+        add({ ok: true, info: true, label: 'Unknown config key', detail: `${named} is ignored, not a Stephen setting. Remove it or fix the spelling in ${configFilePath()}.` });
+      }
+    }
   } catch (e) {
     add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
   }
@@ -527,7 +623,7 @@ async function installLauncher(argv: string[]): Promise<number> {
 
 // ───────────────────────────── main ─────────────────────────────
 
-async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const [cmd = 'serve', ...rest] = argv;
   switch (cmd) {
     case 'serve':
@@ -555,6 +651,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'listen':
       // Loaded on demand: `stephen serve` (the process Claude talks to) never loads memory, app or history code.
+      await startConfigCheck();
       return (await import('./voice/index.js')).runListen(rest);
     case 'eval':
       return (await import('./eval/cli.js')).runEvalCli(rest);

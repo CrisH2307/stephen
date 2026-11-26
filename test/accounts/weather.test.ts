@@ -74,7 +74,9 @@ describe('config', () => {
     expect(() => parseAccountsConfig({ weather: { latitude: 91 } })).toThrow(/latitude/);
     expect(() => parseAccountsConfig({ weather: { longitude: -181 } })).toThrow(/longitude/);
     expect(() => parseAccountsConfig({ weather: { label: '' } })).toThrow(/label/);
-    expect(() => parseAccountsConfig({ weather: { url: 'https://evil.example' } })).toThrow();
+    const keys: string[] = [];
+    expect(parseAccountsConfig({ weather: { url: 'https://evil.example' } }, keys).weather).not.toHaveProperty('url');
+    expect(keys).toEqual(['accounts.weather.url']);
   });
 });
 

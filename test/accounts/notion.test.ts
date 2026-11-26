@@ -157,7 +157,9 @@ describe('Notion: ids, done rule, filter, formatting', () => {
   it('config: todoDatabase validated and normalized', () => {
     expect(parseAccountsConfig({ notion: { todoDatabase: DB } }).notion).toEqual({ enabled: true, todoDatabase: DB_DASHED });
     expect(() => parseAccountsConfig({ notion: { todoDatabase: 'https://www.notion.so/x' } })).toThrow(/32 hex/);
-    expect(() => parseAccountsConfig({ notion: { token: 'x' } })).toThrow();
+    const keys: string[] = [];
+    expect(parseAccountsConfig({ notion: { token: 'x' } }, keys).notion).not.toHaveProperty('token');
+    expect(keys).toEqual(['accounts.notion.token']);
   });
 });
 

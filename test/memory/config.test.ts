@@ -21,13 +21,15 @@ describe('parseMemoryConfig', () => {
     expect(parseMemoryConfig({ maxItems: 1 }).maxItems).toBe(1);
   });
 
-  it('rejects bad values and unknown keys with a clear message', () => {
+  it('rejects bad values with a clear message; unknown keys are listed, not refused', () => {
     expect(() => parseMemoryConfig({ maxItems: 31 })).toThrow(MemoryConfigError);
     expect(() => parseMemoryConfig({ maxItems: 31 })).toThrow(/"memory\.maxItems"/);
     expect(() => parseMemoryConfig({ maxItems: 0 })).toThrow(/maxItems/);
     expect(() => parseMemoryConfig({ maxItems: 2.5 })).toThrow(/maxItems/);
     expect(() => parseMemoryConfig({ enabled: 'yes' })).toThrow(/"memory\.enabled"/);
-    expect(() => parseMemoryConfig({ remember: true })).toThrow(/unknown key "memory\.remember"/);
+    const unknown: string[] = [];
+    expect(() => parseMemoryConfig({ remember: true }, unknown)).not.toThrow();
+    expect(unknown).toEqual(['memory.remember']);
     expect(() => parseMemoryConfig([])).toThrow(/must be an object/);
     expect(() => parseMemoryConfig('on')).toThrow(/must be an object/);
   });

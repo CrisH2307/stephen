@@ -59,11 +59,11 @@ const clip = (i: number, o: Partial<{ source: string; startedAt: number; transcr
 const clipsIn = (dir: string) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith('h_')).sort() : []);
 
 describe('the switch', () => {
-  it('is off by default and only takes true/false; unknown keys are refused', () => {
+  it('is off by default and only takes true/false; unknown keys are ignored', () => {
     expect(parseVoiceConfig({}).replay).toEqual({ enabled: false });
     expect(parseVoiceConfig({ replay: { enabled: true } }).replay).toEqual({ enabled: true });
     expect(() => parseVoiceConfig({ replay: { enabled: 'yes' } })).toThrow(/replay/);
-    expect(() => parseVoiceConfig({ replay: { enabled: true, keepDays: 400 } })).toThrow(/keepDays/);
+    expect(parseVoiceConfig({ replay: { enabled: true, keepDays: 400 } }).replay).toEqual({ enabled: true });
   });
 
   it('off: nothing is saved and no folder is made', async () => {

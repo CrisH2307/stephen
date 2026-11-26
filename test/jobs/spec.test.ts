@@ -291,10 +291,12 @@ describe('jobs config (owner defaults 2026-11-05)', () => {
     });
   });
 
-  it('is strict, and the hard caps (3 h, 2 at once) cannot be raised', () => {
+  it('the hard caps (3 h, 2 at once) cannot be raised; unknown keys are ignored', () => {
     expect(() => parseJobsConfig({ wallClockMin: 181 })).toThrow(/jobs.wallClockMin/);
     expect(() => parseJobsConfig({ maxRunning: 3 })).toThrow(/jobs.maxRunning/);
-    expect(() => parseJobsConfig({ sandbox: false })).toThrow(/unknown key "jobs.sandbox"/);
+    const unknown: string[] = [];
+    expect(parseJobsConfig({ sandbox: false }, unknown)).not.toHaveProperty('sandbox');
+    expect(unknown).toEqual(['jobs.sandbox']);
     expect(() => parseJobsConfig({ repos: { '../x': '/tmp' } })).toThrow(/jobs.repos/);
     expect(() => parseJobsConfig({ model: '--dangerously-skip-permissions' })).toThrow(/jobs.model/);
     expect(parseJobsConfig({ wallClockMin: 180, repos: { stephen: '~/code/stephen' }, model: null }).wallClockMin).toBe(180);
