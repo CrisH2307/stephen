@@ -9,9 +9,10 @@
 import { createTts, type TtsSpeaker } from './tts/index.js';
 import { TalkStore, talkFromConfig } from '../app/talk.js';
 import { ModelStore } from '../app/model.js';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { sleep } from '../lib/process.js';
+import { isPidAlive, sleep } from '../lib/process.js';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
@@ -282,9 +283,41 @@ async function setupModels(
   const paths = modelPaths(root, asr);
   // Tokenize the configured phrases now, so a phrase the model can't spot fails here with a clear message.
   await mkdir(workDir, { recursive: true, mode: 0o700 });
-  writeKeywordsFile(paths, spotterOptions(cfg, workDir));
+  try {
+    writeKeywordsFile(paths, spotterOptions(cfg, workDir));
+  } catch (e) {
+    throw new KeywordsError((e as Error).message);
+  }
   if (installed.length) out(`Speech models ready in ${root}.`);
   return paths;
+}
+
+/** The models are in place but the wake phrase cannot be used (F9b review: not an internet problem). */
+class KeywordsError extends Error {}
+
+/**
+ * One voice-setup at a time per models folder (F9b review): `<root>/.voice-setup.lock` holds the pid. A lock whose pid
+ * is gone is taken over. Returns a release function, or null when another live run holds it.
+ */
+function lockModels(root: string): (() => void) | null {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const lock = join(root, '.voice-setup.lock');
+  for (let i = 0; i < 2; i++) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: 'wx', mode: 0o600 });
+      return () => rmSync(lock, { force: true });
+    } catch {
+      let pid = 0;
+      try {
+        pid = Number(readFileSync(lock, 'utf8').trim());
+      } catch {
+        // gone between the two calls: try again
+      }
+      if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && isPidAlive(pid)) return null;
+      rmSync(lock, { force: true }); // stale: its run is gone
+    }
+  }
+  return null;
 }
 
 /** `stephen voice-setup`: download + verify + extract the speech models (never re-downloads). */
@@ -308,14 +341,36 @@ export async function runVoiceSetup(argv: string[], env: ListenEnv = {}): Promis
     return 2;
   }
   const root = env.modelsRoot ?? modelsDir(loaded.home);
+  const release = lockModels(root);
+  if (!release) {
+    if (json) emit({ event: 'failed', reason: 'busy' });
+    else err('Another voice-setup is running for these models. Wait for it to finish, then run this again.');
+    return 1;
+  }
+  try {
+    return await voiceSetupLocked(root, loaded, json, emit, env, out, err);
+  } finally {
+    release();
+  }
+}
+
+async function voiceSetupLocked(
+  root: string,
+  loaded: NonNullable<ReturnType<typeof loadVoice>>,
+  json: boolean,
+  emit: (e: object) => void,
+  env: ListenEnv,
+  out: (l: string) => void,
+  err: (l: string) => void,
+): Promise<number> {
   if (json) {
     try {
       const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
       await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), { ...env, onModelEvent: emit }, () => {});
       emit({ event: 'done' });
       return 0;
-    } catch {
-      emit({ event: 'failed', reason: 'download' });
+    } catch (e) {
+      emit({ event: 'failed', reason: e instanceof KeywordsError ? 'keywords' : 'download' });
       return 1;
     }
   }
