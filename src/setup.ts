@@ -32,6 +32,8 @@ export interface SetupDeps {
   /** The built CLI that `install --run` registers. */
   cliPath: string;
   log: (line: string) => void;
+  /** The optional weather city question (cli.ts passes it only on a terminal; never throws). */
+  askWeather?: () => Promise<void>;
 }
 
 interface Doctor {
@@ -118,6 +120,11 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
   if (blocker) return stop(blocker.fix ?? `Fix "${blocker.label}", ${AGAIN}`, `${blocker.label}${blocker.detail ? `: ${blocker.detail}` : ''}`);
   for (const c of red) log(`    note: ${c.label}${c.fix ? `. ${c.fix}` : ''}`);
   ok(red.length ? 'ready (the notes above are not blocking)' : 'all green');
+
+  if (deps.askWeather) {
+    log('');
+    await deps.askWeather();
+  }
 
   log('');
   for (const l of PERMISSION_LINES) log(l);
