@@ -48,19 +48,22 @@ import { plainFailureLine } from '../lib/claude-failure.js';
 export { parseStreamLine as parseJobLine, type StreamEvent as JobEvent } from '../lib/claude-stream.js';
 import { parseStreamLine as parseJobLine, type StreamEvent as JobEvent } from '../lib/claude-stream.js';
 
+/** A CLI code word (subtype, startup reason, errno) shown only when it is a plain code: else 'unknown'. Never free text. */
+const codeWord = (s: string | undefined): string => (s && /^[A-Za-z_]{1,40}$/.test(s) ? s : 'unknown');
+
 /** A result event → final status and Stephen's words for it. */
 export function resultStatus(r: Extract<JobEvent, { kind: 'result' }>, spec: Pick<JobSpec, 'maxTurns' | 'maxBudgetUsd'>): { status: JobStatus; error: string } {
   if (r.startupFailure === 'sandbox_required_unavailable') {
     return { status: 'failed', error: "The sandbox isn't available on this computer, so the job didn't start (nothing ran)." };
   }
-  if (r.startupFailure) return { status: 'failed', error: `Claude Code didn't start (${clean(r.startupFailure, 60)}).` };
+  if (r.startupFailure) return { status: 'failed', error: `Claude Code didn't start (${codeWord(r.startupFailure)}).` };
   if (!r.isError && r.subtype === 'success') return { status: 'done', error: '' };
   if (r.subtype === 'error_max_turns') return { status: 'failed', error: `It ran out of turns (${spec.maxTurns}) before finishing.` };
   if (r.subtype === 'error_max_budget_usd') return { status: 'failed', error: `It reached the $${spec.maxBudgetUsd} budget before finishing.` };
   const plain = plainFailureLine([r.text, ...r.errors].join('\n'));
   if (plain) return { status: 'failed', error: plain };
-  const detail = r.errors[0] ? `: ${clean(r.errors[0], 160)}` : '';
-  return { status: 'failed', error: `Claude Code reported an error (${clean(r.subtype || 'unknown', 40)})${detail}.` };
+  // No marker: a fixed line naming only the code word. The CLI's own text can carry page text, so it is never copied.
+  return { status: 'failed', error: `Claude Code reported an error (${codeWord(r.subtype)}).` };
 }
 
 // ───────────── the supervisor ─────────────
@@ -276,7 +279,7 @@ export class JobSupervisor {
       this.stderrTail = (this.stderrTail + chunk).slice(-2000);
     });
     const exit = await new Promise<{ code: number | null; error?: string }>((res) => {
-      child.once('error', (e: NodeJS.ErrnoException) => res({ code: null, error: e.code === 'ENOENT' ? `Claude Code was not found ("${this.s.claudePath}")` : e.message }));
+      child.once('error', (e: NodeJS.ErrnoException) => res({ code: null, error: e.code === 'ENOENT' ? `Claude Code was not found ("${this.s.claudePath}")` : `Claude Code couldn't be started (${codeWord(e.code)})` }));
       child.once('close', (code) => res({ code }));
     });
     if (buf.trim()) this.onLine(buf.trim());
@@ -296,8 +299,8 @@ export class JobSupervisor {
     }
     const plain = plainFailureLine(exit.error ?? this.stderrTail);
     if (plain) return this.finish('failed', plain);
-    const lastErr = clean(this.stderrTail.trim().split('\n').filter(Boolean).at(-1) ?? '', 160);
-    return this.finish('failed', exit.error ? `${exit.error}.` : `Claude Code exited (code ${exit.code ?? 'killed'}) without a result${lastErr ? `: ${lastErr}` : ''}.`);
+    // No marker: a fixed line with the exit code only. The stderr tail stays in the job's own log file.
+    return this.finish('failed', exit.error ? `${exit.error}.` : `Claude Code exited (code ${exit.code ?? 'killed'}) without a result.`);
   }
 
   private onLine(line: string): void {
