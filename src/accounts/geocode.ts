@@ -17,13 +17,14 @@ const MAX_LABEL = 60;
 /** Round to 2 decimals (about 1 km): weather needs no more. */
 export const roundCoord = (n: number): number => Math.round(n * 100) / 100;
 
-/** One part of a label: only letters, marks, spaces, `.`, `-`, `'`. Everything else is dropped. */
+/** One part of a label: only letters, marks (at most 2 in a row), spaces, `.`, `-`, `'`. Everything else is dropped. */
 const part = (v: unknown): string =>
   typeof v === 'string'
     ? v
         .slice(0, 200)
         .normalize('NFKC')
         .replace(/[^\p{L}\p{M} .'-]/gu, '')
+        .replace(/(\p{M}{2})\p{M}+/gu, '$1')
         .replace(/\s+/g, ' ')
         .trim()
     : '';
