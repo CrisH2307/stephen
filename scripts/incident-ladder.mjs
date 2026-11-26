@@ -57,7 +57,8 @@ function execRun(file, args, opts = {}) {
   });
 }
 
-/** The outside world, in one place, so test/scripts/incident-ladder-main.test.ts can fake gh, git, claude and fetch. */
+/** The outside world, in one place. Exported for tests only (test/scripts/incident-ladder-main.test.ts fakes gh, git,
+ * claude and fetch here); nothing else imports this script. */
 export const io = {
   run: execRun,
   fetch: (url, init) => fetch(url, init),
