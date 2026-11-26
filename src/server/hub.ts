@@ -443,8 +443,10 @@ export class Hub {
       if (f === url || !/^https?:/i.test(f)) continue;
       const d = this.safety().gate.evaluate({ ...req, pageUrl: f });
       if (d.verdict === 'deny') {
+        // The frame's host and the policy reason name a page-chosen site: they go inside the untrusted block (T3).
         throw new NoticeError(
-          `Blocked by Stephen's safety policy — did not ${tool} ${tab}: it contains a frame from a blocked site (${hostOf(f)}). ${d.reason}`,
+          `Blocked by Stephen's safety policy — did not ${tool} ${tab}: it contains a frame from a blocked site. Ask the user to do this themselves.\n` +
+            wrapUntrusted(tab, originOf(f), `Frame site: ${hostOf(f)}\nPolicy reason: ${d.reason}`),
         );
       }
     }
@@ -588,13 +590,16 @@ export class Hub {
       outcome: 'denied',
       error: `landed on a blocked site; ${left ? 'tab sent to about:blank' : 'could not leave it'}`,
     });
-    const where = /^https?:/i.test(landed) ? `a blocked site (${host})` : `a browser-internal or non-web page (${landed.split(':')[0]}:)`;
+    const web = /^https?:/i.test(landed);
+    const where = web ? 'a blocked site' : `a browser-internal or non-web page (${landed.split(':')[0]}:)`;
     throw new NoticeError(
       `Blocked by Stephen's safety policy: the action ended on ${where}, which is off-limits. ` +
         (left
           ? `Stephen sent ${tab} to about:blank; nothing from that page is shown. `
           : `Stephen could not leave that page; every action on ${tab} will be refused — close it with tab_close. `) +
-        'Do not try to reach it another way; ask the user to do this themselves.',
+        'Do not try to reach it another way; ask the user to do this themselves.' +
+        // The landed host was chosen by the page (a redirect or script): it goes inside the untrusted block (T3).
+        (web ? `\n${wrapUntrusted(tab, originOf(landed), `Blocked site: ${host}`)}` : ''),
     );
   }
 
