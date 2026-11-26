@@ -203,11 +203,13 @@ export function readUserConfigFile(env: NodeJS.ProcessEnv = process.env): unknow
 }
 
 /**
- * A key name that looks like it holds a secret: its last word is key, token, secret, password, passwd, bearer or
- * cookie. Secrets belong in the Keychain, never in config.json, so such a key stops the start. Takes a dotted path or a
- * bare name. hotkey and hotKey are a shortcut, and apiKeyFile is a path, so neither counts.
+ * A key name that looks like it holds a secret: its last word is key, token, secret, password, passwd, pwd, pat,
+ * passphrase, credential(s), bearer or cookie, or a one-word name such as "apikey" or "authtoken" (SECRET_WORD_ENDS).
+ * Secrets belong in the Keychain, never in config.json, so such a key stops the start. Takes a dotted path or a bare
+ * name. hotkey and hotKey are a shortcut, apiKeyFile is a path, and words like monkey only end in "key", so none counts.
  */
-const SECRET_LAST_WORDS = new Set(['key', 'token', 'secret', 'password', 'passwd', 'bearer', 'cookie']);
+const SECRET_LAST_WORDS = new Set(['key', 'token', 'secret', 'password', 'passwd', 'pwd', 'pat', 'passphrase', 'credential', 'credentials', 'bearer', 'cookie']);
+const SECRET_WORD_ENDS = ['token', 'apikey', 'secretkey', 'privatekey', 'accesskey', 'authkey', 'password'];
 
 /** Words of a key name: camelCase, `_` and `-` separate them ("openaiApiKey" gives openai, api, key). */
 function keyWords(name: string): string[] {
@@ -222,7 +224,8 @@ function keyWords(name: string): string[] {
 export function looksLikeSecretKey(path: string): boolean {
   const words = keyWords(path.slice(path.lastIndexOf('.') + 1));
   if (words.join('') === 'hotkey') return false;
-  return SECRET_LAST_WORDS.has(words.at(-1) ?? '');
+  const last = words.at(-1) ?? '';
+  return SECRET_LAST_WORDS.has(last) || SECRET_WORD_ENDS.some((end) => last.endsWith(end));
 }
 
 export const UNUSUAL_KEY_NAME = 'an unusual key name';
