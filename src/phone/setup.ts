@@ -204,7 +204,8 @@ export async function checkPhoneLockdown(dir: string, o: { claudePath: string; e
   try {
     child = (o.spawn ?? nodeSpawn)(o.claudePath, ['-p', 'Reply with the single word ok.', '--output-format', 'stream-json', '--verbose'], {
       cwd: dir,
-      ...(o.env ? { env: o.env } : {}),
+      // `dir` is phoneDir(home): with no env given, the same allow-listed phone env, never the whole shell (R23 L6).
+      env: o.env ?? phoneClaudeEnv(dirname(dir)),
       stdio: ['ignore', 'pipe', 'ignore'],
     });
   } catch (e) {

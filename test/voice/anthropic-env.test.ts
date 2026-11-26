@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { buildJobEnv } from '../../src/jobs/spec.js';
-import { phoneClaudeEnv, phoneConfigDir } from '../../src/phone/setup.js';
+import { checkPhoneLockdown, phoneClaudeEnv, phoneConfigDir, phoneDir } from '../../src/phone/setup.js';
+import { spawn } from 'node:child_process';
 import { claudeConfigDir } from '../../src/lib/claude-env.js';
 import { KEPT_ANTHROPIC_ENV, KEPT_BASE_ENV, claudeSpawnOptions, droppedEndpointEnv, probeClaudeFlags, withoutSecrets } from '../../src/voice/claude.js';
 
@@ -128,6 +129,11 @@ describe('R23 review L1: one safe CLAUDE_CONFIG_DIR for Claude and for transcrip
     expect(withoutSecrets({ CLAUDE_CONFIG_DIR: join(home, '.claude-alt', '..', '.claude-alt') }, home).CLAUDE_CONFIG_DIR).toBe(join(home, '.claude-alt'));
   });
 
+  it('a real folder under a symlinked folder inside the home, pointing outside, is dropped (L7)', () => {
+    mkdirSync(join(tmp, 'outside', 'cfg'), { recursive: true });
+    expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: join(home, '.claude-link', 'cfg') }, home)).toBeUndefined();
+  });
+
   it('outside the home, relative, missing, a symlink or the home itself: dropped', () => {
     for (const bad of [join(tmp, 'outside'), '.claude-alt', join(home, 'missing'), join(home, '.claude-link'), home, '']) {
       expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: bad }, home), bad).toBeUndefined();
@@ -169,5 +175,25 @@ describe('R23 review M1: install runs claude mcp with the allow-listed env', () 
     expect(seen).not.toContain('HTTPS_PROXY');
     expect(seen).not.toContain('ANTHROPIC_BASE_URL');
     expect(seen).toContain('ANTHROPIC_API_KEY');
+  });
+});
+
+describe('R23 review L6: the phone lockdown check never falls back to the whole shell', () => {
+  it('with no env given, it spawns claude with the allow-listed phone env', async () => {
+    const home = join(tmp, 'phone-home');
+    let seen: NodeJS.ProcessEnv | undefined;
+    process.env.HTTPS_PROXY = 'http://mitm.example:8080';
+    try {
+      await checkPhoneLockdown(phoneDir(home), {
+        claudePath: 'claude',
+        timeoutMs: 2_000,
+        spawn: (_c, _a, opts) => ((seen = opts.env), spawn(process.execPath, ['-e', ''])),
+      });
+    } finally {
+      delete process.env.HTTPS_PROXY;
+    }
+    expect(seen).toBeDefined();
+    expect(seen).not.toHaveProperty('HTTPS_PROXY');
+    expect(seen!.CLAUDE_CONFIG_DIR).toBe(phoneConfigDir(home));
   });
 });
