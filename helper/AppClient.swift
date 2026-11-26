@@ -129,6 +129,9 @@ final class AppModel: ObservableObject {
 
   @Published private(set) var jobs: [JobRow] = []
   @Published private(set) var jobsNotice: String? = nil
+  /** R7d: nil until the first jobs.list answer, then whether the last one worked. The Jobs page shows loading, empty
+   *  and error from it, so a failed list never reads as "No jobs yet". */
+  @Published private(set) var jobsListOk: Bool? = nil
   /** ADR-010: "Job started: <id>" after an Edit request starts; the dialog never named the id (it is fixed at the start). */
   @Published private(set) var jobStarted: String? = nil
 
@@ -765,8 +768,9 @@ final class AppModel: ObservableObject {
       if msg.type == "jobs" {
         self.assign(\.jobs, msg.jobs ?? [])
         self.assign(\.jobsNotice, nil)
+        self.assign(\.jobsListOk, true)
       } else {
-        self.assign(\.jobsNotice, msg.message ?? "error")
+        self.assign(\.jobsListOk, false)
       }
     }
   }
