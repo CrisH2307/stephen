@@ -89,6 +89,7 @@ Usage:
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
                          Show your recent commands (kept on this Mac only), or delete them
+  stephen data           What Stephen keeps on this Mac: each place, its size, how long it stays, how to delete it
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
   stephen report [--last N]
@@ -671,6 +672,10 @@ export async function main(argv: string[]): Promise<number> {
       return (await import('./history/cli.js')).runHistoryCli(rest);
     case 'latency':
       return (await import('./telemetry/cli.js')).runLatencyCli(rest);
+    case 'data': {
+      const { root } = (await import('./jobs/config.js')).parseJobsConfig(loadConfig().jobs ?? {});
+      return (await import('./app/data-cli.js')).runDataCli(rest, root);
+    }
     case 'report':
       return (await import('./telemetry/report.js')).runReportCli(rest);
     case 'replay':
