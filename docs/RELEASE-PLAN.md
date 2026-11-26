@@ -17,7 +17,8 @@ Safety and privacy come first, then speed, then cost. Targets are in `docs/NFR-S
   dev lane says what must not ship, **Cris does about 20 minutes of Mac checks and the merge**.
 - A PR that is not green and reviewed on release day waits for next week. No rush merges.
 - Version: `0.1.x`, one step per weekly release, in `package.json` and a short `CHANGELOG.md` entry (written by a free
-  agent from the PR titles, checked by the review lane).
+  agent from the PR titles, checked by the review lane). `node scripts/release-notes.mjs <version>` prints that entry as
+  plain release notes for friends (F14).
 - Now: `qa` is 12 PRs ahead of `main`. Cut the next release as soon as the open safety PRs are merged or set aside.
 
 ## 2. Friends beta: what it needs
