@@ -45,6 +45,8 @@ export const KEPT_ANTHROPIC_ENV: ReadonlySet<string> = new Set(['ANTHROPIC_API_K
  *   transcripts where Stephen deletes them.
  * - Stephen's own home and config (the serve Claude starts inherits this env and must find the same home).
  * - Bedrock and Vertex sign-in and region, for the owners KEPT_CLAUDE_CODE_ENV already allows. No endpoint variable.
+ *   AWS_PROFILE stays: a profile in the owner's ~/.aws/config can set its own endpoint_url, which the AWS SDK honors.
+ *   That is the owner's own file and only matters with CLAUDE_CODE_USE_BEDROCK, so it is the same trust (R23 post-merge review).
  */
 export const KEPT_BASE_ENV: ReadonlySet<string> = new Set([
   'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'TERM',
