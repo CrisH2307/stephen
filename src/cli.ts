@@ -13,7 +13,7 @@ import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
 import { execFile } from 'node:child_process';
 import { helperDoctorChecks } from './helper/doctor.js';
 import { runInstallHelper } from './helper/install.js';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { REPO_ROOT } from './lib/repo.js';
 import { access, constants, mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -712,7 +712,20 @@ export async function main(argv: string[]): Promise<number> {
           execFile(String((cfg.voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { env, timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
         });
         const claude = out === null ? null : (await import('./voice/claude.js')).claudeVersionStatus(out).version;
-        return (await import('./telemetry/cli.js')).runWeeklyCli({ stephen: packageVersion(), claude });
+        // Job spend: a plain read of each job's state file (never reconcile, which can write); numbers only.
+        const { readJobState } = await import('./jobs/state.js');
+        const jobCosts: { at: number; usd: number }[] = [];
+        let names: string[] = [];
+        try {
+          names = readdirSync(join(cfg.home, 'jobs')).filter((n) => n.endsWith('.json'));
+        } catch {
+          // no jobs yet
+        }
+        for (const n of names) {
+          const j = readJobState(cfg.home, n.slice(0, -5));
+          if (j && typeof j.costUsd === 'number') jobCosts.push({ at: j.endedAt ?? j.startedAt ?? j.createdAt, usd: j.costUsd });
+        }
+        return (await import('./telemetry/cli.js')).runWeeklyCli({ stephen: packageVersion(), claude, jobCosts });
       }
       return (await import('./telemetry/report.js')).runReportCli(rest);
     }
