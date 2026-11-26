@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { helperSourceDir } from '../../src/helper/install.js';
 
-const THEMES = ['light', 'dark', 'navy', 'rose', 'sun'];
+const THEMES = ['light', 'dark', 'navy', 'rose', 'sun', 'paper'];
 const TOKENS = ['ground', 'surface', 'surface2', 'lineStrong', 'ink', 'ink2', 'primary', 'primaryText', 'accent', 'ok', 'warn', 'bad'];
 
 // [text, background, minimum ratio]
@@ -76,5 +76,14 @@ describe('theme colours are readable (#184)', () => {
       if (!(r >= min)) failures.push(`${fg} on ${bg}: ${r.toFixed(2)}:1 (needs ${min}:1)`);
     }
     expect(failures, `${theme} theme`).toEqual([]);
+  });
+
+  it('paper: text on the lavender Ask box and the sky details block reaches 4.5:1', () => {
+    for (const bg of ['lavender', 'sky']) {
+      for (const fg of ['ink', 'ink2', 'accent', 'warn', 'bad']) {
+        const r = ratio(hexOf('paper', fg) ?? NaN, NAMED.get(bg) ?? NaN);
+        expect(r, `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
   });
 });

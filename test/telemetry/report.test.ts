@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { incidentDir, recordIncident } from '../../src/telemetry/incidents.js';
-import { REPORT_LABEL, REPORT_QUESTION, REPORT_REPO, parseReportArgs, runReport, type RunResult } from '../../src/telemetry/report.js';
+import { REPORT_FORM_URL, REPORT_LABEL, REPORT_QUESTION, REPORT_REPO, parseReportArgs, runReport, type RunResult } from '../../src/telemetry/report.js';
 
-function setup(answer: string, runs: RunResult[] = [{ code: 0, stderr: '' }, { code: 0, stderr: '' }]) {
+function setup(answer: string, runs: RunResult[] = [{ code: 0, stderr: '' }, { code: 0, stderr: '' }], platform: NodeJS.Platform = 'linux') {
   const home = mkdtempSync(join(tmpdir(), 'stephen-rep-'));
   const out: string[] = [];
   const asked: string[] = [];
@@ -16,6 +16,7 @@ function setup(answer: string, runs: RunResult[] = [{ code: 0, stderr: '' }, { c
     out: (s: string) => out.push(s),
     ask: async (q: string) => (asked.push(q), answer),
     run: async (file: string, args: string[], input?: string) => (calls.push({ file, args, input }), runs.shift() ?? { code: 0, stderr: '' }),
+    platform,
   };
   return { home, out, asked, calls, deps };
 }
@@ -63,6 +64,37 @@ describe('runReport', () => {
       expect(t.calls).toHaveLength(1);
       expect(t.out.at(-1)).toContain('/issues/new');
     }
+  });
+
+  it.each([127, 1])('F12: on macOS without gh (%s), the shown text is copied and the empty form is opened; nothing goes in the URL', async (code) => {
+    const t = setup('y', [{ code, stderr: '' }], 'darwin');
+    recordIncident(t.home, { part: 'job', code: 'uncaught', id: 'h_f' }, today());
+    expect(await runReport([], t.deps)).toBe(0);
+    const shown = t.out[0]!;
+    expect(t.calls.slice(1)).toEqual([
+      { file: '/usr/bin/pbcopy', args: [], input: shown },
+      { file: '/usr/bin/open', args: [REPORT_FORM_URL], input: undefined },
+    ]);
+    const url = new URL(REPORT_FORM_URL);
+    expect([url.search, url.hash]).toEqual(['', '']);
+    expect(url.href).toBe(`https://github.com/${REPORT_REPO}/issues/new/choose`);
+    expect(t.out.join('\n')).toMatch(/Copied the text above[\s\S]*No GitHub account\? Send the copied text to Cris/);
+  });
+
+  it('F12: --copy (the helper menu) asks nothing, copies and opens, and never runs gh', async () => {
+    const t = setup('', [], 'darwin');
+    recordIncident(t.home, { part: 'listen', code: 'command_error', id: 'h_g' }, today());
+    expect(await runReport(['--copy'], t.deps)).toBe(0);
+    expect(t.asked).toEqual([]);
+    expect(t.calls.map((c) => c.file)).toEqual(['/usr/bin/pbcopy', '/usr/bin/open']);
+  });
+
+  it('F12: --copy where it cannot copy (not macOS) shows the manual steps', async () => {
+    const t = setup('', [], 'linux');
+    recordIncident(t.home, { part: 'listen', code: 'command_error', id: 'h_h' }, today());
+    expect(await runReport(['--copy'], t.deps)).toBe(1);
+    expect(t.calls).toEqual([]);
+    expect(t.out.at(-1)).toContain('/issues/new');
   });
 
   it('a day file older than 30 days is deleted first, and never shown or sent', async () => {

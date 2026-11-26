@@ -95,8 +95,9 @@ struct ConfirmButtons: View {
       if waiting > 1 { Text(verbatim: "1 of \(waiting)").font(TypeScale.secondary).foregroundColor(t.ink2) }
       Spacer()
       // Deny first, so keyboard focus (Full Keyboard Access) lands on it; Return is not bound to Allow.
-      QuietButton("Deny") { answer(false) }
-      PrimaryButton("Allow") { answer(true) }
+      // Same width, so neither looks like the default.
+      QuietButton("Deny", minWidth: 76) { answer(false) }
+      PrimaryButton("Allow", minWidth: 76) { answer(true) }
     }
     .disabled(!live || paletteOpen).opacity(live ? 1 : 0.5)
     .task(id: question.id) {
@@ -130,9 +131,8 @@ struct AskBoxView: View {
     .fixedSize(horizontal: false, vertical: true)
     .background(GeometryReader { g in Color.clear.preference(key: AskBoxSizeKey.self, value: g.size) })
     .frame(height: cardHeight > 0 ? cardHeight : nil, alignment: .top)
-    .clipShape(RoundedRectangle(cornerRadius: Corner.askBox))
-    .background(RoundedRectangle(cornerRadius: Corner.askBox).fill(t.surface).shadow(color: .black.opacity(0.18), radius: 14, y: 6))
-    .overlay(RoundedRectangle(cornerRadius: Corner.askBox).stroke(t.line, lineWidth: 1))
+    .clipShape(RoundedRectangle(cornerRadius: t.paper ? Corner.paperAskBox : Corner.askBox, style: .continuous))
+    .modifier(AskCard())
     .background(shortcuts)
     .onPreferenceChange(AskBoxSizeKey.self) { size in follow(size.height) }
     .onChange(of: model.thread.last?.id) { _ in model.refreshUsage() }  // the menu's usage lines stay current
@@ -154,8 +154,9 @@ struct AskBoxView: View {
     return HStack(spacing: Space.xs) {
       ZStack {
         DragStrip(onEnd: actions.dragEnded)
-        Capsule().fill(t.line).frame(width: 36, height: 4).accessibilityHidden(true).allowsHitTesting(false)
+        Capsule().fill(t.paper ? t.ink2 : t.line).frame(width: 36, height: 4).accessibilityHidden(true).allowsHitTesting(false)
         HStack {
+          if t.paper { Text(verbatim: "Stephen").font(paperHead(15)).foregroundColor(t.ink).accessibilityHidden(true) }
           Spacer(minLength: 0)
           StatusPill(s.word, kind: s.kind)
         }
@@ -258,6 +259,20 @@ struct AskBoxView: View {
     case .listening where box.micHeld: actions.micCancel()
     case .chat where model.isWorking: model.stopChat()
     default: actions.close()
+    }
+  }
+}
+
+/// The card's look: a calm outline and soft shadow, or in Paper the lavender card with an ink edge and a hard shadow.
+private struct AskCard: ViewModifier {
+  @Environment(\.stephenTheme) var t
+  func body(content: Content) -> some View {
+    if t.paper {
+      content.paperBox(t, fill: t.askFill, radius: Corner.paperAskBox)
+    } else {
+      content
+        .background(RoundedRectangle(cornerRadius: Corner.askBox).fill(t.surface).shadow(color: .black.opacity(0.18), radius: 14, y: 6))
+        .overlay(RoundedRectangle(cornerRadius: Corner.askBox).stroke(t.line, lineWidth: 1))
     }
   }
 }
