@@ -360,12 +360,14 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(box).toContain('", almost full"');
   });
 
-  it('R10a-2 (#94): Try again re-sends only a typed bubble; spoken and phone bubbles show where they came from', () => {
+  it('R10a-2 (#94): Try again re-sends only a typed bubble, by its source field, never its text or detail', () => {
     const chat = read('Components/ChatThread.swift');
-    // The one guard: the last said bubble, and only when it has no source label. No fallback to an older typed one.
+    // The one guard: the last said bubble, and only when its source is .typed. No fallback to an older typed one.
     expect(chat).toContain(
-      'guard let last = thread.last(where: { $0.kind == .said }), last.detail.isEmpty else { return nil }',
+      'guard let last = thread.last(where: { $0.kind == .said }), last.source == .typed else { return nil }',
     );
+    const retry = chat.match(/func retryableText\([^)]*\) -> String\? \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(retry).not.toContain('detail');
     // retry() reaches sendChat only through that guard; it is the file's only sendChat.
     expect(chat).toContain('if let typed = retryableText(model.thread) { model.sendChat(typed) }');
     expect(chat.match(/sendChat\(/g)).toHaveLength(1);
@@ -373,22 +375,35 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(chat).toContain('retry: canRetry ? { retry() } : nil');
     expect(chat).toContain('let canRetry = retryableText(thread) != nil');
     expect(chat).toContain('if isLast, let retry = retry { QuietButton("Try again", action: retry) }');
-    // Typed bubbles get an empty label; heard ones always a non-empty one, even for an unknown or missing source.
-    expect(client).toContain('addBubble(.said, text, detail: "")');
-    expect(client).toContain('addBubble(.said, text, detail: heardLabel(msg.source))');
-    const label = client.match(/func heardLabel\(_ source: String\?\) -> String \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    expect(label).toContain('default: return "Not typed here"');
-    const returns = [...label.matchAll(/return ([^\n]*)/g)].map((m) => m[1]);
-    expect(returns.length).toBeGreaterThanOrEqual(5);
-    for (const r of returns) expect(r, r).toMatch(/^"[^"]+"$/);
-    for (const s of ['voice-ptt', 'voice-wake', 'phone', 'cli']) expect(label).toContain(`case "${s}":`);
-    // UI v4 step b (#142, [DEV REVIEW]): the source line in #142's words.
-    for (const [s, w] of [['voice-ptt', 'From: F5'], ['voice-wake', 'From: Hey Stephen'], ['phone', 'From: Phone']]) {
-      expect(label).toContain(`case "${s}": return "${w}"`);
+  });
+
+  it('R10a-2 siblings: spoken, wake word, phone, cli and unknown bubbles are never typed; typed and edited ones are', () => {
+    // Every .said bubble names its source. Typed paths (sendChat, editMessage) are .typed; nothing else is.
+    const said = [...client.matchAll(/addBubble\(\.said, [^\n]*/g)].map((m) => m[0]);
+    expect(said).toHaveLength(3);
+    expect(said.filter((l) => l.endsWith('source: .typed)'))).toHaveLength(2);
+    expect(said).toContain('addBubble(.said, text, detail: "", source: heardSource(msg.source))');
+    // Heard sources map to their own case; unknown or missing maps to .other. No path returns .typed.
+    const map = client.match(/func heardSource\(_ source: String\?\) -> ChatBubble\.Source \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    for (const [s, c] of [['voice-ptt', 'spoken'], ['voice-wake', 'wakeWord'], ['phone', 'phone'], ['cli', 'cli']]) {
+      expect(map).toContain(`case "${s}": return .${c}`);
     }
-    // Shown under the bubble (verbatim) and read by VoiceOver.
-    expect(chat).toContain('if !bubble.detail.isEmpty {\n          Text(verbatim: bubble.detail)');
-    expect(chat).toContain('"You, \\(bubble.detail): \\(bubble.text)"');
+    expect(map).toContain('default: return .other');
+    expect(map).not.toContain('.typed');
+    // The source is optional: Stephen's bubbles (reply, problem, info) are nil, which is never .typed.
+    expect(client).toContain('var source: Source? = nil');
+    expect(client).toContain('case typed, spoken, wakeWord, phone, cli');
+  });
+
+  it('owner 2026-11-26: no source label under a said bubble ("From: F5" is gone), typed or spoken', () => {
+    const chat = read('Components/ChatThread.swift');
+    const said = chat.match(/case \.said:([\s\S]*?)case \.reply:/)?.[1] ?? '';
+    expect(said).toContain('Text(verbatim: bubble.text)');
+    expect(said).not.toContain('bubble.detail');
+    expect(said).not.toContain('bubble.source');
+    expect(said).toContain('.accessibilityLabel("You: \\(bubble.text)")');
+    expect(client).not.toContain('heardLabel');
+    expect(client).not.toContain('From: F5');
   });
 
   it('R10a-5: Esc with a waiting question denies the first one (Ask box panel, Ask box view, main window Home)', () => {
