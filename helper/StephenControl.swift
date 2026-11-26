@@ -91,25 +91,32 @@ func appRequestOnce(
   }
 }
 
+/** R7: a failed menu or doctor request says what failed in a plain sentence, never a raw "error". */
+let PHONE_LINK_FAILED = "Couldn't change the phone link right now."
+let ZEN_OPEN_FAILED = "Couldn't open Zen for Stephen right now."
+let SPEED_FAILED = "Couldn't load the speed report right now."
+let DOCTOR_FAILED = "Couldn't run the doctor checks right now."
+
 /** Plain text for a `phone` answer (what `stephen phone on|off` printed) or an error. */
 func phoneText(_ msg: AppMessage) -> String {
-  return msg.type == "phone" ? (msg.lines ?? []).joined(separator: "\n") : msg.message ?? "error"
+  return msg.type == "phone" ? (msg.lines ?? []).joined(separator: "\n") : plainFailure(msg.message, PHONE_LINK_FAILED)
 }
 
 /** nil when Zen for Stephen is ready, else why not (the `zen` answer's message or an error). */
 func zenProblem(_ msg: AppMessage) -> String? {
-  return msg.type == "zen" && msg.ok == true ? nil : msg.message ?? "error"
+  if msg.type == "zen" { return msg.ok == true ? nil : msg.message ?? ZEN_OPEN_FAILED } // the launcher's own words
+  return plainFailure(msg.message, ZEN_OPEN_FAILED)
 }
 
 /** Plain text for a `latency` answer, like `stephen latency` prints it. An older listener answers with an error. */
 func latencyText(_ msg: AppMessage) -> String {
-  guard msg.type == "latency" else { return msg.message ?? "error" }
+  guard msg.type == "latency" else { return plainFailure(msg.message, SPEED_FAILED) }
   return msg.text ?? ""
 }
 
 /** Plain text for a `doctor` answer, like `stephen doctor` prints it. */
 func doctorText(_ msg: AppMessage) -> String {
-  guard msg.type == "doctor" else { return msg.message ?? "error" }
+  guard msg.type == "doctor" else { return plainFailure(msg.message, DOCTOR_FAILED) }
   var out: [String] = []
   for c in msg.checks ?? [] {
     let mark = c.info == true ? "•" : c.ok ? "✓" : "✗"

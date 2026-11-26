@@ -1307,6 +1307,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
   });
 
+  // R7: a failed menu or doctor request (phone link, Zen, speed, doctor) says what failed in a plain sentence.
+  it('StephenControl has no raw "error" fallback; each menu and doctor failure has its own plain line', () => {
+    const control = read('StephenControl.swift');
+    expect(control).not.toContain('?? "error"');
+    for (const [fn, name, text] of [
+      ['phoneText', 'PHONE_LINK_FAILED', "Couldn't change the phone link right now."],
+      ['zenProblem', 'ZEN_OPEN_FAILED', "Couldn't open Zen for Stephen right now."],
+      ['latencyText', 'SPEED_FAILED', "Couldn't load the speed report right now."],
+      ['doctorText', 'DOCTOR_FAILED', "Couldn't run the doctor checks right now."],
+    ]) {
+      expect(control.match(new RegExp(`func ${fn}\\([\\s\\S]*?\\n\\}`))?.[0] ?? '').toContain(`plainFailure(msg.message, ${name})`);
+      expect(control).toContain(`let ${name} = "${text}"`);
+    }
+  });
+
   it('F9a: the setup sheet shows only fixed lines by code word, never runs the install command, and the status parser keeps an allow-list', () => {
     const sheet = read('OnboardingSheet.swift');
     const control = read('StephenControl.swift');
