@@ -375,7 +375,7 @@ and allow the microphone for Stephen Helper once. Quit any Terminal listener.
   "You told Stephen · you kept it", and `memory list` shows it. The Graph / List switch works with VoiceOver.
 - [ ] `[hands]` **11.6.5** Do: open Settings, Voice. Choose Detailed + Formal + Explain steps. Press Save. Then turn Speak off. Then set macOS voice.
   See: "Saved". `~/.browser-hub/config.json` has the keys under `voice`. The next reply changes. With Speak off, the next reply is silent. macOS voice uses `say`.
-- [ ] `[hands]` **11.6.6** Do: open Settings, Appearance. Try Navy, Rose, Sun, Dark, Light, Follow the Mac.
+- [ ] `[hands]` **11.6.6** Do: open Settings, Appearance. Try Navy, Rose, Sun, Paper, Dark, Light, Follow the Mac.
   See: the window and the Ask box change together.
 - [ ] `[hands]` **11.6.7** Do: open Conversations (⌘2), search, and read a chat. Open Jobs (⌘3), start a job, press Stop, press Open output folder.
   See: Conversations is one list by day. A click on a row shows the reply and its actions; "Refused: …" lines show even on a closed row. In Jobs, Stop moves the job to Earlier as Stopped. Open output folder opens it.
@@ -402,8 +402,10 @@ Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
   See: the open page is semibold with a tinted row and a bar on the left.
 - [ ] `[hands]` **12.10 Spacing.** Do: make the window as small as it goes (720 x 440). Look at each page.
   See: pages feel roomier and nothing is cut off.
-- [ ] `[hands]` **12.11 All five themes.** Do: in Settings, Appearance, choose Light, Dark, Navy, Rose, Sun, one by one. Look at the Ask box, Home and the sidebar.
+- [ ] `[hands]` **12.11 All six themes.** Do: in Settings, Appearance, choose Light, Dark, Navy, Rose, Sun, Paper, one by one. Look at the Ask box, Home and the sidebar.
   See: the Ask box, Home and the sidebar look right in every theme.
+  In Paper, ask for something that needs your OK. See: a lavender Ask box, Deny and Allow the same size, Allow
+  stays dim for a moment, Return does not answer, Esc denies.
 
 ## 13. Latency monitor and command id (A2, issue #43, PRs #44, #46, #47)
 Build from `qa` (section 0) and start Stephen. Then give about 10 real commands: 3 with "Hey Stephen", 3 with F5, 1 typed in

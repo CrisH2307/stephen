@@ -32,6 +32,7 @@ struct ChatThreadView: View {
           }
           if let q = model.confirms.first {
             ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
+              .modifier(PaperBacking())
               // Esc = Deny, in the Ask box and on Home, even while the text field has focus: a key equivalent runs
               // before the field editor. No 0.75 s delay: Esc can only deny. One card, so one question per press (R10a-5).
               .background(
@@ -241,6 +242,21 @@ struct ActionChain: View {
   }
 }
 
+/// Paper only: a hard ink block 4 pt down-right behind the question card, the website's look. The card itself (its
+/// fill and warn outline, #139) is drawn by ConfirmMessage the same in every theme; this only adds the block.
+private struct PaperBacking: ViewModifier {
+  @Environment(\.stephenTheme) var t
+  func body(content: Content) -> some View {
+    if t.paper {
+      // Room for the block inside the thread's scroll view, which clips.
+      content.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.ink).offset(x: 4, y: 4))
+        .padding(.trailing, 4).padding(.bottom, 4)
+    } else {
+      content
+    }
+  }
+}
+
 /// The gate's question as a message: computed facts first, model and page text quoted and labelled (the gate's own
 /// text). The full fact list is kept, in a short scroll, so the owner can decide from it alone, as with the dialog.
 struct ConfirmMessage: View {
@@ -252,10 +268,12 @@ struct ConfirmMessage: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.s) {
       Text(verbatim: "Needs your OK").safetyLabelStyle(t)
-      Text(verbatim: question.title).font(TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
+      Text(verbatim: question.title).font(t.paper ? paperHead(16) : TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
       ScrollView {
-        Text(verbatim: question.body).font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)
+        Text(verbatim: question.body).font(TypeScale.secondary).foregroundColor(t.paper ? t.ink : t.ink2).textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(t.paper ? Space.s : 0)
+          .background(RoundedRectangle(cornerRadius: Corner.button).fill(t.paper ? Theme.sky : Color.clear))
       }
       .frame(maxHeight: 160).fixedSize(horizontal: false, vertical: true)
       .accessibilityLabel("Details: \(question.body)")

@@ -397,6 +397,37 @@ final class StephenControl: ObservableObject {
     }
     do { try p.run() } catch { done(false) }
   }
+  /**
+   * F12 "Report a problem…": run `stephen report --copy`, which puts the incident text (ids, versions and code words
+   * only) on the clipboard and opens GitHub's empty issue form. It sends nothing; `done` gets its last lines.
+   */
+  func reportProblem(_ done: @escaping (String) -> Void) {
+    guard let info = readLaunchInfo() else {
+      return done("Stephen Helper doesn't know where Stephen is: run `stephen install-helper` once in Terminal.")
+    }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: info.node)
+    p.arguments = [info.cli, "report", "--copy"]
+    var env = ProcessInfo.processInfo.environment
+    if !info.path.isEmpty { env["PATH"] = info.path }
+    env["STEPHEN_HOME"] = home
+    p.environment = env
+    p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+    p.standardInput = FileHandle.nullDevice
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = pipe
+    p.terminationHandler = { _ in
+      let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      let tail = text.split(separator: "\n").suffix(4).joined(separator: "\n")
+      DispatchQueue.main.async { done(tail.isEmpty ? "Nothing to report." : tail) }
+    }
+    do {
+      try p.run()
+    } catch {
+      done("Couldn't run stephen report: \(error.localizedDescription)")
+    }
+  }
   /** Settings > Speed: the latency report (ids and numbers only); quick, so a short timeout. */
   func latency(_ done: @escaping (AppMessage) -> Void) {
     appRequestOnce(appSocketPath, .latencyGet("c-latency"), timeout: APP_REQUEST_TIMEOUT_SECONDS, done)
