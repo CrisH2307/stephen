@@ -3,14 +3,14 @@
  * The list mirrors docs/DATA-STORES.md (test/app/data-list.test.ts keeps the two in step). It reads sizes only,
  * never file contents, and deletes nothing; R10 ("delete all my data") reuses STORES and filesOf.
  */
-import { lstatSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
+import { lstatSync, readdirSync, realpathSync, rmdirSync, rmSync, unlinkSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { homedir, userInfo } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseAccountsConfig } from '../accounts/config.js';
-import { SECRET_SPECS } from '../accounts/secrets.js';
-import { expandPath, loadConfig } from '../config.js';
+import { defaultEnvFiles, SECRET_SPECS } from '../accounts/secrets.js';
+import { expandPath, LEGACY_HOME_DIRNAME, loadConfig, STEPHEN_HOME_DIRNAME } from '../config.js';
 import { claudeTranscriptDir, purgeTranscripts } from '../voice/transcripts.js';
 import { KEYCHAIN_SERVICE as VOICE_KEY_SERVICE } from '../voice/tts/keys.js';
 
@@ -162,6 +162,8 @@ export interface DeleteDeps {
   deleteKeychain: (service: string) => Promise<'deleted' | 'missing' | string>;
   /** Claude Code's transcript folder for the voice work folder (src/voice/transcripts.ts). */
   transcriptDir: string;
+  /** `.env` files Stephen may read (src/accounts/secrets.ts): never deleted, only named if one is still there. */
+  envFiles: string[];
   out: (line: string) => void;
   err: (line: string) => void;
 }
@@ -171,6 +173,23 @@ export function unsafeToDelete(path: string, userHome: string): boolean {
   const p = resolve(path);
   const u = resolve(userHome);
   return p === '/' || p === u || u.startsWith(`${p}/`);
+}
+
+/** Stephen's subfolders that may be left empty after its stores go (custom home only). */
+const STORE_DIRS = ['history', 'voice', 'telemetry', 'incidents', 'jobs', 'logs', 'run', 'replay'];
+
+const real = (p: string) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
+
+/** Only ~/.stephen or the old ~/.browser-hub are Stephen's alone, so only they are deleted as a whole. */
+export function isDefaultHome(home: string, userHome: string): boolean {
+  const h = real(home);
+  return [STEPHEN_HOME_DIRNAME, LEGACY_HOME_DIRNAME].some((name) => h === real(join(userHome, name)));
 }
 
 const yes = (answer: string) => /^\s*y(es)?\s*$/i.test(answer);
@@ -242,14 +261,49 @@ export async function deleteAllData(d: DeleteDeps): Promise<number> {
   }
   const n = purgeTranscripts(d.transcriptDir, null);
   if (n) d.out(`Deleted ${n} Claude Code transcript${n === 1 ? '' : 's'}.`);
-  if (exists(home)) {
-    removeAllExcept(home, jobs ? null : jobsRoot);
-    d.out(`Deleted ${show(home)}${!jobs && jobsRoot.startsWith(`${home}/`) ? ` (kept ${show(jobsRoot)} inside it)` : ''}.`);
+
+  const notDeleted: string[] = [];
+  const keepJobs = !jobs && exists(jobsRoot);
+  const inJobs = (p: string) => keepJobs && (p === jobsRoot || p.startsWith(`${jobsRoot}/`) || jobsRoot.startsWith(`${p}/`));
+  if (!exists(home)) {
+    // nothing to delete in the Stephen folder
+  } else if (keepJobs && jobsRoot === home) {
+    notDeleted.push(`${show(home)}: it is also your job folder, and you chose to keep that.`);
+  } else if (isDefaultHome(home, d.userHome)) {
+    // The default folder is Stephen's alone: it all goes, except a job folder inside it on a "no".
+    removeAllExcept(home, keepJobs ? jobsRoot : null);
+    d.out(`Deleted ${show(home)}${keepJobs && jobsRoot.startsWith(`${home}/`) ? ` (kept ${show(jobsRoot)} inside it)` : ''}.`);
+  } else {
+    // A folder set in config.json may hold the person's own files: only Stephen's known stores go.
+    let gone = 0;
+    for (const s of STORES) {
+      for (const f of filesOf(s, d.places)) {
+        if (!f.startsWith(`${home}/`) || inJobs(f)) continue;
+        removePath(f);
+        gone++;
+      }
+    }
+    for (const dir of STORE_DIRS) {
+      try {
+        rmdirSync(join(home, dir)); // only when empty
+      } catch {
+        // not empty or not there: kept
+      }
+    }
+    d.out(`Deleted ${gone} Stephen item${gone === 1 ? '' : 's'} in ${show(home)}.`);
+    notDeleted.push(`Other files in ${show(home)}: that folder is set in config.json, so only Stephen's own files went.`);
   }
   if (jobs && exists(jobsRoot)) {
     removePath(jobsRoot);
     d.out(`Deleted ${show(jobsRoot)}.`);
-  } else if (exists(jobsRoot)) d.out(`Kept ${show(jobsRoot)}.`);
+  } else if (keepJobs && jobsRoot !== home) notDeleted.push(`${show(jobsRoot)}: your job output files.`);
+  for (const f of d.envFiles) {
+    if (exists(f)) notDeleted.push(`${show(f)}: an old settings file that may still hold account keys. Delete it yourself if you no longer need it.`);
+  }
+  if (notDeleted.length) {
+    d.out('Not deleted:');
+    for (const l of notDeleted) d.out(`  ${l}`);
+  }
   if (failed) d.err('Some items could not be deleted (see above). Remove them in Keychain Access.');
   return failed ? 1 : 0;
 }
@@ -299,6 +353,7 @@ export async function runDataDelete(argv: string[], jobsRoot: string, w: OwnerWr
       disconnectGmail: w.disconnectGmail,
       deleteKeychain: (s) => w.keychainDelete(s, { user }),
       transcriptDir: claudeTranscriptDir(join(cfg.home, 'voice', 'workdir')),
+      envFiles: defaultEnvFiles(),
       out: (l) => console.log(l),
       err: (l) => console.error(l),
     });
