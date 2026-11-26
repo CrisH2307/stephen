@@ -90,6 +90,8 @@ Usage:
   stephen history [--limit N] | clear
                          Show your recent commands (kept on this Mac only), or delete them
   stephen data           What Stephen keeps on this Mac: each place, its size, how long it stays, how to delete it
+  stephen data delete --all
+                         Delete everything Stephen keeps (asks first, then asks again about your job folder)
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
   stephen report [--last N]
@@ -674,7 +676,12 @@ export async function main(argv: string[]): Promise<number> {
       return (await import('./telemetry/cli.js')).runLatencyCli(rest);
     case 'data': {
       const { root } = (await import('./jobs/config.js')).parseJobsConfig(loadConfig().jobs ?? {});
-      return (await import('./app/data-cli.js')).runDataCli(rest, root);
+      const data = await import('./app/data-cli.js');
+      if (rest[0] !== 'delete') return data.runDataCli(rest, root);
+      // R10: the Keychain delete and Gmail disconnect are owner-only (src/connect), loaded here on demand.
+      const { keychainDelete } = await import('./connect/keychain-write.js');
+      const { runConnectCli } = await import('./connect/gmail-oauth.js');
+      return data.runDataDelete(rest.slice(1), root, { keychainDelete, disconnectGmail: (label) => runConnectCli('disconnect', ['gmail', label]) });
     }
     case 'report':
       return (await import('./telemetry/report.js')).runReportCli(rest);
