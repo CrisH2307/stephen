@@ -26,6 +26,12 @@ nothing about who merges.
    issue #109): `npm run build`, `npm run typecheck`, `npx vitest run`. A red run is rerun by test name once; both
    results go into the release PR. Zero failed in the final result. Once CI rollout step 6 is accepted
    (`docs/CI-CD-PROPOSAL.md`, PR #156), this step becomes "CI green on the release commit"; steps 5 to 8 stay local.
+4b. **Inject eval on the release commit, on the owner's Mac:** `node dist/cli.js eval --only inject`. It runs the
+   prompt-injection cases (7 today: a page or a message tries to make Stephen do something else), one Claude run each on
+   your plan. The last lines say `One-shot eval: N/M passed` and give the report file. Anything below M/M blocks the
+   release. Put the score and the run's cost into the release PR's number sheet (see `docs/RELEASE-PLAN.md`
+   section 4). The cost is the sum of `costUsd` in the report file:
+   `node -e "const r=require(process.argv[1]);console.log(r.results.reduce((s,x)=>s+(x.costUsd||0),0).toFixed(2))" <report file>`.
 5. **Swift compiles:** `npx vitest run test/helper` passes on the Mac.
 6. **`node dist/cli.js mac-checks`** on the owner's Mac: no FAIL line.
 7. **`node dist/cli.js doctor`**: no problem that blocks voice.
