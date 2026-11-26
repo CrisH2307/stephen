@@ -28,5 +28,5 @@ pictures, and every technical word explained in the [glossary](GLOSSARY.md).
 | [Privacy](../PRIVACY.md) | What Stephen keeps on your Mac and what leaves it |
 | [Data stores](../DATA-STORES.md) | Every file Stephen keeps, for how long, and how to delete it |
 
-The pictures in this guide are drawings of the app (mockups) with made-up sample text. They never show anyone's
-private data.
+Most pictures in this guide are drawings of the app (marked "Illustration"). The ones marked "Real screenshot" are
+taken from the app itself. All of them use made-up sample text and never show anyone's private data.
