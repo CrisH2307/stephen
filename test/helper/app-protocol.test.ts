@@ -680,6 +680,19 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('return parts.joined(separator: " · ")');
   });
 
+  // R7d: loading, error and empty in words. A failed list never reads as "No jobs yet", and never shows raw "error".
+  it('Jobs page shows loading, error with Try again, and empty only after a good list', () => {
+    const jobs = read('JobsPage.swift');
+    expect(client).toContain('@Published private(set) var jobsListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshJobs()'), client.indexOf('func refreshPersonal()'));
+    expect(refresh).toContain('self.assign(\\.jobsListOk, true)');
+    expect(refresh).toContain('self.assign(\\.jobsListOk, false)');
+    expect(refresh).not.toContain('msg.message ?? "error"');
+    expect(jobs).toContain('switch model.jobsListOk');
+    expect(jobs).toMatch(/case nil:[\s\S]*JOBS_LOADING[\s\S]*case false\?:[\s\S]*JOBS_LIST_FAILED[\s\S]*QuietButton\("Try again"[\s\S]*model\.refreshJobs\(\)[\s\S]*case true\?:[\s\S]*JOBS_EMPTY/);
+    expect(jobs).toContain('let JOBS_LIST_FAILED = "Couldn\'t load your jobs right now."');
+  });
+
   // ADR-010 Edit request ([DEV REVIEW]): off while queued or running (with the line), the editor only sends the text,
   // the listener shows the job dialog; "Version N of M"; all verbatim; the palette never reaches it.
   it('ADR-010 Jobs: Edit request button and its disabled line, the editor, the version label, Text(verbatim:), not in the palette', () => {
