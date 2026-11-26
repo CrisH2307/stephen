@@ -75,7 +75,7 @@ import { soundControl, type SoundControl } from './media-command.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
 import { MemoryRouter } from './memory-router.js';
-import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelPaths } from './models.js';
+import { ensureModels, isInstalled, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelEvent, type ModelPaths } from './models.js';
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
@@ -108,6 +108,8 @@ export interface Engines {
 
 /** Everything runListen touches outside itself — injectable for tests. */
 export interface ListenEnv {
+  /** F9b: model download progress as code words (voice-setup --json-progress). */
+  onModelEvent?: (e: ModelEvent) => void;
   loadConfig?: () => {
     home: string;
     voice: Record<string, unknown>;
@@ -276,7 +278,7 @@ async function setupModels(
   env: ListenEnv,
   out: (l: string) => void,
 ): Promise<ModelPaths> {
-  const installed = await ensureModels(root, requiredArchives(asr), { log: out, download: env.download });
+  const installed = await ensureModels(root, requiredArchives(asr), { log: out, download: env.download, ...(env.onModelEvent ? { onEvent: env.onModelEvent } : {}) });
   const paths = modelPaths(root, asr);
   // Tokenize the configured phrases now, so a phrase the model can't spot fails here with a clear message.
   await mkdir(workDir, { recursive: true, mode: 0o700 });
@@ -293,13 +295,30 @@ export async function runVoiceSetup(argv: string[], env: ListenEnv = {}): Promis
     out('stephen voice-setup   Download the "Hey Stephen" speech models (wake word, VAD, speech-to-text) into <stephen home>/models');
     return 0;
   }
-  if (argv.length) {
-    err(`Unknown option "${argv[0]}". Usage: stephen voice-setup`);
+  // F9b: --json-progress prints only code-word JSON lines (the setup sheet's own text goes with each), no free text.
+  const json = argv.length === 1 && argv[0] === '--json-progress';
+  if (argv.length && !json) {
+    err(`Unknown option "${argv[0]}". Usage: stephen voice-setup [--json-progress]`);
     return 2;
   }
-  const loaded = loadVoice(env, err);
-  if (!loaded) return 2;
+  const emit = (e: object) => out(JSON.stringify(e));
+  const loaded = loadVoice(env, json ? () => {} : err);
+  if (!loaded) {
+    if (json) emit({ event: 'failed', reason: 'config' });
+    return 2;
+  }
   const root = env.modelsRoot ?? modelsDir(loaded.home);
+  if (json) {
+    try {
+      const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
+      await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), { ...env, onModelEvent: emit }, () => {});
+      emit({ event: 'done' });
+      return 0;
+    } catch {
+      emit({ event: 'failed', reason: 'download' });
+      return 1;
+    }
+  }
   try {
     const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
     await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), env, out);
@@ -997,4 +1016,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       process.off('exit', onExit);
     }
   }
+}
+
+/** F9: are the speech models for the configured speech-to-text in place? (`stephen setup --status`). Reads only. */
+export async function voiceModelsReady(env: ListenEnv = {}): Promise<boolean> {
+  const loaded = loadVoice(env, () => {});
+  if (!loaded) return false;
+  const root = env.modelsRoot ?? modelsDir(loaded.home);
+  for (const m of requiredArchives(loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL)) if (!(await isInstalled(root, m))) return false;
+  return true;
 }
