@@ -1163,6 +1163,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('SettingsPage.swift')).toContain('QuietButton("Run setup again") { UserDefaults.standard.set(false, forKey: "onboarded") }');
     expect(read('MainWindow.swift')).toContain('.onChange(of: onboarded) { if !$0 { showSetup = true } }');
     expect(read('Info.plist')).toContain('NSMicrophoneUsageDescription'); // requestAccess needs it, or the app quits
+    expect(sheet).toContain('Microphone: press Ask now (macOS adds apps to that list only when they ask).'); // no + for the mic list
   });
 
   it('#189: Settings uses the Mac controls: every switch shows its label on the theme accent, no StephenSwitch', () => {

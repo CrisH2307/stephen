@@ -208,7 +208,7 @@ private struct PermissionsStep: View {
         Image(systemName: allOn ? "checkmark.circle.fill" : "3.circle").foregroundColor(allOn ? t.accent : t.ink2).accessibilityHidden(true)
         Text(verbatim: "Mac permissions").font(TypeScale.section).foregroundColor(t.ink)
       }
-      Text(verbatim: "Turn on \"Stephen Helper\" in each list. If it is not there, click + and choose it from Applications in your home folder.")
+      Text(verbatim: "Turn on \"Stephen Helper\" in each list. Microphone: press Ask now (macOS adds apps to that list only when they ask). Input Monitoring and Accessibility: if it is not there, click + and choose it from Applications in your home folder. If you start Stephen from Terminal instead, macOS asks for Terminal.")
         .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
       ForEach(SETUP_PERMISSIONS) { p in
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
