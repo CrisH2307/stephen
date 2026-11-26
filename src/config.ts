@@ -225,6 +225,13 @@ export function looksLikeSecretKey(path: string): boolean {
   return SECRET_LAST_WORDS.has(words.at(-1) ?? '');
 }
 
+export const UNUSUAL_KEY_NAME = 'an unusual key name';
+
+/** A key name fit to print: at most 40 characters of letters, digits, _ and -, with dots between segments. */
+export function showKeyName(path: string): string {
+  return path.length <= 40 && /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/.test(path) ? path : UNUSUAL_KEY_NAME;
+}
+
 /** Strip null/undefined so they never overwrite a lower layer. */
 function compact<T extends Record<string, unknown>>(o: T | null | undefined): Partial<T> {
   const out: Record<string, unknown> = {};

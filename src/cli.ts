@@ -22,6 +22,8 @@ import {
   legacyHomeNotice,
   loadConfig,
   looksLikeSecretKey,
+  showKeyName,
+  UNUSUAL_KEY_NAME,
   readUserConfigFile,
   resolveStephenHome,
   userConfigUnknownKeys,
@@ -126,7 +128,7 @@ Config: ${configFilePath()}  (env STEPHEN_HOME, STEPHEN_CONFIG)`;
 
 /** One start-time line that names the ignored keys (names only, never values). */
 export function ignoredKeysNotice(keys: string[]): string {
-  return `[stephen] config: ignored keys ${keys.join(', ')} (run stephen doctor)`;
+  return `[stephen] config: ignored keys ${keys.map(showKeyName).join(', ')} (run stephen doctor)`;
 }
 
 /**
@@ -335,7 +337,9 @@ export async function doctor(network = false, json = false): Promise<number> {
         add({ ok: false, blocking: true, label: 'Secret in config.json', detail: 'a key whose name looks like a secret (name not shown); `stephen serve` and `stephen listen` refuse to start', fix: `Remove it from ${configFilePath()}. Secrets belong in the macOS Keychain (ElevenLabs can also read apiKeyFile).` });
       } else {
         // Info only: Stephen ignores the key, so it is not a problem with the setup.
-        add({ ok: true, info: true, label: 'Unknown config key', detail: `"${key}" is ignored, not a Stephen setting. Remove it or fix the spelling in ${configFilePath()}.` });
+        const shown = showKeyName(key);
+        const named = shown === UNUSUAL_KEY_NAME ? shown : `"${shown}"`;
+        add({ ok: true, info: true, label: 'Unknown config key', detail: `${named} is ignored, not a Stephen setting. Remove it or fix the spelling in ${configFilePath()}.` });
       }
     }
   } catch (e) {

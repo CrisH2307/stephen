@@ -135,6 +135,21 @@ describe('listen start path', () => {
 });
 
 describe('start-time notice', () => {
+  it('prints a key name only when it is short and name-like; otherwise "an unusual key name"', () => {
+    expect(ignoredKeysNotice(['x'.repeat(41), 'bad key!', 'voice.fooBar'])).toBe(
+      '[stephen] config: ignored keys an unusual key name, an unusual key name, voice.fooBar (run stephen doctor)',
+    );
+    expect(ignoredKeysNotice(['x'.repeat(40)])).toContain('x'.repeat(40));
+  });
+
+  it('doctor prints an unusual key name in place of a long or odd one, and never its value', async () => {
+    const long = 'y'.repeat(41);
+    const r = await runDoctor({ voice: { [long]: 'plain-value-QQ' } }, false);
+    expect(r.out).toContain('an unusual key name is ignored');
+    expect(r.out).not.toContain(long);
+    expect(r.out).not.toContain('plain-value-QQ');
+  });
+
   it('names the ignored keys on one line, by name only', () => {
     expect(ignoredKeysNotice(['safety.blockedDomain', 'chorme'])).toBe('[stephen] config: ignored keys safety.blockedDomain, chorme (run stephen doctor)');
   });
