@@ -1,10 +1,10 @@
 /**
- * B10: N-1 data fixtures. test/fixtures/v0.1/ holds files written by the real writers of version 0.1 (config.json,
+ * B10: N-1 data fixtures. test/fixtures/v0.1/ holds files written by the real writers of version 0.1 (settings.json, a config.json saved under another name because .gitignore drops config.json;
  * memory.json, timers.json, a history line, a latency line, an incident line, a job state). Every later version must
  * still read them, field by field, so an update or a rollback never loses a person's data. If a reader drops a field,
  * the field's check here fails. Never edit a v0.1 fixture: add a v0.2 folder next to it instead.
  */
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -24,17 +24,17 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe('B10: today\'s code reads the v0.1 files', () => {
   it('config.json loads, and the known keys keep their values', () => {
-    const cfg = loadConfig(undefined, { HOME: tmp, STEPHEN_HOME: join(tmp, 'h1'), STEPHEN_CONFIG: join(FIX, 'config.json') });
+    const cfg = loadConfig(undefined, { HOME: tmp, STEPHEN_HOME: join(tmp, 'h1'), STEPHEN_CONFIG: join(FIX, 'settings.json') });
     expect(cfg.chrome.mode).toBe('agent');
     expect(cfg.memory).toMatchObject({ enabled: true });
-    expect(userConfigUnknownKeys(json('config.json'))).toEqual([]);
+    expect(userConfigUnknownKeys(json('settings.json'))).toEqual([]);
   });
 
   it('a config with keys this version does not know still loads, and doctor can name them (B11)', () => {
-    const cfg = loadConfig(undefined, { HOME: tmp, STEPHEN_HOME: join(tmp, 'h2'), STEPHEN_CONFIG: join(FIX, 'config-unknown-key.json') });
+    const cfg = loadConfig(undefined, { HOME: tmp, STEPHEN_HOME: join(tmp, 'h2'), STEPHEN_CONFIG: join(FIX, 'settings-unknown-key.json') });
     expect(cfg.chrome.mode).toBe('agent');
     expect(cfg.memory).toMatchObject({ enabled: true });
-    expect(userConfigUnknownKeys(json('config-unknown-key.json'))).toEqual(expect.arrayContaining(['futureThing']));
+    expect(userConfigUnknownKeys(json('settings-unknown-key.json'))).toEqual(expect.arrayContaining(['futureThing']));
   });
 
   it('memory.json: both items with id, text, source and times', () => {
@@ -51,6 +51,7 @@ describe('B10: today\'s code reads the v0.1 files', () => {
     const home = join(tmp, 'timers');
     mkdirSync(home, { recursive: true, mode: 0o700 });
     copyFileSync(join(FIX, 'timers.json'), join(home, 'timers.json'));
+    chmodSync(join(home, 'timers.json'), 0o600); // git keeps 0644; Stephen's readers want 0600
     const store = new TimerStore({ home, now: () => 1795617000000 });
     expect(store.list().map((t) => ({ kind: t.kind, text: t.text, dueAt: t.dueAt }))).toEqual([
       { kind: 'timer', text: 'tea', dueAt: 1795617600000 },
@@ -82,6 +83,7 @@ describe('B10: today\'s code reads the v0.1 files', () => {
     const home = join(tmp, 'jobs-home');
     mkdirSync(join(home, 'jobs'), { recursive: true, mode: 0o700 });
     copyFileSync(join(FIX, 'job-state.json'), join(home, 'jobs', '2026-11-25-write-a-poem.json'));
+    chmodSync(join(home, 'jobs', '2026-11-25-write-a-poem.json'), 0o600);
     expect(readJobState(home, '2026-11-25-write-a-poem')).toMatchObject({
       id: '2026-11-25-write-a-poem', task: 'write a poem', status: 'done', source: 'voice-ptt', model: 'sonnet',
       maxTurns: 150, maxBudgetUsd: 5, wallClockMs: 2_700_000, turns: 4, toolCalls: 6, costUsd: 0.21, summary: 'Wrote a short poem.',

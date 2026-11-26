@@ -1,0 +1,4 @@
+{
+  "chrome": { "mode": "agent" },
+  "memory": { "enabled": true }
+}
