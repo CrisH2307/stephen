@@ -658,7 +658,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
       ...(heard && lastTts() ? { tts: lastTts()! } : {}),
     });
-    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end }).then(() => {
+    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end, isPrivateUrl: (u) => isPrivateUrl(u, loaded.lists) }).then(() => {
       // ADR-010: one audit line per edit and resend (ids and the old source, no text), after the steps were read.
       const line = editResendAudit(r);
       if (line && audit) return audit.append(line).catch((e: unknown) => err(`Note: could not audit the edit (${(e as Error).message}).`));

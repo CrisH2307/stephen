@@ -169,6 +169,8 @@ export async function finishCommand(
     log?: (line: string) => void;
     /** When the command ended (epoch ms, the onDone time); default now. The history line's ts and the steps' window. */
     end?: number;
+    /** Private sites (built-in plus the owner's lists): their labels and errors never reach the steps (T6 step 3). */
+    isPrivateUrl?: (url: string) => boolean;
   },
 ): Promise<void> {
   const end = o.end ?? Date.now();
@@ -178,7 +180,7 @@ export async function finishCommand(
   } catch (e) {
     note(e);
   }
-  const steps = await readCommandSteps(o.audit, calls, r.id, r.ms, end);
+  const steps = await readCommandSteps(o.audit, calls, r.id, r.ms, end, o.isPrivateUrl);
   try {
     o.record?.(r, { ...(steps ? { steps } : {}), calls, ts: new Date(end) });
   } catch (e) {
