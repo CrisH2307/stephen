@@ -7,7 +7,7 @@
 // or a token: this script alone posts, with fixed commands and a fixed repo. Issue text never reaches a model; only the
 // lines that parseIncidentIssue keeps do.
 import { execFile } from 'node:child_process';
-import { existsSync, lstatSync } from 'node:fs';
+import { lstatSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -75,7 +75,7 @@ async function runL1(lines, codeText, fileOk) {
   const model = pickL1Model(process.env.INCIDENT_L1_MODEL);
   const key = process.env.FREELLM_API_KEY;
   if (!model || !key) {
-    log('  L1 skipped (model not on the pinned list, or FREELLM_API_KEY is not set).');
+    log('  L1 skipped (INCIDENT_L1_MODEL is not set to a pinned model, or FREELLM_API_KEY is not set).');
     return null;
   }
   try {
@@ -216,7 +216,10 @@ async function main() {
   );
   const mine = touched.filter((i) => i.state === 'open');
   if (!mine.length) return log('No open incident issues from an allowed author.');
-  if (!existsSync(join(ROOT, 'dist', 'telemetry', 'incident-ladder.js'))) throw new Error('Run npm run build first (dist/ is missing).');
+  // L5 adds this label. Without it the label step fails after the Claude levels ran, no marker is posted, and the
+  // next run would spend them again.
+  const labels = await ghJson([`repos/${REPO}/labels?per_page=100`]);
+  if (!labels.some((l) => l.name === 'needs-cris')) throw new Error('Create the needs-cris label first: gh label create needs-cris --repo ' + REPO);
   await run('git', ['fetch', '--quiet', 'origin', 'qa'], { cwd: ROOT });
 
   const commentsOf = new Map();
