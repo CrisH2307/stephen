@@ -1,6 +1,6 @@
 /**
  * `"accounts"` in config.json (phase 2a). Everything is optional:
- *   { "enabled": true, "timeZone": "America/Toronto", "canvas": { "enabled": true, "url": "https://learn.ontariotechu.ca" },
+ *   { "enabled": true, "timeZone": "America/New_York", "canvas": { "enabled": true, "url": "https://school.instructure.com" },
  *     "notion": { "enabled": true, "todoDatabase": "<32 hex id>" },
  *     "gmail": { "enabled": true, "clientId": "<Google OAuth desktop client id>", "accounts": ["personal", "personal2"] } }
  * Tokens are NEVER here (Keychain or the repo's .env, see secrets.ts).
@@ -22,7 +22,7 @@ const schema = z
     timeZone: z.string().min(1).max(64).optional(),
     canvas: service.extend({ url: z.string().min(1).max(200).optional() }).default({ enabled: true }),
     calendar: service.default({ enabled: true }),
-    /** Where the weather tool looks (Open-Meteo, no key). Default Toronto. */
+    /** Where the weather tool looks (Open-Meteo, no key). DEFAULT_WEATHER until the person sets their own place. */
     weather: service
       .extend({
         latitude: z.number().min(-90).max(90).default(DEFAULT_WEATHER.latitude),

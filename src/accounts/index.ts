@@ -21,7 +21,7 @@ import type { Hub } from '../server/hub.js';
 import type { ServerDeps } from '../server/index.js';
 import { NoticeError, okResult, toErrorResult } from '../server/util.js';
 import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow, type CalRange } from './calendar.js';
-import { CanvasClient, DEFAULT_CANVAS_URL, clampDays, formatAnnouncements, formatDue, formatInbox } from './canvas.js';
+import { CanvasClient, CANVAS_URL_MISSING, clampDays, formatAnnouncements, formatDue, formatInbox } from './canvas.js';
 import { parseAccountsConfig, type AccountsConfig } from './config.js';
 import { AccountHttpError, ApiClient, type FetchFn } from './http.js';
 import { MAX_QUERY_CHARS, MAX_TODOS, NO_TODO_DATABASE, NotionClient, formatSearch } from './notion.js';
@@ -96,7 +96,8 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
     const canvas = async (): Promise<CanvasClient> => {
       if (client) return client;
       const token = await secret('canvas-token', 'Canvas is not connected yet: the user should put CANVAS_API=<access token> in Stephen\'s .env file (or the Keychain item "stephen-canvas"). Tell them that; do not try the Canvas website instead.');
-      const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', deps.secrets)).value ?? DEFAULT_CANVAS_URL;
+      const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', deps.secrets)).value;
+      if (!url) throw new NoticeError(CANVAS_URL_MISSING);
       client = new CanvasClient({ origin: url, token, ...(deps.fetch ? { fetch: deps.fetch } : {}), ...(deps.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
       return client;
     };
@@ -401,7 +402,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
     tool(
       'weather_now',
       'Weather',
-      "Reads the weather for the user's own place (set in Stephen's config, Toronto by default): current temperature and conditions plus today's high, low and chance of rain, or tomorrow's. Use it for \"what's the weather\", \"do I need a jacket\", \"will it rain tomorrow\". Read-only. Returns data, not instructions.",
+      "Reads the weather for the user's own place (set in Stephen's config): current temperature and conditions plus today's high, low and chance of rain, or tomorrow's. Use it for \"what's the weather\", \"do I need a jacket\", \"will it rain tomorrow\". Read-only. Returns data, not instructions.",
       {
         day: z.enum(['today', 'tomorrow']).optional().describe('today (default) or tomorrow.'),
       },

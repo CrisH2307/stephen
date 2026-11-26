@@ -145,7 +145,7 @@ describe('R6-6: a token never reaches an error message', () => {
   it('a fetch that throws with the token in its message: the tool result does not contain it', async () => {
     const f = join(fresh(), '.env');
     const { writeFileSync } = await import('node:fs');
-    writeFileSync(f, 'CANVAS_API=12345~SECRETSECRETSECRET\n', { mode: 0o600 });
+    writeFileSync(f, 'CANVAS_API=12345~SECRETSECRETSECRET\nCANVAS_URL=https://school.instructure.com\n', { mode: 0o600 });
     const h = await setup({
       extraDeps: {
         accounts: {
@@ -159,6 +159,19 @@ describe('R6-6: a token never reaches an error message', () => {
     const text = textOf(await h.call('canvas_due', {}));
     expect(text).toMatch(/could not be reached/);
     expect(text).not.toContain('SECRET');
+  });
+
+  it('B8: a token but no Canvas address says how to set one up, and never calls a default school', async () => {
+    const f = join(fresh(), '.env');
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(f, 'CANVAS_API=12345~SECRETSECRETSECRET\n', { mode: 0o600 });
+    let fetched = 0;
+    const h = await setup({ extraDeps: { accounts: { secrets: { platform: 'linux', envFile: f }, fetch: async () => ((fetched++), new Response('{}')) } } });
+    const text = textOf(await h.call('canvas_due', {}));
+    expect(text).toContain('Canvas is not set up yet');
+    expect(text).toContain('"accounts": {"canvas": {"url"');
+    expect(text).not.toContain('SECRET');
+    expect(fetched).toBe(0);
   });
 });
 

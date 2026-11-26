@@ -165,9 +165,9 @@ const header = (m: GmailMessage, name: string): string => {
 };
 
 /**
- * A From header → display name + the address's real domain only ("Dr Patel <ontariotechu.ca>"); never the full
+ * A From header → display name + the address's real domain only ("Dr Patel <example.com>"); never the full
  * address. The display name is the sender's own text, so it can't carry a domain of its own (review 7, R7-6): after
- * NFKC (so "＠" and "（" are caught), words that hold an "@" or look like a domain ("ontariotechu.ca") are dropped,
+ * NFKC (so "＠" and "（" are caught), words that hold an "@" or look like a domain ("example.com") are dropped,
  * and so are parentheses and brackets. The angle brackets then hold only the domain from the address.
  */
 export function senderText(from: string): string {

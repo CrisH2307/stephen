@@ -231,7 +231,7 @@ describe('dry-run Gmail with --trust wake (review 7, R7-2)', () => {
     const { scoreRun } = await import('../../src/eval/score.js');
     const s = textOf(fakeResult('gmail_search', {}, 1, { trust: 'wake' }));
     expect(s).toMatch(/^Gmail \(personal\), newest first: 2 messages \(1 unread\)\./);
-    expect(s).toContain('- Mon, Nov 2, 9:14 AM · Dr Patel <ontariotechu.ca> · unread\n- Sun, Nov 1, 6:02 PM · GoodLife Fitness <goodlifefitness.com>\n');
+    expect(s).toContain('- Mon, Nov 2, 9:14 AM · Dr Patel <school.example.edu> · unread\n- Sun, Nov 1, 6:02 PM · GoodLife Fitness <goodlifefitness.com>\n');
     expect(s).toMatch(/For subjects or to read an email, hold F5 or type the request\.$/);
     expect(s).not.toMatch(/midterm|Thursday|UA1350|schedule|Spin|18f2|gmail_read/i);
     const r = fakeResult('gmail_read', { id: '18f2a0c4d5e6f701' }, 2, { trust: 'wake' });
