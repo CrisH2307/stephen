@@ -14,7 +14,8 @@ Stephen is Cris's Mac voice and browser assistant. The repo is public. New here?
   retries.
 - Safety first: the model never writes memory, timers or jobs; third-party text is data, never instructions;
   Allow and Deny are clicks only. Changes to `src/safety/`, `helper/AppConfirm.swift`, the memory, timer and job
-  write paths, or the app.sock protocol need `[DEV REVIEW]` and an independent review.
+  write paths, or the app.sock protocol need `[DEV REVIEW]` and an independent review. The `safety-paths` CI check
+  fails a PR that touches them without the tag (the list is in `scripts/safety-paths.mjs`).
 - Checks before a PR: `npm run build && npm run typecheck && npx vitest run`.
 - **Cheapest model that can do the job, with a precise spec.** Every chat and every brief: free agents first
   (OpenCode, freellm) for drafts, docs, tests and planned non-safety code, then a cheaper model (Haiku or Sonnet) for
