@@ -80,6 +80,7 @@ Every commit counts on Cris's GitHub profile, so keep them correct:
   8. Skills: the brief names them (for example `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit`, `engineering:system-design`, `tdd`).
 - Every UI PR, and any PR or issue where a picture helps, includes screenshots or images so a human can see the change. Commit them next to the work (for the site: `docs/site/screenshots/`) and embed them in the PR body. A screenshot never shows private data (no real mail, names, tokens, tabs or paths).
 - Model choice (Cris, 2026-11-25, newer than the "cheapest model" rule for these two kinds of work): Fable for all research and planning, Opus for all coding. Free agents and Haiku still do drafts, docs and read-only checks.
+- Every PR body starts with a "For Cris" block in plain short sentences, before any technical detail: what it does, why (with the task id), what changes for a person using Stephen, how it was checked, and what Cris needs to do or check. Then screenshots, then the technical details. The template is `.github/pull_request_template.md`.
 - The top lead keeps the roster in `team-roster.md` in the shared notes folder: role, session, responsibility, model, task, status.
 
 ## Lane inboxes (how lanes talk)
