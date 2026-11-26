@@ -302,7 +302,7 @@ export interface WeeklySummary {
   from: string;
   to: string;
   /** Oldest day first, every one of the 7 local days, zeros included. */
-  days: { day: string; commands: number; failed: number; jobs: number; usd: number }[];
+  days: { day: string; commands: number; failed: number; jobs: number; usd: number; jobUsd: number }[];
   incidents: Record<string, number>;
   /** speech → reply of ok commands, split local routers and the model. */
   local: SpanStats | null;
@@ -311,6 +311,8 @@ export interface WeeklySummary {
   failed: number;
   jobs: number;
   usd: number;
+  /** Background jobs' own model cost (job state costUsd), by the day each job ended or started. */
+  jobUsd: number;
   stephen: string;
   claude: string;
 }
@@ -322,9 +324,10 @@ export function buildWeekly(
   incidents: readonly { ts: string; code: string }[],
   now: Date,
   versions: { stephen?: string | null; claude?: string | null },
+  jobCosts: readonly { at: number; usd: number }[] = [],
 ): WeeklySummary {
   const dayList = Array.from({ length: WEEK_DAYS }, (_, i) => localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (WEEK_DAYS - 1 - i))));
-  const days = new Map(dayList.map((day) => [day, { day, commands: 0, failed: 0, jobs: 0, usd: 0 }]));
+  const days = new Map(dayList.map((day) => [day, { day, commands: 0, failed: 0, jobs: 0, usd: 0, jobUsd: 0 }]));
   const local: number[] = [];
   const model: number[] = [];
   for (const r of latency) {
@@ -337,9 +340,13 @@ export function buildWeekly(
     const ms = r.outcome === 'ok' ? spanMs(r, 'speech', 'replyReady') : null;
     if (ms !== null) (r.route === 'model' ? model : local).push(ms);
   }
+  for (const j of jobCosts) {
+    const d = Number.isFinite(j.at) && Number.isFinite(j.usd) && j.usd >= 0 ? days.get(localDate(new Date(j.at))) : undefined;
+    if (d) d.jobUsd += j.usd;
+  }
   const inc: Record<string, number> = {};
   for (const i of incidents) if (days.has(localDate(new Date(i.ts)))) bump(inc, i.code);
-  const rows = [...days.values()].map((d) => ({ ...d, usd: Math.round(d.usd * 100) / 100 }));
+  const rows = [...days.values()].map((d) => ({ ...d, usd: Math.round(d.usd * 100) / 100, jobUsd: Math.round(d.jobUsd * 100) / 100 }));
   const sum = (k: 'commands' | 'failed' | 'jobs') => rows.reduce((n, d) => n + d[k], 0);
   return {
     from: dayList[0]!,
@@ -352,6 +359,7 @@ export function buildWeekly(
     failed: sum('failed'),
     jobs: sum('jobs'),
     usd: Math.round(rows.reduce((n, d) => n + d.usd, 0) * 100) / 100,
+    jobUsd: Math.round(rows.reduce((n, d) => n + d.jobUsd, 0) * 100) / 100,
     stephen: safeVersion(versions.stephen),
     claude: safeVersion(versions.claude),
   };
@@ -362,12 +370,12 @@ export function formatWeekly(s: WeeklySummary): string {
   return [
     `Stephen week ${s.from} to ${s.to}`,
     `Stephen ${s.stephen}, Claude Code ${s.claude}`,
-    `Commands ${s.commands}, failed ${s.failed}, jobs started ${s.jobs}, model cost ${s.usd.toFixed(2)} USD`,
+    `Commands ${s.commands}, failed ${s.failed}, jobs started ${s.jobs}, model cost ${s.usd.toFixed(2)} USD, job cost ${s.jobUsd.toFixed(2)} USD`,
     time('Local commands, speech to reply', s.local),
     time('Model commands, speech to reply', s.model),
     `Incidents: ${Object.keys(s.incidents).length ? counts(Object.fromEntries(Object.entries(s.incidents).sort(([a], [b]) => a.localeCompare(b)))) : 'none'}`,
-    'Per day (commands, failed, jobs, cost USD):',
-    ...s.days.map((d) => `  ${d.day}  ${d.commands}  ${d.failed}  ${d.jobs}  ${d.usd.toFixed(2)}`),
+    'Per day (commands, failed, jobs, cost USD, job cost USD):',
+    ...s.days.map((d) => `  ${d.day}  ${d.commands}  ${d.failed}  ${d.jobs}  ${d.usd.toFixed(2)}  ${d.jobUsd.toFixed(2)}`),
   ].join('\n');
 }
 
@@ -377,6 +385,8 @@ export interface WeeklyEnv {
   now?: Date;
   stephen?: string | null;
   claude?: string | null;
+  /** Each job's cost and when it ended (or started): numbers only. cli.ts reads them (src/telemetry may not load src/jobs). */
+  jobCosts?: { at: number; usd: number }[];
   out?: (l: string) => void;
 }
 
@@ -387,6 +397,6 @@ export async function runWeeklyCli(e: WeeklyEnv = {}): Promise<number> {
   const homeOf = () => (home ??= loadConfig().home);
   const latency = (e.monitor ?? new LatencyMonitor({ home: homeOf() })).read(WEEK_DAYS + 1);
   const incidents = e.incidents ?? (await import('./incidents.js')).readIncidents(homeOf(), 10_000);
-  (e.out ?? ((l: string) => console.log(l)))(formatWeekly(buildWeekly(latency, incidents, now, { stephen: e.stephen, claude: e.claude })));
+  (e.out ?? ((l: string) => console.log(l)))(formatWeekly(buildWeekly(latency, incidents, now, { stephen: e.stephen, claude: e.claude }, e.jobCosts ?? [])));
   return 0;
 }
