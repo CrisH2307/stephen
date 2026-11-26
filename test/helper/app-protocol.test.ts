@@ -72,6 +72,8 @@ const RESPONSES: Record<string, string[]> = {
 const REQUEST_TYPES = Object.keys(RESPONSES);
 /** Request types only the CLI sends. */
 const CLI_ONLY_REQUESTS = ['window.open', 'confirm.ask'];
+/** Requests the listener accepts but the window never sends (fewer memory write paths); pinned absent below. */
+const WINDOW_NEVER_SENDS = ['memory.add'];
 /** Responses only the gate reads. */
 const GATE_ONLY_RESPONSES = ['confirm.result'];
 const RESPONSE_TYPES = [...new Set(Object.values(RESPONSES).flat())];
@@ -328,7 +330,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   const window = ['AppWindow.swift', 'MainWindow.swift', 'HomeView.swift', 'Palette.swift', 'SettingsPage.swift', 'MemoryPage.swift'].map(read).join('\n');
 
   it('AppClient sends every request type and handles every response and push type', () => {
-    const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t));
+    const windowRequests = REQUEST_TYPES.filter((t) => !CLI_ONLY_REQUESTS.includes(t) && !WINDOW_NEVER_SENDS.includes(t));
     const windowResponses = RESPONSE_TYPES.filter((t) => !GATE_ONLY_RESPONSES.includes(t));
     for (const t of [...windowRequests, ...windowResponses, ...PUSH_TYPES]) expect(client, t).toContain(`"${t}"`);
     expect(client).toContain('APP_MAX_LINE_BYTES = 256 * 1024');
@@ -717,7 +719,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
     // No Swift file can build a memory.add request at all (the unused builder was removed): fewer memory write paths.
-    for (const f of HELPER_SOURCES) expect(read(f)).not.toContain('"memory.add"');
+    for (const f of HELPER_SOURCES) for (const t of WINDOW_NEVER_SENDS) expect(read(f)).not.toContain(`"${t}"`);
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
