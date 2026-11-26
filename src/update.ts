@@ -7,6 +7,9 @@
  * Every program runs through `deps`, so the tests never touch git, npm or the helper.
  */
 
+import { HELPER_UNCHANGED } from './helper/install.js';
+import { firstLine } from './lib/process.js';
+
 export interface RunResult {
   /** Exit code; null when the program could not start. */
   code: number | null;
@@ -24,7 +27,6 @@ export interface UpdateDeps {
   log: (line: string) => void;
 }
 
-const firstLine = (s: string) => s.trim().split('\n').find((l) => l.trim()) ?? '';
 const out = (r: RunResult) => r.stdout.trim();
 
 export const GOING_BACK_DOC = 'docs/RELEASE-CHECKLIST.md, "Going back"';
@@ -96,7 +98,7 @@ export async function runUpdate(deps: UpdateDeps): Promise<number> {
   if (helper.code !== 0) {
     return stop(`The helper did not build. Run \`stephen install-helper\` and read the error. To go back: git checkout ${prev}`, firstLine(helper.stderr || helper.stdout));
   }
-  const rebuilt = !/Nothing changed/.test(helper.stdout);
+  const rebuilt = !helper.stdout.includes(HELPER_UNCHANGED);
 
   const after = deps.version();
   log(`\nUpdated: Stephen ${before} (${prev}) to ${after} (${out(nowR)}).`);

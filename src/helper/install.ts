@@ -23,6 +23,8 @@ export const HELPER_SOURCES = [
   'AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift', 'AppWindow.swift', 'AskBox.swift', 'MainWindow.swift', 'HomeView.swift', 'Palette.swift', 'MemoryPage.swift', 'ConversationsPage.swift', 'JobsPage.swift', 'AppearanceSettings.swift', 'SettingsPage.swift', 'main.swift',
 ] as const;
 export const HELPER_FRAMEWORKS = ['AppKit', 'CoreAudio', 'CoreGraphics', 'SwiftUI'] as const;
+/** The start of the line install-helper prints when it skipped the build. update and setup match it to tell a skip from a rebuild. */
+export const HELPER_UNCHANGED = 'Nothing changed';
 export const XCODE_TOOLS_FIX = 'Install Apple\'s command line tools: run `xcode-select --install` (or install Xcode), then run `stephen install-helper` again.';
 
 /** `<package>/helper` — the Swift sources ship next to dist/ and src/. */
@@ -353,7 +355,7 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
   if (fingerprint && !opts.force && deps.exists(plan.appPath)) {
     const stamp = (await readFile(stampFile, 'utf8').catch(() => '')).trim();
     if (stamp === fingerprint && (await deps.run('/usr/bin/codesign', ['--verify', '--strict', plan.appPath], 60_000)).code === 0) {
-      log(`Nothing changed, so the build was skipped. ${plan.appPath} is already installed and signed.`);
+      log(`${HELPER_UNCHANGED}, so the build was skipped. ${plan.appPath} is already installed and signed.`);
       return 0;
     }
   }
