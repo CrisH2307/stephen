@@ -81,6 +81,19 @@ func jobsStillRunning(_ n: Int) -> String {
   return n == 1 ? "1 job is still running." : "\(n) jobs are still running."
 }
 
+/// R7: what the Home chat says when a send fails and the listener gave no plain sentence.
+let CHAT_SEND_FAILED = "Couldn't send that right now."
+
+/**
+ * R7: a failed action in plain words, never a raw "error". The listener's own sentence is kept because it says what to
+ * do ("This conversation changed. Open it again."); a bare word, a code or an exception text gets `fallback` instead.
+ * ponytail: "a sentence" means a capital first and a period last; a list of known messages if that ever misfires.
+ */
+func plainFailure(_ message: String?, _ fallback: String) -> String {
+  guard let m = message?.trimmingCharacters(in: .whitespacesAndNewlines), m.first?.isUppercase == true, m.hasSuffix(".") else { return fallback }
+  return m
+}
+
 struct HistoryDay: Identifiable {
   /** Day key, e.g. "2026-11-01" (local time). */
   let id: String
@@ -406,11 +419,10 @@ final class AppModel: ObservableObject {
       if msg.type == "chat.accepted", let entryId = msg.entryId {
         self.awaitingReplies.insert(entryId)
       } else if msg.type == "error" {
-        let m = msg.message ?? "error"
-        if m == "busy" {
+        if msg.message == "busy" {
           self.addBubble(.info, "Stephen is busy with another command. Try again when it's done.", detail: "")
         } else {
-          self.addBubble(.problem, m, detail: "")
+          self.addBubble(.problem, plainFailure(msg.message, CHAT_SEND_FAILED), detail: "")
         }
       }
     }

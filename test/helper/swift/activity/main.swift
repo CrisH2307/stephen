@@ -72,6 +72,7 @@ check(plainFailure("EACCES: permission denied, open '/Users/x/.stephen/history.j
 check(plainFailure("  ", RECENT_ACTIONS_FAILED) == RECENT_ACTIONS_FAILED, "blank")
 check(plainFailure("This conversation changed. Open it again.", CONVERSATIONS_EDIT_FAILED) == "This conversation changed. Open it again.", "listener sentence kept")
 check(plainFailure("Only the Stephen window can delete a version.", CONVERSATIONS_DELETE_FAILED) == "Only the Stephen window can delete a version.", "refusal kept")
+check(plainFailure("error", CHAT_SEND_FAILED) == "Couldn't send that right now.", "Home chat send")
 
 if failed > 0 { exit(1) }
 print("ok")
