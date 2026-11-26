@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { HelperClient } from '../../src/helper/client.js';
+import { HelperClient, readHelperNonce } from '../../src/helper/client.js';
 import { LineFramer } from '../../src/helper/framing.js';
 import { buildWithSdkFallback, findSwiftCompiler, listFallbackSdks, swiftcArgs } from '../../src/helper/install.js';
 import type { HelperEvent } from '../../src/helper/protocol.js';
@@ -102,6 +102,12 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     await h.ready();
     return h;
   };
+  /** A raw connection that sends the helper's nonce first (F15). */
+  const authed = (sock: string, nonce: string | null = readHelperNonce(sock)): Socket => {
+    const s = createConnection(sock);
+    s.once('connect', () => s.write(`${JSON.stringify({ type: 'auth', nonce })}\n`));
+    return s;
+  };
   const client = (sock: string) => {
     const c = new HelperClient({ home: dirname(dirname(sock)), socketPath: sock, launch: false, reconnectIntervalMs: 100 });
     kills.push(() => c.close());
@@ -167,10 +173,52 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     expect(Math.abs(got[1]!.type === 'esc' ? got[1]!.at - Date.now() : 1e9)).toBeLessThan(5_000);
   });
 
+  it('F15: a fresh 0600 nonce per launch; no auth line, a wrong nonce, or junk first is dropped without a hello, and never replaces the current client', async () => {
+    const sock = mk();
+    const h = await start(sock);
+    const nonceFile = join(dirname(sock), 'helper.nonce');
+    expect(statSync(nonceFile).mode & 0o777).toBe(0o600);
+    const nonce = readHelperNonce(sock);
+    expect(nonce).toMatch(/^[0-9a-f]{64}$/);
+    const good = authed(sock);
+    kills.push(() => good.destroy());
+    let goodData = '';
+    good.on('data', (d) => (goodData += d.toString()));
+    await until(() => goodData.includes('"hello"'));
+    const tries: [string, (s: Socket) => void][] = [
+      ['silent', () => {}],
+      ['wrong nonce', (s) => s.write(`${JSON.stringify({ type: 'auth', nonce: '0'.repeat(64) })}\n`)],
+      ['a command first', (s) => s.write('{"type":"quit"}\n')],
+      ['an over-long first line', (s) => s.write(`${'x'.repeat(300)}\n`)],
+    ];
+    for (const [name, send] of tries) {
+      const bad = createConnection(sock);
+      kills.push(() => bad.destroy());
+      let data = '';
+      let closed = false;
+      bad.on('data', (d) => (data += d.toString()));
+      bad.on('close', () => (closed = true));
+      bad.on('error', () => {});
+      bad.once('connect', () => send(bad));
+      await until(() => closed, 4000, `${name} dropped`);
+      expect(data, name).toBe('');
+    }
+    expect(h.lines).not.toContain('quit');
+    h.input('key 53');
+    await until(() => goodData.includes('"esc"'), 3000, 'the good client is still current');
+    expect(h.stderr.join('')).toContain('rejected (no valid auth line');
+    // A restart makes a new nonce, so an old one stops working.
+    h.input('exit');
+    await until(() => h.exitCode !== null, 5000, 'exit');
+    expect(existsSync(nonceFile)).toBe(false);
+    await start(sock);
+    expect(readHelperNonce(sock)).not.toBe(nonce);
+  });
+
   it('handles commands: state (incl. JSON escapes), query_audio; ignores malformed, unknown and over-long lines', async () => {
     const sock = mk();
     const h = await start(sock);
-    const s: Socket = createConnection(sock);
+    const s: Socket = authed(sock);
     kills.push(() => s.destroy());
     const framer = new LineFramer();
     const events: Record<string, unknown>[] = [];
@@ -248,14 +296,14 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
   it('one client at a time: a new connection replaces the old; the UI goes idle when the client leaves', async () => {
     const sock = mk();
     const h = await start(sock);
-    const a = createConnection(sock);
+    const a = authed(sock);
     kills.push(() => a.destroy());
     let aClosed = false;
     let aData = '';
     a.on('data', (d) => (aData += d.toString()));
     a.on('close', () => (aClosed = true));
     await until(() => aData.includes('"hello"'));
-    const b = createConnection(sock);
+    const b = authed(sock);
     kills.push(() => b.destroy());
     let bData = '';
     b.on('data', (d) => (bData += d.toString()));
