@@ -45,7 +45,7 @@ describe('Canvas announcements text (src/accounts/canvas.ts formatAnnouncements)
         context_code: 'course_1',
       },
     ];
-    const lines = formatAnnouncements(items, new Map([['course_1', 'SOFE 3980U']]), { timeZone: TZ });
+    const lines = formatAnnouncements(items, new Map([['course_1', 'ABCD 1234']]), { timeZone: TZ });
     const block = accountBlock('canvas', 'Announcements:', lines);
     expect(lines).toHaveLength(1);
     expect(count(block, /<\/untrusted_account_data>/g)).toBe(1);
