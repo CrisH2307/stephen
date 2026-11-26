@@ -1124,6 +1124,20 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
   });
 
+  it('F9a: the setup sheet shows only fixed lines by code word, never runs the install command, and the status parser keeps an allow-list', () => {
+    const sheet = read('OnboardingSheet.swift');
+    const control = read('StephenControl.swift');
+    expect(sheet).not.toMatch(/Process\(|\.run\(\)|NSAppleScript|launchPath/); // the sheet runs nothing
+    expect(sheet).toContain('let CLAUDE_CODE_PAGE = "https://claude.com/claude-code"'); // the link only, as stephen setup and the guide
+    expect(sheet).not.toMatch(/npm install|curl |install\.sh|brew install/);
+    for (const w of ['missing', 'signed_out', 'ok', 'checking', 'no_launch_info']) expect(sheet).toContain(`case "${w}": return "`);
+    expect(sheet).toContain('Text(verbatim: claudeSetupLine(claude))');
+    expect(control).toContain('p.arguments = [info.cli, "setup", "--status"]');
+    expect(control).toContain('p.standardError = FileHandle.nullDevice');
+    expect(control).toContain('let SETUP_CLAUDE_WORDS: Set<String> = ["missing", "signed_out", "ok"]');
+    expect(read('MainWindow.swift')).toContain('@AppStorage("onboarded") private var onboarded = false');
+  });
+
   it('#189: Settings uses the Mac controls: every switch shows its label on the theme accent, no StephenSwitch', () => {
     const settings = read('SettingsPage.swift');
     const appearance = read('AppearanceSettings.swift');
