@@ -1,5 +1,5 @@
 // Stephen Helper: Settings > Appearance (UI-PLAN v3.1 section 8). The theme is stored in UserDefaults under the key
-// "theme" (light, dark, navy, rose, sun, or "mac" for Follow the Mac), as the temporary reading of it was. ThemeStore
+// "theme" (light, dark, navy, rose, sun, paper, or "mac" for Follow the Mac), as the temporary reading of it was. ThemeStore
 // is the one place that reads and writes it; the main window and the Ask box both observe it, so a change shows at once.
 
 import SwiftUI

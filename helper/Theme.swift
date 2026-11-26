@@ -7,7 +7,7 @@ import AppKit
 import SwiftUI
 
 enum ThemeName: String, CaseIterable, Identifiable {
-  case light, dark, navy, rose, sun
+  case light, dark, navy, rose, sun, paper
   var id: String { return rawValue }
   var title: String { return rawValue.capitalized }
 }
@@ -58,6 +58,13 @@ struct Theme: Equatable {
 
   var colorScheme: ColorScheme { return isDark ? .dark : .light }
 
+  /// Paper (the website's student look, #323): ink-outlined cards with a hard offset shadow, pill buttons.
+  var paper: Bool { return name == .paper }
+  /// The Ask box card's fill: lavender in Paper, else surface.
+  var askFill: Color { return paper ? Theme.lavender : surface }
+  /// Paper only: the pale blue block behind a question's quoted details.
+  static let lavender = Color(hex: 0xE7E1FF), sky = Color(hex: 0xD9ECFF)
+
   private static let okLight = Color(hex: 0x1E7A4F), warnLight = Color(hex: 0x8A5A00), badLight = Color(hex: 0xB42318)
   private static let okDark = Color(hex: 0x5CC28B), warnDark = Color(hex: 0xE0B04A), badDark = Color(hex: 0xF07167)
 
@@ -92,6 +99,12 @@ struct Theme: Equatable {
                    surface2: Color(hex: 0xF7F0D4), line: Color(hex: 0xEFE6C4), lineStrong: Color(hex: 0x91865E), ink: Color(hex: 0x221C08), ink2: Color(hex: 0x6B5F35),
                    primary: Color(hex: 0x3D3200), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0x7A5E00),
                    ok: okLight, warn: warnLight, bad: badLight, sidebar: Color(hex: 0xFBF5DC), selection: Color(hex: 0xEFECE0))
+    case .paper:
+      // The website's tokens (site/style.css, #323): paper ground, ink outlines, blue buttons, yellow selection.
+      return Theme(name: n, isDark: false, ground: Color(hex: 0xFBF8F1), surface: Color(hex: 0xFFFFFF),
+                   surface2: Color(hex: 0xF3EEE2), line: Color(hex: 0xE2DBC9), lineStrong: Color(hex: 0x15151A), ink: Color(hex: 0x15151A), ink2: Color(hex: 0x4A4A57),
+                   primary: Color(hex: 0x1F4FC4), primaryText: Color(hex: 0xFFFFFF), accent: Color(hex: 0x1F4FC4),
+                   ok: okLight, warn: warnLight, bad: badLight, sidebar: Color(hex: 0xF4EFE3), selection: Color(hex: 0xFFF1B8))
     }
   }
 }
@@ -146,6 +159,18 @@ enum TypeScale {
   static let eyebrow = Font.system(size: 12)
   static let mono = Font.system(size: 13, design: .monospaced)
 }
+
+extension View {
+  /// The Paper look: `fill`, a 2 pt `edge` (ink by default) and a hard shadow `pop` pt down-right, no blur.
+  func paperBox(_ t: Theme, fill: Color, radius: CGFloat, pop: CGFloat = 4, edge: Color? = nil) -> some View {
+    let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+    return background(shape.fill(fill).shadow(color: t.ink, radius: 0, x: pop, y: pop))
+      .overlay(shape.stroke(edge ?? t.ink, lineWidth: 2))
+  }
+}
+
+/// Paper's bold geometric sans for titles (Avenir Next ships with macOS; the website uses it too).
+func paperHead(_ size: CGFloat) -> Font { return Font.custom("Avenir Next", size: size).weight(.bold) }
 
 enum Motion {
   static let state: Double = 0.15
