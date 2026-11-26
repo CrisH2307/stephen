@@ -7,16 +7,20 @@ struct PrimaryButton: View {
   @Environment(\.stephenTheme) var t
   let title: String
   var symbol: String? = nil
+  var minWidth: CGFloat = 0
   let action: () -> Void
-  init(_ title: String, symbol: String? = nil, action: @escaping () -> Void) { self.title = title; self.symbol = symbol; self.action = action }
+  init(_ title: String, symbol: String? = nil, minWidth: CGFloat = 0, action: @escaping () -> Void) {
+    self.title = title; self.symbol = symbol; self.minWidth = minWidth; self.action = action
+  }
   var body: some View {
     Button(action: action) {
       HStack(spacing: 6) {
         if let s = symbol { Image(systemName: s).font(.system(size: 14)) }
-        Text(verbatim: title).font(TypeScale.body.weight(.medium))
+        Text(verbatim: title).font(TypeScale.body.weight(t.paper ? .semibold : .medium))
       }
+      .frame(minWidth: minWidth)
       .foregroundColor(t.primaryText).padding(.horizontal, Space.l).padding(.vertical, 8)
-      .background(RoundedRectangle(cornerRadius: Corner.button).fill(t.primary))
+      .modifier(ButtonFace(fill: t.primary))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain).accessibilityLabel(title)
@@ -29,21 +33,39 @@ struct QuietButton: View {
   let title: String
   var symbol: String? = nil
   var destructive: Bool = false
+  var minWidth: CGFloat = 0
   let action: () -> Void
-  init(_ title: String, symbol: String? = nil, destructive: Bool = false, action: @escaping () -> Void) {
-    self.title = title; self.symbol = symbol; self.destructive = destructive; self.action = action
+  init(_ title: String, symbol: String? = nil, destructive: Bool = false, minWidth: CGFloat = 0, action: @escaping () -> Void) {
+    self.title = title; self.symbol = symbol; self.destructive = destructive; self.minWidth = minWidth; self.action = action
   }
   var body: some View {
     Button(action: action) {
       HStack(spacing: 6) {
         if let s = symbol { Image(systemName: s).font(.system(size: 14)) }
-        Text(verbatim: title).font(TypeScale.body)
+        Text(verbatim: title).font(TypeScale.body.weight(t.paper ? .semibold : .regular))
       }
+      .frame(minWidth: minWidth)
       .foregroundColor(destructive ? t.bad : t.ink).padding(.horizontal, Space.l).padding(.vertical, 8)
-      .background(RoundedRectangle(cornerRadius: Corner.button).stroke(t.lineStrong, lineWidth: 1))
+      .modifier(ButtonFace(fill: nil))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain).accessibilityLabel(title)
+  }
+}
+
+/// A button's shape. Paper: a pill with an ink edge and a 3 pt hard shadow, the same for filled and outlined buttons,
+/// so Allow and Deny differ only in fill. Other themes: a filled or outlined rounded rectangle, as before.
+private struct ButtonFace: ViewModifier {
+  @Environment(\.stephenTheme) var t
+  let fill: Color?
+  func body(content: Content) -> some View {
+    if t.paper {
+      content.paperBox(t, fill: fill ?? t.surface, radius: 999, pop: 3)
+    } else if let fill {
+      content.background(RoundedRectangle(cornerRadius: Corner.button).fill(fill))
+    } else {
+      content.background(RoundedRectangle(cornerRadius: Corner.button).stroke(t.lineStrong, lineWidth: 1))
+    }
   }
 }
 
@@ -153,8 +175,21 @@ struct AskField: View {
       }
     }
     .padding(.horizontal, large ? Space.l : Space.m).padding(.vertical, large ? Space.l : 10)
-    .background(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).fill(t.surface))
-    .overlay(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).stroke(t.lineStrong, lineWidth: 1))
+    .modifier(FieldFace(radius: large ? Corner.askBox : Corner.list))
+  }
+}
+
+/// The ask input's box: Paper gives it the ink edge (no shadow); other themes the strong 1 pt outline.
+private struct FieldFace: ViewModifier {
+  @Environment(\.stephenTheme) var t
+  let radius: CGFloat
+  func body(content: Content) -> some View {
+    if t.paper {
+      content.paperBox(t, fill: t.surface, radius: radius, pop: 0)
+    } else {
+      content.background(RoundedRectangle(cornerRadius: radius).fill(t.surface))
+        .overlay(RoundedRectangle(cornerRadius: radius).stroke(t.lineStrong, lineWidth: 1))
+    }
   }
 }
 
