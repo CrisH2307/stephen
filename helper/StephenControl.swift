@@ -312,6 +312,31 @@ final class StephenControl: ObservableObject {
   }
   func openZen(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .zenOpen("c-zen"), done) }
   func runDoctor(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .doctorRun("c-doctor"), done) }
+
+  /**
+   * F9 onboarding: where Claude Code stands, from `stephen setup --status` (fixed argv from the launch info, no shell).
+   * `done` gets one of SETUP_CLAUDE_WORDS, or "unknown": never the command's own output, which the sheet does not show.
+   */
+  func setupStatus(_ done: @escaping (String) -> Void) {
+    guard let info = readLaunchInfo() else { return done("no_launch_info") }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: info.node)
+    p.arguments = [info.cli, "setup", "--status"]
+    var env = ProcessInfo.processInfo.environment
+    if !info.path.isEmpty { env["PATH"] = info.path }
+    env["STEPHEN_HOME"] = home
+    p.environment = env
+    p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+    p.standardInput = FileHandle.nullDevice
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = FileHandle.nullDevice
+    p.terminationHandler = { _ in
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      DispatchQueue.main.async { done(setupClaudeWord(data)) }
+    }
+    do { try p.run() } catch { done("unknown") }
+  }
   /** Settings > Speed: the latency report (ids and numbers only); quick, so a short timeout. */
   func latency(_ done: @escaping (AppMessage) -> Void) {
     appRequestOnce(appSocketPath, .latencyGet("c-latency"), timeout: APP_REQUEST_TIMEOUT_SECONDS, done)
@@ -354,4 +379,17 @@ final class StephenControl: ObservableObject {
     logLines.append(contentsOf: parts)
     if logLines.count > LISTEN_LOG_MAX_LINES { logLines.removeFirst(logLines.count - LISTEN_LOG_MAX_LINES) }
   }
+}
+
+
+/** The code words `stephen setup --status` may give for Claude Code (src/setup.ts SetupStatus). */
+let SETUP_CLAUDE_WORDS: Set<String> = ["missing", "signed_out", "ok"]
+
+/** `{"claude":"…"}` → its word if it is one of ours, else "unknown". Pure. */
+func setupClaudeWord(_ data: Data) -> String {
+  guard data.count <= 1024,
+    let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let w = j["claude"] as? String, SETUP_CLAUDE_WORDS.contains(w)
+  else { return "unknown" }
+  return w
 }
