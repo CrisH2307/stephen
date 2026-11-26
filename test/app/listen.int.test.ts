@@ -37,7 +37,7 @@ class EndlessSource implements AudioSource {
 const kws = await prepareKwsModel();
 
 describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
-  function start(app: Record<string, unknown> = {}, home = mkdtempSync(join(tmp, 'home-')), safety?: { blockedDomains: string[]; sensitiveDomains: string[] }) {
+  function start(app: Record<string, unknown> = {}, home = mkdtempSync(join(tmp, 'home-')), safety?: { blockedDomains: string[]; sensitiveDomains: string[] }, extra: Partial<ListenEnv> = {}) {
     const root = mkdtempSync(join(tmp, 'models-'));
     symlinkSync(join(kws.ok ? kws.root : '', KWS_MODEL.dir), join(root, KWS_MODEL.dir));
     fakeInstall(root, VAD_MODEL);
@@ -59,6 +59,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
       helper: () => null,
       source,
       engines: async () => ({ spotter: new ScriptedSpotter({}), vad: new FakeVad(), transcriber: new FakeTranscriber([]) }),
+      ...extra,
     };
     const running = runListen(['--dry-run', '--no-helper'], e);
     return { home, source, out, err, running };
@@ -106,6 +107,36 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
       expect(byUrl(u)).not.toHaveProperty('intent');
     }
     expect(byUrl('https://www.youtube.com')).toMatchObject({ element: 'row "your code is 771204"', intent: 'open the code mail' });
+    c.close();
+    await t.source.stop();
+    expect(await t.running).toBe(0);
+  });
+
+  it('T6 step 3: the owner\'s sensitive sites reach the chat steps path, so chat.done hides their label and error', async () => {
+    const home = mkdtempSync(join(tmp, 'steps-'));
+    // A dry run can end in 0 ms, and a 0 ms command reads no steps. Its argv line is printed inside the command, so a
+    // 20 ms pause there gives the command a real window that covers the lines written just before it.
+    const out = (l: string) => {
+      if (!l.includes('claude argv (dry run)')) return;
+      const until = Date.now() + 20;
+      while (Date.now() < until);
+    };
+    const t = start({}, home, { blockedDomains: [], sensitiveDomains: ['intranet.example.org'] }, { out });
+    const sock = appSocketPath(t.home);
+    await waitFor(() => existsSync(sock), 10_000, 'app.sock');
+    const c = await TestClient.connect(sock);
+    await c.request({ id: 'h', type: 'hello', version: '1' });
+    await c.waitFor((m) => m.type === 'state' && m.state === 'listening');
+    // Lines stamped now fall inside the typed command's window (no command id: matched by time).
+    const line = (url: string, el: string) => JSON.stringify({ ts: new Date().toISOString(), tool: 'click', kind: 'click', urlBefore: url, element: el, error: 'page said 771204', outcome: 'error' });
+    writeFileSync(join(home, 'audit.log'), [line('https://intranet.example.org/x', 'row "your code is 771204"'), line('https://www.youtube.com/', 'row "lo-fi radio"')].join('\n') + '\n');
+    const a = await c.request({ id: 'c', type: 'chat.send', text: 'open youtube' });
+    const done = (await c.waitFor((m) => m.type === 'chat.done' && m.entryId === a.entryId)) as unknown as { steps?: { text: string; status: string }[] };
+    // Same time stamp on both lines, so the order is not part of the check.
+    expect(done.steps).toHaveLength(2);
+    expect(done.steps).toContainEqual({ text: 'Tried click, it failed', status: 'failed' });
+    expect(done.steps).toContainEqual({ text: 'Tried click row "lo-fi radio", it failed', status: 'failed' });
+    expect(JSON.stringify(done)).not.toContain('771204');
     c.close();
     await t.source.stop();
     expect(await t.running).toBe(0);
