@@ -360,6 +360,26 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(box).toContain('", almost full"');
   });
 
+  // R7: loading, error and empty in words. A failed list never reads as "Nothing yet", and never shows raw "error".
+  it('Conversations shows loading, error with Refresh, and empty only after a good list', () => {
+    const conv = read('ConversationsPage.swift');
+    expect(client).toContain('@Published private(set) var historyListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshHistory()'), client.indexOf('func loadOlderHistory('));
+    expect(refresh).toContain('self.assign(\\.historyListOk, true)');
+    expect(refresh).toContain('self.assign(\\.historyListOk, false)');
+    expect(refresh).not.toContain('msg.message ?? "error"');
+    // Clearing the history is a good empty list, not a failed one.
+    const clear = client.slice(client.indexOf('func clearHistory()'), client.indexOf('var historyDays'));
+    expect(clear).toContain('self.historyListOk = true');
+    // Loading only before the first answer with no rows; error with Refresh (ADR-007: no "Try again" on this page, it
+    // could read as re-running a command); empty only after a good list.
+    expect(conv).toContain('if model.history.isEmpty && model.historyListOk == nil {');
+    expect(conv).toMatch(/historyListOk == false \{[\s\S]*CONVERSATIONS_LIST_FAILED[\s\S]*QuietButton\("Refresh"[^\n]*model\.refreshHistory\(\)/);
+    expect(conv).toMatch(/if model\.historyListOk == true \{\s*Text\(verbatim: CONVERSATIONS_EMPTY\)/);
+    expect(conv).toContain('let CONVERSATIONS_LIST_FAILED = "Couldn\'t load your conversations right now."');
+    expect(conv).not.toMatch(/if model\.history\.isEmpty \{\s*Text\(verbatim: CONVERSATIONS_EMPTY\)/);
+  });
+
   it('R10a-2 (#94): Try again re-sends only a typed bubble; spoken and phone bubbles show where they came from', () => {
     const chat = read('Components/ChatThread.swift');
     // The one guard: the last said bubble, and only when it has no source label. No fallback to an older typed one.
@@ -1407,7 +1427,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
     const conv = read('ConversationsPage.swift');
     expect(conv).toContain('Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")');
-    expect(conv).toContain('Text(verbatim: "Nothing yet. Ask Stephen something and it shows here.")');
+    expect(conv).toContain('let CONVERSATIONS_EMPTY = "Nothing yet. Ask Stephen something and it shows here."');
     // Chips: All, Refused, Failed, drawn with Memory's Tag.
     expect(conv).toMatch(/let CONVERSATION_FILTERS = \[\s*MemoryFilter\(id: "all", title: "All"\), MemoryFilter\(id: "refused", title: "Refused"\), MemoryFilter\(id: "failed", title: "Failed"\),\s*\]/);
     expect(conv).toContain('ForEach(CONVERSATION_FILTERS) { f in Tag(f.title, selected: filter == f.id) { filter = f.id }.fixedSize() }');
