@@ -3,64 +3,76 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stephen: a voice assistant for your Mac</title>
+<title>Stephen: talk to your Mac</title>
 <meta name="description" content="Stephen is a voice assistant for your Mac and browser. It asks before anything risky.">
+<meta name="theme-color" content="#0F1B33">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><div class="wrap">
-<strong>Stephen</strong>
-<nav aria-label="Main" style="display:flex;gap:18px;flex-wrap:wrap">
-<a href="index.html" aria-current="page">Home</a>
-<a href="beta.html">Get the beta</a>
-<a href="privacy.html">Privacy</a>
-<a href="https://github.com/CrisH2307/stephen">GitHub</a>
-</nav>
-</div></header>
-<main><div class="wrap">
-<h1>Stephen is a voice assistant for your Mac and browser. It asks before anything risky.</h1>
-<p class="lede">Say "Hey Stephen, open YouTube." Or hold F5 and talk.</p>
-<p class="note">Stephen is in a friends beta. It is early, and some things are slow. <a href="beta.html">How to get the beta</a>.</p>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap top">
+  <a class="mark" href="index.html" aria-current="page"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>Stephen</a>
+  <nav aria-label="Main">
+    <a href="beta.html">Get the beta</a>
+    <a href="privacy.html">Privacy</a>
+    <a class="gh" href="https://github.com/CrisH2307/stephen">GitHub</a>
+  </nav>
+</header>
 
-<h2>Voice control of your Mac and browser</h2>
-<ul>
-<li>Say "Hey Stephen", or hold F5, then speak.</li>
-<li>Stephen works in your own Zen or Chrome, signed in as you.</li>
-<li>It can do several steps from one sentence, like "what's due on Canvas this week, and put on some lofi".</li>
-<li>It answers in one or two spoken sentences.</li>
-<li>It can read Canvas, your calendar, Notion and Gmail. These reads are read-only.</li>
-<li>Honest limit: "Hey Stephen" is slow today (about 9.6 seconds, median). Holding F5 is faster (about 2 seconds, median).</li>
-</ul>
+<main id="main" class="wrap">
+  <section class="hero">
+    <div>
+      <h1>Talk to your Mac. Stay in charge.</h1>
+      <p class="lede">Stephen is a voice assistant for your Mac and browser. Say "Hey Stephen" or hold F5. It asks before anything risky.</p>
+      <div class="cta">
+        <a class="btn" href="beta.html">Get the beta</a>
+        <span class="small">Friends beta. Open source.</span>
+      </div>
+    </div>
 
-<h2>It asks first, and page text is never an order</h2>
-<ul>
-<li>Risky actions stop at a Mac dialog. A spoken "yes" never counts. Allow and Deny are clicks only.</li>
-<li>Web pages, emails and Canvas posts are treated as data. The model cannot write memory or timers. It can start a job only from the phone link, after you approve the exact task on your phone.</li>
-<li>After Stephen reads something private, it asks before it sends anything out.</li>
-<li>The wake word gets less trust than F5, because a video could say "Hey Stephen".</li>
-</ul>
-<p>Stephen is designed and tested to resist prompt injection. It has thousands of automated tests, an attack test with a real model, and independent reviews. We do not claim it cannot be tricked. The open safety items are listed in the repo.</p>
+    <figure class="demo">
+      <div class="box play" role="img" aria-label="Drawing: you ask Stephen to book a study room. It opens the page and fills in the form, then asks you before it clicks the button. You choose Allow or Deny.">
+        <div class="strip"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg><b>Stephen</b></div>
+        <div class="said">Book study room 2 at the library for 3 pm.<small>Push to talk (F5)</small></div>
+        <ul class="steps">
+          <li>Opened the library page</li>
+          <li>Filled in room 2, 3 pm</li>
+        </ul>
+        <div class="ask">
+          <p>Stephen wants to click a button</p>
+          <p class="site">Site: library.school.example</p>
+          <div class="buttons"><span>Deny</span><span class="allow">Allow</span></div>
+        </div>
+      </div>
+      <figcaption>A simple drawing of the Ask box. The site is an example.</figcaption>
+    </figure>
+  </section>
 
-<h2>Your speech stays on your Mac</h2>
-<ul>
-<li>The wake word, end-of-sentence detection and transcription run on your Mac. Your audio does not leave it.</li>
-<li>Claude gets the text of your command, plus what Stephen reads to answer it (a page, an email).</li>
-<li>Nothing is sent to us. Stephen has no server.</li>
-<li>Passwords and tokens stay in the macOS Keychain and are never shown to the model.</li>
-</ul>
-<p>The full list of what is stored, for how long, and how to delete it is on the <a href="privacy.html">privacy page</a>.</p>
+  <section class="promises" aria-label="Three promises">
+    <div>
+      <h2>It asks first.</h2>
+      <p>Sending, submitting and other risky steps wait for your click on Allow. A spoken yes never counts.</p>
+    </div>
+    <div>
+      <h2>Pages are data, not orders.</h2>
+      <p>Web pages and emails are read as data, never as your words. Stephen is built and tested to resist hidden orders.</p>
+    </div>
+    <div>
+      <h2>Your speech stays on your Mac.</h2>
+      <p>Speech to text runs on the Mac. Claude gets the text of your request through your own account. Stephen has no server.</p>
+    </div>
+  </section>
 
-<h2>What Stephen is not</h2>
-<ul>
-<li>Not a chatbot. One spoken request, one short spoken answer.</li>
-<li>Not for Windows or Linux. It needs macOS 14 or newer.</li>
-<li>Not one-click yet. Setup is a few Terminal commands and three Mac permission screens.</li>
-<li>Not free of cost. It runs on your own Claude plan.</li>
-<li>Not signed or notarized yet. After an update, macOS may ask for permissions again.</li>
-<li>Not an official Anthropic product. The AI behind Stephen is Claude.</li>
-</ul>
-<p>The code is on <a href="https://github.com/CrisH2307/stephen">GitHub</a> under the MIT license.</p>
-</div></main>
-<footer><div class="wrap">Stephen is open source under the MIT license. It is not an official Anthropic product.</div></footer>
+  <section class="close">
+    <h2>Try the friends beta.</h2>
+    <p>It is early, and some things are slow. You need a Mac with Apple silicon, macOS 14 or newer, and your own Claude plan.</p>
+    <a class="btn" href="beta.html">Get the beta</a>
+  </section>
+</main>
+
+<footer><div class="wrap">
+  <span>Open source under the MIT license. Not an official Anthropic product.</span>
+  <span class="links"><a href="privacy.html">Privacy</a><a href="https://github.com/CrisH2307/stephen">GitHub</a></span>
+</div></footer>
 </body>
 </html>
