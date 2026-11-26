@@ -664,7 +664,8 @@ export async function main(argv: string[]): Promise<number> {
     case 'setup':
       if (rest.length === 1 && rest[0] === '--status') {
         // F9: one JSON line of code words for the onboarding sheet; nothing else is printed.
-        console.log(JSON.stringify(await setupStatus({ runClaude: defaultRunClaude })));
+        const { voiceModelsReady } = await import('./voice/index.js');
+        console.log(JSON.stringify(await setupStatus({ runClaude: defaultRunClaude, modelsReady: () => voiceModelsReady() })));
         return 0;
       }
       return setup();

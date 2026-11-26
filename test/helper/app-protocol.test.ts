@@ -1138,6 +1138,18 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('MainWindow.swift')).toContain('@AppStorage("onboarded") private var onboarded = false');
   });
 
+  it('F9b: the models step streams code-word progress only and shows fixed lines', () => {
+    const sheet = read('OnboardingSheet.swift');
+    const control = read('StephenControl.swift');
+    expect(control).toContain('p.arguments = [info.cli, "voice-setup", "--json-progress"]');
+    expect(control).toContain('let MODEL_EVENTS: Set<String> = ["downloading", "extracting", "installed", "done", "failed"]');
+    expect(control.match(/p\.standardError = FileHandle\.nullDevice/g)?.length).toBeGreaterThanOrEqual(2);
+    for (const e of ['downloading', 'extracting', 'installed', 'failed']) expect(sheet).toContain(`case "${e}": return "`);
+    expect(sheet).toContain('Text(verbatim: modelSetupLine(models, progress))');
+    expect(sheet).toContain('PrimaryButton(progress?.event == "failed" ? "Retry" : "Download")');
+    expect(sheet).toContain('.frame(width: 560, height: 540'); // fits the 860 x 640 minimum window
+  });
+
   it('#189: Settings uses the Mac controls: every switch shows its label on the theme accent, no StephenSwitch', () => {
     const settings = read('SettingsPage.swift');
     const appearance = read('AppearanceSettings.swift');

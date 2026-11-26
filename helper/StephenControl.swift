@@ -317,8 +317,8 @@ final class StephenControl: ObservableObject {
    * F9 onboarding: where Claude Code stands, from `stephen setup --status` (fixed argv from the launch info, no shell).
    * `done` gets one of SETUP_CLAUDE_WORDS, or "unknown": never the command's own output, which the sheet does not show.
    */
-  func setupStatus(_ done: @escaping (String) -> Void) {
-    guard let info = readLaunchInfo() else { return done("no_launch_info") }
+  func setupStatus(_ done: @escaping (String, String) -> Void) {
+    guard let info = readLaunchInfo() else { return done("no_launch_info", "unknown") }
     let p = Process()
     p.executableURL = URL(fileURLWithPath: info.node)
     p.arguments = [info.cli, "setup", "--status"]
@@ -333,9 +333,45 @@ final class StephenControl: ObservableObject {
     p.standardError = FileHandle.nullDevice
     p.terminationHandler = { _ in
       let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      DispatchQueue.main.async { done(setupClaudeWord(data)) }
+      DispatchQueue.main.async { done(setupClaudeWord(data), setupModelsWord(data)) }
     }
-    do { try p.run() } catch { done("unknown") }
+    do { try p.run() } catch { done("unknown", "unknown") }
+  }
+
+  /**
+   * F9b: `stephen voice-setup --json-progress`, streamed. Each line becomes a ModelProgress (code words and numbers
+   * only; any other line is dropped). `done(true)` when it finished, `done(false)` when it failed or could not start.
+   */
+  func voiceSetup(progress: @escaping (ModelProgress) -> Void, done: @escaping (Bool) -> Void) {
+    guard let info = readLaunchInfo() else { return done(false) }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: info.node)
+    p.arguments = [info.cli, "voice-setup", "--json-progress"]
+    var env = ProcessInfo.processInfo.environment
+    if !info.path.isEmpty { env["PATH"] = info.path }
+    env["STEPHEN_HOME"] = home
+    p.environment = env
+    p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+    p.standardInput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    var pending = Data()
+    pipe.fileHandleForReading.readabilityHandler = { h in
+      let chunk = h.availableData
+      if chunk.isEmpty { h.readabilityHandler = nil; return }
+      pending.append(chunk)
+      while let nl = pending.firstIndex(of: 10) {
+        let line = pending[pending.startIndex..<nl]
+        pending = Data(pending[(nl + 1)...])
+        if let ev = parseModelProgress(Data(line)) { DispatchQueue.main.async { progress(ev) } }
+      }
+      if pending.count > 4096 { pending.removeAll() }  // no line is this long: drop it
+    }
+    p.terminationHandler = { proc in
+      DispatchQueue.main.async { done(proc.terminationStatus == 0) }
+    }
+    do { try p.run() } catch { done(false) }
   }
   /**
    * F12 "Report a problem…": run `stephen report --copy`, which puts the incident text (ids, versions and code words
@@ -415,6 +451,36 @@ final class StephenControl: ObservableObject {
 
 /** The code words `stephen setup --status` may give for Claude Code (src/setup.ts SetupStatus). */
 let SETUP_CLAUDE_WORDS: Set<String> = ["missing", "signed_out", "ok"]
+
+/** `{"models":"…"}` → "missing" or "ok", else "unknown". Pure. */
+func setupModelsWord(_ data: Data) -> String {
+  guard data.count <= 1024, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let w = j["models"] as? String, w == "missing" || w == "ok"
+  else { return "unknown" }
+  return w
+}
+
+/** One progress step of the model download (src/voice/models.ts ModelEvent, plus done and failed). */
+struct ModelProgress: Equatable {
+  let event: String
+  let index: Int
+  let total: Int
+  let mb: Int
+}
+
+let MODEL_EVENTS: Set<String> = ["downloading", "extracting", "installed", "done", "failed"]
+
+/** A `--json-progress` line → ModelProgress, or nil for anything else (unknown events, odd numbers). Pure. */
+func parseModelProgress(_ data: Data) -> ModelProgress? {
+  guard data.count <= 512, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let e = j["event"] as? String, MODEL_EVENTS.contains(e)
+  else { return nil }
+  let n = { (k: String) -> Int in
+    guard let v = j[k] as? NSNumber, v.doubleValue >= 0, v.doubleValue <= 100_000 else { return 0 }
+    return v.intValue
+  }
+  return ModelProgress(event: e, index: n("index"), total: n("total"), mb: n("mb"))
+}
 
 /** `{"claude":"…"}` → its word if it is one of ours, else "unknown". Pure. */
 func setupClaudeWord(_ data: Data) -> String {
