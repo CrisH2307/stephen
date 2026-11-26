@@ -1,19 +1,18 @@
 // F9 first-run setup in the Stephen window (docs/ARCHITECTURE-PLAN.md F9). F9a: Claude Code present and signed in.
 // Every line here is Stephen's own fixed text, chosen by a code word from `stephen setup --status`; nothing from Claude
-// Code, a page or the network is shown (#382, #390). The install command is shown with Copy and is never run.
+// Code, a page or the network is shown (#382, #390). Installing is the person's: the sheet only opens the official page
+// (the same link as `stephen setup` and docs/guide/GETTING-STARTED.md), it never shows or runs an install command.
 
 import AppKit
 import SwiftUI
 
-/** The official install command, shown for the person to paste into Terminal. Stephen never runs it. */
-let CLAUDE_INSTALL_COMMAND = "npm install -g @anthropic-ai/claude-code"
 let CLAUDE_CODE_PAGE = "https://claude.com/claude-code"
 
 /** The fixed line for each code word. Pure (tested from the TypeScript side by reading this file). */
 func claudeSetupLine(_ word: String) -> String {
   switch word {
   case "checking": return "Checking Claude Code..."
-  case "missing": return "Claude Code is not on this Mac yet. Open Terminal, paste the command below, press Return, then press Check again."
+  case "missing": return "Claude Code is not on this Mac yet. Open its page, follow the install steps there, then press Check again."
   case "signed_out": return "Claude Code is installed but not signed in. Open Terminal, type claude, press Return and sign in. Then press Check again."
   case "ok": return "Claude Code is ready and signed in."
   case "no_launch_info": return "Stephen Helper doesn't know where Stephen is yet. Run stephen install-helper once in Terminal, then press Check again."
@@ -59,10 +58,9 @@ struct OnboardingSheet: View {
         Text(verbatim: "Claude Code").font(TypeScale.section).foregroundColor(t.ink)
       }
       Text(verbatim: claudeSetupLine(claude)).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
-      if claude == "missing" { command(CLAUDE_INSTALL_COMMAND) }
       if claude == "signed_out" { command("claude") }
       if claude == "missing" {
-        QuietButton("Read about Claude Code") { if let u = URL(string: CLAUDE_CODE_PAGE) { _ = NSWorkspace.shared.open(u) } }
+        PrimaryButton("Open the Claude Code page") { if let u = URL(string: CLAUDE_CODE_PAGE) { _ = NSWorkspace.shared.open(u) } }
       }
     }
     .padding(Space.m)

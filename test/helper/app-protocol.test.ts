@@ -1128,7 +1128,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const sheet = read('OnboardingSheet.swift');
     const control = read('StephenControl.swift');
     expect(sheet).not.toMatch(/Process\(|\.run\(\)|NSAppleScript|launchPath/); // the sheet runs nothing
-    expect(sheet).toContain('let CLAUDE_INSTALL_COMMAND = "npm install -g @anthropic-ai/claude-code"');
+    expect(sheet).toContain('let CLAUDE_CODE_PAGE = "https://claude.com/claude-code"'); // the link only, as stephen setup and the guide
+    expect(sheet).not.toMatch(/npm install|curl |install\.sh|brew install/);
     for (const w of ['missing', 'signed_out', 'ok', 'checking', 'no_launch_info']) expect(sheet).toContain(`case "${w}": return "`);
     expect(sheet).toContain('Text(verbatim: claudeSetupLine(claude))');
     expect(control).toContain('p.arguments = [info.cli, "setup", "--status"]');
