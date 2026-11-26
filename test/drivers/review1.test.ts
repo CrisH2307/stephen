@@ -41,6 +41,7 @@ function zen(deps: Partial<ZenDriverDeps>): { driver: ZenDriver; connects: Conne
   const out = { driver: undefined as unknown as ZenDriver, connects: [] as ConnectOptions[], spawns: 0 };
   out.driver = new ZenDriver(tc.cfg, {
     isExecutable: async () => true,
+    otherUserCount: async () => 0, // B5: a single-user Mac unless a test says otherwise
     isProcessRunning: async () => false,
     isPidAlive: () => false,
     listenTimeoutMs: 300,

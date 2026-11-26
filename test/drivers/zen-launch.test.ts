@@ -102,6 +102,7 @@ function launchHarness(o: {
   if (o.realDriver) {
     h.driver = new ZenDriver(tc.cfg, {
       resolveRealProfile: async () => profile,
+      otherUserCount: async () => 0, // B5: a single-user Mac unless a test says otherwise
       isExecutable: async () => true,
       isProcessRunning: async () => false,
       isPidAlive: () => false,

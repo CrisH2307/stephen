@@ -43,6 +43,7 @@ import {
 } from './util.js';
 import { DriverBase, watchLaunch } from './common.js';
 import { ensurePrivateDir, isExecutable } from '../lib/fs.js';
+import { otherUserCount, sharedMacReason } from '../lib/other-users.js';
 import { isPidAlive } from '../lib/process.js';
 
 export interface ZenDriverDeps {
@@ -55,6 +56,8 @@ export interface ZenDriverDeps {
   resolveRealProfile: (cfg: ResolvedConfig) => Promise<string | null>;
   /** Does something answer at this ws:// endpoint? (TCP only — never opens a BiDi session.) */
   probeEndpoint: (wsUrl: string) => Promise<boolean>;
+  /** Other user accounts on this Mac, or null when unknown (B5: a shared Mac never gets Zen's open port). */
+  otherUserCount: () => Promise<number | null>;
   /** How long to wait for the "WebDriver BiDi listening" line (first launch after an update is slow). */
   listenTimeoutMs: number;
   /** This server's pid, recorded as the owner of the BiDi session. */
@@ -75,6 +78,7 @@ const DEFAULT_DEPS: ZenDriverDeps = {
   isPidAlive,
   resolveRealProfile: resolveZenRealProfile,
   probeEndpoint: (wsUrl) => probeWsEndpoint(wsUrl),
+  otherUserCount: () => otherUserCount(),
   listenTimeoutMs: 60_000,
   ownerPid: process.pid,
   connectTimeoutMs: 20_000,
@@ -590,6 +594,13 @@ export class ZenDriver extends DriverBase {
         'NOT_CONNECTED',
         `Zen was not found at ${exe}. Install Zen (zen-browser.app), or set "zen.executablePath" in ~/.stephen/config.json to the binary inside Zen.app/Contents/MacOS/.`,
       );
+    }
+    // B5 (until ADR-009): the port Zen opens has no password, so on a Mac with other accounts (or when that cannot be
+    // checked) Stephen never starts it. Every Zen Stephen starts goes through here (zen-launch and launch "auto").
+    const others = await this.#deps.otherUserCount();
+    if (others !== 0) {
+      this.detail = 'Not started: this Mac has other user accounts.';
+      throw new HubError('NEEDS_USER', sharedMacReason(others));
     }
     await ensurePrivateDir(this.#cfg.stateDir, this.#cfg.home);
     const logPath = this.#logPath(mode);
