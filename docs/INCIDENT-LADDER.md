@@ -74,7 +74,7 @@ does not run the script.
 | Author allow-list by user id | `user.id` from the GitHub API is checked first. A skipped issue is never parsed. Today only 119613966. |
 | 10-minute edit window | Uses the body's last edit time (GraphQL `lastEditedAt`, else `createdAt`), not `updated_at`, so comments cannot delay it. A new body starts over. |
 | Strict parser, issue text is data | `parseIncidentIssue` from #330 with its fuzz test. Titles, comments and free text never reach a model. |
-| Read-only | L1 has no tools. L2 to L4 get only Read, Grep and Glob, in a temp copy of `qa` outside home. Correction: the Seatbelt sandbox only covers Bash in Claude Code, and these levels have no Bash, so it adds nothing here. The limits are the tool list, `blockReadsOutsideWorkingDirectories`, deny rules for reads under `~` (`withHomeDeny`, added to the job settings in the script), `--strict-mcp-config` with an empty config, `--setting-sources ""`, and env from `withoutSecrets` (no `GH_TOKEN`). Canary (2026-11-25, real `claude -p`, Haiku, the same flags): reads of `~/.claude.json`, `~/.stephen` and `/etc/hosts` were refused; a read of a file in the copy worked; the init event lists Glob, Grep, Read and StructuredOutput, and no MCP servers. The init event also names the builtin plugins and skill names, but there is no Skill tool. |
+| Read-only | L1 has no tools. L2 to L4 get only Read, Grep and Glob, in a temp copy of `qa` outside home. Correction: the Seatbelt sandbox only covers Bash in Claude Code, and these levels have no Bash, so it adds nothing here. The limits are the tool list, `blockReadsOutsideWorkingDirectories`, deny rules for reads under `~` (`withHomeDeny`, added to the job settings in the script), `--strict-mcp-config` with an empty config, `--setting-sources ""`, and env from `withoutSecrets` (no `GH_TOKEN`). Canary (2026-11-25, real `claude -p`, Haiku, the same flags): reads of `~/.claude.json`, `~/.stephen` and `/etc/hosts` were refused; a read of a file in the copy worked; the init event lists Glob, Grep, Read and StructuredOutput, and no MCP servers. The init event also names the builtin plugins and skill names, but there is no Skill tool. Second canary (2026-11-26, #368, same flags): a read of a file in `/private/tmp` was refused (outside the copy, `blockReadsOutsideWorkingDirectories`); the read in the copy worked; tools Glob, Grep, Read and StructuredOutput, no MCP servers. |
 | Strict answer check | `checkFindings`. All model text (cause and summary) sits inside one code block. Nothing the model wrote goes to #274. |
 | AUTO_FIX off | No fix path at all. A fix is a normal lane task. |
 | Daily cap | See caps above. |
@@ -117,9 +117,45 @@ Default without his answer: his normal login, fixed commands only.
 
 ## Later
 
-- A launchd timer, so the script runs on a schedule. Cris: try later, once the script is stable by hand.
+- A launchd timer: ready below (#368), for Cris to turn on once the script is stable by hand.
 - A canary test with the real CLI: the ladder's `claude -p` cannot read outside the copy, run Bash, reach an MCP
   tool or an account connector (read the init event's tool list).
+
+## Run it every 10 minutes (launchd, Cris turns it on)
+
+Standing config on Cris's Mac, so Cris installs it himself. The daily caps stay (2 runs per issue, 6 Claude runs a day,
+counted from the comments), and launchd never starts a second copy while one is still running.
+
+1. Save this as `~/Library/LaunchAgents/com.stephen.incident-ladder.plist`, with `REPO` replaced by the full path of
+   a separate Stephen clone kept on `qa` (not the checkout the agents work in), and `USER` by your Mac user name
+   (launchd does not expand `~`). The log stays in your own Library, where no other user can plant a link:
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+     <key>Label</key><string>com.stephen.incident-ladder</string>
+     <key>ProgramArguments</key>
+     <array><string>/bin/zsh</string><string>-lc</string><string>cd "REPO" &amp;&amp; npm run incident-ladder</string></array>
+     <key>StartInterval</key><integer>600</integer>
+     <key>RunAtLoad</key><false/>
+     <key>StandardOutPath</key><string>/Users/USER/Library/Logs/stephen-incident-ladder.log</string>
+     <key>StandardErrorPath</key><string>/Users/USER/Library/Logs/stephen-incident-ladder.log</string>
+   </dict>
+   </plist>
+   ```
+
+   `zsh -l` loads Cris's own PATH, so `node`, `npm`, `gh` and `claude` are found as in Terminal. To use the free first
+   level, add `export INCIDENT_L1_MODEL=gpt-oss-120b; ` before `cd` (see #367).
+2. Turn it on: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stephen.incident-ladder.plist`
+3. Check it: `tail ~/Library/Logs/stephen-incident-ladder.log` after 10 minutes. With no incident it prints
+   `No open incident issues from an allowed author.`
+4. Turn it off: `launchctl bootout gui/$(id -u)/com.stephen.incident-ladder`
+
+The script builds from the clone it runs in and reads `origin/qa`. Use a separate clone for the timer (for example
+`git clone https://github.com/CrisH2307/stephen ~/stephen-ladder`, then `git checkout qa` there and `npm install` once),
+so an agent's branch in the shared checkout never runs on the timer.
 
 ## Needs Cris's OK
 
