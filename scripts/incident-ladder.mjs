@@ -107,7 +107,7 @@ async function runL1(lines, codeText, fileOk) {
 }
 
 /** L1b: one OpenCode Zen free model, only when L1a gave no draft. No tools: an empty dir, a scrubbed env and a config
- * that denies everything (XDG_CONFIG_HOME too, so no global MCP or plugin loads). Null when it fails or fails the check. */
+ * that denies everything (HOME and XDG dirs too, so no global MCP, plugin or ~/.claude file loads). Null when it fails or fails the check. */
 async function runL1b(lines, codeText, fileOk, work) {
   const model = pickL1bModel(process.env.INCIDENT_L1B_MODEL);
   if (!model) {
@@ -124,7 +124,20 @@ async function runL1b(lines, codeText, fileOk, work) {
     await writeFile(configFile, JSON.stringify(OPENCODE_L1B_CONFIG), { mode: 0o600 });
     const out = await run('opencode', opencodeArgs(model, l1Prompt(lines, codeText)), {
       cwd: empty,
-      env: { ...withoutSecrets(process.env), OPENCODE_CONFIG: configFile, XDG_CONFIG_HOME: conf },
+      // The real HOME would let OpenCode add ~/.claude/CLAUDE.md and skills to the prompt: HOME and the XDG dirs point
+      // into the temp dir, and the OPENCODE_DISABLE_* names (read from the installed opencode 2.3.2) turn that off too.
+      env: {
+        ...withoutSecrets(process.env),
+        HOME: dir,
+        XDG_CONFIG_HOME: conf,
+        XDG_DATA_HOME: join(dir, 'data'),
+        OPENCODE_CONFIG: configFile,
+        OPENCODE_DISABLE_CLAUDE_CODE: '1',
+        OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: '1',
+        OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
+        OPENCODE_DISABLE_PROJECT_CONFIG: '1',
+        OPENCODE_DISABLE_AUTOUPDATE: '1',
+      },
       timeout: L1_TIMEOUT_MS,
     });
     const text = opencodeText(out);
