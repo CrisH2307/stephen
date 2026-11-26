@@ -55,6 +55,7 @@ function world(answers: string[], o: Partial<DeleteDeps> = {}) {
       return s === 'stephen-canvas' ? 'deleted' : 'missing';
     },
     transcriptDir,
+    envFiles: [],
     out: (l) => out.push(l),
     err: (l) => out.push(`ERR ${l}`),
     ...o,
@@ -76,7 +77,7 @@ describe('stephen data delete --all (R10)', () => {
     expect(w.asked).toEqual(['Delete all of this? [y/N] ', expect.stringContaining('It holds your job output files. [y/N]')]);
     expect(w.out).toContain('Deleted the Keychain item stephen-canvas.');
     expect(w.out.some((l) => l.startsWith('Deleted ~/.stephen'))).toBe(true);
-    expect(w.out).toContain('Kept ~/Stephen Jobs.');
+    expect(w.out).toContain('  ~/Stephen Jobs: your job output files.');
   });
 
   it('the job folder goes only after its own yes', async () => {
@@ -165,5 +166,44 @@ describe('stephen data delete --all (R10)', () => {
     const w = world(['y', 'n'], { deleteKeychain: async () => 'locked' });
     expect(await deleteAllData(w.deps)).toBe(1);
     expect(w.out.some((l) => l.startsWith('ERR Could not delete the Keychain item'))).toBe(true);
+  });
+  it('a Stephen folder set in config.json (not ~/.stephen): only Stephen files go, the person\'s own files stay', async () => {
+    const w = world(['y', 'n']);
+    const docs = join(w.deps.userHome, 'Documents');
+    mkdirSync(join(docs, 'history'), { recursive: true });
+    for (const f of ['memory.json', 'timers.json', 'history/2026-11-25.jsonl', '.env']) writeFileSync(join(docs, f), 'x');
+    writeFileSync(join(docs, 'thesis.docx'), 'the person\'s own file');
+    w.deps.places = { home: docs, jobsRoot: w.jobsRoot };
+    w.deps.envFiles = [join(docs, '.env')];
+    expect(await deleteAllData(w.deps)).toBe(0);
+    expect(existsSync(join(docs, 'thesis.docx'))).toBe(true);
+    expect(existsSync(join(docs, '.env'))).toBe(true); // may be the person's own: named, never deleted
+    for (const f of ['memory.json', 'timers.json', 'history']) expect(existsSync(join(docs, f))).toBe(false);
+    expect(w.out).toContain('Deleted 3 Stephen items in ~/Documents.');
+    expect(w.out).toContain('Not deleted:');
+    expect(w.out.some((l) => l.includes('Other files in ~/Documents'))).toBe(true);
+    expect(w.out.some((l) => l.includes('~/Documents/.env: an old settings file'))).toBe(true);
+  });
+
+  it('an old .env outside the Stephen folder is named, kept, and its contents never shown', async () => {
+    const w = world(['y', 'n']);
+    const repo = join(w.deps.userHome, 'stephen-repo');
+    mkdirSync(repo);
+    writeFileSync(join(repo, '.env'), 'NOTION_API=secret-value-123');
+    w.deps.envFiles = [join(w.home, '.env'), join(repo, '.env')];
+    expect(await deleteAllData(w.deps)).toBe(0);
+    expect(existsSync(join(repo, '.env'))).toBe(true);
+    expect(w.out).toContain('  ~/stephen-repo/.env: an old settings file that may still hold account keys. Delete it yourself if you no longer need it.');
+    expect(w.out.some((l) => l.includes('~/.stephen/.env'))).toBe(false); // it went with the Stephen folder
+    expect(w.out.join('\n')).not.toContain('secret-value-123');
+  });
+
+  it('the job folder is the Stephen folder itself and the answer is no: nothing there is said to be deleted', async () => {
+    const w = world(['y', 'n']);
+    w.deps.places = { home: w.home, jobsRoot: w.home };
+    expect(await deleteAllData(w.deps)).toBe(0);
+    expect(existsSync(join(w.home, 'memory.json'))).toBe(true);
+    expect(w.out.some((l) => l.startsWith('Deleted ~/.stephen'))).toBe(false);
+    expect(w.out).toContain('  ~/.stephen: it is also your job folder, and you chose to keep that.');
   });
 });
