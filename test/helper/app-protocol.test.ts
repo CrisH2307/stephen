@@ -10,7 +10,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { helperSourceDir } from '../../src/helper/install.js';
+import { HELPER_SOURCES, helperSourceDir } from '../../src/helper/install.js';
 import { EDIT_REQUEST_MAX } from '../../src/jobs/spec.js';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'app-protocol-v1.jsonl');
@@ -716,6 +716,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('Text(verbatim: "Things Stephen remembers about you. It only saves what you tell it or keep.")');
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
+    // No Swift file can build a memory.add request at all (the unused builder was removed): fewer memory write paths.
+    for (const f of HELPER_SOURCES) expect(read(f)).not.toContain('"memory.add"');
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
