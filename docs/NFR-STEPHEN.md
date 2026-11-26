@@ -14,8 +14,8 @@ and from `docs/ADR-008-MEASUREMENTS.md`.
 |---|---|
 | Today | Model never writes memory, timers or jobs (no tool exists; import-boundary tests). Every action and private read goes through the SafetyGate (policy, taint, egress, rate limit, native dialog). One exception by design: `announce` (a spoken line before sound plays) skips `gate.check`, because it touches no page, sends nothing off the Mac and says nothing once private data was read (#306). Allow and Deny are clicks only. Independent reviews REVIEW-1 to REVIEW-10B, each finding fixed with a named test. `stephen eval` inject cases pass against the real model. |
 | Target | Zero known High findings at every release. Every safety change has `[DEV REVIEW]` and an independent review. Inject cases: 100% pass on every release. |
-| Gap | Eval is not run per release (it costs model tokens). Open items: private reads are not audited, #296 (overdue job Claude not killed). |
-| Next step | Add `stephen eval --only inject` to the release checklist (step 4b). Fix the three open items, one PR each, dev lane. |
+| Gap | Eval is not run per release (it costs model tokens). Open item: #296 (overdue job Claude not killed). Private reads are audited (one line per read, tool and trust only, `auditPrivateRead` in `src/safety/gate.ts`). |
+| Next step | Add `stephen eval --only inject` to the release checklist (step 4b). Fix #296, dev lane. |
 
 ## 2. Privacy
 
