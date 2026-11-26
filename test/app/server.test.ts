@@ -639,7 +639,7 @@ describe('memory, history, settings, audit, window', () => {
     ] as AuditEntry[];
     const h = await harness({ audit: { recent: async () => entries } });
     const a = (await h.client.request({ id: 'a', type: 'audit.recent' })) as unknown as { entries: AuditEntry[] };
-    expect(a.entries[0]).toEqual({ ts: '2026-11-01T14:03:20.000Z', tool: 'click', kind: 'click', urlBefore: 'https://mail.google.com/mail/u/0/', outcome: 'error' });
+    expect(a.entries[0]).toEqual({ ts: '2026-11-01T14:03:20.000Z', tool: 'click', kind: 'click', urlBefore: 'https://mail.google.com', outcome: 'error' }); // URL cut to the origin
     expect(JSON.stringify(a.entries.slice(0, 2))).not.toContain('771204');
     expect(a.entries[2]).toEqual(entries[2]); // not built in: kept, unless the owner lists it
     expect(a.entries[3]).toEqual(entries[3]);
