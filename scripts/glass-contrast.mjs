@@ -8,6 +8,7 @@ const T = {
   navy: { dark: true, sidebar: '16264A', ground: '0F1B33', surface: '16264A', ink: 'EEF2FA', ink2: 'A9B6CF', accent: '8FB0FF', warn: 'E0B04A' },
   rose: { dark: false, sidebar: 'FBEFF2', ground: 'FFF5F7', surface: 'FFFFFF', ink: '2A1219', ink2: '7A5560', accent: 'B4235A', warn: '8A5A00' },
   sun: { dark: false, sidebar: 'FBF5DC', ground: 'FFFBEA', surface: 'FFFFFF', ink: '221C08', ink2: '6B5F35', accent: '7A5E00', warn: '8A5A00' },
+  paper: { dark: false, sidebar: 'F4EFE3', ground: 'FBF8F1', surface: 'FFFFFF', ink: '15151A', ink2: '4A4A57', accent: '1F4FC4', warn: '8A5A00' },
 };
 // Surface -> [alpha in light themes, alpha in dark themes]. The palette uses `surface` as its tint.
 export const ALPHA = { sidebar: [0.95, 0.88], toolbar: [0.92, 0.85], palette: [0.90, 0.88] };
