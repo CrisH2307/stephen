@@ -134,6 +134,25 @@ describe('listen start path', () => {
   });
 });
 
+describe('start check reads the memory and history sections for secret names only', () => {
+  it('a secret-looking key in memory or history refuses the start', async () => {
+    useConfig({ memory: { apiKey: 'mem-SECRET-VALUE-1' } });
+    const err = await startConfigCheck(env).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HubError);
+    expect((err as Error).message).not.toContain('mem-SECRET-VALUE-1');
+    useConfig({ history: { retention: { cookie: 'x' } } });
+    expect(await startConfigCheck(env).catch((e: unknown) => e)).toBeInstanceOf(HubError);
+  });
+
+  it('other unknown keys in those sections start silently: their names are not printed at start', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    useConfig({ memory: { fooBar: 1 }, history: { barBaz: 2 }, jobs: { x: 1 }, app: { y: 2 } });
+    await expect(startConfigCheck(env)).resolves.toBeUndefined();
+    expect(log.mock.calls.flat().join(' ')).not.toMatch(/fooBar|barBaz/);
+    log.mockRestore();
+  });
+});
+
 describe('start-time notice', () => {
   it('prints a key name only when it is short and name-like; otherwise "an unusual key name"', () => {
     expect(ignoredKeysNotice(['x'.repeat(41), 'bad key!', 'voice.fooBar'])).toBe(

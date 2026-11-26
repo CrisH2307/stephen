@@ -136,7 +136,7 @@ export function ignoredKeysNotice(keys: string[]): string {
  * secrets belong in the Keychain. Other unknown keys are ignored, and each start names them on stderr.
  */
 export async function startConfigCheck(env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const ignored = await configUnknownKeys(env);
+  const ignored = await configUnknownKeys(env, true);
   if (ignored.some(looksLikeSecretKey)) {
     throw new HubError(
       'INVALID_ARG',
@@ -222,11 +222,25 @@ async function serve(argv: string[] = []): Promise<void> {
 
 // ───────────────────────────── doctor ─────────────────────────────
 
+/** Sections whose readers serve and listen never load: their code stays out of the start-up path (memory, history). */
+const COLD_SECTIONS = ['memory', 'history', 'jobs', 'app'];
+
+/** Every dotted path in a raw section whose key name looks like a secret (any depth). */
+function secretKeyPaths(value: unknown, prefix: string): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value).flatMap(([k, v]) => {
+    const path = `${prefix}.${k}`;
+    return [...(looksLikeSecretKey(path) ? [path] : []), ...secretKeyPaths(v, path)];
+  });
+}
+
 /**
  * Keys in config.json that no reader uses, top level and in each section Stephen reads. The readers ignore them;
  * doctor warns with the key name only. [] when the file cannot be read or is not valid JSON.
+ * `start` (serve, listen): only the readers that code already loads run. For the cold sections (COLD_SECTIONS) that
+ * means no reader at all; their raw keys are checked for a secret-looking name, the one thing the start refuses on.
  */
-export async function configUnknownKeys(env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
+export async function configUnknownKeys(env: NodeJS.ProcessEnv = process.env, start = false): Promise<string[]> {
   let raw: unknown;
   try {
     raw = readUserConfigFile(env);
@@ -236,24 +250,18 @@ export async function configUnknownKeys(env: NodeJS.ProcessEnv = process.env): P
   const found = new Set(userConfigUnknownKeys(raw));
   const section = (name: string) => (raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[name] : undefined);
   // On demand, like the other owner-only readers: the start-up graph stays free of these modules.
-  const [voice, memory, history, jobs, app, desktop, accounts] = await Promise.all([
-    import('./voice/config.js'),
-    import('./memory/config.js'),
-    import('./history/config.js'),
-    import('./jobs/config.js'),
-    import('./app/config.js'),
-    import('./desktop/config.js'),
-    import('./accounts/config.js'),
-  ]);
+  const [voice, desktop, accounts] = await Promise.all([import('./voice/config.js'), import('./desktop/config.js'), import('./accounts/config.js')]);
   const readers: [string, (v: unknown, unknownKeys: string[]) => unknown][] = [
     ['voice', voice.parseVoiceConfig],
-    ['memory', memory.parseMemoryConfig],
-    ['history', history.parseHistoryConfig],
-    ['jobs', jobs.parseJobsConfig],
-    ['app', app.parseAppConfig],
     ['desktop', desktop.parseDesktopConfig],
     ['accounts', accounts.parseAccountsConfig],
   ];
+  if (start) {
+    for (const name of COLD_SECTIONS) for (const path of secretKeyPaths(section(name), name)) found.add(path);
+  } else {
+    const [memory, history, jobs, app] = await Promise.all([import('./memory/config.js'), import('./history/config.js'), import('./jobs/config.js'), import('./app/config.js')]);
+    readers.push(['memory', memory.parseMemoryConfig], ['history', history.parseHistoryConfig], ['jobs', jobs.parseJobsConfig], ['app', app.parseAppConfig]);
+  }
   for (const [name, read] of readers) {
     const sink: string[] = [];
     try {
