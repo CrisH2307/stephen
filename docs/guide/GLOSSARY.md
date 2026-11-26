@@ -3,10 +3,17 @@
 Every technical word you might meet in Stephen's pages, explained in one or two short sentences, with an everyday
 example. Words are in A to Z order. A word in *italics* inside an explanation has its own entry.
 
-[A](#a) · [B](#b) · [C](#c) · [D](#d) · [E](#e) · [F](#f) · [H](#h) · [I](#i) · [J](#j) · [K](#k) · [L](#l) · [M](#m) ·
-[N](#n) · [O](#o) · [P](#p) · [R](#r) · [S](#s) · [T](#t) · [U](#u) · [W](#w)
+[A](#a) · [B](#b) · [C](#c) · [D](#d) · [E](#e) · [F](#f) · [H](#h) · [I](#i) · [J](#j) · [K](#k) · [L](#l) ·
+[M](#m) · [N](#n) · [O](#o) · [P](#p) · [R](#r) · [S](#s) · [T](#t) · [U](#u) · [V](#v) · [W](#w)
+
 
 ## A
+
+### Ad hoc signing
+
+Signing an app without a paid Apple developer ID. Stephen Helper is signed this way, so after a rebuild macOS may ask you to turn on Input Monitoring again.
+*Example:* After `stephen update` rebuilds the Helper, F5 may stop working. In Input Monitoring, remove Stephen
+Helper with the minus button and add it again.
 
 ### ADR (architecture decision record)
 
@@ -47,19 +54,40 @@ The company that makes *Claude*. Stephen is not made by Anthropic and is not con
 The chips Apple makes for newer Macs (M1, M2, M3 and later). The Stephen beta only runs on these Macs.
 *Example:* Apple menu > About This Mac. If it says "Chip: Apple M1" (or newer), your Mac has Apple silicon.
 
+### Arm delay
+
+Allow and Deny stay switched off for 0.75 seconds each time a new question appears, so a quick double click can't approve something you never saw.
+*Example:* You click twice fast. The second click lands while the buttons are still off, so nothing is approved.
+
 ### Ask box
 
 Stephen's small window under its icon in the *menu bar*. You can type to Stephen there, and it shows what you said
 and the reply.
 *Example:* Click the Stephen icon, type "set a timer for 10 minutes", press Return.
 
+### Atomic write
+
+Saving a file by writing a new copy first, then swapping it in, in one step. If the Mac crashes halfway, you keep the old file instead of half a file.
+*Example:* Your memory list is saved this way, so a crash can't leave it broken.
+
+### Attach-only
+
+By default, Stephen uses the Zen you opened yourself (with Zen for Stephen) and never starts Zen on its own.
+*Example:* If Zen is closed, Stephen tells you to open it with Zen for Stephen, instead of opening it for you.
+
 ### Audit log
 
 A diary Stephen keeps on your Mac of every action it took in your browser: when, where, and the reason given. Text
-it typed is saved only as a length, never the words.
+it typed is saved only as a length, never the words, and web addresses are saved without the part after the "?".
 *Example:* Ask Stephen what it just did in your browser, and it reads its recent entries back to you.
 
 ## B
+
+### Barge-in
+
+Cutting Stephen off. "Stephen, stop" or Esc stops a running command or its spoken reply. "Hey Stephen" also
+cancels a running command, but is ignored while Stephen is talking.
+*Example:* Stephen is reading a long answer out loud. You say "Stephen, stop" and it stops.
 
 ### Beta
 
@@ -73,6 +101,11 @@ The app you use to visit websites. Stephen works with two: Zen and Google Chrome
 *Example:* "Hey Stephen, open YouTube" opens YouTube in your browser.
 
 ## C
+
+### CDP (Chrome DevTools Protocol)
+
+The language Stephen uses to control Chrome: open tabs, read pages, click.
+*Example:* When Stephen clicks a button in Chrome, it sends that click over CDP.
 
 ### CI (continuous integration)
 
@@ -102,6 +135,13 @@ never see your account.
 The Terminal app on your Mac, where you type commands instead of clicking. You need it a few times to set Stephen up.
 *Example:* You type `stephen setup` in Terminal and press Return.
 
+### Confirmer chain
+
+The ways Stephen can ask you a question, in order: a question in the Claude Code chat when that is where you are
+talking, then the Ask box card, then a normal macOS dialog. The first one that can show the question gets your
+answer.
+*Example:* If the Ask box isn't running, the Allow / Deny question appears as a macOS dialog instead.
+
 ### Context window
 
 How much text an AI model can look at in one go, like the size of its desk. Very long pages are cut to fit.
@@ -109,17 +149,17 @@ How much text an AI model can look at in one go, like the size of its desk. Very
 
 ## D
 
-### Data
-
-Any information: your words, a web page, a reminder, a setting.
-*Example:* "Buy milk at 6" is data once Stephen saves it as a reminder.
-
 ### Daily limit
 
 A cap on how much Stephen may spend of your Claude plan in one day, 1 US dollar of model use by default. Near the
 cap Stephen warns you; at the cap it stops starting new model runs until midnight. Timers, memory and "stop" still
 work.
 *Example:* Stephen says "Today's limit is used. It resets at midnight."
+
+### Data
+
+Any information: your words, a web page, a reminder, a setting.
+*Example:* "Buy milk at 6" is data once Stephen saves it as a reminder.
 
 ## E
 
@@ -129,6 +169,11 @@ Data leaving your Mac. Stephen watches for it, for example inside a web address 
 wants to type into a website.
 *Example:* After Stephen reads your email, opening a new site with words in its address asks you first.
 
+### Endpoint
+
+The moment Stephen decides you finished talking. By default that is 0.8 seconds of silence, or 1.5 seconds once you have talked for a while, so you can pause between parts.
+*Example:* You say "open YouTube" and stop. A moment later Stephen starts working.
+
 ## F
 
 ### F5 (push-to-talk key)
@@ -136,11 +181,22 @@ wants to type into a website.
 The key you hold to talk to Stephen without saying the *wake word*. Holding Fn and Option together works too.
 *Example:* Hold F5, say "what time is it", let go.
 
+### Fail open and fail closed
+
+What a check does when it can't decide. Fail open lets the action go ahead. Fail closed blocks it. Stephen's safety rules, its Allow / Deny
+questions and its note of private reads fail closed.
+*Example:* If Stephen can't save its note that it read your email, it stops instead of going on (fail closed).
+
 ### Follow-up
 
 A second command soon after the first one, which continues the same conversation.
 *Example:* "How long to the station by train?" and then "what about by car?" Stephen knows you still mean the
 station.
+
+### Follow-up window
+
+How long a conversation stays open after a command, so the next command can build on it. 3 minutes (180 seconds) by default.
+*Example:* Ask about a train, and within 3 minutes ask "what about by car?".
 
 ## H
 
@@ -176,6 +232,11 @@ A longer task Claude does in the background while you do something else. It star
 works in its own folder inside a *sandbox*, and you can stop it any time.
 *Example:* "While I'm cooking, write a first draft of my lab report."
 
+### JSONL
+
+A text file with one record per line, each written in JSON (a simple data format). Stephen's history and logs use it.
+*Example:* Each line of a history file is one command and its reply.
+
 ## K
 
 ### Keychain
@@ -184,12 +245,22 @@ The Mac's built-in safe for passwords and keys. Stephen keeps the keys for your 
 setups may use a `.env` file instead), and never shows them to the AI model.
 *Example:* Your Canvas token sits in the Keychain, not in a plain text file.
 
+### Keyword spotter
+
+A small listening model on your Mac that only waits for the wake phrase, like "Hey Stephen". It does not write down anything else.
+*Example:* You talk with a friend. The keyword spotter ignores it all until it hears "Hey Stephen".
+
 ## L
 
 ### Latency
 
 The waiting time between finishing your sentence and hearing the answer.
 *Example:* If Stephen answers 2 seconds after you stop talking, the latency is 2 seconds.
+
+### Levenshtein distance
+
+The number of one-letter changes needed to turn one word into another. Stephen uses it to match names that were heard a little wrong.
+*Example:* "Spotfy" is one letter away from "Spotify", so Stephen still finds the app.
 
 ### Listener
 
@@ -232,6 +303,11 @@ A goal about how well something works, not what it does: how fast, how safe, how
 
 ## O
 
+### OBSCURED
+
+A message that means something covers the button Stephen wanted to click, like a cookie banner or a pop-up. Nothing was clicked.
+*Example:* Stephen closes the cookie banner first, then clicks again.
+
 ### Open source
 
 Software whose code anyone can read. Stephen's code is public on GitHub, so anyone can check what it really does.
@@ -255,6 +331,12 @@ Accessibility.
 
 The short note that tells Claude how to behave as Stephen, for example to keep spoken replies short.
 *Example:* The persona is why Stephen answers in one sentence instead of a long essay.
+
+### Policy pass
+
+The safety gate checks a step against every rule at once. If any rule says refuse, it refuses. Otherwise, if any rule says ask, it asks you.
+*Example:* Typing a one-time code on a bank's page is both on a sensitive site (ask) and into a code field
+(refuse). The answer is refuse.
 
 ### Prompt
 
@@ -285,10 +367,25 @@ A cap on how fast something can happen. By default Stephen allows at most 40 act
 scrolls and account reads all count), then pauses.
 *Example:* If something went wrong and Stephen kept clicking, the rate limit would stop it.
 
+### Reconcile
+
+After a crash or a restart, Stephen looks at its background jobs and marks the ones that stopped running as failed, so the list is right.
+*Example:* Your Mac restarts during a job. Afterwards the Jobs page shows that job as failed, not as still running.
+
+### Ref
+
+A short name for one thing on a web page, like `z1:e12` (tab z1, element 12). It comes from Stephen's latest look at the page.
+*Example:* Claude says "click z1:e12" to click the Search button it found.
+
 ### Repository (repo)
 
 The folder, stored on GitHub, that holds all of Stephen's code, docs and history.
 *Example:* `github.com/CrisH2307/stephen` is Stephen's repository.
+
+### Retention
+
+How long Stephen keeps something before it deletes it on its own.
+*Example:* Your conversation history has a retention of 7 days by default.
 
 ### Router
 
@@ -311,10 +408,21 @@ A closed box a program runs in, so it can only touch what it is allowed to. Back
 the Mac's own sandbox, with no internet.
 *Example:* A job that runs a command cannot reach the internet from inside that command.
 
+### Shadow mode
+
+New code that only watches and takes notes, without changing what Stephen does. It shows whether the new code would be right before it is switched on.
+*Example:* A new command sorter labels each command in the speed log, but the old way still decides.
+
 ### Speech to text
 
-Turning spoken words into written words. Stephen does this on your Mac.
+Turning spoken words into written words, also called ASR. Stephen does this on your Mac, with a model called Whisper (small, English) by default. Until that model is downloaded it uses a smaller one.
 *Example:* You say "open YouTube". Stephen writes down "open YouTube" and sends only that text.
+
+### STALE_REF
+
+A message that means the page changed, so a *ref* no longer points at anything. Claude looks at the page again and tries with a fresh ref.
+*Example:* A page reloads while you click Allow. Stephen does nothing, and Claude looks at the page again and
+tries again.
 
 ### System design
 
@@ -360,11 +468,23 @@ word gets less, because anyone in the room can say it.
 
 ## U
 
+### Unix socket
+
+A private connection between two programs on the same Mac, through a special file. Stephen's parts talk to each other this way, never over the internet.
+*Example:* The Ask box talks to the listener through a socket called `app.sock`.
+
 ### Untrusted text
 
 Anything Stephen reads that you did not write yourself, like a web page, an email or a tab title. Stephen marks it as data so Claude does not
 follow orders written inside it.
 *Example:* An email that says "ignore your rules" is untrusted text. Stephen reads it, but does not obey it.
+
+## V
+
+### Voice activity detection (VAD)
+
+Finds where speech starts and stops in the sound from the microphone, on your Mac.
+*Example:* It trims the silence before and after your command.
 
 ## W
 
@@ -373,6 +493,16 @@ follow orders written inside it.
 The words that make Stephen start listening: "Hey Stephen". "Yo Stephen", "OK Stephen" and just "Stephen" work
 too. The wake word is noticed on your Mac.
 *Example:* "Hey Stephen, open YouTube."
+
+### Warm Claude
+
+Stephen starts Claude Code while you are still talking, and keeps it ready for follow-ups, so the answer comes sooner.
+*Example:* By the time you finish your sentence, Claude is already started.
+
+### WebDriver BiDi
+
+The language Stephen uses to control Zen: open tabs, read pages, click.
+*Example:* When Stephen opens a tab in Zen, it asks over WebDriver BiDi.
 
 ### Worktree
 
