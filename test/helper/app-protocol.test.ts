@@ -360,6 +360,27 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(box).toContain('", almost full"');
   });
 
+  // R7: loading, error and empty in words. A failed read never reads as "Nothing saved yet", and never shows raw "error".
+  it('Memory shows loading, error with Try again, and empty only after a good read', () => {
+    const mem = read('MemoryPage.swift');
+    expect(client).toContain('@Published private(set) var graphListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshMemoryPage()'), client.indexOf('refreshSuggestions()', client.indexOf('func refreshMemoryPage()')));
+    expect(refresh).toContain('self.assign(\\.graphListOk, true)');
+    expect(refresh).toContain('self.assign(\\.graphListOk, false)');
+    expect(refresh).not.toContain('msg.message');
+    // memory.list failing is not a raw notice either; a failed change still says why.
+    expect(client).toContain('self.assign(\\.memoryNotice, isChange ? msg.message ?? "error" : nil)');
+    expect(mem).toContain('if model.graphNodes.isEmpty && model.graphListOk == nil {');
+    expect(mem).toMatch(/graphListOk == false \{[\s\S]*MEMORY_LIST_FAILED[\s\S]*QuietButton\("Try again"[^\n]*model\.refreshMemoryPage\(\)/);
+    expect(mem).toContain('let MEMORY_LIST_FAILED = "Couldn\'t load your memory right now."');
+    // Both empty lines (graph and list) go through memoryEmptyLine; no other "Nothing saved yet".
+    expect(mem.match(/memoryEmptyLine\(total: model\.graphNodes\.count, listOk: model\.graphListOk/g)).toHaveLength(2);
+    expect(mem.match(/"Nothing saved yet/g)).toHaveLength(2);
+    const fn = mem.match(/func memoryEmptyLine\([\s\S]*?\n\}/)?.[0] ?? '';
+    expect(fn).toContain('if total > 0 { return "Nothing matches." }');
+    expect(fn).toContain('guard listOk == true else { return nil }');
+  });
+
   // R7: loading, error and empty in words. A failed list never reads as "Nothing yet", and never shows raw "error".
   it('Conversations shows loading, error with Refresh, and empty only after a good list', () => {
     const conv = read('ConversationsPage.swift');
