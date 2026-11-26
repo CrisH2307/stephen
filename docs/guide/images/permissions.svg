@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 460" width="900" height="460" role="img" aria-labelledby="pm-title pm-desc">
+  <title id="pm-title">Privacy and Security settings for Stephen Helper</title>
+  <desc id="pm-desc">A simplified System Settings Privacy and Security panel with three rows, Microphone, Input Monitoring and Accessibility. Each row has a Stephen Helper toggle switched on and a short note on what it is for.</desc>
+  <style>
+    .h { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; }
+    .b { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #15151A; }
+    .s { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #4A4A57; }
+    .bd { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; }
+  </style>
+  <rect width="900" height="460" fill="#FBF8F1"/>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="11" cy="11" r="1.2" fill="#E2DBC9"/>
+    </pattern>
+  </defs>
+  <rect width="900" height="460" fill="url(#dots)"/>
+
+  <text class="h" x="40" y="44" font-size="22">Where to turn on Stephen Helper</text>
+
+  <!-- Panel with hard shadow -->
+  <rect x="44" y="74" width="820" height="340" rx="18" fill="#15151A"/>
+  <rect x="40" y="70" width="820" height="340" rx="18" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="bd" x="64" y="112" font-size="20">Privacy &amp; Security</text>
+  <line x1="64" y1="128" x2="836" y2="128" stroke="#E2DBC9" stroke-width="2"/>
+
+  <!-- Row 1: Microphone -->
+  <rect x="64" y="158" width="40" height="40" rx="10" fill="#E7E1FF" stroke="#15151A" stroke-width="1.5"/>
+  <text class="bd" x="120" y="178" font-size="17">Microphone</text>
+  <text class="s" x="600" y="178" font-size="14">Stephen Helper</text>
+  <rect x="772" y="162" width="56" height="30" rx="15" fill="#2E9E5B" stroke="#15151A" stroke-width="1.5"/>
+  <circle cx="813" cy="177" r="11" fill="#FFFFFF" stroke="#15151A" stroke-width="1.5"/>
+  <text class="s" x="120" y="202" font-size="14">to hear you</text>
+  <line x1="64" y1="224" x2="836" y2="224" stroke="#E2DBC9" stroke-width="1.5"/>
+
+  <!-- Row 2: Input Monitoring -->
+  <rect x="64" y="242" width="40" height="40" rx="10" fill="#D9ECFF" stroke="#15151A" stroke-width="1.5"/>
+  <text class="bd" x="120" y="262" font-size="17">Input Monitoring</text>
+  <text class="s" x="600" y="262" font-size="14">Stephen Helper</text>
+  <rect x="772" y="246" width="56" height="30" rx="15" fill="#2E9E5B" stroke="#15151A" stroke-width="1.5"/>
+  <circle cx="813" cy="261" r="11" fill="#FFFFFF" stroke="#15151A" stroke-width="1.5"/>
+  <text class="s" x="120" y="286" font-size="14">to notice F5, Fn+Option and Esc. It ignores every other key.</text>
+  <line x1="64" y1="308" x2="836" y2="308" stroke="#E2DBC9" stroke-width="1.5"/>
+
+  <!-- Row 3: Accessibility -->
+  <rect x="64" y="326" width="40" height="40" rx="10" fill="#D8F4E4" stroke="#15151A" stroke-width="1.5"/>
+  <text class="bd" x="120" y="346" font-size="17">Accessibility</text>
+  <text class="s" x="600" y="346" font-size="14">Stephen Helper</text>
+  <rect x="772" y="330" width="56" height="30" rx="15" fill="#2E9E5B" stroke="#15151A" stroke-width="1.5"/>
+  <circle cx="813" cy="345" r="11" fill="#FFFFFF" stroke="#15151A" stroke-width="1.5"/>
+  <text class="s" x="120" y="370" font-size="14">to press play and pause for you</text>
+
+  <text class="s" x="40" y="436" font-size="14">Turn all three on. If Stephen Helper is not in a list, click + and choose it from Applications.</text>
+</svg>
