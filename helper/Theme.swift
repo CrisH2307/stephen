@@ -163,9 +163,13 @@ enum TypeScale {
 extension View {
   /// The Paper look: `fill`, a 2 pt `edge` (ink by default) and a hard shadow `pop` pt down-right, no blur.
   func paperBox(_ t: Theme, fill: Color, radius: CGFloat, pop: CGFloat = 4, edge: Color? = nil) -> some View {
-    let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-    return background(shape.fill(fill).shadow(color: t.ink, radius: 0, x: pop, y: pop))
-      .overlay(shape.stroke(edge ?? t.ink, lineWidth: 2))
+    return paperBox(t, fill: fill, shape: RoundedRectangle(cornerRadius: radius, style: .continuous), pop: pop, edge: edge)
+  }
+
+  func paperBox<S: InsettableShape>(_ t: Theme, fill: Color, shape: S, pop: CGFloat = 4, edge: Color? = nil) -> some View {
+    // The shadow is a second ink shape behind, not .shadow(): crisp, and drawn the same on and off screen.
+    return background(ZStack { shape.fill(t.ink).offset(x: pop, y: pop); shape.fill(fill) })
+      .overlay(shape.strokeBorder(edge ?? t.ink, lineWidth: 2))
   }
 }
 
