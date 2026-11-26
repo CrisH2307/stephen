@@ -202,16 +202,27 @@ export function readUserConfigFile(env: NodeJS.ProcessEnv = process.env): unknow
   return readConfigFile(configFilePath(env));
 }
 
-/** The whole key name, not a substring: hotkey, monkey, secretary or tokenLimit are not secrets. */
-const SECRET_NAME_RE = /^(api|access|secret|private|refresh|client|auth)?[_-]?(key|token|secret|password)$/i;
-
 /**
- * A key name that looks like it holds a secret (key, token, secret or password). Secrets belong in the Keychain, never
- * in config.json, so such a key stops the start. `apiKeyFile` is a path, not a secret. Takes a dotted path or a bare name.
+ * A key name that looks like it holds a secret: its last word is key, token, secret, password, passwd, bearer or
+ * cookie. Secrets belong in the Keychain, never in config.json, so such a key stops the start. Takes a dotted path or a
+ * bare name. hotkey and hotKey are a shortcut, and apiKeyFile is a path, so neither counts.
  */
+const SECRET_LAST_WORDS = new Set(['key', 'token', 'secret', 'password', 'passwd', 'bearer', 'cookie']);
+
+/** Words of a key name: camelCase, `_` and `-` separate them ("openaiApiKey" gives openai, api, key). */
+function keyWords(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+}
+
 export function looksLikeSecretKey(path: string): boolean {
-  const name = path.slice(path.lastIndexOf('.') + 1);
-  return name !== 'apiKeyFile' && SECRET_NAME_RE.test(name);
+  const words = keyWords(path.slice(path.lastIndexOf('.') + 1));
+  if (words.join('') === 'hotkey') return false;
+  return SECRET_LAST_WORDS.has(words.at(-1) ?? '');
 }
 
 /** Strip null/undefined so they never overwrite a lower layer. */

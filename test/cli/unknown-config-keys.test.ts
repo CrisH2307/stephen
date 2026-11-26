@@ -140,11 +140,17 @@ describe('start-time notice', () => {
   });
 });
 
-describe('secret-looking key names', () => {
-  it.each(['apiKey', 'api_key', 'token', 'voice.elevenlabs.apiKey', 'gmail.refreshToken', 'clientSecret', 'password', 'accessToken'])('%s looks like a secret', (k) => {
+describe('secret-looking key names (the last word of the name)', () => {
+  it.each([
+    'apiKey', 'api_key', 'token', 'password', 'clientSecret', 'voice.elevenlabs.apiKey', 'gmail.refreshToken', 'accessToken',
+    'openaiApiKey', 'anthropicApiKey', 'githubToken', 'botToken', 'oauthToken', 'sessionToken', 'webhookSecret', 'dbPassword',
+    'bearer', 'cookie',
+  ])('%s is refused', (k) => {
     expect(looksLikeSecretKey(k)).toBe(true);
   });
-  it.each(['apiKeyFile', 'voice.elevenlabs.apiKeyFile', 'voiceId', 'claudePath', 'hotkey', 'monkey', 'secretary', 'tokenLimit', 'keyboardShortcut'])('%s does not', (k) => {
+  it.each([
+    'apiKeyFile', 'voice.elevenlabs.apiKeyFile', 'voiceId', 'claudePath', 'hotkey', 'hotKey', 'monkey', 'secretary', 'tokenLimit', 'keyboardShortcut',
+  ])('%s is allowed', (k) => {
     expect(looksLikeSecretKey(k)).toBe(false);
   });
 });
