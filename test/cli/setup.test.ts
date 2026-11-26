@@ -131,3 +131,14 @@ describe('stephen setup', () => {
     expect(h.text()).toContain('Stopped. Run `stephen doctor`');
   });
 });
+
+describe('stephen setup, the weather question', () => {
+  it('asks after doctor, before the permission lines, only when cli.ts passes askWeather (a terminal)', async () => {
+    const order: string[] = [];
+    const h = harness({ askWeather: async () => void order.push(`asked after ${h.calls.length} calls`) });
+    expect(await runSetup(h.deps)).toBe(0);
+    expect(order).toEqual(['asked after 7 calls']);
+    const plain = harness();
+    expect(await runSetup(plain.deps)).toBe(0);
+  });
+});
