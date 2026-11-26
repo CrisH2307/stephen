@@ -247,12 +247,15 @@ describe('secret-looking key names (the last word of the name)', () => {
     // T8 (#338 post-merge review L4): one-word names and the other secret words.
     'apikey', 'openai_apikey', 'authtoken', 'githubaccesstoken', 'privatekey', 'awsSecretkey', 'pwd', 'dbPwd', 'pat', 'githubPat',
     'passphrase', 'credentials', 'gmail.credential', 'adminpassword',
+    // Health audit 7: a last word "token" is refused by design (maxToken, pageToken); 'token' stays a word end too,
+    // or one-word names like authtoken would pass.
+    'maxToken', 'pageToken',
   ])('%s is refused', (k) => {
     expect(looksLikeSecretKey(k)).toBe(true);
   });
   it.each([
     'apiKeyFile', 'voice.elevenlabs.apiKeyFile', 'voiceId', 'claudePath', 'hotkey', 'hotKey', 'monkey', 'secretary', 'tokenLimit', 'keyboardShortcut',
-    'turkey', 'maxTokens', 'pattern', 'path', 'credentialsFile', 'keyword',
+    'turkey', 'maxTokens', 'pattern', 'path', 'credentialsFile', 'keyword', 'tokensPerMinute', 'tokenBudget', 'maxTokensPerJob',
   ])('%s is allowed', (k) => {
     expect(looksLikeSecretKey(k)).toBe(false);
   });
