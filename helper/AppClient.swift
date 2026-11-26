@@ -152,6 +152,9 @@ final class AppModel: ObservableObject {
   /** Memory page (section 7a): the graph, proposals waiting for Keep/Skip, the memory bar, and why one is missing. */
   @Published private(set) var graphNodes: [GraphNode] = []
   @Published private(set) var graphLinks: [GraphLink] = []
+  /** R7: nil until the first memory.graph answer, then whether the last one worked. The Memory page shows loading,
+   *  empty and error from it, so a failed read never reads as "Nothing saved yet". */
+  @Published private(set) var graphListOk: Bool? = nil
   @Published private(set) var suggestions: [MemoryProposal] = []
   @Published private(set) var memoryUsage: UsageBar? = nil
   @Published private(set) var memoryPageNotice: String? = nil
@@ -539,7 +542,8 @@ final class AppModel: ObservableObject {
         self.assign(\.memory, msg.items ?? [])
         self.assign(\.memoryNotice, isChange ? "Saved. Stephen starts a fresh conversation with the next command." : nil)
       } else {
-        self.assign(\.memoryNotice, msg.message ?? "error")
+        // A failed list is said by the Memory page states (graphListOk), never as a raw "error". A failed change says why.
+        self.assign(\.memoryNotice, isChange ? msg.message ?? "error" : nil)
       }
     }
   }
@@ -561,8 +565,9 @@ final class AppModel: ObservableObject {
         self.assign(\.graphNodes, msg.nodes ?? [])
         self.assign(\.graphLinks, msg.links ?? [])
         self.assign(\.memoryPageNotice, nil)
+        self.assign(\.graphListOk, true)
       } else {
-        self.assign(\.memoryPageNotice, msg.message ?? "Couldn't read memory.")
+        self.assign(\.graphListOk, false)
       }
     }
     refreshSuggestions()
