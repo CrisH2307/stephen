@@ -47,18 +47,26 @@ const INBOX_ISSUE = 274;
 const FREELLM_URL = 'http://localhost:3001/v1/chat/completions';
 const L1_TIMEOUT_MS = 45_000;
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DRY = process.argv.includes('--dry-run');
-
-const log = (s) => console.log(s);
 const oneLine = (e) => String(e?.message ?? e).split('\n')[0];
 
 /** Runs a program with argv (never a shell). Resolves with stdout; rejects with the error. */
-function run(file, args, opts = {}) {
+function execRun(file, args, opts = {}) {
   return new Promise((resolveRun, reject) => {
     const child = execFile(file, args, { maxBuffer: 20 * 1024 * 1024, ...opts }, (err, stdout) => (err ? reject(err) : resolveRun(stdout)));
     child.stdin?.end();
   });
 }
+
+/** The outside world, in one place, so test/scripts/incident-ladder-main.test.ts can fake gh, git, claude and fetch. */
+export const io = {
+  run: execRun,
+  fetch: (url, init) => fetch(url, init),
+  log: (s) => console.log(s),
+  now: () => new Date(),
+  dry: process.argv.includes('--dry-run'),
+};
+const run = (file, args, opts) => io.run(file, args, opts);
+const log = (s) => io.log(s);
 
 const ghJson = async (args) => JSON.parse(await run('gh', ['api', ...args]));
 
@@ -79,7 +87,7 @@ async function runL1(lines, codeText, fileOk) {
     return null;
   }
   try {
-    const res = await fetch(FREELLM_URL, {
+    const res = await io.fetch(FREELLM_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       body: JSON.stringify({ model, stream: false, messages: [{ role: 'user', content: l1Prompt(lines, codeText) }] }),
@@ -108,11 +116,11 @@ async function runClaude(level, lines, previous, copy, settingsFile, fileOk) {
 }
 
 /** Runs the ladder on one issue and posts one comment. `budget.used` counts Claude runs across issues today. */
-async function handleIssue(issue, comments, budget, today) {
+export async function handleIssue(issue, comments, budget, today) {
   const n = issue.number;
   const body = issue.body ?? '';
   const hash = bodyHash(body);
-  if (!editWindowOk(await bodyEditedAt(n), new Date())) return log(`#${n}: skipped, the body was edited less than 10 minutes ago.`);
+  if (!editWindowOk(await bodyEditedAt(n), io.now())) return log(`#${n}: skipped, the body was edited less than 10 minutes ago.`);
   if (hasMarker(comments, hash)) return log(`#${n}: skipped, this body was already answered.`);
   if (ladderRunsToday(comments, today) >= LADDER_RUNS_PER_ISSUE_PER_DAY) return log(`#${n}: skipped, ${LADDER_RUNS_PER_ISSUE_PER_DAY} runs today.`);
   const { records } = parseIncidentIssue(body);
@@ -176,7 +184,7 @@ async function handleIssue(issue, comments, budget, today) {
 
     const marker = markerFor(hash);
     const comment = findingsComment(resolved ? final : shown, marker, trail, resolved);
-    if (DRY) {
+    if (io.dry) {
       log(`#${n}: dry run, would post:\n${comment}`);
       if (!resolved) log(`#${n}: dry run, would add label needs-cris and post the #${INBOX_ISSUE} line.`);
       return;
@@ -208,8 +216,8 @@ async function listAll(path) {
   }
 }
 
-async function main() {
-  const today = dayUtc(new Date());
+export async function main() {
+  const today = dayUtc(io.now());
   // The author check comes first: a body from any other id is never read.
   const allowed = (i) => !i.pull_request && ALLOWED_AUTHOR_IDS.includes(i.user?.id);
   // Every open incident, however old. A dated list would skip one filed yesterday.
@@ -239,7 +247,10 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(`incident-ladder: ${oneLine(e)}`);
-  process.exit(1);
-});
+// Runs only when started as a script (npm run incident-ladder), not when a test imports it.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => {
+    console.error(`incident-ladder: ${oneLine(e)}`);
+    process.exit(1);
+  });
+}
