@@ -173,7 +173,8 @@ final class AppModel: ObservableObject {
   private let timeFormatter = DateFormatter()
 
   static let historyPageSize = 50
-  static let auditLimit = 100
+  /// APP_AUDIT_LIMIT_MAX in src/app/protocol.ts: Activity shows the last 24 h, and says so when this many came back.
+  static let auditLimit = 200
 
   init(socketPath: String, log: @escaping (String) -> Void) {
     self.socketPath = socketPath
