@@ -343,6 +343,30 @@ final class StephenControl: ObservableObject {
    * only; any other line is dropped). `done(true)` when it finished, `done(false)` when it failed or could not start.
    */
   func voiceSetup(progress: @escaping (ModelProgress) -> Void, done: @escaping (Bool) -> Void) {
+    // One download per helper (F9b review): a second caller (the sheet closed with Later and opened again) joins the
+    // running one instead of starting another that would write the same model folders. voice-setup also locks.
+    setupWatchers.append((progress, done))
+    if setupWatchers.count > 1 {
+      if let last = lastSetupProgress { progress(last) }
+      return
+    }
+    lastSetupProgress = nil
+    let all: (ModelProgress) -> Void = { [weak self] ev in
+      self?.lastSetupProgress = ev
+      for w in self?.setupWatchers ?? [] { w.0(ev) }
+    }
+    let finish: (Bool) -> Void = { [weak self] ok in
+      let ws = self?.setupWatchers ?? []
+      self?.setupWatchers = []
+      for w in ws { w.1(ok) }
+    }
+    runVoiceSetup(progress: all, done: finish)
+  }
+
+  private var setupWatchers: [((ModelProgress) -> Void, (Bool) -> Void)] = []
+  private var lastSetupProgress: ModelProgress? = nil
+
+  private func runVoiceSetup(progress: @escaping (ModelProgress) -> Void, done: @escaping (Bool) -> Void) {
     guard let info = readLaunchInfo() else { return done(false) }
     let p = Process()
     p.executableURL = URL(fileURLWithPath: info.node)
@@ -435,7 +459,11 @@ struct ModelProgress: Equatable {
   let index: Int
   let total: Int
   let mb: Int
+  /** For "failed": download, keywords, busy or config; else "". */
+  var reason: String = ""
 }
+
+let MODEL_FAIL_REASONS: Set<String> = ["download", "keywords", "busy", "config"]
 
 let MODEL_EVENTS: Set<String> = ["downloading", "extracting", "installed", "done", "failed"]
 
@@ -448,7 +476,8 @@ func parseModelProgress(_ data: Data) -> ModelProgress? {
     guard let v = j[k] as? NSNumber, v.doubleValue >= 0, v.doubleValue <= 100_000 else { return 0 }
     return v.intValue
   }
-  return ModelProgress(event: e, index: n("index"), total: n("total"), mb: n("mb"))
+  let r = j["reason"] as? String ?? ""
+  return ModelProgress(event: e, index: n("index"), total: n("total"), mb: n("mb"), reason: MODEL_FAIL_REASONS.contains(r) ? r : "")
 }
 
 /** `{"claude":"…"}` → its word if it is one of ours, else "unknown". Pure. */
