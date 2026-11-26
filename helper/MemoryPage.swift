@@ -115,6 +115,18 @@ func memoryLayout(_ nodes: [GraphNode], size: CGSize) -> (points: [String: CGPoi
   return (points, labels)
 }
 
+/** R7: the Memory page states, in plain words. */
+let MEMORY_LOADING = "Loading what Stephen remembers..."
+let MEMORY_LIST_FAILED = "Couldn't load your memory right now."
+
+/** The line when nothing shows: "Nothing matches." for a search or filter, the nothing-saved line only after a good read
+ *  (nil while loading or after a failed read, which the page says itself). */
+func memoryEmptyLine(total: Int, listOk: Bool?, graph: Bool) -> String? {
+  if total > 0 { return "Nothing matches." }
+  guard listOk == true else { return nil }
+  return graph ? "Nothing saved yet. Tell Stephen something below." : "Nothing saved yet."
+}
+
 struct MemoryPage: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
@@ -143,6 +155,18 @@ struct MemoryPage: View {
           .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
         if let n = model.memoryPageNotice ?? model.memoryNotice {
           Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2)
+        }
+        // R7: loading and error in words, with Try again. Empty is said in the graph and list, only after a good read.
+        if model.graphNodes.isEmpty && model.graphListOk == nil {
+          HStack(spacing: Space.s) {
+            ProgressView().controlSize(.small)
+            Text(verbatim: MEMORY_LOADING).font(TypeScale.body).foregroundColor(t.ink2)
+          }
+        } else if model.graphListOk == false {
+          VStack(alignment: .leading, spacing: Space.s) {
+            Text(verbatim: MEMORY_LIST_FAILED).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
+            QuietButton("Try again", symbol: "arrow.clockwise") { model.refreshMemoryPage() }
+          }
         }
         if !model.suggestions.isEmpty { proposals }
         VStack(alignment: .leading, spacing: Space.m) {
@@ -266,8 +290,8 @@ struct MemoryPage: View {
         ForEach(nodes) { n in
           if let at = layout.points[n.id] { node(n).position(at) }
         }
-        if nodes.isEmpty {
-          Text(verbatim: model.graphNodes.isEmpty ? "Nothing saved yet. Tell Stephen something below." : "Nothing matches.")
+        if nodes.isEmpty, let line = memoryEmptyLine(total: model.graphNodes.count, listOk: model.graphListOk, graph: true) {
+          Text(verbatim: line)
             .font(TypeScale.secondary).foregroundColor(t.ink2).position(x: center.x, y: center.y + 40)
         }
       }
@@ -310,8 +334,8 @@ struct MemoryPage: View {
   private var list: some View {
     // No scroll of its own: the page scrolls.
     VStack(alignment: .leading, spacing: Space.l) {
-      if shown.isEmpty {
-        Text(verbatim: model.graphNodes.isEmpty ? "Nothing saved yet." : "Nothing matches.")
+      if shown.isEmpty, let line = memoryEmptyLine(total: model.graphNodes.count, listOk: model.graphListOk, graph: false) {
+        Text(verbatim: line)
           .font(TypeScale.secondary).foregroundColor(t.ink2)
       }
       ForEach(MEMORY_KIND_ORDER, id: \.self) { kind in
