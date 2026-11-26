@@ -92,6 +92,7 @@ export const LT_LOOKALIKES: readonly number[] = [
   0x00ab, // \u00ab left-pointing double angle quotation mark
   0x02c2, // \u02c2 modifier letter left arrowhead
   0x1438, // \u1438 canadian syllabics pa
+  0x16b2, // \u16b2 runic letter kauna
   0x2039, // \u2039 single left-pointing angle quotation mark
   0x2329, // \u3008 left-pointing angle bracket
   0x22d6, // \u22d6 less-than with dot
@@ -115,19 +116,34 @@ export const SLASH_LOOKALIKES: readonly number[] = [
   0x27cb, // \u27cb mathematical rising diagonal
   0x29f8, // \u29f8 big solidus
   0x2afd, // \u2afd double solidus operator
+  0x2f03, // \u2f03 kangxi radical slash (NFKC gives U+4E3F, not "/")
   0x3033, // \u3033 vertical kana repeat mark upper half
+  0x30ce, // \u30ce katakana no
+  0x4e3f, // \u4e3f cjk ideograph slash stroke (NFKC of U+2F03; callers that normalize first see this one)
+  0xff89, // \uff89 halfwidth katakana no (NFKC gives U+30CE, not "/")
 ];
+// Cyrillic, Greek and Armenian letters that look like Latin ones, folded so a tag word such as "untrusted" spelled
+// with them still matches. A reasoned subset of the UTS #39 confusables for letters, not the whole table.
+export const LETTER_LOOKALIKES: ReadonlyMap<number, string> = new Map([
+  [0x0430, 'a'], [0x0435, 'e'], [0x043e, 'o'], [0x0440, 'p'], [0x0441, 'c'], [0x0443, 'y'], [0x0445, 'x'],
+  [0x0456, 'i'], [0x0458, 'j'], [0x0455, 's'], [0x0501, 'd'], [0x0442, 't'], [0x0433, 'r'], [0x0410, 'a'],
+  [0x0415, 'e'], [0x041e, 'o'], [0x0420, 'p'], [0x0421, 'c'], [0x0422, 't'], [0x0425, 'x'], [0x0406, 'i'],
+  [0x0408, 'j'], [0x0405, 's'], [0x0578, 'n'], [0x057d, 'u'], [0x03bf, 'o'], [0x03c1, 'p'], [0x03c4, 't'],
+  [0x03c5, 'u'], [0x03bd, 'v'], [0x0391, 'a'], [0x0395, 'e'], [0x0399, 'i'], [0x039d, 'n'], [0x039f, 'o'],
+  [0x03a1, 'p'], [0x03a4, 't'], [0x03a5, 'y'],
+]);
 const LOOKALIKE_FOLD = new Map<number, string>([
   ...LT_LOOKALIKES.map((c): [number, string] => [c, '<']),
   ...SLASH_LOOKALIKES.map((c): [number, string] => [c, '/']),
+  ...LETTER_LOOKALIKES,
 ]);
 // Invisible to a reader and skipped by the match: default-ignorable code points (format characters, variation
-// selectors, hangul fillers), format (Cf) characters and combining marks (Mn). Property classes, not a hand list.
-const IGNORABLE_RE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Mn}]/u;
-// '<' + optional whitespace + optional '/' + 'untrusted_', any case. Runs on the folded copy only.
-const DELIMITER_RE = /<\s*\/?\s*untrusted_/gi;
+// selectors, hangul fillers), format (Cf) characters and combining marks (M: Mn, Mc, Me). Property classes, not a list.
+const IGNORABLE_RE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{M}]/u;
+// '<' + optional whitespace + optional '/' + 'untrusted' + '_', '-' or whitespace, any case. Folded copy only.
+const DELIMITER_RE = /<\s*\/?\s*untrusted(?:_|-|\s)/gi;
 
-/** One code point for matching: lookalikes become "<" or "/", compatibility forms (fullwidth letters) fold to ASCII. */
+/** One code point for matching: lookalikes become "<", "/" or a Latin letter, compatibility forms (fullwidth letters) fold to ASCII. */
 function fold(cp: string): string {
   const hit = LOOKALIKE_FOLD.get(cp.codePointAt(0) ?? 0);
   if (hit) return hit;
