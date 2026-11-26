@@ -67,6 +67,11 @@ export interface JobState {
   editVersion?: number;
 }
 
+/** R7: the raw reason behind a plain job message, for the log (stderr). Never shown or spoken. */
+export function logRaw(what: string, detail: string): void {
+  console.error(`jobs: ${what}: ${detail}`);
+}
+
 export const jobsDir = (home: string): string => join(home, 'jobs');
 export const statePath = (home: string, id: string): string => join(jobsDir(home), `${id}.json`);
 export const metaDirOf = (home: string, id: string): string => join(jobsDir(home), id);

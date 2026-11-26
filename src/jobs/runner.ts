@@ -21,7 +21,12 @@ import { clean } from '../safety/text.js';
 import type { IAuditLog } from '../types.js';
 import { MAX_WALL_CLOCK_MIN } from './config.js';
 import { KILL_GRACE_MS, buildJobArgs, buildJobEnv, cleanJobOutput, isJobId, jobFiles, jobToolLists, type JobSpec } from './spec.js';
-import { isFinal, jobsDir, readJobState, writeJobState, type JobState, type JobStatus } from './state.js';
+import { isFinal, jobsDir, logRaw, readJobState, writeJobState, type JobState, type JobStatus } from './state.js';
+
+/** R7: a job that fails before Claude Code runs says one plain sentence. The raw detail goes to the log only. */
+export const JOB_SPEC_INVALID = "The job's settings weren't valid. The job did not start.";
+export const JOB_LOG_FAILED = "I couldn't open the job's log file. The job did not start.";
+export const JOB_CLAUDE_START_FAILED = "I couldn't start Claude Code for the job. The job did not start.";
 
 export type SpawnFn = (cmd: string, args: readonly string[], opts: SpawnOptions) => ChildProcess;
 
@@ -221,7 +226,8 @@ export class JobSupervisor {
     try {
       args = buildJobArgs(spec);
     } catch (e) {
-      return this.finish('failed', `The job spec is invalid (${(e as Error).message}).`);
+      logRaw('job spec', (e as Error).message);
+      return this.finish('failed', JOB_SPEC_INVALID);
     }
     const f = jobFiles(spec.metaDir);
     let log: CappedFile;
@@ -230,7 +236,8 @@ export class JobSupervisor {
       log = new CappedFile(f.log, MAX_LOG_BYTES);
       errLog = new CappedFile(f.stderr, MAX_STDERR_BYTES);
     } catch (e) {
-      return this.finish('failed', `Could not open the job log (${(e as Error).message}).`);
+      logRaw('job log', (e as Error).message);
+      return this.finish('failed', JOB_LOG_FAILED);
     }
     const spawnFn: SpawnFn = this.d.spawn ?? ((c, a, o) => spawn(c, a as string[], o));
     const wallClockMs = Math.min(spec.wallClockMs, MAX_WALL_CLOCK_MIN * 60_000);
@@ -238,9 +245,11 @@ export class JobSupervisor {
     try {
       child = spawnFn(this.s.claudePath, args, { cwd: spec.cwd, env: buildJobEnv(this.d.env ?? process.env), stdio: ['ignore', 'pipe', 'pipe'], detached: true, shell: false });
     } catch (e) {
+      logRaw('claude spawn', (e as Error).message);
+      errLog.write(`could not start Claude Code: ${(e as Error).message}\n`); // the supervisor's own stderr is ignored
       log.close();
       errLog.close();
-      return this.finish('failed', `Could not start Claude Code (${(e as Error).message}).`);
+      return this.finish('failed', JOB_CLAUDE_START_FAILED);
     }
     this.child = child;
     const started = this.now();

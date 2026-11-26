@@ -4,11 +4,11 @@
  * SIGKILL after 10 s), stop, crash → failed, the sandbox's fail-closed refusal, output cleaning, caffeinate on macOS.
  */
 import { FAILURE_LINES } from '../../src/lib/claude-failure.js';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobPlan } from '../../src/jobs/manager.js';
-import { JobSupervisor, parseJobLine, resultStatus, type SupervisorSpec } from '../../src/jobs/runner.js';
+import { JOB_CLAUDE_START_FAILED, JOB_LOG_FAILED, JOB_SPEC_INVALID, JobSupervisor, parseJobLine, resultStatus, type SupervisorSpec } from '../../src/jobs/runner.js';
 import { JOB_ENV_KEYS, buildJobArgs, jobFiles } from '../../src/jobs/spec.js';
 import { readJobState, statePath, type JobState } from '../../src/jobs/state.js';
 import { readPrivateJsonFile } from '../../src/lib/fs.js';
@@ -254,5 +254,55 @@ describe('JobSupervisor with a fake claude', () => {
     const end = await new JobSupervisor(sup, { spawn: fakeClaudeSpawn().spawn, audit: null, platform: 'linux' }).run();
     expect(end).toMatchObject({ status: 'failed', error: "You've reached your Claude plan limit." });
     expect(end.error).not.toMatch(/evil|ignore previous|https:/);
+  });
+});
+
+describe('R7: a job that fails before Claude Code runs says one plain sentence', () => {
+  const RAW = 'EACCES: permission denied, /Users/x/secret';
+  async function failed(sup: SupervisorSpec, spawn = fakeClaudeSpawn().spawn): Promise<{ end: JobState; logged: string }> {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const end = await new JobSupervisor(sup, { spawn, audit: null, platform: 'linux' }).run();
+      return { end, logged: spy.mock.calls.flat().join('\n') };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+  const expectPlain = (end: JobState, line: string) => {
+    expect(end.status).toBe('failed');
+    expect(end.error).toBe(line);
+  };
+
+  it('the spawn throws: the job error is the constant; the raw text is in the log only', async () => {
+    const { sup } = await started('research the history of printing');
+    const { end, logged } = await failed(sup, () => {
+      throw new Error(RAW);
+    });
+    expectPlain(end, JOB_CLAUDE_START_FAILED);
+    expect(end.error).not.toMatch(/EACCES|\/Users/);
+    expect(logged).toContain(RAW);
+    expect(readJobState(sup.home, end.id)?.error).toBe(JOB_CLAUDE_START_FAILED);
+    expect(readFileSync(jobFiles(sup.spec.metaDir).stderr, 'utf8')).toContain(RAW);
+  });
+
+  it('the job log cannot be opened: the constant, raw text in the log only', async () => {
+    const { sup } = await started('research the history of printing');
+    const logPath = jobFiles(sup.spec.metaDir).log;
+    rmSync(logPath, { force: true });
+    mkdirSync(logPath); // opening a folder as the log fails (EISDIR, with the path)
+    const { end, logged } = await failed(sup);
+    expectPlain(end, JOB_LOG_FAILED);
+    expect(end.error).not.toContain(sup.spec.metaDir);
+    expect(logged).toContain(logPath);
+    expect(readJobState(sup.home, end.id)?.error).toBe(JOB_LOG_FAILED);
+  });
+
+  it('an invalid spec: the constant, raw reason in the log only', async () => {
+    const { sup } = await started('research the history of printing');
+    const { end, logged } = await failed({ ...sup, spec: { ...sup.spec, sessionId: 'not-a-uuid' } });
+    expectPlain(end, JOB_SPEC_INVALID);
+    expect(end.error).not.toMatch(/session id/);
+    expect(logged).toContain('bad session id');
+    expect(readJobState(sup.home, end.id)?.error).toBe(JOB_SPEC_INVALID);
   });
 });

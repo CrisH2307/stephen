@@ -12,7 +12,10 @@ import { spokenShow } from './finish.js';
 import { parseJobIntent } from './intent.js';
 import type { JobManager, JobPlan } from './manager.js';
 import { TASK_MAX } from './spec.js';
-import { isFinal, type JobState } from './state.js';
+import { isFinal, logRaw, type JobState } from './state.js';
+
+/** R7: an unexpected error in a job command is said as one plain sentence; the raw text goes to the log only. */
+export const JOB_SOMETHING_WRONG = 'Something went wrong with the job. Try again in a moment.';
 
 /** Same shape as the timer router's result (the Assistant handles them the same way). */
 export interface JobRoute {
@@ -104,7 +107,8 @@ export class JobRouter {
           return await this.stop(intent.which, opts.source, wake);
       }
     } catch (e) {
-      return { reply: `Something went wrong with the job (${clean((e as Error).message, 120)}).`, changed: false };
+      logRaw('job command', (e as Error).message);
+      return { reply: JOB_SOMETHING_WRONG, changed: false };
     }
   }
 
@@ -132,7 +136,8 @@ export class JobRouter {
       if ('refused' in r) return no(r.refused);
       return { ok: true, text: `Job started: ${said(plan.task)}. Up to ${plural(minutes(plan.wallClockMs), 'minute')}, web ${web ? 'on' : 'off'}, no input files; it'll be in your Stephen Jobs folder. Ask "how's my job going" to check on it.` };
     } catch (e) {
-      return no(`Something went wrong with the job (${clean((e as Error).message, 120)}).`);
+      logRaw('phone job', (e as Error).message);
+      return no(JOB_SOMETHING_WRONG);
     }
   }
 
