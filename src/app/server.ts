@@ -30,6 +30,7 @@ import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/
 import type { ProposalStore } from '../memory/proposals.js';
 import { memoryGraph } from './memory-graph.js';
 import type { ModelChanges } from './model.js';
+import { compileLists, isPrivateUrl } from '../safety/policy.js';
 import { truncate } from '../safety/text.js';
 import type { AuditEntry } from '../types.js';
 import type { ChatStep } from './steps.js';
@@ -56,6 +57,23 @@ import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
 
 /** `<home>/run/app.sock` */
+const BUILTIN_LISTS = compileLists({ blockedDomains: [], sensitiveDomains: [] });
+const BUILTIN_PRIVATE = (url: string): boolean => isPrivateUrl(url, BUILTIN_LISTS);
+
+/**
+ * T6 step 3 (docs/design/STOP-AND-ACTIVITY.md): an audit entry on a private site leaves app.sock without its element
+ * label, intent, error and args. A Gmail row label can hold a code; the listener can't know what the owner already saw.
+ */
+export function hidePrivateFields(e: AuditEntry, isPrivate: (url: string) => boolean): AuditEntry {
+  if (![e.urlBefore, e.urlAfter].some((u) => u !== undefined && isPrivate(u))) return e;
+  const out = { ...e };
+  delete out.element;
+  delete out.intent;
+  delete out.error;
+  delete out.args;
+  return out;
+}
+
 export function appSocketPath(home: string): string {
   return join(home, 'run', 'app.sock');
 }
@@ -106,6 +124,8 @@ export interface AppServerOptions {
   history: (Pick<HistoryStore, 'list' | 'clear'> & Partial<Pick<HistoryStore, 'all' | 'deleteVersion'>>) | null;
   /** null = no audit log configured. */
   audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
+  /** True for a private site (mail, private apps, sensitive, the owner's sensitiveDomains). Default: the built-in lists. */
+  isPrivateUrl?: (url: string) => boolean;
   settings: () => AppSettings;
   /** settings.set (How Stephen talks): validated changes in, the saved settings out. Absent = read-only. */
   setTalk?: (changes: Partial<TalkState>) => void;
@@ -715,7 +735,8 @@ export class AppServer {
         } catch {
           return { id, type: 'error', message: 'could not read the audit log' };
         }
-        return fitList(entries, (e) => ({ id, type: 'audit', entries: e }));
+        const priv = this.o.isPrivateUrl ?? BUILTIN_PRIVATE;
+        return fitList(entries.map((e) => hidePrivateFields(e, priv)), (e) => ({ id, type: 'audit', entries: e }));
       }
       case 'accounts.status':
         if (!this.o.accounts) return { id, type: 'error', message: 'accounts status is not available' };
