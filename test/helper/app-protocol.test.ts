@@ -691,6 +691,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(jobs).toContain('switch model.jobsListOk');
     expect(jobs).toMatch(/case nil:[\s\S]*JOBS_LOADING[\s\S]*case false\?:[\s\S]*JOBS_LIST_FAILED[\s\S]*QuietButton\("Try again"[\s\S]*model\.refreshJobs\(\)[\s\S]*case true\?:[\s\S]*JOBS_EMPTY/);
     expect(jobs).toContain('let JOBS_LIST_FAILED = "Couldn\'t load your jobs right now."');
+    // Activity lists jobs too: a failed list is said there as well, never silent.
+    expect(read('ActivityPage.swift')).toContain('model.jobsListOk == false ? JOBS_LIST_FAILED : nil');
   });
 
   // ADR-010 Edit request ([DEV REVIEW]): off while queued or running (with the line), the editor only sends the text,
