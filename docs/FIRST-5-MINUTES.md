@@ -1,6 +1,6 @@
 # Your first 5 minutes with Stephen
 
-This page starts after Stephen is installed ([Getting started](guide/GETTING-STARTED.md), steps 1 to 3). Almost everything here is clicks in the Stephen window. The one exception is signing in to Claude Code.
+This page starts after Stephen is installed ([Getting started](guide/GETTING-STARTED.md), steps 1 to 3). Setting up is clicks in the Stephen window, except signing in to Claude Code, which needs Terminal. Leaving Stephen also uses Terminal for a few commands.
 
 ## 1. Open the Stephen window
 
@@ -11,7 +11,7 @@ This page starts after Stephen is installed ([Getting started](guide/GETTING-STA
 
 1. Step 1 of the sheet checks that Claude Code is installed and signed in.
 2. If it says Claude Code is not on this Mac yet: press "Open the Claude Code page", follow the install steps on that page, then press "Check again".
-3. If it says Claude Code is not signed in: open Terminal, type claude, press Return and sign in. The sheet shows the word claude with a Copy button. Then press "Check again". This is the only step that needs Terminal.
+3. If it says Claude Code is not signed in: open Terminal, type claude, press Return and sign in. The sheet shows the word claude with a Copy button. Then press "Check again". This is the only setup step that needs Terminal.
 
 ## 3. Voice models
 
