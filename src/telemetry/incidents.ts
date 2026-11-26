@@ -32,10 +32,12 @@ export type IncidentPart = (typeof INCIDENT_PARTS)[number];
 
 /**
  * What went wrong, as a code word. uncaught = a crash with no error code; command_error = a command ended with
- * outcome `error`; helper_lost = the helper connection dropped. The E codes are Node's own error codes.
+ * outcome `error`; helper_lost = the helper connection dropped. The E codes are Node's own error codes. The claude_
+ * codes say why a model run failed (R5, CLAUDE_FAILURES in src/voice/claude.ts; a test keeps the two lists equal).
  */
 export const INCIDENT_CODES = [
   'uncaught', 'command_error', 'helper_lost',
+  'claude_missing', 'claude_signed_out', 'claude_usage_limit', 'claude_busy', 'claude_offline', 'claude_other',
   'ENOENT', 'EACCES', 'EPERM', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'EADDRINUSE', 'EMFILE', 'ENOMEM',
   'ERR_INVALID_ARG_TYPE', 'ERR_STREAM_DESTROYED', 'ERR_SOCKET_CLOSED',
   'other',
