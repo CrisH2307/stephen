@@ -82,7 +82,8 @@ describe('plan limit message', () => {
   });
   it('other errors are untouched', () => {
     expect(planLimitMessage('Something about a rate of limits')).toBeNull();
-    expect(outcomeFromResult({ type: 'result', is_error: true, result: 'boom' })).toMatchObject({ message: 'boom' });
+    // A non-limit error with no subtype line gets the fixed line, never its own text.
+    expect(outcomeFromResult({ type: 'result', is_error: true, result: 'boom' })).toMatchObject({ message: 'Something went wrong while I was working on that.' });
   });
 });
 
