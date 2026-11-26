@@ -593,9 +593,13 @@ export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
+    // max turns and budget are Stephen's own limits, not a Claude failure: the subtype decides and their text (which a
+    // page can steer) is never classified, not even for the plan-limit line.
+    if (res.subtype === 'error_max_turns' || res.subtype === 'error_max_budget_usd') {
+      return { kind: 'error', message: ERROR_TEXT[res.subtype]!, sessionId };
+    }
     const msg = planLimitMessage(text) ?? ERROR_TEXT[res.subtype ?? ''] ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
-    // max turns and budget are Stephen's own limits, not a Claude failure: their text is never classified.
-    return res.subtype === 'error_max_turns' || res.subtype === 'error_max_budget_usd' ? { kind: 'error', message: msg, sessionId } : withFailure({ kind: 'error', message: msg, sessionId }, text);
+    return withFailure({ kind: 'error', message: msg, sessionId }, text);
   }
   return {
     kind: 'ok',
