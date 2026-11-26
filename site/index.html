@@ -10,7 +10,7 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap top">
-  <a class="mark" href="index.html" aria-current="page">Stephen <span class="dot" aria-hidden="true"></span></a>
+  <a class="mark" href="index.html" aria-current="page"><span class="tile" aria-hidden="true"></span>Stephen</a>
   <nav aria-label="Main">
     <a href="beta.html">Get the beta</a>
     <a href="privacy.html">Privacy</a>
@@ -21,59 +21,59 @@
 <main id="main">
   <section class="wrap hero">
     <div>
-      <h1>Talk to your Mac. It asks before anything risky.</h1>
+      <h1>Talk to your Mac. It asks before anything <mark>risky</mark>.</h1>
       <p class="lede">Stephen is a voice assistant for your Mac and browser. Say "Hey Stephen" or hold F5, and it does the clicking for you.</p>
       <div class="cta">
         <a class="btn" href="beta.html">Get the beta</a>
         <span class="small">Friends beta for Mac. Open source.</span>
       </div>
+      <p class="aside">you say it, you still click Allow
+        <svg viewBox="0 0 64 32" aria-hidden="true"><path d="M2 22 C 20 30, 40 28, 58 10 M48 9 L58 10 L56 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </p>
     </div>
 
     <figure class="demo">
-      <div class="askbox" role="img" aria-label="Drawing: you ask Stephen to book a study room. It opens the page, chooses the room and fills in the form. Before it submits, it asks you, and you click Allow or Deny.">
-        <div class="strip"><b>Stephen</b> · Book a study room</div>
-        <div class="thread play">
-          <div class="me">Book a study room at the library for 3 pm today.</div>
-          <div class="src">Push to talk (F5)</div>
-          <div class="plan"><ol>
-            <li><span>Open library.school.example</span></li>
-            <li><span>Choose Study room 2</span></li>
-            <li><span>Fill in the form</span></li>
-            <li><span>Submit the form</span></li>
-          </ol></div>
-          <div class="card">
-            <p class="q">Submit this form?</p>
-            <p class="why">Submitting always needs your click.</p>
-            <div class="verbatim">Room: Study room 2<br>Today, 3:00 to 4:00 pm</div>
-            <div class="choice"><span>Deny</span><span class="allow">Allow</span></div>
-          </div>
+      <div class="card askbox play" role="img" aria-label="Drawing: you ask Stephen to book a study room. It opens the page, chooses the room and fills in the form. Before it submits, it asks you, and you click Allow or Deny.">
+        <div class="strip">Stephen <span>· Book a study room</span></div>
+        <div class="me">Book a study room at the library for 3 pm today.</div>
+        <div class="src">Push to talk (F5)</div>
+        <ul class="steps">
+          <li>Open library.school.example</li>
+          <li>Choose Study room 2</li>
+          <li>Fill in the form</li>
+        </ul>
+        <div class="card ask">
+          <p class="q">Submit this form?</p>
+          <p class="why">Submitting always needs your click.</p>
+          <div class="verbatim">Room: Study room 2<br>Today, 3:00 to 4:00 pm</div>
+          <div class="choice"><span>Deny</span><span class="allow">Allow</span></div>
         </div>
       </div>
       <figcaption>A simple drawing of the Ask box. The library site is an example.</figcaption>
     </figure>
   </section>
 
-  <section class="band" aria-label="Three promises">
-    <div class="wrap promises">
-      <div>
-        <h2>It asks first.</h2>
-        <p>Sending, submitting and other risky steps wait for your click on Allow. A spoken yes never counts.</p>
-      </div>
-      <div>
-        <h2>Pages are data, not orders.</h2>
-        <p>Web pages and emails are read as data, never as your words. Stephen is built and tested to resist hidden orders.</p>
-      </div>
-      <div>
-        <h2>Your speech stays on your Mac.</h2>
-        <p>Speech to text runs on the Mac. Claude gets your request and what Stephen reads for it, through your own account. Stephen has no server.</p>
-      </div>
+  <section class="wrap promises" aria-label="Three promises">
+    <div class="card sky">
+      <h2>It asks first.</h2>
+      <p>Sending, submitting and other risky steps wait for your click on Allow. A spoken yes never counts.</p>
+    </div>
+    <div class="card pink">
+      <h2>Pages are data, not orders.</h2>
+      <p>Web pages and emails are read as data, never as your words. Stephen is built and tested to resist hidden orders.</p>
+    </div>
+    <div class="card mint">
+      <h2>Your speech stays on your Mac.</h2>
+      <p>Speech to text runs on the Mac. Claude gets your request and what Stephen reads for it, through your own account. Stephen has no server.</p>
     </div>
   </section>
 
-  <section class="wrap close">
-    <h2>Want to try it?</h2>
-    <p>The beta is for friends right now. It is early, and some things are slow. You need a Mac with Apple silicon and your own Claude plan.</p>
-    <a class="btn" href="beta.html">Get the beta</a>
+  <section class="wrap">
+    <div class="card close">
+      <h2>Want to try it?</h2>
+      <p>The beta is for friends right now. It is early, and some things are slow. You need a Mac with Apple silicon and your own Claude plan.</p>
+      <a class="btn" href="beta.html">Get the beta</a>
+    </div>
   </section>
 </main>
 
