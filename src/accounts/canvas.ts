@@ -15,7 +15,7 @@ import { field } from './result.js';
 export const MAX_DAYS = 30;
 /** No default school: the person sets their own Canvas address (B8). */
 export const CANVAS_URL_MISSING =
-  'Canvas is not set up yet: the user should set "canvas": {"url": "https://<their school>.instructure.com"} in ~/.stephen/config.json (or CANVAS_URL in Stephen\'s .env). Tell them that; do not try the Canvas website instead.';
+  'Canvas is not set up yet: the user should set "accounts": {"canvas": {"url": "https://<their school>.instructure.com"}} in ~/.stephen/config.json (or CANVAS_URL in Stephen\'s .env). Tell them that; do not try the Canvas website instead.';
 
 /** The parts of a planner item Stephen uses (Canvas returns many more). */
 export interface PlannerItem {

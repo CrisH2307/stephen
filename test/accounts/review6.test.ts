@@ -169,7 +169,7 @@ describe('R6-6: a token never reaches an error message', () => {
     const h = await setup({ extraDeps: { accounts: { secrets: { platform: 'linux', envFile: f }, fetch: async () => ((fetched++), new Response('{}')) } } });
     const text = textOf(await h.call('canvas_due', {}));
     expect(text).toContain('Canvas is not set up yet');
-    expect(text).toContain('"canvas": {"url"');
+    expect(text).toContain('"accounts": {"canvas": {"url"');
     expect(text).not.toContain('SECRET');
     expect(fetched).toBe(0);
   });
