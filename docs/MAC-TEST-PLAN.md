@@ -487,9 +487,9 @@ The full acceptance is 20 holds and 10 of each stop. If you have little time, do
 - [ ] `[scripted]` **14.8** Do: run `npx vitest run test/app/steps.test.ts`.
   See: all tests pass. (R10a-1, #93, #110)
 - [ ] `[hands]` **14.9** Do: turn Wi-Fi off. Say "Hey Stephen, what's my day". Turn Wi-Fi on again.
-  See: the problem shows. Under your words it says "From: Hey Stephen". There is no "Try again" button. (R10a-2, #94, #111; the way to make it fail is not in the PR, so this is a guess: if no problem shows, note it in the issue)
+  See: the problem shows. No source line is under your words. There is no "Try again" button. (R10a-2, #94, #111; the way to make it fail is not in the PR, so this is a guess: if no problem shows, note it in the issue)
 - [ ] `[hands]` **14.10** Do: only if you use the phone page: send a command from the phone while Wi-Fi is off. Otherwise skip.
-  See: the problem shows, under your words it says "From: Phone", and there is no "Try again" button. Skip if you do not use the phone. (R10a-2, #94, #111)
+  See: the problem shows, no source line is under your words, and there is no "Try again" button. Skip if you do not use the phone. (R10a-2, #94, #111)
 - [ ] `[hands]` **14.11** Do: turn Wi-Fi off. Open the Ask box and type "what time is it", then press Return. Turn Wi-Fi on. Click "Try again".
   See: the problem shows with a "Try again" button. After the click, the same words are sent again and a reply shows. (R10a-2, #94, #111)
 - [ ] `[hands]` **14.12** Do: ask for a gated action in the Ask box. When the question shows, click in the text field so the cursor is there. Press Esc.

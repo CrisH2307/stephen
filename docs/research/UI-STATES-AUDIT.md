@@ -120,13 +120,13 @@ Handled at window level via `OfflineView` (see MainWindow.swift). Conversations 
 **File:** `helper/JobsPage.swift`
 
 ### Loading State
-**Lines:** 1-211
-- Intro line with caution note (R9)
-- Running jobs shown open by default
-- No explicit loading indicator
+- "Loading your jobs..." with a small spinner until the first jobs.list answer (`model.jobsListOk == nil`, R7d)
 
 ### Empty State
-No explicit empty state - jobs list may be empty showing no rows.
+- "No jobs yet. Say "start a job to find 5 internships"." only after a jobs.list answer that worked (R7d)
+
+### Error State
+- "Couldn't load your jobs right now." with a Try again button that calls `model.refreshJobs()` (R7d)
 
 ### Job Status States
 **Lines:** 11-20
@@ -286,7 +286,7 @@ enum Page: String, CaseIterable, Identifiable {
 | Home | Lines 63-79 (greeting, chips, recent) | None (instant render) | None | MainWindow:164-169 |
 | Memory | Lines 269-272, 313-316 | Lines 144-146 (notice) | None | MainWindow:164-169 |
 | Conversations | Line 141 (empty line) | None | None | MainWindow:164-169 |
-| Jobs | None | None | Rows show error status | MainWindow:164-169 |
+| Jobs | After a good list (R7d) | "Loading your jobs..." (R7d) | "Couldn't load your jobs right now." and Try again (R7d) | MainWindow:164-169 |
 | Settings | Lines 87-95 (pane placeholders) | None | None | Lines 345-352 (Connected pane) |
 | Ask Box | Lines 13-19 (empty thread) | None (instant render) | None | Lines 172-203 |
 

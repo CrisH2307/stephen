@@ -1,4 +1,4 @@
-// Stephen Helper: the Memory page (UI-V4-IA-PLAN section 6.3), the sidebar's Memory row (⌘4) and the Ask box.
+// Stephen Helper: the Memory page (UI-V4-IA-PLAN section 6.3), the sidebar's Memory row (⌘5) and the Ask box.
 // Intro line, New from your chats (Keep, Edit, Skip; only when there are any), search (⌘F) with the "86% full" chip
 // only over 80% and ⋯, filter chips, Graph or List, the graph (you in the center, items grouped by kind, links between
 // related items, the selected node accent, a New proposal dashed amber) or the same items as a list with the

@@ -46,6 +46,20 @@ let job = try! JSONDecoder().decode(JobRow.self, from: Data(#"{"id":"2026-11-26-
 let rows = activityRows(audit: [failedType, jobAudit, click, gate, old], jobs: [job], history: history, now: now, parse: parse)
 check(rows.map { $0.text } == ["Typed into a field on docs.google.com", "Job \"Sort my downloads\"", #"Clicked button "Play" on www.youtube.com"#], "rows: \(rows.map { $0.text })")
 check(rows.map { $0.historyId } == ["h_old", nil, "h_0123456789abcdef"], "joins: \(rows.map { $0.historyId })")
+// Two tabs on the same host at once, lines interleaved (result A, result B, decision B, decision A): each decision
+// folds into its own tab's result, so each click shows once. A new tab's decision line ("new") folds into its result.
+func tabLine(_ ts: String, _ tab: String, after: Bool) -> AuditEntry {
+  return audit(#"{"ts":"\#(ts)","tool":"click","kind":"click","urlBefore":"https://www.youtube.com/","outcome":"ok","tab":"\#(tab)""# + (after ? #","urlAfter":"https://www.youtube.com/x"}"# : "}"))
+}
+let two = activityRows(audit: [tabLine("2026-11-26T14:40:04Z", "z1", after: true), tabLine("2026-11-26T14:40:03Z", "z2", after: true),
+                               tabLine("2026-11-26T14:40:02Z", "z2", after: false), tabLine("2026-11-26T14:40:01Z", "z1", after: false)],
+                       jobs: [], history: [], now: now, parse: parse)
+check(two.count == 2, "two tabs: \(two.count) rows")
+let opened = activityRows(audit: [audit(#"{"ts":"2026-11-26T14:50:01Z","tool":"tab_open","kind":"tab_open","urlBefore":"about:blank","urlAfter":"https://a.example/","outcome":"ok","tab":"z3"}"#),
+                                  audit(#"{"ts":"2026-11-26T14:50:00Z","tool":"tab_open","kind":"tab_open","urlBefore":"about:blank","outcome":"ok","tab":"new"}"#)],
+                          jobs: [], history: [], now: now, parse: parse)
+check(opened.count == 1, "new tab folds: \(opened.count) rows")
+
 // Nothing secret reaches any row.
 for r in rows { for s in ["s3cret", "771204", "my secret", "watch", "token"] { check(!r.text.contains(s), "leak \(s) in \(r.text)") } }
 
