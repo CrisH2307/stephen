@@ -30,7 +30,9 @@ import {
   MCP_SERVER_NAME,
   SESSION_ID_RE,
   buildWarmArgs,
-  claudeNotFound,
+  CLAUDE_NOT_FOUND,
+  CLAUDE_START_FAILED,
+  logStartRaw,
   claudeSpawnOptions,
   killGroup,
   outcomeFromResult,
@@ -254,8 +256,9 @@ export class WarmClaude implements WarmProcess {
     try {
       child = spawnFn(this.o.claudePath, buildWarmArgs(this.inst ? { ...this.o, mcpConfigPath: this.inst.mcpConfigPath } : this.o, memory), claudeSpawnOptions(this.o, 'pipe'));
     } catch (e) {
+      logStartRaw(this.o.claudePath, (e as Error).message);
       this.onClosed();
-      throw new Error(`Could not start Claude Code (${(e as Error).message}).`);
+      throw new Error(CLAUDE_START_FAILED);
     }
     this.child = child;
     child.stdout?.setEncoding('utf8').on('data', (d: string) => this.onData(d));
@@ -264,7 +267,8 @@ export class WarmClaude implements WarmProcess {
     });
     child.stdin?.on('error', () => undefined); // EPIPE after an exit: the close handler reports it
     child.once('error', (e: NodeJS.ErrnoException) => {
-      this.stderr += `\n${e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : e.message}`;
+      logStartRaw(this.o.claudePath, e.message);
+      this.stderr += `\n${e.code === 'ENOENT' ? CLAUDE_NOT_FOUND : CLAUDE_START_FAILED}`;
       this.onClosed();
     });
     child.once('close', () => this.onClosed());

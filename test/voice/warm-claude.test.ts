@@ -7,9 +7,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { newServeInstance, pidAlive, readServeLock, serveLockPath } from '../../src/server/instance.js';
-import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, checkClaudeFlags, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
+import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, CLAUDE_START_FAILED, checkClaudeFlags, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
 import { WarmClaude, probeWarmProtocol, userMessageLine, type WarmClaudeOptions } from '../../src/voice/warm-claude.js';
 import { fakeClaudePath, isAlive, readFakeLog, waitFor } from './helpers.js';
 
@@ -281,11 +281,36 @@ describe('WarmClaude against the fake stream-json claude', () => {
     expect(isAlive(t.procs().claude)).toBe(false);
   });
 
-  it('a missing claude binary: not ready, with the install hint', async () => {
-    const t = setup({}, { claudePath: join(tmp, 'no-such-claude') });
-    const p = new WarmClaude(t.o, undefined);
-    await expect(p.ready()).rejects.toThrow(/stopped \(Claude Code was not found/);
-    expect(p.exited).toBe(true);
+  it('a missing claude binary: not ready, with the install hint; the path is in the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup({}, { claudePath: join(tmp, 'no-such-claude') });
+      const p = new WarmClaude(t.o, undefined);
+      const err = await p.ready().then(() => null, (e: Error) => e.message);
+      expect(err).toMatch(/stopped \(Claude Code was not found/);
+      expect(err).not.toContain('no-such-claude');
+      expect(p.exited).toBe(true);
+      expect(spy.mock.calls.flat().join('\n')).toContain('no-such-claude');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('R7: a spawn that throws says one plain sentence; the raw reason is in the log only', async () => {
+    const raw = 'EACCES: permission denied, /Users/x/secret';
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup({}, {
+        spawn: () => {
+          throw new Error(raw);
+        },
+      });
+      const p = new WarmClaude(t.o, undefined);
+      await expect(p.ready()).rejects.toThrow(CLAUDE_START_FAILED);
+      expect(spy.mock.calls.flat().join('\n')).toContain(raw);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('probeWarmProtocol: null when initialize answers, else the reason; the probe process is killed', async () => {
