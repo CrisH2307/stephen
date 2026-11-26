@@ -19,6 +19,8 @@ import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
 import { DEFAULT_TALK, EXPLAIN_LINE, LENGTH_LINES, TONE_LINES, type TalkPrefs } from './talk.js';
 import { withoutSecrets } from '../lib/claude-env.js';
+import { claudeFailure, planLimitMessage, type ClaudeFailure } from '../lib/claude-failure.js';
+export { CLAUDE_FAILURES, claudeFailure, planLimitMessage, type ClaudeFailure } from '../lib/claude-failure.js';
 export { KEPT_ANTHROPIC_ENV, KEPT_BASE_ENV, KEPT_CLAUDE_CODE_ENV, droppedEndpointEnv, withoutSecrets } from '../lib/claude-env.js';
 
 /** The MCP server name. Tools appear to Claude as mcp__stephen__<tool>. */
@@ -494,38 +496,6 @@ const ERROR_TEXT: Record<string, string> = {
   error_during_execution: 'Something went wrong while I was working on that.',
   error_max_budget_usd: 'That would cost more than allowed, so I stopped.',
 };
-
-// Wording seen in Claude Code 2.1.319 ("Usage limit reached · limit resets 3pm") and earlier builds ("You've hit your limit · resets 3pm").
-const PLAN_LIMIT_RE = /\b(?:usage|plan|session|weekly|5-hour) limit reached\b|\bhit your (?:[a-z0-9-]+ )?limit\b/i;
-const LIMIT_RESET_RE = /\bresets?\s+(?:at\s+)?([^·|(\n]+)/i;
-
-/** The plain message for "plan limit reached" CLI text (with the reset time when the text carries one), else null. Pure. */
-export function planLimitMessage(text: string): string | null {
-  if (!PLAN_LIMIT_RE.test(text)) return null;
-  // The reset time is CLI text: keep only a short clock-like value.
-  const raw = LIMIT_RESET_RE.exec(text)?.[1]?.trim();
-  const at = raw && /^[0-9apm: .]{1,12}$/i.test(raw) ? raw : undefined;
-  return at ? `You've reached your Claude plan limit. It resets at ${at}.` : "You've reached your Claude plan limit.";
-}
-
-/** Why a model run failed (R5), as an incident code word. claude_other: anything not matched below. */
-export const CLAUDE_FAILURES = ['claude_missing', 'claude_signed_out', 'claude_usage_limit', 'claude_busy', 'claude_offline', 'claude_other'] as const;
-export type ClaudeFailure = (typeof CLAUDE_FAILURES)[number];
-
-// Fixed markers only, first match wins. The text is never copied anywhere: it only picks one of these words.
-// ponytail: markers seen in Claude Code 2.1.316 to 2.1.319 and Node's network errors; a new wording falls to claude_other.
-const FAILURE_MARKERS: readonly [ClaudeFailure, RegExp][] = [
-  ['claude_missing', /\bClaude Code was not found\b/],
-  ['claude_usage_limit', new RegExp(`${PLAN_LIMIT_RE.source}|\\breached your Claude plan limit\\b`, 'i')],
-  ['claude_signed_out', /\bnot logged in\b|\bplease run \/login\b|\binvalid api key\b|\bauthentication_error\b|\boauth token has expired\b|\bAPI Error: 401\b/i],
-  ['claude_busy', /\boverloaded(?:_error)?\b|\brate_limit_error\b|\brate limited\b|\bAPI Error: (?:429|529)\b/i],
-  ['claude_offline', /\b(?:ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ETIMEDOUT)\b|\bgetaddrinfo\b|\bfetch failed\b|\bunable to connect to api\b|\bconnection error\b/i],
-];
-
-/** One failed run's message (a ClaudeOutcome error) → a failure code word, by fixed markers. Pure. */
-export function claudeFailure(message: string): ClaudeFailure {
-  return FAILURE_MARKERS.find(([, re]) => re.test(message))?.[0] ?? 'claude_other';
-}
 
 /** The error outcome with `failure` set when the raw CLI text (result text or stderr) has a known marker. */
 function withFailure(o: { kind: 'error'; message: string; sessionId: string | null }, raw: string): ClaudeOutcome {

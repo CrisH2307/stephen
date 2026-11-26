@@ -37,11 +37,20 @@ const ago = (ms: number) => {
 };
 const when = (t: number | null) => (t ? new Date(t).toLocaleString() : '-');
 
+/**
+ * A job's error note, framed as job output. It can hold Claude's last error line, which a page the job read can
+ * steer (sibling of R9 J2), so it is cleaned like the summary (links and codes hidden, <untrusted_ tags escaped) and
+ * printed inside the same frame. Stephen's own fixed notes ("Stopped by the owner.") stay readable inside it.
+ */
+function framedNote(error: string, max: number): string {
+  return `<untrusted_job_output>${cleanJobOutput(error, max)}</untrusted_job_output>`;
+}
+
 /** One line (plus the task) per job. Every string is cleaned again before it reaches the terminal. */
 export function formatJobLine(j: JobState, now: number): string {
   const time = j.status === 'running' && j.startedAt ? ago(now - j.startedAt) : j.endedAt && j.startedAt ? ago(j.endedAt - j.startedAt) : '';
   const parts = [j.id, j.status, time, `${j.turns} turns`, j.costUsd !== null ? `$${j.costUsd.toFixed(2)}` : '', j.web ? 'web on' : '', j.repo ? `branch ${clean(j.repo.branch, 80)}` : ''];
-  return `${parts.filter(Boolean).join('  ')}\n  "${clean(j.task, 200)}"${j.error && j.status !== 'done' ? `\n  ${clean(j.error, 200)}` : ''}`;
+  return `${parts.filter(Boolean).join('  ')}\n  "${clean(j.task, 200)}"${j.error && j.status !== 'done' ? `\n  ${framedNote(j.error, 200)}` : ''}`;
 }
 
 export function formatJobStatus(j: JobState, now: number): string {
@@ -55,7 +64,7 @@ export function formatJobStatus(j: JobState, now: number): string {
     `  ended:    ${when(j.endedAt)}`,
     `  budgets:  ${Math.round(j.wallClockMs / 60_000)} min, ${j.maxTurns} turns, $${j.maxBudgetUsd}; model ${clean(j.model, 40)}; web ${j.web ? 'on' : 'off'}`,
     `  used:     ${j.turns} turns, ${j.toolCalls} tool calls, ${j.denials} denied, ${j.costUsd !== null ? `$${j.costUsd.toFixed(2)}` : 'cost unknown'}`,
-    ...(j.error ? [`  note:     ${clean(j.error, 400)}`] : []),
+    ...(j.error ? [`  note:     ${framedNote(j.error, 400)}`] : []),
     ...(j.sessionId ? [`  resume:   cd ${JSON.stringify(j.cwd)} && claude --resume ${clean(j.sessionId, 40)}`] : []),
   ].join('\n');
 }

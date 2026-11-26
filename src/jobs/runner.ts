@@ -44,6 +44,7 @@ export interface SupervisorSpec {
 
 // ───────────── stream-json → events (pure, in src/lib/claude-stream.ts) ─────────────
 
+import { plainFailureLine } from '../lib/claude-failure.js';
 export { parseStreamLine as parseJobLine, type StreamEvent as JobEvent } from '../lib/claude-stream.js';
 import { parseStreamLine as parseJobLine, type StreamEvent as JobEvent } from '../lib/claude-stream.js';
 
@@ -56,6 +57,8 @@ export function resultStatus(r: Extract<JobEvent, { kind: 'result' }>, spec: Pic
   if (!r.isError && r.subtype === 'success') return { status: 'done', error: '' };
   if (r.subtype === 'error_max_turns') return { status: 'failed', error: `It ran out of turns (${spec.maxTurns}) before finishing.` };
   if (r.subtype === 'error_max_budget_usd') return { status: 'failed', error: `It reached the $${spec.maxBudgetUsd} budget before finishing.` };
+  const plain = plainFailureLine([r.text, ...r.errors].join('\n'));
+  if (plain) return { status: 'failed', error: plain };
   const detail = r.errors[0] ? `: ${clean(r.errors[0], 160)}` : '';
   return { status: 'failed', error: `Claude Code reported an error (${clean(r.subtype || 'unknown', 40)})${detail}.` };
 }
@@ -291,6 +294,8 @@ export class JobSupervisor {
       const r = resultStatus(this.result, spec);
       return this.finish(r.status, r.error);
     }
+    const plain = plainFailureLine(exit.error ?? this.stderrTail);
+    if (plain) return this.finish('failed', plain);
     const lastErr = clean(this.stderrTail.trim().split('\n').filter(Boolean).at(-1) ?? '', 160);
     return this.finish('failed', exit.error ? `${exit.error}.` : `Claude Code exited (code ${exit.code ?? 'killed'}) without a result${lastErr ? `: ${lastErr}` : ''}.`);
   }
