@@ -181,12 +181,13 @@ async function handleIssue(issue, comments, budget, today) {
       if (!resolved) log(`#${n}: dry run, would add label needs-cris and post the #${INBOX_ISSUE} line.`);
       return;
     }
-    // The label goes first: if it fails, nothing is posted, so the marker is never written for a run that did not finish.
-    if (!resolved) await run('gh', ['issue', 'edit', String(n), '--repo', REPO, '--add-label', 'needs-cris']);
+    // The comment goes first: it holds the marker and the Claude count, so a later failure never makes the next run
+    // spend the Claude levels again. The label exists (checked in main), so the label step is unlikely to fail.
     const commentFile = join(work, 'comment.md');
     await writeFile(commentFile, `${comment}\n`);
     await run('gh', ['issue', 'comment', String(n), '--repo', REPO, '--body-file', commentFile]);
     if (!resolved) {
+      await run('gh', ['issue', 'edit', String(n), '--repo', REPO, '--add-label', 'needs-cris']);
       const inboxFile = join(work, 'inbox.md');
       await writeFile(inboxFile, `${inboxLine(n, 5, shown ? shown.confidence : 'none')}\n`);
       await run('gh', ['issue', 'comment', String(INBOX_ISSUE), '--repo', REPO, '--body-file', inboxFile]);
@@ -209,21 +210,25 @@ async function listAll(path) {
 
 async function main() {
   const today = dayUtc(new Date());
-  // Open and closed incident issues touched today: the daily cap counts Claude runs on all of them.
   // The author check comes first: a body from any other id is never read.
-  const touched = (await listAll(`repos/${REPO}/issues?labels=incident&state=all&since=${today}T00:00:00Z`)).filter(
-    (i) => !i.pull_request && ALLOWED_AUTHOR_IDS.includes(i.user?.id),
-  );
-  const mine = touched.filter((i) => i.state === 'open');
+  const allowed = (i) => !i.pull_request && ALLOWED_AUTHOR_IDS.includes(i.user?.id);
+  // Every open incident, however old. A dated list would skip one filed yesterday.
+  const mine = (await listAll(`repos/${REPO}/issues?labels=incident&state=open`)).filter(allowed);
   if (!mine.length) return log('No open incident issues from an allowed author.');
-  // L5 adds this label. Without it the label step fails after the Claude levels ran, no marker is posted, and the
-  // next run would spend them again.
-  const labels = await ghJson([`repos/${REPO}/labels?per_page=100`]);
-  if (!labels.some((l) => l.name === 'needs-cris')) throw new Error('Create the needs-cris label first: gh label create needs-cris --repo ' + REPO);
+  // Open and closed incident issues touched today: the daily cap counts Claude runs on all of them.
+  const touched = (await listAll(`repos/${REPO}/issues?labels=incident&state=all&since=${today}T00:00:00Z`)).filter(allowed);
+  // L5 adds this label. Check it before any level runs. A missing label fails here (404), not after the Claude runs.
+  try {
+    await ghJson([`repos/${REPO}/labels/needs-cris`]);
+  } catch {
+    throw new Error(`Create the needs-cris label first: gh label create needs-cris --repo ${REPO}`);
+  }
   await run('git', ['fetch', '--quiet', 'origin', 'qa'], { cwd: ROOT });
 
   const commentsOf = new Map();
-  for (const i of touched) commentsOf.set(i.number, await listAll(`repos/${REPO}/issues/${i.number}/comments`));
+  for (const i of [...touched, ...mine]) {
+    if (!commentsOf.has(i.number)) commentsOf.set(i.number, await listAll(`repos/${REPO}/issues/${i.number}/comments`));
+  }
   const budget = { used: claudeRunsToday([...commentsOf.values()].flat(), today) };
   for (const i of mine) {
     try {
