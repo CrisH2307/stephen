@@ -101,6 +101,7 @@ Usage:
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
   stephen report [--last N]
                          Show recent crashes and failed commands; send them to GitHub only if you type y
+  stephen report --week  A weekly summary to paste to Cris: numbers, code words, versions and dates only
   stephen replay list | label <id> <code> | accuracy [--days 7|30] | delete --all | <id>
                          Saved F5 recordings (only when voice.replay.enabled is on): list, label, accuracy, delete
   stephen mac-checks [--json]
@@ -702,8 +703,19 @@ export async function main(argv: string[]): Promise<number> {
       const { runConnectCli } = await import('./connect/gmail-oauth.js');
       return data.runDataDelete(rest.slice(1), root, { keychainDelete, disconnectGmail: (label) => runConnectCli('disconnect', ['gmail', label]) });
     }
-    case 'report':
+    case 'report': {
+      if (rest[0] === '--week' && rest.length === 1) {
+        // F13: numbers, code words, versions and dates only. The Claude Code version comes from `claude --version`.
+        const cfg = loadConfig();
+        const env = (await import('./lib/claude-env.js')).withoutSecrets(process.env);
+        const out = await new Promise<string | null>((res) => {
+          execFile(String((cfg.voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { env, timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
+        });
+        const claude = out === null ? null : (await import('./voice/claude.js')).claudeVersionStatus(out).version;
+        return (await import('./telemetry/cli.js')).runWeeklyCli({ stephen: packageVersion(), claude });
+      }
       return (await import('./telemetry/report.js')).runReportCli(rest);
+    }
     case 'replay':
       return (await import('./replay/recorder.js')).runReplayCli(rest, loadConfig().home);
     case 'mac-checks':
