@@ -11,6 +11,7 @@ import { TalkStore, talkFromConfig } from '../app/talk.js';
 import { ModelStore } from '../app/model.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { sleep } from '../lib/process.js';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
@@ -936,7 +937,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
           if (run) {
             pending.length = 0;
             await run.catch(() => undefined);
-          } else await new Promise((r) => setTimeout(r, 500));
+          } else await sleep(500);
         }
         pending.length = 0;
       } finally {
