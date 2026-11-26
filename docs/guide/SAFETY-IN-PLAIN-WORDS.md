@@ -29,6 +29,7 @@ say.
 
 <p align="center">
   <img src="images/confirm-card.svg" alt="An Allow / Deny card with numbered labels: who wants to act and where, the facts Stephen checked, what Claude says, what the page says, and the Deny and Allow buttons." width="760">
+  <br><sub>Illustration with made-up sample text, not a real screenshot.</sub>
 </p>
 
 How to read it:

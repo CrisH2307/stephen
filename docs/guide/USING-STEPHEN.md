@@ -10,6 +10,7 @@
 
 <p align="center">
   <img src="images/ask-box.svg" alt="The Ask box under the Stephen icon, with numbered labels: the icon, your words, Stephen's reply and the text field." width="760">
+  <br><sub>Illustration with made-up sample text, not a real screenshot.</sub>
 </p>
 
 **Why does F5 get more trust than "Hey Stephen"?** Anyone in the room, or a video, can say "Hey Stephen". Only you

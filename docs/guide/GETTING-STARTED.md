@@ -62,6 +62,7 @@ Setup never asks for a password or a key.
 
 <p align="center">
   <img src="images/permissions.svg" alt="System Settings, Privacy and Security, with Stephen Helper turned on for Microphone, Input Monitoring and Accessibility." width="760">
+  <br><sub>Illustration with made-up sample text, not a real screenshot.</sub>
 </p>
 
 Open **System Settings > Privacy & Security**, then turn on **Stephen Helper** in each of these:
@@ -97,6 +98,7 @@ Then hold **F5**, say **"what time is it"**, and let go. Stephen answers out lou
 
 <p align="center">
   <img src="images/menu-bar-states.svg" alt="Stephen's menu-bar icon in five states: idle, listening, recording, working and speaking." width="760">
+  <br><sub>Illustration with made-up sample text, not a real screenshot.</sub>
 </p>
 
 Watch the Stephen icon in the menu bar. It changes shape as Stephen works: idle, listening, recording, working,
