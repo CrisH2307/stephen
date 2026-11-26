@@ -3,7 +3,7 @@
  * `--text` and the Stephen app's typed chat (src/app/server.ts): call command(text, {source, raw}).
  */
 import { newConversationId, newHistoryId } from '../history/store.js';
-import type { ClaudeOutcome, ModelTimes } from './claude.js';
+import { claudeFailure, type ClaudeFailure, type ClaudeOutcome, type ModelTimes } from './claude.js';
 import { LIMIT_REACHED, LIMIT_WARNING, type DailyLimit } from './daily-limit.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
@@ -127,6 +127,19 @@ export const RESUME_GONE_MESSAGE = 'That conversation is no longer saved.';
 /** A resumed message a local router answered (timer, memory, job): the earlier chat was not used. */
 export const RESUME_NOT_USED_MESSAGE = 'The earlier chat was not used for this.';
 
+/**
+ * R5: the plain line for a failed model run Stephen recognizes. claude_usage_limit keeps the plan limit message (it may
+ * hold the reset time); claude_other keeps the run's own message.
+ */
+export const FAILURE_LINES: Partial<Record<ClaudeFailure, string>> = {
+  claude_missing: "I can't find Claude Code on this Mac. Run stephen doctor to see how to fix it.",
+  claude_signed_out: 'Claude Code is signed out. Open Terminal, run claude, and sign in again.',
+  claude_busy: 'Claude is busy right now. Try again in a minute.',
+  claude_offline: "I can't reach Claude right now. Check the internet.",
+};
+/** Said once per listener run, after the first recognized failure: the local routers do not need Claude. */
+export const LOCAL_STILL_WORKS = 'Timers and memory still work.';
+
 /** What happened to one command (onDone, and the return value of command()). */
 export interface CommandReport {
   /** History entry id (HandleOptions.id or a fresh one). */
@@ -159,6 +172,8 @@ export interface CommandReport {
   conv?: string;
   /** Edit and resend (ADR-010): the message this command is a new version of (ResumeRequest.edit). */
   editOf?: EditedMessage;
+  /** R5: why the model run failed, a code word only (the incident file gets it, never the text). */
+  failure?: ClaudeFailure;
 }
 
 export interface AssistantOptions {
@@ -200,6 +215,8 @@ export class Assistant {
   private phaseValue: Phase = 'idle';
   private speech: SpeakHandle | null = null;
   private cancelled = false;
+  /** LOCAL_STILL_WORKS was said in this run (R5: once). */
+  private localNoteSaid = false;
   /** When a cancel hit a reply being spoken (assistant clock), and how long the speech took to end after it. */
   private silenceFrom: number | null = null;
   private silenceMs: number | undefined;
@@ -376,7 +393,14 @@ export class Assistant {
         this.o.chimes.play('done');
         return report({ result: 'cancelled', outcome: 'cancelled', reply: '', ...claude });
       }
-      const raw = out.kind === 'ok' ? out.text : out.message;
+      // R5: a failed run gets a code word by fixed markers (set from the raw CLI text in claude.ts, else from the message); a recognized one gets its plain line, and the first one
+      // in this run also says the local commands still work. claude_other keeps the run's own message.
+      const failure = out.kind === 'error' ? (out.failure ?? claudeFailure(out.message)) : undefined;
+      let raw = out.kind === 'ok' ? out.text : (failure && FAILURE_LINES[failure]) || out.message;
+      if (failure && failure !== 'claude_other' && !this.localNoteSaid) {
+        this.localNoteSaid = true;
+        raw = `${raw} ${LOCAL_STILL_WORKS}`;
+      }
       let warn = false;
       try {
         warn = this.o.limit?.warnNow() ?? false;
@@ -389,7 +413,7 @@ export class Assistant {
       await this.deliver(spoken, out.kind === 'ok', opts.speak, t0, onScreen);
       if (out.kind === 'ok' && !this.cancelled) this.o.runner.commandEnded?.();
       const result: CommandResult = out.kind === 'ok' ? 'ok' : 'error';
-      return report({ result, outcome: result, reply: spoken, ...claude });
+      return report({ result, outcome: result, reply: spoken, ...claude, ...(failure ? { failure } : {}) });
     } finally {
       this.phaseNow = 'idle';
     }

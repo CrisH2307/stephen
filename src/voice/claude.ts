@@ -464,7 +464,7 @@ export type ClaudeOutcome =
       /** Set by the conversation runners: private data read in this conversation (null: state unreadable). */
       privateRead?: boolean | null;
     }
-  | { kind: 'error'; message: string; sessionId: string | null; privateRead?: boolean | null }
+  | { kind: 'error'; message: string; sessionId: string | null; privateRead?: boolean | null; failure?: ClaudeFailure }
   | { kind: 'cancelled' };
 
 /** One command's model run, measured from its stream lines (src/voice/warm-claude.ts). All in ms. */
@@ -506,6 +506,31 @@ export function planLimitMessage(text: string): string | null {
   const raw = LIMIT_RESET_RE.exec(text)?.[1]?.trim();
   const at = raw && /^[0-9apm: .]{1,12}$/i.test(raw) ? raw : undefined;
   return at ? `You've reached your Claude plan limit. It resets at ${at}.` : "You've reached your Claude plan limit.";
+}
+
+/** Why a model run failed (R5), as an incident code word. claude_other: anything not matched below. */
+export const CLAUDE_FAILURES = ['claude_missing', 'claude_signed_out', 'claude_usage_limit', 'claude_busy', 'claude_offline', 'claude_other'] as const;
+export type ClaudeFailure = (typeof CLAUDE_FAILURES)[number];
+
+// Fixed markers only, first match wins. The text is never copied anywhere: it only picks one of these words.
+// ponytail: markers seen in Claude Code 2.1.316 to 2.1.319 and Node's network errors; a new wording falls to claude_other.
+const FAILURE_MARKERS: readonly [ClaudeFailure, RegExp][] = [
+  ['claude_missing', /\bClaude Code was not found\b/],
+  ['claude_usage_limit', new RegExp(`${PLAN_LIMIT_RE.source}|\\breached your Claude plan limit\\b`, 'i')],
+  ['claude_signed_out', /\bnot logged in\b|\bplease run \/login\b|\binvalid api key\b|\bauthentication_error\b|\boauth token has expired\b|\bAPI Error: 401\b/i],
+  ['claude_busy', /\boverloaded(?:_error)?\b|\brate_limit_error\b|\brate limited\b|\bAPI Error: (?:429|529)\b/i],
+  ['claude_offline', /\b(?:ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ETIMEDOUT)\b|\bgetaddrinfo\b|\bfetch failed\b|\bunable to connect to api\b|\bconnection error\b/i],
+];
+
+/** One failed run's message (a ClaudeOutcome error) → a failure code word, by fixed markers. Pure. */
+export function claudeFailure(message: string): ClaudeFailure {
+  return FAILURE_MARKERS.find(([, re]) => re.test(message))?.[0] ?? 'claude_other';
+}
+
+/** The error outcome with `failure` set when the raw CLI text (result text or stderr) has a known marker. */
+function withFailure(o: { kind: 'error'; message: string; sessionId: string | null }, raw: string): ClaudeOutcome {
+  const failure = claudeFailure(raw);
+  return failure === 'claude_other' ? o : { ...o, failure };
 }
 
 /** Claude Code versions Stephen's recorded fixtures (help text, stream-json) come from: the oldest and newest tested. */
@@ -555,7 +580,7 @@ export function parseClaudeOutput(stdout: string, exitCode: number | null, stder
   }
   if (!res) {
     const why = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? `exit code ${exitCode}`;
-    return { kind: 'error', message: `Claude Code didn't return a result (${why.slice(0, 300)}).`, sessionId: null };
+    return withFailure({ kind: 'error', message: `Claude Code didn't return a result (${why.slice(0, 300)}).`, sessionId: null }, stderr);
   }
   return outcomeFromResult(res);
 }
@@ -568,8 +593,13 @@ export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
-    const msg = ERROR_TEXT[res.subtype ?? ''] ?? planLimitMessage(text) ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
-    return { kind: 'error', message: msg, sessionId };
+    // max turns and budget are Stephen's own limits, not a Claude failure: the subtype decides and their text (which a
+    // page can steer) is never classified, not even for the plan-limit line.
+    if (res.subtype === 'error_max_turns' || res.subtype === 'error_max_budget_usd') {
+      return { kind: 'error', message: ERROR_TEXT[res.subtype]!, sessionId };
+    }
+    const msg = planLimitMessage(text) ?? ERROR_TEXT[res.subtype ?? ''] ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
+    return withFailure({ kind: 'error', message: msg, sessionId }, text);
   }
   return {
     kind: 'ok',
