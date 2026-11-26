@@ -913,7 +913,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
     const main = read('MainWindow.swift');
-    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .activity, .jobs]');
     expect(main).toContain('static let control: [Page] = [.memory, .settings]');
     expect(main).toContain('SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }');
     expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');
