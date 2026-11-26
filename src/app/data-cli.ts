@@ -175,8 +175,17 @@ export function unsafeToDelete(path: string, userHome: string): boolean {
   return p === '/' || p === u || u.startsWith(`${p}/`);
 }
 
-/** Stephen's subfolders that may be left empty after its stores go (custom home only). */
-const STORE_DIRS = ['history', 'voice', 'telemetry', 'incidents', 'jobs', 'logs', 'run', 'replay'];
+/**
+ * Stephen's subfolders that may be left empty after its stores go (custom home only): the first folder under the
+ * home of every store path, so a new store folder in STORES is never missed.
+ */
+export const STORE_DIRS = [
+  ...new Set(
+    STORES.flatMap((s) => s.paths({ home: '/H', jobsRoot: '/J' }))
+      .filter((path) => path.startsWith('/H/') && path.slice(3).includes('/'))
+      .map((path) => path.slice(3).split('/')[0]!),
+  ),
+];
 
 const real = (p: string) => {
   try {
