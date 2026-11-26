@@ -27,7 +27,8 @@ All in `Theme.swift` tokens plus small `if t.paper` branches, so other themes dr
 - No logic changed. `AppConfirm.swift` (Allow, Deny, Esc = Deny) is not touched. The 0.75 s arming delay, the order
   (Deny first for keyboard focus), Esc = Deny and "Return never answers" are unchanged.
 - Allow is never the default: no default key, no extra size, no extra shadow. Allow and Deny now share one width
-  (76 pt minimum, in every theme) and the same edge and shadow, so they differ only in fill and words.
+  (76 pt minimum, in every theme) and the same edge and shadow. As in every theme, Allow is the filled button and Deny the outlined one; nothing
+  else sets Allow apart.
 - The question card keeps its warn outline (#139), at 2 pt in Paper, so it still stands apart from the other
   ink-edged cards. The "Needs your OK" label stays.
 
