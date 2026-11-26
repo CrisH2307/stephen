@@ -34,12 +34,12 @@ function home(): string {
 
 async function week(h: string): Promise<string> {
   const out: string[] = [];
-  await runWeeklyCli({ monitor: new LatencyMonitor({ home: h, now: () => NOW.getTime() }), incidents: readIncidents(h, 100), now: NOW, stephen: '0.9.1', claude: '2.1.318', out: (l) => out.push(l) });
+  await runWeeklyCli({ monitor: new LatencyMonitor({ home: h, now: () => NOW.getTime() }), incidents: readIncidents(h, 100), now: NOW, stephen: '0.9.1', claude: '2.1.318', jobCosts: [{ at: new Date(at(1)).getTime(), usd: 1.234 }], out: (l) => out.push(l) });
   return out.join('\n');
 }
 
 // Every word of the output: fixed English labels, code words, numbers, versions and dates. Nothing else.
-const LABELS = 'Stephen week to Claude Code Commands failed jobs started model cost USD Local commands speech reply median ms p95 n Model no timed Incidents none Per day cost'.split(' ');
+const LABELS = 'Stephen week to Claude Code Commands failed jobs started model cost USD Local commands speech reply median ms p95 n Model no timed Incidents none Per day cost job'.split(' ');
 const ALLOWED = new Set<string>([...LABELS, ...INCIDENT_CODES, ...LATENCY_OUTCOMES]);
 const ok = (token: string) => ALLOWED.has(token) || /^\d{4}-\d{2}-\d{2}$/.test(token) || /^\d+(\.\d+)*$/.test(token) || /^n=\d+$/.test(token);
 
@@ -62,6 +62,24 @@ describe('stephen report --week', () => {
     expect(text).toContain('Stephen 0.9.1, Claude Code 2.1.318');
     const bad = text.split(/[\s,():]+/).filter((t) => t && !ok(t));
     expect(bad).toEqual([]);
+  });
+
+  it('job spend is counted per day the job ended, separately from model cost; bad numbers and old jobs are left out', () => {
+    const ms = (iso: string) => new Date(iso).getTime();
+    const s = buildWeekly([], [], NOW, {}, [
+      { at: ms(at(0)), usd: 1.004 },
+      { at: ms(at(0, 15)), usd: 0.5 },
+      { at: ms(at(3)), usd: 2 },
+      { at: ms(at(10)), usd: 99 }, // older than a week
+      { at: ms(at(1)), usd: Number.NaN },
+      { at: ms(at(1)), usd: -5 },
+      { at: Number.NaN, usd: 3 },
+    ]);
+    expect(s.jobUsd).toBe(3.5);
+    expect(s.usd).toBe(0);
+    expect(s.days.find((d) => d.day === '2026-11-26')!.jobUsd).toBe(1.5);
+    expect(s.days.find((d) => d.day === '2026-11-23')!.jobUsd).toBe(2);
+    expect(formatWeekly(s)).toContain('job cost 3.50 USD');
   });
 
   it('a version that is not digits and dots shows as unknown', () => {
