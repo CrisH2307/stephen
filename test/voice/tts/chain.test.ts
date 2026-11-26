@@ -253,6 +253,23 @@ describe('provider choice', () => {
     expect(t.lastProvider).toBe('say');
   });
 
+  it('a failed warm-up rejects (the caller logs it); speaking still works through the fallback', async () => {
+    const t = createTts(cfg({ tts: 'kokoro' }), {
+      home: home(true),
+      findKey: async () => ({ found: null, notes: [] }),
+      kokoroEngine: async () => {
+        throw new Error('engine missing');
+      },
+      play: afplayPlayer(afplay.path),
+      sayCommand: say.path,
+      log: (l) => logs.push(l),
+      tmpRoot: audioTmp,
+    });
+    await expect(t.warm()).rejects.toThrow('the local voice could not start: engine missing');
+    await t.speak('Hi.').done;
+    expect(t.lastProvider).toBe('say');
+  });
+
   it('everything failing → done still resolves, reason logged', async () => {
     const t = createTts(cfg({ tts: 'say' }), { home: home(false), findKey: async () => ({ found: null, notes: [] }), sayCommand: join(tmp, 'no-say'), log: (l) => logs.push(l) });
     await t.speak('Hi.').done;
