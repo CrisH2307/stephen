@@ -352,7 +352,7 @@ export async function doctor(network = false, json = false): Promise<number> {
       }
     }
   } catch (e) {
-    add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
+    add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see docs/guide/ADVANCED-SETUP.md#configuration).`, blocking: true });
   }
 
   const dropped = (await import('./voice/claude.js')).droppedEndpointEnv(process.env);
