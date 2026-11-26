@@ -1,11 +1,33 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configUnknownKeys, doctor, ignoredKeysNotice, main, startConfigCheck } from '../../src/cli.js';
 import { loadConfig, looksLikeSecretKey } from '../../src/config.js';
 import { HubError } from '../../src/errors.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
+
+// Importing cli.js loads the config from the environment (serve runs at import). Point HOME and the Stephen home at a
+// temp folder before any import, so this file never reads the developer's real config.json.
+const sandbox = await vi.hoisted(async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const home = mkdtempSync(join(tmpdir(), 'stephen-cli-test-'));
+  const prev = { HOME: process.env.HOME, STEPHEN_HOME: process.env.STEPHEN_HOME, STEPHEN_CONFIG: process.env.STEPHEN_CONFIG };
+  process.env.HOME = home;
+  process.env.STEPHEN_HOME = join(home, '.stephen');
+  process.env.STEPHEN_CONFIG = join(home, '.stephen', 'config.json');
+  return { home, prev };
+});
+
+afterAll(() => {
+  for (const [k, v] of Object.entries(sandbox.prev)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  rmSync(sandbox.home, { recursive: true, force: true });
+});
 
 // Importing cli.js runs `serve`, and serveStdio would take over console.log and stdin in this worker. The tests
 // only need the doctor and start-check helpers, so the MCP server start is a no-op here.
