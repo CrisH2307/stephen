@@ -1307,6 +1307,30 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
   });
 
+  // R7 leftovers: Start, Report and the helper's own start failure say a fixed plain line. The raw reason (errno,
+  // exception text) and any home path go to helper.log only. Settings > Privacy shows the plain sentence once.
+  it('R7: Start, Report and the helper start failure never show raw errors or paths', () => {
+    const control = read('StephenControl.swift');
+    expect(control).not.toContain('localizedDescription)")');
+    expect(control).not.toMatch(/done\("[^"]*\\\((launchInfoPath|logPath|home)/);
+    expect(control).not.toContain('strerror(errno)))")');
+    for (const [name, text] of [
+      ['LAUNCH_INFO_MISSING', "Stephen Helper doesn't know how to start Stephen. Run `stephen install-helper` once in Terminal."],
+      ['LISTEN_START_FAILED', "Couldn't start Stephen right now. Try again in a moment."],
+      ['REPORT_RUN_FAILED', "Couldn't make the problem report right now."],
+    ]) {
+      expect(control).toContain(`let ${name} = "${text}"`);
+      expect(control).toContain(`done(${name})`);
+    }
+    const main = read('main.swift');
+    expect(main).not.toContain('setProblem("error:');
+    expect(main).toContain('statusMenu?.setProblem(HELPER_START_FAILED)');
+    expect(main).toMatch(/let HELPER_START_FAILED = "[^"\\]*"/); // a fixed line: no interpolation, no path
+    const settings = read('SettingsPage.swift');
+    expect(settings).not.toContain('"Could not delete them: \\(');
+    expect(settings).not.toContain('"Could not change it: \\(');
+  });
+
   // R7: a failed menu or doctor request (phone link, Zen, speed, doctor) says what failed in a plain sentence.
   it('StephenControl has no raw "error" fallback; each menu and doctor failure has its own plain line', () => {
     const control = read('StephenControl.swift');
