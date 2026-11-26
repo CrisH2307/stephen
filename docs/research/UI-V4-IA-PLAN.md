@@ -8,7 +8,7 @@ Builds on: `docs/research/UI-V4-DIRECTION.md` (tokens, stories S1 to S9), `docs/
 they are linked, not repeated. Code facts below are from `qa` at `7474ed1`.
 
 Mock: `docs/research/ui-v4-mock/index.html` (one file, no network). Pictures for discussion, not the app.
-Glass check: `node docs/research/ui-v4-mock/glass-contrast.mjs`.
+Glass check: `node scripts/glass-contrast.mjs`.
 
 **Review marks.** `[DEV REVIEW]` marks every change that touches a surface the dev lane must review first: the
 question card (Allow or Deny), the source label, steps and refusals, the Ask box send, cancel and Esc behaviour, and the
@@ -458,7 +458,7 @@ desktop behind the window. At these opacities every text colour stays at 4.5:1 o
 | Toolbar (`ground`) | 92% | 85% | 4.6 (Light, warn) |
 | Palette (`surface`) | 90% | 88% | 4.7 (Light, warn) |
 
-Numbers from `docs/research/ui-v4-mock/glass-contrast.mjs` (it exits 1 if any pair drops under 4.5). So the glass is
+Numbers from `scripts/glass-contrast.mjs` (it exits 1 if any pair drops under 4.5). So the glass is
 subtle: 5% to 15% see-through. That is the honest amount that keeps AA on any desktop. The real material blur lowers
 the backdrop's contrast further, so step a may measure on the Mac and lower the opacity, never below what the script
 passes with the measured backdrop.

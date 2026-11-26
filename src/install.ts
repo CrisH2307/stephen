@@ -7,7 +7,7 @@
  * (same server, old name) so Claude Code does not start two copies — and says so. Without --run it only prints
  * the commands. Everything goes through `execFile` with argv arrays (no shell).
  */
-import { execNoThrow } from './lib/process.js';
+import { execNoThrow, firstLine } from './lib/process.js';
 import { SERVER_NAME } from './server/index.js';
 
 /** The MCP server name used before the rename; `install --run` removes a user-scope registration under it. */
@@ -52,8 +52,6 @@ const LEGACY_REMOVE = `claude mcp remove --scope user ${LEGACY_SERVER_NAME}`;
 function isNotRegistered(r: ClaudeResult): boolean {
   return /not found|no .*(server|mcp).*(found|named|exists|configured)|does not exist|doesn't exist/i.test(`${r.stderr}\n${r.stdout}`);
 }
-
-const firstLine = (s: string) => s.trim().split('\n')[0] ?? '';
 
 export const defaultRunClaude: RunClaude = async (args) => {
   const r = await execNoThrow('claude', args, 60_000);

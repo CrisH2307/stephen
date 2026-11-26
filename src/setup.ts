@@ -6,6 +6,9 @@
  * Every program runs through `deps` so the tests never start a real install.
  */
 
+import { HELPER_UNCHANGED } from './helper/install.js';
+import { firstLine } from './lib/process.js';
+
 export interface RunResult {
   /** Exit code; null when the program could not start. */
   code: number | null;
@@ -37,7 +40,6 @@ interface Doctor {
 }
 
 const AGAIN = 'then run `stephen setup` again.';
-const firstLine = (s: string) => s.trim().split('\n').find((l) => l.trim()) ?? '';
 
 /** The three Mac permissions, with the exact place in System Settings. Shown at the end of a good setup. */
 export const PERMISSION_LINES = [
@@ -99,7 +101,7 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
   if (h.code !== 0) {
     return stop(`Install Apple's command line tools with \`xcode-select --install\`, ${AGAIN}`, firstLine(h.stderr || h.stdout));
   }
-  if (/Nothing changed/.test(h.stdout)) skip();
+  if (h.stdout.includes(HELPER_UNCHANGED)) skip();
   else ok('built');
 
   head('Check the setup (stephen doctor)');
@@ -110,7 +112,7 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
   } catch {
     // fall through: unreadable output counts as a red line
   }
-  if (!doc) return stop(`Run \`stephen doctor\` and read the first red line, ${AGAIN}`);
+  if (!doc) return stop(`Run \`stephen doctor\` and read the first red line, ${AGAIN}`, firstLine(d.stderr || d.stdout));
   const red = doc.checks.filter((c) => !c.ok && !c.info);
   const blocker = red.find((c) => c.blocking);
   if (blocker) return stop(blocker.fix ?? `Fix "${blocker.label}", ${AGAIN}`, `${blocker.label}${blocker.detail ? `: ${blocker.detail}` : ''}`);

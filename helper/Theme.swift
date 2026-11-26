@@ -217,7 +217,7 @@ extension EnvironmentValues {
 // MARK: glass (UI-V4-IA-PLAN section 8)
 
 /// The only three glass surfaces. Everything else (pages, the question card, the banner, steps, refusals, the
-/// "Recording on" sign) stays solid. Tint alphas must match docs/research/ui-v4-mock/glass-contrast.mjs (ALPHA), which
+/// "Recording on" sign) stays solid. Tint alphas must match scripts/glass-contrast.mjs (ALPHA), which
 /// checks 4.5:1 for every text color over pure black and pure white.
 enum Glass {
   case sidebar, toolbar, palette

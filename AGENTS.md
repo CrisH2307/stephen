@@ -61,6 +61,27 @@ Every commit counts on Cris's GitHub profile, so keep them correct:
   commit, never squash. So never squash, rebase away or rewrite commits that are already pushed.
 - PRs Cris's account opens count on his profile right away.
 
+## Team roles (Cris, 2026-11-25)
+
+- Chat titles are "STATUS | Role | job". Status words: WORKING, INREVIEW, WAITING (needs Cris), DONE, CLOSED. Rename the chat when the status changes.
+- Every agent has one role, one split task, a list of files it owns and must not touch, and the skills or model that fit. No two agents share files or a task.
+- Every coder reads the code first and follows the ponytail ladder: reuse before adding, smallest correct change, root-cause fixes, one runnable check.
+- Every code PR gets a code review as well as any safety review: `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit` (Sonnet for normal code, Opus for safety code).
+- After each batch of merges, a code health audit runs on the touched folders: `ponytail:ponytail-audit`, `ponytail:ponytail-debt`, `engineering:tech-debt`. Findings become small queue tasks.
+- A feature bigger than one file gets a short design note first: `engineering:system-design`, `engineering:architecture` (ADRs), Fable or Opus, with an independent review.
+- Coding agent responsibilities (copy into every coding brief):
+  1. Explore first: read the files you own, every caller of what you change (grep), the related ADR or design note, and the existing tests. No edit before you understand the flow.
+  2. Scope: the files you own, the files you must not touch (always the Claude-only list), one task only.
+  3. Design: follow the design note. For anything multi-file without one, ask the top lead first.
+  4. Code: ponytail ladder (reuse before adding, smallest correct change, root-cause fix), project style, no new dependency without asking.
+  5. Test: one runnable check per logic change, sibling cases (BRANCHING.md H1), then the tests of the touched folders. One full suite per machine.
+  6. Review: request the code review (`code-review`, `ponytail:ponytail-review`) and, for safety code, an independent review. Fix every finding.
+  7. Report: small commits as Cris, PR to qa, title and chat name updated, a short report: what changed, what was checked, what is left.
+  8. Skills: the brief names them (for example `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit`, `engineering:system-design`, `tdd`).
+- Every UI PR, and any PR or issue where a picture helps, includes screenshots or images so a human can see the change. Commit them next to the work (for the site: `docs/site/screenshots/`) and embed them in the PR body. A screenshot never shows private data (no real mail, names, tokens, tabs or paths).
+- Model choice (Cris, 2026-11-25, newer than the "cheapest model" rule for these two kinds of work): Fable for all research and planning, Opus for all coding. Free agents and Haiku still do drafts, docs and read-only checks.
+- The top lead keeps the roster in `team-roster.md` in the shared notes folder: role, session, responsibility, model, task, status.
+
 ## Lane inboxes (how lanes talk)
 
 Lanes talk through GitHub issues, not through Cris pasting chats.

@@ -18,6 +18,11 @@ export function execNoThrow(
   });
 }
 
+/** The first non-blank line of a program's output, trimmed ('' when there is none). */
+export function firstLine(s: string): string {
+  return s.trim().split('\n')[0] ?? '';
+}
+
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but isn't ours. */
 export function isPidAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;

@@ -1,4 +1,4 @@
-// UI v4 glass check (docs/research/UI-V4-IA-PLAN.md section 8). Run: node docs/research/ui-v4-mock/glass-contrast.mjs
+// UI v4 glass check (docs/research/UI-V4-IA-PLAN.md section 8). Run: node scripts/glass-contrast.mjs
 // Each glass surface is a theme tint at alpha A over whatever is behind the window. Worst case: pure black or pure
 // white behind it (the real material blur only lowers the backdrop's contrast). Text on it must stay >= 4.5:1.
 // Tint colours are the mock's tokens; alphas are the plan's. Exit code 1 if any pair fails.
