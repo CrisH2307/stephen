@@ -6,11 +6,11 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { AppServer } from '../../src/app/server.js';
-import { COPY_GONE, COPY_MAX_FILES, COPY_TOO_BIG, EDIT_STOP_FIRST, copyJobFolder, type GitFn } from '../../src/jobs/manager.js';
+import { COPY_GONE, COPY_MAX_FILES, COPY_TOO_BIG, EDIT_STOP_FIRST, JOB_COPY_FAILED, JOB_WORKTREE_FAILED, copyJobFolder, type GitFn } from '../../src/jobs/manager.js';
 import { JobRouter } from '../../src/jobs/router.js';
 import { EDIT_RECORD_HEAD, EDIT_REQUEST_MAX, EDIT_REQUEST_TOO_LONG, TASK_MAX, editedTask, jobFiles, requestOf } from '../../src/jobs/spec.js';
 import { parseJobState, readJobState, statePath, writeJobState, type JobState } from '../../src/jobs/state.js';
@@ -551,16 +551,43 @@ describe('review fixes: a symlink swap while the dialog is open, a failed worktr
     failWorktree = true;
     const root = readdirSync(h.root).sort();
     const jobs = readdirSync(join(h.home, 'jobs')).sort();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const r = await new JobRouter({ jobs: h.manager, confirmer: dialog('approved').confirmer }).editJob(old.id, 'fix the tests in myapp again');
-    expect(r).toEqual({ refused: expect.stringMatching(/couldn't make a git worktree of myapp \(fatal: could not create work tree\)/) });
+    // R7: one plain sentence; git's own words go to the log only.
+    expect(r).toEqual({ refused: JOB_WORKTREE_FAILED });
+    expect(log).toHaveBeenCalledWith('jobs: git worktree of myapp: fatal: could not create work tree');
+    log.mockRestore();
     expect(readdirSync(h.root).sort()).toEqual(root);
     expect(readdirSync(join(h.home, 'jobs')).sort()).toEqual(jobs);
     // A new (not edited) code job fails the same way, and leaves nothing either.
     const p = await h.manager.plan('fix the lint in myapp');
     if ('error' in p) throw new Error(p.error);
-    expect(await h.manager.start(p, 'voice-ptt')).toHaveProperty('refused');
+    const log2 = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await h.manager.start(p, 'voice-ptt')).toEqual({ refused: JOB_WORKTREE_FAILED });
+    log2.mockRestore();
     expect(readdirSync(h.root).sort()).toEqual(root);
     expect(readdirSync(join(h.home, 'jobs')).sort()).toEqual(jobs);
+  });
+
+  it.skipIf(process.getuid?.() === 0)('a copy that fails to read the old folder is one plain sentence; the raw reason goes to the log only (R7)', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    const p = await h.manager.planEdit(old.id, 'write my lab report draft again');
+    if ('error' in p) throw new Error(p.error);
+    // After the dialog: a subfolder the copy cannot read makes readdirSync throw a raw EACCES.
+    const locked = join(old.folder, 'locked');
+    mkdirSync(locked, { mode: 0o700 });
+    chmodSync(locked, 0o000);
+    const root = readdirSync(h.root).sort();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await h.manager.start(p, 'app')).toEqual({ refused: JOB_COPY_FAILED });
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/^jobs: copy old job folder: .*EACCES/));
+    } finally {
+      log.mockRestore();
+      chmodSync(locked, 0o700);
+    }
+    expect(readdirSync(h.root).sort()).toEqual(root);
   });
 
   it(`an edited request of ${EDIT_REQUEST_MAX} characters is kept whole, even after a long old request; one more is refused`, async () => {
