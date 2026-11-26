@@ -369,7 +369,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(refresh).toContain('self.assign(\\.graphListOk, false)');
     expect(refresh).not.toContain('msg.message');
     // memory.list failing is not a raw notice either; a failed change still says why.
-    expect(client).toContain('self.assign(\\.memoryNotice, isChange ? msg.message ?? "error" : nil)');
+    expect(client).toContain('self.assign(\\.memoryNotice, isChange ? plainFailure(msg.message, MEMORY_CHANGE_FAILED) : nil)');
     expect(mem).toContain('if model.graphNodes.isEmpty && model.graphListOk == nil {');
     expect(mem).toMatch(/graphListOk == false \{[\s\S]*MEMORY_LIST_FAILED[\s\S]*QuietButton\("Try again"[^\n]*model\.refreshMemoryPage\(\)/);
     expect(mem).toContain('let MEMORY_LIST_FAILED = "Couldn\'t load your memory right now."');
@@ -438,6 +438,28 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
       expect(body).not.toContain('?? "error"');
       expect(body).not.toMatch(/addBubble\(\.problem, (m|msg\.message)\b/);
       expect(client).toContain(`let CHAT_SEND_FAILED = "Couldn't send that right now."`);
+    });
+    // R7: the other pages too. No raw "error" fallback is left anywhere in AppClient.swift.
+    it('AppClient.swift has no raw "error" fallback left', () => {
+      expect(read('AppClient.swift')).not.toMatch(/\?\?\s*"error"/);
+    });
+    it.each([
+      ['memoryRequest', 'MEMORY_CHANGE_FAILED', "Couldn't change your memory right now."],
+      ['keepProposal', 'MEMORY_KEEP_FAILED', "Couldn't keep that memory right now."],
+      ['takeSuggestions', 'MEMORY_SUGGESTIONS_FAILED', "Couldn't update your memory suggestions right now."],
+      ['refreshSettings', 'SETTINGS_LOAD_FAILED', "Couldn't load your settings right now."],
+      ['saveTalk', 'SETTINGS_SAVE_FAILED', "Couldn't save your settings right now."],
+      ['saveModel', 'SETTINGS_SAVE_FAILED', "Couldn't save your settings right now."],
+      ['saveReplay', 'SETTINGS_SAVE_FAILED', "Couldn't save your settings right now."],
+      ['deleteRecordings', 'RECORDINGS_DELETE_FAILED', "Couldn't delete your recordings right now."],
+      ['refreshAccounts', 'ACCOUNTS_FAILED', "Couldn't check your accounts right now."],
+      ['stopJob', 'JOBS_STOP_FAILED', "Couldn't stop that job right now."],
+      ['editJob', 'JOBS_EDIT_FAILED', "Couldn't start the edited job right now."],
+    ])('%s says %s, never raw "error"', (fn, name, text) => {
+      const body = fnBody(fn);
+      expect(body).toContain(`plainFailure(msg.message, ${name})`);
+      expect(body).not.toMatch(/msg\.message \?\?/);
+      expect(client).toContain(`let ${name} = "${text}"`);
     });
     it('plainFailure keeps only a sentence, else the fallback', () => {
       const fn = client.match(/func plainFailure\([\s\S]*?\n\}/)?.[0] ?? '';
