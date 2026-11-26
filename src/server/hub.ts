@@ -447,7 +447,7 @@ export class Hub {
         // The frame's host and the policy reason name a page-chosen site: they go inside the untrusted block (T3).
         throw new NoticeError(
           `Blocked by Stephen's safety policy — did not ${tool} ${tab}: it contains a frame from a blocked site. Ask the user to do this themselves.\n` +
-            wrapUntrusted(tab, originOf(f), `Frame site: ${hostOf(f)}\nPolicy reason: ${d.reason}`),
+            wrapUntrusted(tab, f, `Frame site: ${hostOf(f)}\nPolicy reason: ${d.reason}`),
         );
       }
     }
@@ -600,7 +600,7 @@ export class Hub {
           : `Stephen could not leave that page; every action on ${tab} will be refused — close it with tab_close. `) +
         'Do not try to reach it another way; ask the user to do this themselves.' +
         // The landed host was chosen by the page (a redirect or script): it goes inside the untrusted block (T3).
-        (web ? `\n${wrapUntrusted(tab, originOf(landed), `Blocked site: ${host}`)}` : ''),
+        (web ? `\n${wrapUntrusted(tab, landed, `Blocked site: ${host}`)}` : ''),
     );
   }
 

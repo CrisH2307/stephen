@@ -122,7 +122,7 @@ describe('reads', () => {
     const res = await h.call('snapshot', { tab: 'z1' });
     expect(res.isError).toBeFalsy();
     const text = textOf(res);
-    expect(text.startsWith('<untrusted_web_content source="z1" origin="https://mail.example.com/inbox">')).toBe(true);
+    expect(text.startsWith('<untrusted_web_content source="z1" origin="https://mail.example.com">')).toBe(true);
     expect(text).toContain('[ref=z1:e1]');
     expect(h.gate.checks[0]).toMatchObject({ kind: 'read', tool: 'snapshot', tab: 'z1', browser: 'zen', pageUrl: 'https://mail.example.com/inbox' });
     expect(h.gate.reads).toEqual(['https://mail.example.com/inbox']);
@@ -239,12 +239,12 @@ describe('actions', () => {
     });
     const res = await h.call('click', { target: 'z1:e4', intent: 'send the reply', include_snapshot: true });
     const text = textOf(res);
-    expect(text).toContain('Clicked z1:e4 in z1.\n<untrusted_web_content source="z1" origin="https://mail.example.com/sent">');
+    expect(text).toContain('Clicked z1:e4 in z1.\n<untrusted_web_content source="z1" origin="https://mail.example.com">');
     // Page-derived facts (element label, title) are only ever inside the untrusted block.
     expect(text).toContain('element: button "Send"\npage now: "Sent – Mail" https://mail.example.com/sent</untrusted_web_content>');
     expect(text.split('<untrusted_web_content')[0]).not.toContain('Send');
     expect(text).toContain('refs from earlier snapshots are now stale');
-    expect(text).toContain('<untrusted_web_content source="z1" origin="https://mail.example.com/sent">');
+    expect(text).toContain('<untrusted_web_content source="z1" origin="https://mail.example.com">');
     expect(h.engine.click).toHaveBeenCalledWith(expect.anything(), 'z1:e4', {});
     expect(h.audit.entries).toHaveLength(1);
     expect(h.audit.entries[0]).toMatchObject({
