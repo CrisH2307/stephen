@@ -9,26 +9,34 @@ export type ListUsers = () => Promise<{ code: number | null; stdout: string }>;
 
 const dsclUsers: ListUsers = () => execNoThrow('/usr/bin/dscl', ['.', '-list', '/Users', 'UniqueID'], 5_000);
 
+/** The Guest User login is on (#385 review: Guest has uid 201, below the login-account range). */
+const loginWindowGuest = async (): Promise<boolean> =>
+  (await execNoThrow('/usr/bin/defaults', ['read', '/Library/Preferences/com.apple.loginwindow', 'GuestEnabled'], 5_000)).stdout.trim() === '1';
+
 /**
- * Other login accounts (uid 501 and up, not a `_` service account, not this one), or null when the list could not be
- * read: callers treat null as "maybe shared" (fail closed). Not macOS: 0, there is no Zen launcher there.
+ * Other login accounts (uid 501 and up, not a `_` service account, not this one), plus Guest when its login is on or
+ * its record exists, or null when the list could not be read: callers treat null as "maybe shared" (fail closed).
+ * Not macOS: 0, there is no Zen launcher there.
  */
 export async function otherUserCount(
   platform: NodeJS.Platform = process.platform,
   list: ListUsers = dsclUsers,
   myUid: number = process.getuid?.() ?? -1,
+  guestEnabled: () => Promise<boolean> = loginWindowGuest,
 ): Promise<number | null> {
   if (platform !== 'darwin') return 0;
   const r = await list();
   if (r.code !== 0) return null;
   let n = 0;
+  let guest = false;
   for (const line of r.stdout.split('\n')) {
     const m = /^(\S+)\s+(-?\d+)\s*$/.exec(line.trim());
     if (!m || m[1]!.startsWith('_')) continue;
     const uid = Number(m[2]);
-    if (uid >= 501 && uid !== myUid) n++;
+    if (m[1] === 'Guest') guest ||= uid !== myUid;
+    else if (uid >= 501 && uid !== myUid) n++;
   }
-  return n;
+  return n + (guest || (await guestEnabled()) ? 1 : 0);
 }
 
 /** The refusal and doctor text for a shared Mac: a count, never a name. */
