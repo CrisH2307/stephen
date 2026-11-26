@@ -3,6 +3,7 @@
  * environment, stream-json progress, the lock-down check on init, the wall-clock kill (fake timers; SIGTERM then
  * SIGKILL after 10 s), stop, crash → failed, the sandbox's fail-closed refusal, output cleaning, caffeinate on macOS.
  */
+import { FAILURE_LINES } from '../../src/lib/claude-failure.js';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
@@ -57,6 +58,11 @@ describe('parseJobLine / resultStatus', () => {
     expect(resultStatus({ ...base, subtype: 'error_max_turns', isError: true }, b).error).toMatch(/ran out of turns \(150\)/);
     expect(resultStatus({ ...base, subtype: 'error_max_budget_usd', isError: true }, b).error).toMatch(/\$5 budget/);
     expect(resultStatus({ ...base, subtype: 'error_during_execution', isError: true, startupFailure: 'sandbox_required_unavailable' }, b)).toEqual({ status: 'failed', error: expect.stringMatching(/sandbox isn't available.*nothing ran/) });
+    // R5 follow-up: the same plain lines as voice, by fixed markers in the result text or errors only.
+    expect(resultStatus({ ...base, isError: true, text: 'API Error: 529 overloaded_error' }, b)).toEqual({ status: 'failed', error: FAILURE_LINES.claude_busy });
+    expect(resultStatus({ ...base, subtype: 'error_during_execution', isError: true, errors: ['Usage limit reached \u00b7 limit resets 3pm'] }, b)).toEqual({ status: 'failed', error: "You've reached your Claude plan limit. It resets at 3pm." });
+    // No marker: today's text, unchanged.
+    expect(resultStatus({ ...base, subtype: 'error_during_execution', isError: true, errors: ['tool broke'] }, b).error).toBe('Claude Code reported an error (error_during_execution): tool broke.');
   });
 });
 
@@ -219,10 +225,30 @@ describe('JobSupervisor with a fake claude', () => {
     expect(fake.calls).toEqual([]);
   });
 
-  it('claude not found → failed', async () => {
+  it('claude not found → failed, with the same plain line as voice (R5)', async () => {
     const { sup } = await started('write my lab report MODE:ok');
     const end = await new JobSupervisor({ ...sup, claudePath: '/nonexistent/claude' }, { audit: null, platform: 'linux' }).run();
     expect(end.status).toBe('failed');
-    expect(end.error).toMatch(/not found/);
+    expect(end.error).toBe(FAILURE_LINES.claude_missing);
+  });
+
+  it('R5 follow-up: an exit without a result with a network error says the plain offline line, no stderr text', async () => {
+    const { sup } = await started('write my lab report MODE:offline');
+    const end = await new JobSupervisor(sup, { spawn: fakeClaudeSpawn().spawn, audit: null, platform: 'linux' }).run();
+    expect(end).toMatchObject({ status: 'failed', error: FAILURE_LINES.claude_offline });
+    expect(end.error).not.toMatch(/ENOTFOUND|ignore previous/);
+  });
+
+  it('R5 follow-up: a signed-out result says the plain sign-in line', async () => {
+    const { sup } = await started('write my lab report MODE:signedout');
+    const end = await new JobSupervisor(sup, { spawn: fakeClaudeSpawn().spawn, audit: null, platform: 'linux' }).run();
+    expect(end).toMatchObject({ status: 'failed', error: FAILURE_LINES.claude_signed_out });
+  });
+
+  it('R5 follow-up: a plan-limit result keeps only a clock-like reset time, never the rest of the text', async () => {
+    const { sup } = await started('write my lab report MODE:limit');
+    const end = await new JobSupervisor(sup, { spawn: fakeClaudeSpawn().spawn, audit: null, platform: 'linux' }).run();
+    expect(end).toMatchObject({ status: 'failed', error: "You've reached your Claude plan limit." });
+    expect(end.error).not.toMatch(/evil|ignore previous|https:/);
   });
 });
