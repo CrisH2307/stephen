@@ -30,6 +30,7 @@ import { buildNameList } from './names.js';
 import { MemoryStore } from '../memory/store.js';
 import { ProposalStore } from '../memory/proposals.js';
 import { AuditLog } from '../safety/audit.js';
+import { compileLists, isPrivateUrl, type PolicyLists } from '../safety/policy.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
 import { commandFilePath, toolLogPath } from '../server/tool-log.js';
@@ -120,6 +121,8 @@ export interface ListenEnv {
     accounts?: Record<string, unknown>;
     jobs?: Record<string, unknown>;
     auditLogPath?: string;
+    /** The owner's safety lists (T6: private fields hidden in audit.recent). Absent = the built-in lists only. */
+    safety?: { blockedDomains: string[]; sensitiveDomains: string[] };
   };
   /** Shown in the Stephen window's Settings (default: configFilePath()). */
   configPath?: string;
@@ -248,6 +251,8 @@ interface LoadedVoice {
   /** Raw "accounts" section (accounts.status). */
   accounts: unknown;
   auditLogPath: string | null;
+  /** The safety lists (built-in plus the owner's), for hiding private fields in audit.recent (T6). */
+  lists: PolicyLists;
 }
 
 function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null {
@@ -263,6 +268,7 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null
       jobs: parseJobsConfig(c.jobs),
       accounts: c.accounts ?? {},
       auditLogPath: c.auditLogPath ?? null,
+      lists: compileLists({ blockedDomains: c.safety?.blockedDomains ?? [], sensitiveDomains: c.safety?.sensitiveDomains ?? [] }),
     };
   } catch (e) {
     const known = e instanceof VoiceConfigError || e instanceof MemoryConfigError || e instanceof HistoryConfigError || e instanceof AppConfigError || e instanceof JobsConfigError;
@@ -810,6 +816,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       endConversation: () => a.endConversation(),
       history,
       audit,
+      isPrivateUrl: (url: string) => isPrivateUrl(url, loaded.lists),
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get(), replay: rec.on() }),
       accounts: allAccounts,
       personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
