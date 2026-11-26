@@ -227,6 +227,7 @@ export class HelperClient implements IHelperClient {
       const conn: Conn = { socket, hello: null };
       const framer = new LineFramer();
       let settled = false;
+      let noNonce = false;
       const settle = (r: HelperStartResult) => {
         if (settled) return;
         settled = true;
@@ -234,7 +235,9 @@ export class HelperClient implements IHelperClient {
         resolve(r);
       };
       const helloTimer = setTimeout(() => {
-        settle({ ok: false, reason: `connected but no hello within ${this.opts.helloTimeoutMs} ms` });
+        // Without a key the helper waits its own 2 s before closing, so this timer can fire first: same plain reason.
+        const late = `connected but no hello within ${this.opts.helloTimeoutMs} ms`;
+        settle({ ok: false, reason: noNonce ? `${late}. ${helperKeyMissing(this.socketPath)}` : late });
         socket.destroy();
       }, this.opts.helloTimeoutMs);
 
@@ -242,7 +245,6 @@ export class HelperClient implements IHelperClient {
         settle({ ok: false, reason: e.code ?? e.message });
       });
       // F15: the first line is the helper's per-launch nonce, or the helper drops this client before its hello.
-      let noNonce = false;
       socket.once('connect', () => {
         const nonce = readHelperNonce(this.socketPath);
         if (nonce) socket.write(`${JSON.stringify({ type: 'auth', nonce })}\n`);
