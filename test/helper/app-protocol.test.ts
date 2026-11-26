@@ -789,7 +789,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('AppProtocol.swift')).not.toMatch(/struct AuditEntry[\s\S]*?\bargs\b[\s\S]*?\n\}/);
     expect(act).not.toMatch(/\.(intent|error|args)\b/);
     expect(act.match(/\.url(Before|After)\b(?!\.isEmpty)/g)?.length).toBe(act.match(/activityHost\([^)]*\.url(Before|After)\)/g)?.length);
-    expect(read('AppProtocol.swift')).toContain('case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd }');
+    expect(read('AppProtocol.swift')).toContain('case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd, tab }');
     expect(read('AppClient.swift')).toContain('static let auditLimit = 200');
   });
 
