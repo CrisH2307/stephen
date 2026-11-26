@@ -145,7 +145,8 @@ const LOOKALIKE_FOLD = new Map<number, string>([
 // selectors, hangul fillers), format (Cf) characters and combining marks (M: Mn, Mc, Me). Property classes, not a list.
 const IGNORABLE_RE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{M}]/u;
 // '<' + optional whitespace + optional '/' + a word starting with 'untrusted', any case, whatever follows. Folded copy only.
-const DELIMITER_RE = /<\s*\/?\s*untrusted/gi;
+// The second whitespace run only follows a '/', so a failed match gives back each space once (linear time, T2).
+const DELIMITER_RE = /<\s*(?:\/\s*)?untrusted/gi;
 const MARKS_RE = /\p{M}/gu;
 
 /**
