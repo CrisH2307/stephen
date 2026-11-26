@@ -82,7 +82,7 @@ function hasFactVerb(body: string): boolean {
 /**
  * By voice every saved line needs a fact shape (#137): a verb, not just a thing. "remember the milk", "remember my
  * keys" and "can you remember that song from titanic" are to-dos or questions, so they save nothing; "remember my
- * gym is goodlife" and "remember that i moved to toronto" still save. Voice only, and only ever an extra refusal.
+ * gym is goodlife" and "remember that i moved to denver" still save. Voice only, and only ever an extra refusal.
  * ponytail: a fixed verb list plus two simple patterns (a pronoun with 'm 're 's and so on, "i moved"); a fact with a
  * rare verb then needs "is" or similar, and typed text is the fallback (F5 users can type in the Ask box).
  */
