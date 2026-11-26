@@ -81,7 +81,7 @@ struct Tag: View {
       .padding(.horizontal, Space.m).padding(.vertical, 5)
       .background(Capsule().fill(selected ? t.surface2 : Color.clear))
       // Only a chip you can click gets the strong outline; a plain label keeps the calm one.
-      .overlay(Capsule().stroke(selected ? t.accent : (action == nil ? t.line : t.lineStrong), lineWidth: 1))
+      .overlay(Capsule().strokeBorder(selected ? t.accent : (action == nil ? t.line : t.lineStrong), lineWidth: 1).drawingGroup())  // drawingGroup: a plain pill stroke draws stray bits at its sides on recent macOS
     if let action = action {
       Button(action: action) { label }.buttonStyle(.plain)
         .accessibilityLabel(title).accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)

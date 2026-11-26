@@ -37,7 +37,7 @@ class EndlessSource implements AudioSource {
 const kws = await prepareKwsModel();
 
 describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
-  function start(app: Record<string, unknown> = {}, home = mkdtempSync(join(tmp, 'home-'))) {
+  function start(app: Record<string, unknown> = {}, home = mkdtempSync(join(tmp, 'home-')), safety?: { blockedDomains: string[]; sensitiveDomains: string[] }) {
     const root = mkdtempSync(join(tmp, 'models-'));
     symlinkSync(join(kws.ok ? kws.root : '', KWS_MODEL.dir), join(root, KWS_MODEL.dir));
     fakeInstall(root, VAD_MODEL);
@@ -46,7 +46,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     const out: string[] = [];
     const err: string[] = [];
     const e: ListenEnv = {
-      loadConfig: () => ({ home, voice: { claudeModel: 'haiku' }, app, auditLogPath: join(home, 'audit.log') }),
+      loadConfig: () => ({ home, voice: { claudeModel: 'haiku' }, app, auditLogPath: join(home, 'audit.log'), ...(safety ? { safety } : {}) }),
       configPath: join(home, 'config.json'),
       out: (l) => out.push(l),
       err: (l) => err.push(l),
@@ -88,6 +88,27 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     expect(await t.running).toBe(0);
     expect(existsSync(sock)).toBe(false);
     expect(existsSync(launchInfoPath(t.home))).toBe(false); // R9-8: only install-helper writes it
+  });
+
+  it('T6 step 3: audit.recent hides the label, intent, error and args on mail and on the owner\'s sensitive sites', async () => {
+    const home = mkdtempSync(join(tmp, 'priv-'));
+    const line = (url: string) => JSON.stringify({ ts: new Date().toISOString(), tool: 'click', kind: 'click', urlBefore: url, element: 'row "your code is 771204"', intent: 'open the code mail', error: 'page said 771204', args: { text: '[6 chars] "771204"' }, outcome: 'error' });
+    writeFileSync(join(home, 'audit.log'), [line('https://mail.google.com/mail/u/0/'), line('https://intranet.example.org/x'), line('https://www.youtube.com/')].join('\n') + '\n');
+    const t = start({}, home, { blockedDomains: [], sensitiveDomains: ['intranet.example.org'] });
+    const sock = appSocketPath(t.home);
+    await waitFor(() => existsSync(sock), 10_000, 'app.sock');
+    const c = await TestClient.connect(sock);
+    const a = (await c.request({ id: 'a', type: 'audit.recent' })) as unknown as { entries: Record<string, unknown>[] };
+    const byUrl = (u: string) => a.entries.find((e) => String(e.urlBefore).startsWith(u))!;
+    for (const u of ['https://mail.google.com', 'https://intranet.example.org']) {
+      expect(byUrl(u)).toMatchObject({ tool: 'click', kind: 'click', outcome: 'error' });
+      expect(JSON.stringify(byUrl(u))).not.toContain('771204');
+      expect(byUrl(u)).not.toHaveProperty('intent');
+    }
+    expect(byUrl('https://www.youtube.com')).toMatchObject({ element: 'row "your code is 771204"', intent: 'open the code mail' });
+    c.close();
+    await t.source.stop();
+    expect(await t.running).toBe(0);
   });
 
   it('R9-4: when listening ends, the Remote Control our own `phone on` started is stopped and the marker removed', async () => {

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { commandSteps, MAX_CHAT_STEPS, MAX_STEP_CHARS, readCommandSteps, STEPS_AUDIT_WAIT_MS, type ChatStep } from '../../src/app/steps.js';
+import { BUILTIN_PRIVATE, commandSteps, MAX_CHAT_STEPS, MAX_STEP_CHARS, readCommandSteps, STEPS_AUDIT_WAIT_MS, type ChatStep } from '../../src/app/steps.js';
 import { HistoryStore } from '../../src/history/store.js';
 import type { AuditEntry } from '../../src/types.js';
 import type { CommandReport } from '../../src/voice/assistant.js';
@@ -80,6 +80,22 @@ describe('readCommandSteps (one audit read, R10a-9 bound)', () => {
   it('a fast read gives the steps; no steps at all gives undefined', async () => {
     expect(await readCommandSteps({ recent: async () => [] }, calls, 'h_1', 900, end)).toEqual([{ text: 'Used gmail_search', status: 'ok' }]);
     expect(await readCommandSteps({ recent: async () => [] }, [], 'h_1', 900, end)).toBeUndefined();
+  });
+
+  it('T6 step 3: a private site\'s label and error never reach the steps (built-in lists, hostile host forms, owner lists)', async () => {
+    const t = new Date(end - 100).toISOString();
+    const priv = (url: string, extra: object = {}) => ({ ts: t, tool: 'click', kind: 'click', urlBefore: url, element: 'row "your code is 771204"', ...extra }) as AuditEntry;
+    const audit = [
+      priv('https://mail.google.com/mail/u/0/#inbox', { outcome: 'denied', error: 'page said 771204' }),
+      priv('https://MAIL.GOOGLE.COM./mail/', { outcome: 'error' }),
+      priv('https://intranet.example.org/x', { outcome: 'ok' }),
+    ];
+    const steps = (await readCommandSteps({ recent: async () => audit }, [], 'h_1', 900, end)) ?? [];
+    expect(JSON.stringify(steps.slice(0, 2))).not.toContain('771204');
+    expect(steps[0]?.status).toBe('refused');
+    expect(steps[2]?.text).toContain('771204'); // not private unless the owner lists it
+    const own = (await readCommandSteps({ recent: async () => audit }, [], 'h_1', 900, end, (u) => BUILTIN_PRIVATE(u) || u.includes('intranet.example.org'))) ?? [];
+    expect(JSON.stringify(own)).not.toContain('771204');
   });
 
   it('a failed read (rejected or thrown) gives undefined, not the tool lines alone', async () => {

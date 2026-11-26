@@ -650,7 +650,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(all).not.toContain('‹ Personal');
     expect(all).not.toContain('Back to Personal');
     const main = read('MainWindow.swift');
-    expect(main).toContain('case home, conversations, jobs, memory, settings\n');
+    expect(main).toContain('case home, conversations, activity, jobs, memory, settings\n');
     const page = read('MemoryPage.swift');
     expect(page).not.toContain('nav.');
     expect(page).toContain('.onExitCommand { editing = false; editingProposal = nil }');
@@ -787,6 +787,23 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Refused: ');
     expect(conv).toContain('Clear all conversations?');
     expect(conv).toContain('Text(verbatim: entry.said)');
+  });
+
+  it('T6 step 4: Activity reads only, shows every string verbatim, and never uses args, intent or error text', () => {
+    const act = read('ActivityPage.swift');
+    expect(read('MainWindow.swift')).toContain('case .activity: ActivityPage(model: model, nav: nav)');
+    expect(act.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    expect(act).toContain('Text(verbatim: row.text)');
+    // Only reads and refreshes, plus the versions read a Conversations row makes when it opens.
+    const calls = [...new Set(act.match(/model\.\w+(?=\()/g) ?? [])].sort();
+    expect(calls).toEqual(['model.loadVersions', 'model.refreshAudit', 'model.refreshHistory', 'model.refreshJobs']);
+    expect(act).not.toMatch(/AppRequest|\.send\(|chatSend|stopJob/);
+    // Never shown: args (not decoded at all), the model's intent, error text. URLs only through activityHost.
+    expect(read('AppProtocol.swift')).not.toMatch(/struct AuditEntry[\s\S]*?\bargs\b[\s\S]*?\n\}/);
+    expect(act).not.toMatch(/\.(intent|error|args)\b/);
+    expect(act.match(/\.url(Before|After)\b(?!\.isEmpty)/g)?.length).toBe(act.match(/activityHost\([^)]*\.url(Before|After)\)/g)?.length);
+    expect(read('AppProtocol.swift')).toContain('case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd }');
+    expect(read('AppClient.swift')).toContain('static let auditLimit = 200');
   });
 
   it('ADR-007 recents: history strings in Conversations are Text(verbatim:); no send or retry; v2 adds only Open in chat', () => {
@@ -926,7 +943,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
     const main = read('MainWindow.swift');
-    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .activity, .jobs]');
     expect(main).toContain('static let control: [Page] = [.memory, .settings]');
     expect(main).toContain('SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }');
     expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');
@@ -1103,6 +1120,35 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const recent = home.match(/private var recentChats: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
     expect(recent.match(/Button \{[^}]*\}/g)).toEqual(['Button { nav.page = .conversations }']);
     expect(recent).not.toMatch(/sendChat|model\.\w+\(/);
+  });
+
+  it('T6 step 1: Stop next to Working, a Stop menu item while working, and an honest stopped line', () => {
+    const chat = read('Components/ChatThread.swift');
+    // Ask box and Home share the thread: one Stop button, it sends chat.stop only (jobs keep running).
+    expect(chat).toContain('QuietButton("Stop", symbol: "stop.fill") { model.stopChat() }.accessibilityLabel("Stop Stephen")');
+    const main = read('main.swift');
+    expect(main).toContain('stopItem.isHidden = !working()');
+    expect(main).toContain('working: { appModel?.canStop ?? false }, stopWork: { appModel?.stopChat() },');
+    // A stopped command is a grey info line; once a tool ran, it says the step may already have happened.
+    const client = read('AppClient.swift');
+    expect(client).toContain('addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])');
+    const line = client.match(/func stoppedLine\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(line).toContain('tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."');
+  });
+
+  it('T6 step 2: Stop leaves jobs alone, then offers Stop them too under the stopped line; Stop also while speaking', () => {
+    const client = read('AppClient.swift');
+    // The cancelled path marks its line and reads jobs.list; Stop them too sends jobs.stop per running job.
+    expect(client).toMatch(/stoppedLine\(tools:[^\n]*\n\s*stoppedBubble = chat\.last\?\.id\n\s*refreshJobs\(\)/);
+    expect(client).toContain('for j in jobs where j.isRunning { stopJob(j.id) }');
+    expect(client).toContain('n == 1 ? "1 job is still running." : "\\(n) jobs are still running."');
+    expect(client).toContain('var canStop: Bool { return isWorking || state == "speaking" }');
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('if thread.last?.id == model.stoppedBubble && running > 0 {');
+    expect(chat).toContain('QuietButton("Stop them too", destructive: true) { model.stopRunningJobs() }');
+    expect(chat).toContain('} else if model.canStop {');
+    expect(read('main.swift')).toContain('working: { appModel?.canStop ?? false }');
+    expect(read('AskBox.swift')).toContain('case .chat where model.canStop: model.stopChat()');
   });
 
   it('Ask box strip (S9, R7): the state word with its dot; the chat title only in the ⋯ menu, verbatim', () => {

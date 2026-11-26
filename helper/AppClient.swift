@@ -63,6 +63,16 @@ struct ChatStep: Decodable, Equatable {
   let status: String
 }
 
+/// T6: the line after Stop. A tool that already ran (a click, typed text) can't be taken back, so say so.
+func stoppedLine(tools: [String], steps: [ChatStep]) -> String {
+  return tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."
+}
+
+/// T6 step 2: Stop leaves jobs alone. Under the stopped line, say how many still run.
+func jobsStillRunning(_ n: Int) -> String {
+  return n == 1 ? "1 job is still running." : "\(n) jobs are still running."
+}
+
 struct HistoryDay: Identifiable {
   /** Day key, e.g. "2026-11-01" (local time). */
   let id: String
@@ -132,6 +142,8 @@ final class AppModel: ObservableObject {
   /** R7d: nil until the first jobs.list answer, then whether the last one worked. The Jobs page shows loading, empty
    *  and error from it, so a failed list never reads as "No jobs yet". */
   @Published private(set) var jobsListOk: Bool? = nil
+  /// T6 step 2: the id of the last "Stopped." line. Under it the thread offers "Stop them too" while jobs run.
+  @Published private(set) var stoppedBubble: Int? = nil
   /** ADR-010: "Job started: <id>" after an Edit request starts; the dialog never named the id (it is fixed at the start). */
   @Published private(set) var jobStarted: String? = nil
 
@@ -176,7 +188,8 @@ final class AppModel: ObservableObject {
   private let timeFormatter = DateFormatter()
 
   static let historyPageSize = 50
-  static let auditLimit = 100
+  /// APP_AUDIT_LIMIT_MAX in src/app/protocol.ts: Activity shows the last 24 h, and says so when this many came back.
+  static let auditLimit = 200
 
   init(socketPath: String, log: @escaping (String) -> Void) {
     self.socketPath = socketPath
@@ -224,6 +237,8 @@ final class AppModel: ObservableObject {
   }
 
   var isWorking: Bool { return state == "working" || !awaitingReplies.isEmpty }
+  /// T6: Stop is offered while Stephen works or speaks (chat.stop also cuts a spoken reply short).
+  var canStop: Bool { return isWorking || state == "speaking" }
 
   private func connect() {
     if connection == .connecting { return }
@@ -487,7 +502,13 @@ final class AppModel: ObservableObject {
     }
     let outcome = msg.outcome ?? "ok"
     var reply = msg.reply ?? ""
-    if reply.isEmpty && outcome == "cancelled" { reply = "Stopped." }
+    // T6: a stopped command is one grey line, in words. A step that already ran can't be taken back.
+    if reply.isEmpty && outcome == "cancelled" {
+      addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])
+      stoppedBubble = chat.last?.id
+      refreshJobs()
+      return
+    }
     if reply.isEmpty { reply = "(no reply)" }
     let steps = msg.steps ?? []
     var detailParts: [String] = []
@@ -806,6 +827,11 @@ final class AppModel: ObservableObject {
       }
       self.refreshJobs()
     }
+  }
+
+  /** T6 step 2: "Stop them too", the owner's own click. Each running job gets its own jobs.stop. */
+  func stopRunningJobs() {
+    for j in jobs where j.isRunning { stopJob(j.id) }
   }
 
   /**

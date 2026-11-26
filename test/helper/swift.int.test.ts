@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HelperClient, readHelperNonce } from '../../src/helper/client.js';
 import { LineFramer } from '../../src/helper/framing.js';
-import { buildWithSdkFallback, findSwiftCompiler, listFallbackSdks, swiftcArgs } from '../../src/helper/install.js';
+import { HELPER_FRAMEWORKS, HELPER_SOURCES, buildWithSdkFallback, findSwiftCompiler, listFallbackSdks, swiftcArgs } from '../../src/helper/install.js';
 import type { HelperEvent } from '../../src/helper/protocol.js';
 import { defaultRun } from '../../src/zen-launcher.js';
 import { until } from './fake-helper.js';
@@ -401,4 +401,15 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     expect(b.result.stderr + b.result.stdout).not.toMatch(/error:/);
     expect(b.ok).toBe(true);
   }, 1_200_000);
+
+  it.runIf(process.platform === 'darwin')('T6 step 4: Activity rows say host only, never args or error text, quote and cut page text', () => {
+    const bin = join(work, 'activity');
+    const sources = HELPER_SOURCES.filter((f) => f !== 'main.swift').map((f) => join(ROOT, 'helper', f));
+    const args = ['-swift-version', '5', '-o', bin, ...sources, join(ROOT, 'test', 'helper', 'swift', 'activity', 'main.swift'), ...HELPER_FRAMEWORKS.flatMap((f) => ['-framework', f])];
+    const c = spawnSync(SWIFTC!, args, { encoding: 'utf8', timeout: 600_000 });
+    expect(c.stderr + c.stdout).not.toMatch(/error:/);
+    const r = spawnSync(bin, [], { encoding: 'utf8', timeout: 10_000 });
+    expect(r.stdout.trim()).toBe('ok');
+    expect(r.status).toBe(0);
+  }, 600_000);
 });

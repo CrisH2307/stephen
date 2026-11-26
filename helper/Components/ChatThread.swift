@@ -30,6 +30,15 @@ struct ChatThreadView: View {
           ForEach(thread) { b in
             ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil, links: links).id(b.id)
           }
+          // T6 step 2: Stop left the jobs alone. Offer to stop them too, under the stopped line only.
+          let running = model.jobs.filter { $0.isRunning }.count
+          if thread.last?.id == model.stoppedBubble && running > 0 {
+            HStack(spacing: Space.s) {
+              Text(verbatim: jobsStillRunning(running)).font(TypeScale.secondary).foregroundColor(t.ink2)
+              QuietButton("Stop them too", destructive: true) { model.stopRunningJobs() }
+            }
+            .id("jobs")
+          }
           if let q = model.confirms.first {
             ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
               .modifier(PaperBacking())
@@ -40,9 +49,14 @@ struct ChatThreadView: View {
                   .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
               )
               .id("confirm")
-          } else if model.isWorking {
-            Text(verbatim: "Working…").font(TypeScale.secondary).foregroundColor(t.ink2)
-              .accessibilityLabel("Working. Press Escape to stop.").id("working")
+          } else if model.canStop {
+            // T6: a visible Stop (Esc still works). It sends chat.stop only; running jobs keep going.
+            HStack(spacing: Space.s) {
+              Text(verbatim: model.isWorking ? "Working…" : "Speaking…").font(TypeScale.secondary).foregroundColor(t.ink2)
+                .accessibilityLabel(model.isWorking ? "Working. Press Escape to stop." : "Speaking. Press Escape to stop.")
+              QuietButton("Stop", symbol: "stop.fill") { model.stopChat() }.accessibilityLabel("Stop Stephen")
+            }
+            .id("working")
           }
           Color.clear.frame(height: 1).id("end")
         }
@@ -135,7 +149,11 @@ struct ChatBubbleRow: View {
         if isLast, let retry = retry { QuietButton("Try again", action: retry) }
       }
     case .info:
-      Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
+      // A stopped command keeps its folded chain, so you can see what already ran (T6).
+      VStack(alignment: .leading, spacing: Space.s) {
+        if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
+        Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
+      }
     }
   }
 

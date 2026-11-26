@@ -257,7 +257,7 @@ struct AskBoxView: View {
     if model.denyFirstConfirm() { return }  // Esc = Deny, like the dialog
     switch mode {
     case .listening where box.micHeld: actions.micCancel()
-    case .chat where model.isWorking: model.stopChat()
+    case .chat where model.canStop: model.stopChat()
     default: actions.close()
     }
   }

@@ -14,6 +14,7 @@
  */
 import { MAX_CHAT_STEPS, MAX_STEP_CHARS, type ChatStep } from '../history/store.js';
 import { validCommandId } from '../lib/command-id.js';
+import { compileLists, isPrivateUrl } from '../safety/policy.js';
 import { truncate } from '../safety/text.js';
 import type { ToolCallRecord } from '../server/tool-log.js';
 import type { AuditEntry } from '../types.js';
@@ -26,6 +27,42 @@ const STEPS_AUDIT_LIMIT = 100;
 export const STEPS_AUDIT_WAIT_MS = 400;
 /** Audit lines up to this long before the command's start or after its end still count (clock and write slack). */
 const SLACK_MS = 1000;
+
+/** Private sites from the built-in lists only (used when the owner's lists are not passed). */
+const BUILTIN_LISTS = compileLists({ blockedDomains: [], sensitiveDomains: [] });
+export const BUILTIN_PRIVATE = (url: string): boolean => isPrivateUrl(url, BUILTIN_LISTS);
+
+/** A URL cut to its origin (no path, query or hash); undefined when it does not parse to one. */
+function originOf(u: string | undefined): string | undefined {
+  if (u === undefined) return undefined;
+  try {
+    const o = new URL(u).origin;
+    return o === 'null' ? undefined : o;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * T6 step 3 (docs/design/STOP-AND-ACTIVITY.md): an audit entry on a private site loses its element label, intent,
+ * error and args, and its URLs are cut to the origin. A Gmail row label can hold a code. Used for audit.recent and
+ * for the steps that chat.done sends and the history file stores.
+ */
+export function hidePrivateFields(e: AuditEntry, isPrivate: (url: string) => boolean): AuditEntry {
+  if (![e.urlBefore, e.urlAfter].some((u) => u !== undefined && isPrivate(u))) return e;
+  const out = { ...e };
+  delete out.element;
+  delete out.intent;
+  delete out.error;
+  delete out.args;
+  for (const k of ['urlBefore', 'urlAfter'] as const) {
+    if (out[k] === undefined) continue;
+    const o = originOf(out[k]);
+    if (o === undefined) delete out[k];
+    else out[k] = o;
+  }
+  return out;
+}
 
 function actionText(a: AuditEntry): string {
   return [a.kind ?? a.tool, a.element].filter((s) => !!s).join(' ');
@@ -77,6 +114,7 @@ export async function readCommandSteps(
   id: string,
   ms: number,
   end: number,
+  isPrivate: (url: string) => boolean = BUILTIN_PRIVATE,
 ): Promise<ChatStep[] | undefined> {
   let entries: AuditEntry[] | null = [];
   if (audit && ms > 0) {
@@ -88,6 +126,6 @@ export async function readCommandSteps(
     entries = await Promise.race([read, slow]).finally(() => clearTimeout(timer));
   }
   if (entries === null) return undefined;
-  const steps = commandSteps(entries, calls, end - ms, end, id);
+  const steps = commandSteps(entries.map((e) => hidePrivateFields(e, isPrivate)), calls, end - ms, end, id);
   return steps.length > 0 ? steps : undefined;
 }

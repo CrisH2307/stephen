@@ -195,6 +195,43 @@ export function pickL1Model(env: string | undefined): string | null {
   return L1_MODELS.includes(m) ? m : null;
 }
 
+/** L1b: the only OpenCode Zen free models it may use (docs/design/INCIDENT-LADDER-FREE-FIRST.md). Only `opencode/*-free`. */
+export const L1B_MODELS: readonly string[] = ['opencode/deepseek-v4.1-flash-free'];
+/** L1b runs only when Cris names the model in INCIDENT_L1B_MODEL, after the canary passes. */
+export function pickL1bModel(env: string | undefined): string | null {
+  const m = (env ?? '').trim();
+  return L1B_MODELS.includes(m) && /^opencode\/[a-z0-9.-]+-free$/.test(m) ? m : null;
+}
+
+/** The isolated OpenCode config L1b runs with: no MCP, no plugins, every tool and permission denied. */
+export const OPENCODE_L1B_CONFIG = {
+  $schema: 'https://opencode.ai/config.json',
+  mcp: {},
+  plugin: [],
+  tools: { '*': false },
+  permission: { '*': 'deny', edit: 'deny', bash: 'deny', webfetch: 'deny' },
+} as const;
+
+/** `opencode run` argv for L1b. Never `--auto`. */
+export function opencodeArgs(model: string, prompt: string): string[] {
+  return ['run', '--standalone', '--archived', '--format', 'json', '-m', model, prompt];
+}
+
+/** The last text part from `opencode run --format json` (one JSON event per line). Null when there is none. */
+// ponytail: event shape read from the json format (part.type text); the L1b canary confirms it before L1b is turned on.
+export function opencodeText(out: string): string | null {
+  let text: string | null = null;
+  for (const line of out.split('\n')) {
+    try {
+      const part = (JSON.parse(line) as { part?: { type?: unknown; text?: unknown } }).part;
+      if (part?.type === 'text' && typeof part.text === 'string') text = part.text;
+    } catch {
+      // Not a JSON line.
+    }
+  }
+  return text;
+}
+
 export const CLAUDE_LEVELS = {
   2: { model: 'haiku', turns: 15, minutes: 10 },
   3: { model: 'sonnet', turns: 25, minutes: 15 },

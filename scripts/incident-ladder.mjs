@@ -33,7 +33,11 @@ import {
   ladderRunsToday,
   markerFor,
   nextLevel,
+  OPENCODE_L1B_CONFIG,
+  opencodeArgs,
+  opencodeText,
   parseModelJson,
+  pickL1bModel,
   pickL1Model,
   QA_REF,
   resolves,
@@ -79,12 +83,12 @@ async function bodyEditedAt(number) {
   return issue.lastEditedAt ?? issue.createdAt;
 }
 
-/** L1: one free model through freellm. No tools. Null when it fails or its answer does not pass the check. */
+/** L1a: one free model through freellm. No tools. Null when it fails or its answer does not pass the check. */
 async function runL1(lines, codeText, fileOk) {
   const model = pickL1Model(process.env.INCIDENT_L1_MODEL);
   const key = process.env.FREELLM_API_KEY;
   if (!model || !key) {
-    log('  L1 skipped (INCIDENT_L1_MODEL is not set to a pinned model, or FREELLM_API_KEY is not set).');
+    log('  L1a skipped (INCIDENT_L1_MODEL is not set to a pinned model, or FREELLM_API_KEY is not set).');
     return null;
   }
   try {
@@ -97,6 +101,47 @@ async function runL1(lines, codeText, fileOk) {
     if (!res.ok) return null;
     const text = (await res.json())?.choices?.[0]?.message?.content;
     return typeof text === 'string' ? checkFindings(parseModelJson(text), fileOk) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** L1b: one OpenCode Zen free model, only when L1a gave no draft. No tools: an empty dir, a scrubbed env and a config
+ * that denies everything (HOME and XDG dirs too, so no global MCP, plugin or ~/.claude file loads). Null when it fails or fails the check. */
+async function runL1b(lines, codeText, fileOk, work) {
+  const model = pickL1bModel(process.env.INCIDENT_L1B_MODEL);
+  if (!model) {
+    log('  L1b skipped (INCIDENT_L1B_MODEL is not set to a pinned free model).');
+    return null;
+  }
+  try {
+    const dir = await mkdtemp(join(work, 'l1b-'));
+    const conf = join(dir, 'conf');
+    const empty = join(dir, 'cwd');
+    await mkdir(join(conf, 'opencode'), { recursive: true });
+    await mkdir(empty);
+    const configFile = join(conf, 'opencode', 'opencode.json');
+    await writeFile(configFile, JSON.stringify(OPENCODE_L1B_CONFIG), { mode: 0o600 });
+    const out = await run('opencode', opencodeArgs(model, l1Prompt(lines, codeText)), {
+      cwd: empty,
+      // The real HOME would let OpenCode add ~/.claude/CLAUDE.md and skills to the prompt: HOME and the XDG dirs point
+      // into the temp dir, and the OPENCODE_DISABLE_* names (read from the installed opencode 2.3.2) turn that off too.
+      env: {
+        ...withoutSecrets(process.env),
+        HOME: dir,
+        XDG_CONFIG_HOME: conf,
+        XDG_DATA_HOME: join(dir, 'data'),
+        OPENCODE_CONFIG: configFile,
+        OPENCODE_DISABLE_CLAUDE_CODE: '1',
+        OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: '1',
+        OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
+        OPENCODE_DISABLE_PROJECT_CONFIG: '1',
+        OPENCODE_DISABLE_AUTOUPDATE: '1',
+      },
+      timeout: L1_TIMEOUT_MS,
+    });
+    const text = opencodeText(out);
+    return text ? checkFindings(parseModelJson(text), fileOk) : null;
   } catch {
     return null;
   }
@@ -162,7 +207,11 @@ export async function handleIssue(issue, comments, budget, today) {
 
     const trail = [];
     let draft = await runL1(lines, codeText, fileOk);
-    trail.push(draft ? 'L1 draft' : 'L1 none');
+    trail.push(draft ? 'L1a draft' : 'L1a none');
+    if (!draft) {
+      draft = await runL1b(lines, codeText, fileOk, work);
+      trail.push(draft ? 'L1b draft' : 'L1b none');
+    }
     let level = 1;
     let last = draft;
     let shown = draft;
