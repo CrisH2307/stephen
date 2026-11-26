@@ -1394,7 +1394,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   });
 
   it('glass (UI v4 section 8): sidebar, toolbar and palette only; tints and alphas are the checked ones; solid fallbacks', () => {
-    const script = join(helperSourceDir(), '..', 'docs', 'research', 'ui-v4-mock', 'glass-contrast.mjs');
+    const script = join(helperSourceDir(), '..', 'scripts', 'glass-contrast.mjs');
     execFileSync(process.execPath, [script], { stdio: 'pipe' });  // throws if any text pair is under 4.5:1
     const src = readFileSync(script, 'utf8');
     const theme = read('Theme.swift');
