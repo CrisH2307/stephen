@@ -64,7 +64,7 @@ export type ReadPrivateJsonResult = { state: unknown } | { missing: true } | { e
 export function readPrivateJsonFile(path: string, maxBytes: number = MAX_PRIVATE_JSON_BYTES): ReadPrivateJsonResult {
   let fd: number;
   try {
-    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0));
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return { missing: true };
