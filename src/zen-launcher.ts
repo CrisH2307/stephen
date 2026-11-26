@@ -27,6 +27,7 @@ import {
   readAppBundleInfo,
 } from './drivers/macos.js';
 import { type Clock, errText, realClock } from './drivers/util.js';
+import { otherUserCount, sharedMacReason } from './lib/other-users.js';
 import { execNoThrow } from './lib/process.js';
 import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import type { ResolvedConfig } from './types.js';
@@ -61,6 +62,8 @@ export interface ZenLaunchDeps {
   run: RunFn;
   platform: NodeJS.Platform;
   clock: Clock;
+  /** Other user accounts, or null when unknown (B5). Checked before --quit-running closes the person's Zen. */
+  otherUserCount: () => Promise<number | null>;
   /** How long to wait for Zen to quit after asking it to (default 20 s). */
   quitTimeoutMs: number;
   pollIntervalMs: number;
@@ -92,6 +95,7 @@ export function defaultZenLaunchDeps(cfg: ResolvedConfig): ZenLaunchDeps {
     driver: new ZenDriver(cfg),
     isProcessRunning: defaultIsProcessRunning,
     run: defaultRun,
+    otherUserCount: () => otherUserCount(),
     platform: process.platform,
     clock: realClock,
     quitTimeoutMs: 20_000,
@@ -144,6 +148,9 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
     // A Zen started by an earlier zen-launch that is still starting up: wait for it (launchForClaude resumes it).
     if (readiness.kind !== 'starting' && (await deps.isProcessRunning('zen'))) {
       if (!opts.quitRunning) return fail(2, 'zen-running', ZEN_RUNNING_NORMALLY_MESSAGE);
+      // B5 (#385 review): on a shared Mac the launch below is refused, so never quit the person's Zen first.
+      const others = await deps.otherUserCount();
+      if (others !== 0) return fail(2, 'needs-user', sharedMacReason(others));
       if (deps.platform !== 'darwin') {
         return fail(2, 'quit-failed', 'Asking Zen to quit only works on macOS. Quit Zen yourself, then run `stephen zen-launch` again.');
       }
