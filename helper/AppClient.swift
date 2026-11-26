@@ -463,10 +463,10 @@ final class AppModel: ObservableObject {
         self.awaitingReplies.insert(entryId)
         self.editsInFlight.insert(entryId)
       } else if msg.type == "error" {
-        let m = msg.message ?? "error"
-        if m == "busy" {
+        if msg.message == "busy" {
           self.addBubble(.info, "Stephen is busy with another command. Try again when it's done.", detail: "")
         } else {
+          let m = plainFailure(msg.message, CONVERSATIONS_EDIT_FAILED)
           self.addBubble(.problem, m, detail: "")
           self.historyNotice = m
         }
@@ -491,7 +491,7 @@ final class AppModel: ObservableObject {
         self.versions = [:]
         self.refreshHistory()
       } else {
-        self.historyNotice = msg.message ?? "error"
+        self.historyNotice = plainFailure(msg.message, CONVERSATIONS_DELETE_FAILED)
       }
     }
   }
@@ -672,7 +672,8 @@ final class AppModel: ObservableObject {
         self.history.append(contentsOf: entries.filter { !known.contains($0.id) })
         self.historyMayHaveMore = entries.count >= AppModel.historyPageSize
       } else {
-        self.historyNotice = msg.message ?? "error"
+        // The rows already shown stay; only the notice says the older page failed.
+        self.historyNotice = plainFailure(msg.message, CONVERSATIONS_OLDER_FAILED)
       }
     }
   }
@@ -686,7 +687,8 @@ final class AppModel: ObservableObject {
         self.historyListOk = true
         self.historyNotice = "History cleared."
       } else {
-        self.historyNotice = msg.message ?? "error"
+        // Nothing was cleared, so the rows stay.
+        self.historyNotice = plainFailure(msg.message, CONVERSATIONS_CLEAR_FAILED)
       }
     }
   }
@@ -784,7 +786,7 @@ final class AppModel: ObservableObject {
         self.assign(\.audit, msg.auditEntries ?? [])
         self.assign(\.auditNotice, nil)
       } else {
-        self.assign(\.auditNotice, msg.message ?? "error")
+        self.assign(\.auditNotice, plainFailure(msg.message, RECENT_ACTIONS_FAILED))
       }
     }
   }

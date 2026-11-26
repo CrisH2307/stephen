@@ -401,6 +401,42 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).not.toMatch(/if model\.history\.isEmpty \{\s*Text\(verbatim: CONVERSATIONS_EMPTY\)/);
   });
 
+  // R7 follow-up: every other failed Conversations action says what failed in a plain sentence, never a raw "error".
+  // The listener's own sentence ("This conversation changed. Open it again.") is kept; the rows stay.
+  describe('Conversations failures in plain words', () => {
+    const fnBody = (name: string) => client.match(new RegExp(`func ${name}\\([\\s\\S]*?\\n  \\}`))?.[0] ?? '';
+    const conv = read('ConversationsPage.swift');
+    it.each([
+      ['editMessage', 'CONVERSATIONS_EDIT_FAILED', "Couldn't send your edit right now."],
+      ['loadOlderHistory', 'CONVERSATIONS_OLDER_FAILED', "Couldn't load older conversations right now."],
+      ['clearHistory', 'CONVERSATIONS_CLEAR_FAILED', "Couldn't clear your history right now."],
+      ['deleteVersion', 'CONVERSATIONS_DELETE_FAILED', "Couldn't delete that version right now."],
+      ['refreshAudit', 'RECENT_ACTIONS_FAILED', "Couldn't load recent actions right now."],
+    ])('%s says %s, never raw "error"', (fn, name, text) => {
+      const body = fnBody(fn);
+      expect(body).toContain(`plainFailure(msg.message, ${name})`);
+      expect(body).not.toContain('?? "error"');
+      expect(body).not.toMatch(/Notice\s*=\s*msg\.message|Notice, msg\.message\)/);
+      expect(conv).toContain(`let ${name} = "${text}"`);
+    });
+    it('the rows stay when load older or clear fails', () => {
+      for (const fn of ['loadOlderHistory', 'clearHistory']) {
+        const failed = fnBody(fn).split('} else {')[1] ?? '';
+        expect(failed).toContain('plainFailure(');
+        expect(failed).not.toMatch(/self\.history\s*=|historyListOk/);
+      }
+    });
+    it('a failed edit says it in the chat bubble and the notice; busy keeps its own line', () => {
+      const body = fnBody('editMessage');
+      expect(body).toContain('if msg.message == "busy" {');
+      expect(body).toMatch(/let m = plainFailure\(msg\.message, CONVERSATIONS_EDIT_FAILED\)\s*self\.addBubble\(\.problem, m, detail: ""\)\s*self\.historyNotice = m/);
+    });
+    it('plainFailure keeps only a sentence, else the fallback', () => {
+      const fn = conv.match(/func plainFailure\([\s\S]*?\n\}/)?.[0] ?? '';
+      expect(fn).toContain('m.first?.isUppercase == true, m.hasSuffix(".") else { return fallback }');
+    });
+  });
+
   it('R10a-2 (#94): Try again re-sends only a typed bubble, by its source field, never its text or detail', () => {
     const chat = read('Components/ChatThread.swift');
     // The one guard: the last said bubble, and only when its source is .typed. No fallback to an older typed one.
