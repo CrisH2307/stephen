@@ -3,7 +3,7 @@
 Every technical word you might meet in Stephen's pages, explained in one or two short sentences, with an everyday
 example. Words are in A to Z order. A word in *italics* inside an explanation has its own entry.
 
-[A](#a) · [B](#b) · [C](#c) · [D](#d) · [F](#f) · [H](#h) · [I](#i) · [J](#j) · [K](#k) · [L](#l) · [M](#m) ·
+[A](#a) · [B](#b) · [C](#c) · [D](#d) · [E](#e) · [F](#f) · [H](#h) · [I](#i) · [J](#j) · [K](#k) · [L](#l) · [M](#m) ·
 [N](#n) · [O](#o) · [P](#p) · [R](#r) · [S](#s) · [T](#t) · [U](#u) · [W](#w)
 
 ## A
@@ -114,6 +114,21 @@ How much text an AI model can look at in one go, like the size of its desk. Very
 Any information: your words, a web page, a reminder, a setting.
 *Example:* "Buy milk at 6" is data once Stephen saves it as a reminder.
 
+### Daily limit
+
+A cap on how much Stephen may spend of your Claude plan in one day, 1 US dollar of model use by default. Near the
+cap Stephen warns you; at the cap it stops starting new model runs until midnight. Timers, memory and "stop" still
+work.
+*Example:* Stephen says "Today's limit is used. It resets at midnight."
+
+## E
+
+### Egress
+
+Data leaving your Mac. Stephen watches for it, for example inside a web address the AI wants to open, or text it
+wants to type into a website.
+*Example:* After Stephen reads your email, opening a new site with words in its address asks you first.
+
 ## F
 
 ### F5 (push-to-talk key)
@@ -134,6 +149,12 @@ station.
 When an AI model says something that sounds right but is not true. Every AI model can do this.
 *Example:* A model names a store's opening hours with confidence, but the hours are wrong. Check things that matter.
 
+### Helper (Stephen Helper)
+
+The small Mac app that is Stephen's face: the icon in the menu bar, the Ask box, the Allow and Deny buttons, and
+the F5 key.
+*Example:* When you hold F5, the Helper notices and tells the listener to start recording.
+
 ## I
 
 ### Independent review
@@ -151,8 +172,8 @@ every other key, and never sends or saves what you type.
 
 ### Job
 
-A longer task Stephen does in the background while you do something else. It works in its own folder and you can
-stop it any time.
+A longer task Claude does in the background while you do something else. It starts only after you click Start,
+works in its own folder inside a *sandbox*, and you can stop it any time.
 *Example:* "While I'm cooking, find three cheap flights to Montreal and write them in a file."
 
 ## K
@@ -169,6 +190,12 @@ setups may use a `.env` file instead), and never shows them to the AI model.
 
 The waiting time between finishing your sentence and hearing the answer.
 *Example:* If Stephen answers 2 seconds after you stop talking, the latency is 2 seconds.
+
+### Listener
+
+The part of Stephen that hears you. It runs on your Mac, turns your voice into text, and keeps your memory,
+timers, history and settings.
+*Example:* Clicking Start in the Ask box starts the listener.
 
 ### Local
 
@@ -212,6 +239,12 @@ Software whose code anyone can read. Stephen's code is public on GitHub, so anyo
 
 ## P
 
+### p50 and p95
+
+Two ways to say how fast something is. p50 is the middle time: half of the commands are faster. p95 is the time
+that 95 of 100 commands beat, so it shows the slow cases.
+*Example:* "F5 replies: p50 2 seconds" means half of them came back in under 2 seconds.
+
 ### Permission
 
 A switch on your Mac that lets an app do a sensitive thing. Stephen needs three: Microphone, *Input Monitoring* and
@@ -239,6 +272,11 @@ never as orders, and still asks you before anything risky.
 A proposed change to the code, shown side by side with the old version, so people can review it before it goes in.
 *Example:* "Add the glossary" was a pull request. A reviewer read it, then it was merged.
 
+### Push-to-talk
+
+Hold a key while you speak, then let go to send. In Stephen the key is F5 (or Fn+Option). See *F5*.
+*Example:* Like a walkie-talkie: press, talk, release.
+
 ## R
 
 ### Rate limit
@@ -252,11 +290,18 @@ scrolls and account reads all count), then pauses.
 The folder, stored on GitHub, that holds all of Stephen's code, docs and history.
 *Example:* `github.com/CrisH2307/stephen` is Stephen's repository.
 
+### Router
+
+Fixed rules on your Mac that handle some commands without the AI: memory, timers and starting jobs. Because the AI
+is not involved, a web page can never change these.
+*Example:* "Set a timer for 10 minutes" is handled by the router in a split second.
+
 ## S
 
 ### Safety gate
 
-The part of Stephen that checks every action before it happens and decides: do it, ask you, or refuse. It is code,
+The one check that every browser and Mac action, and every read of private data, must pass. It decides: do it,
+ask you, or refuse. It is code,
 so page text cannot argue with it.
 *Example:* The safety gate refuses to type into a password field, whatever the page says.
 
@@ -301,11 +346,23 @@ One thing the AI is allowed to do, like "open a tab", "click", "read the page" o
 act through Stephen's tools.
 *Example:* To answer "what's the weather?", Claude uses the weather tool.
 
+### Tool server
+
+The part of Stephen that holds its tools and the safety gate. Claude asks it to do things through *MCP*, and it
+only does what the gate allows.
+*Example:* Claude asks the tool server to click a button. The gate checks the click first.
+
+### Trust tier
+
+How much Stephen trusts a command, based on how it started. F5, the Ask box and Terminal get full trust. The wake
+word gets less, because anyone in the room can say it.
+*Example:* After "Hey Stephen", Stephen says how many memories you have instead of reading them out loud.
+
 ## U
 
 ### Untrusted text
 
-Text that comes from outside, like a web page, an email or a file. Stephen marks it as data so Claude does not
+Anything Stephen reads that you did not write yourself, like a web page, an email or a tab title. Stephen marks it as data so Claude does not
 follow orders written inside it.
 *Example:* An email that says "ignore your rules" is untrusted text. Stephen reads it, but does not obey it.
 
