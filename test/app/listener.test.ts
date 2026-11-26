@@ -181,7 +181,8 @@ describe('typed chat in the listener queue', () => {
 
   it('memory edits from the window end the conversation', async () => {
     const t = await setup();
-    await t.client.request({ id: 'm', type: 'memory.add', text: 'my gym is goodlife' });
+    await t.store.add('my gym is goodlife', 'cli');
+    await t.client.request({ id: 'm', type: 'memory.forget', memId: 'm1' });
     expect(t.runner.conversationEnds).toBe(1);
   });
 

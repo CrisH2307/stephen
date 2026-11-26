@@ -22,11 +22,7 @@
 {"from":"app","kind":"request","msg":{"id":"a7","type":"history.clear"}}
 {"from":"node","kind":"response","msg":{"id":"a7","type":"ok"}}
 {"from":"app","kind":"request","msg":{"id":"a8","type":"memory.list"}}
-{"from":"node","kind":"response","msg":{"id":"a8","type":"memory","items":[{"id":"m7","text":"my prof for sofe 3980 is dr patel","source":"voice-ptt","createdAt":"2026-11-01T09:12:05.000Z","updatedAt":"2026-11-01T09:12:05.000Z"}]}}
-{"from":"app","kind":"request","msg":{"id":"a9","type":"memory.add","text":"I take the 7:40 GO train on weekdays"}}
-{"from":"node","kind":"response","msg":{"id":"a9","type":"memory","items":[{"id":"m7","text":"my prof for sofe 3980 is dr patel","source":"voice-ptt","createdAt":"2026-11-01T09:12:05.000Z","updatedAt":"2026-11-01T09:12:05.000Z"},{"id":"m8","text":"I take the 7:40 GO train on weekdays","source":"app","createdAt":"2026-11-01T15:00:00.000Z","updatedAt":"2026-11-01T15:00:00.000Z"}]}}
-{"from":"app","kind":"request","msg":{"id":"a10","type":"memory.add","text":"my bank pin is 4821"}}
-{"from":"node","kind":"response","msg":{"id":"a10","type":"error","message":"I don't save passwords, codes or card numbers."}}
+{"from":"node","kind":"response","msg":{"id":"a8","type":"memory","items":[{"id":"m7","text":"my prof for sofe 3980 is dr patel","source":"voice-ptt","createdAt":"2026-11-01T09:12:05.000Z","updatedAt":"2026-11-01T09:12:05.000Z"},{"id":"m8","text":"I take the 7:40 GO train on weekdays","source":"app","createdAt":"2026-11-01T15:00:00.000Z","updatedAt":"2026-11-01T15:00:00.000Z"}]}}
 {"from":"app","kind":"request","msg":{"id":"a11","type":"memory.update","memId":"m8","text":"I take the 7:50 GO train on weekdays"}}
 {"from":"node","kind":"response","msg":{"id":"a11","type":"memory","items":[{"id":"m7","text":"my prof for sofe 3980 is dr patel","source":"voice-ptt","createdAt":"2026-11-01T09:12:05.000Z","updatedAt":"2026-11-01T09:12:05.000Z"},{"id":"m8","text":"I take the 7:50 GO train on weekdays","source":"app","createdAt":"2026-11-01T15:00:00.000Z","updatedAt":"2026-11-01T15:02:10.000Z"}]}}
 {"from":"app","kind":"request","msg":{"id":"a12","type":"memory.forget","memId":"m7"}}
