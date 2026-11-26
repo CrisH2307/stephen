@@ -89,6 +89,8 @@ function launchHarness(o: {
   launchError?: Error;
   /** Use a real ZenDriver (fake spawn/connect) instead of a stub. */
   realDriver?: boolean;
+  /** Other user accounts (B5); default a single-user Mac. */
+  others?: number | null;
 }): LaunchHarness {
   const h: LaunchHarness = { deps: undefined as unknown as ZenLaunchDeps, runs: [], launches: 0, driver: null, spawns: [], children: [], connects: 0 };
   const running = [...(o.running ?? [false])];
@@ -137,6 +139,7 @@ function launchHarness(o: {
     driver,
     isProcessRunning: async () => (running.length > 1 ? running.shift()! : running[0]!),
     run,
+    otherUserCount: async () => (o.others === undefined ? 0 : o.others),
     platform: o.platform ?? 'darwin',
     clock: fakeClock(),
     quitTimeoutMs: 20_000,
@@ -146,6 +149,15 @@ function launchHarness(o: {
 }
 
 describe('zen-launch', () => {
+  it.each([[2], [null]])('B5 (#385 review): --quit-running on a shared Mac (%s) refuses before it asks Zen to quit', async (others) => {
+    tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
+    const h = launchHarness({ running: [true], others });
+    const r = await runZenLaunch({ quitRunning: true }, h.deps);
+    expect(r).toMatchObject({ exitCode: 2, status: 'needs-user', message: expect.stringMatching(/Chrome/) });
+    expect(h.runs).toEqual([]); // no osascript quit: the person's Zen stays open
+    expect(h.launches).toBe(0);
+  });
+
   it('nothing running: launches, writes the state for serve (no owner, no session) and exits 0 — kills nothing', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const killSpy = vi.spyOn(process, 'kill');
