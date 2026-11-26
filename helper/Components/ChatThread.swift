@@ -32,6 +32,7 @@ struct ChatThreadView: View {
           }
           if let q = model.confirms.first {
             ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
+              .modifier(PaperBacking())
               // Esc = Deny, in the Ask box and on Home, even while the text field has focus: a key equivalent runs
               // before the field editor. No 0.75 s delay: Esc can only deny. One card, so one question per press (R10a-5).
               .background(
@@ -241,18 +242,17 @@ struct ActionChain: View {
   }
 }
 
-/// The question card keeps its warn outline all round, no side stripe: the most distinct shape, in every theme (#139).
-/// Paper: a white card, the warn edge at 2 pt and the hard ink shadow, so it still stands apart from the ink-edged
-/// cards around it.
-private struct ConfirmCard: ViewModifier {
+/// Paper only: a hard ink block 4 pt down-right behind the question card, the website's look. The card itself (its
+/// fill and warn outline, #139) is drawn by ConfirmMessage the same in every theme; this only adds the block.
+private struct PaperBacking: ViewModifier {
   @Environment(\.stephenTheme) var t
   func body(content: Content) -> some View {
     if t.paper {
-      // Room for the 4 pt shadow inside the thread's scroll view, which clips.
-      content.paperBox(t, fill: t.surface, radius: 16, edge: t.warn).padding(.trailing, 4).padding(.bottom, 4)
+      // Room for the block inside the thread's scroll view, which clips.
+      content.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.ink).offset(x: 4, y: 4))
+        .padding(.trailing, 4).padding(.bottom, 4)
     } else {
-      content.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
-        .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))
+      content
     }
   }
 }
@@ -280,7 +280,9 @@ struct ConfirmMessage: View {
       ConfirmButtons(question: question, waiting: waiting, answer: answer)
     }
     .padding(Space.m)
-    .modifier(ConfirmCard())
+    .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
+    // A 1.5 pt warn outline all round, no side stripe: the most distinct shape, in every theme (#139).
+    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))
     .accessibilityElement(children: .contain)
   }
 }
