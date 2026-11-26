@@ -248,7 +248,8 @@ private struct ConfirmCard: ViewModifier {
   @Environment(\.stephenTheme) var t
   func body(content: Content) -> some View {
     if t.paper {
-      content.paperBox(t, fill: t.surface, radius: 16, edge: t.warn)
+      // Room for the 4 pt shadow inside the thread's scroll view, which clips.
+      content.paperBox(t, fill: t.surface, radius: 16, edge: t.warn).padding(.trailing, 4).padding(.bottom, 4)
     } else {
       content.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
         .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))
