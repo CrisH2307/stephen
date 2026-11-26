@@ -1311,9 +1311,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   // exception text) and any home path go to helper.log only. Settings > Privacy shows the plain sentence once.
   it('R7: Start, Report and the helper start failure never show raw errors or paths', () => {
     const control = read('StephenControl.swift');
-    expect(control).not.toContain('localizedDescription)")');
-    expect(control).not.toMatch(/done\("[^"]*\\\((launchInfoPath|logPath|home)/);
-    expect(control).not.toContain('strerror(errno)))")');
+    // What `done` shows: no exception text, errno or path. The `log(...)` lines (helper.log) may keep them.
+    expect(control).not.toMatch(/done\("[^"\n]*\\\((error\.localizedDescription|String\(cString: strerror|launchInfoPath|logPath|home)/);
     for (const [name, text] of [
       ['LAUNCH_INFO_MISSING', "Stephen Helper doesn't know how to start Stephen. Run `stephen install-helper` once in Terminal."],
       ['LISTEN_START_FAILED', "Couldn't start Stephen right now. Try again in a moment."],
