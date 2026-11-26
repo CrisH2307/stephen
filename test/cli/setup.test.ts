@@ -132,6 +132,17 @@ describe('stephen setup', () => {
   });
 });
 
+describe('stephen setup, the weather question', () => {
+  it('asks after doctor, before the permission lines, only when cli.ts passes askWeather (a terminal)', async () => {
+    const order: string[] = [];
+    const h = harness({ askWeather: async () => void order.push(`asked after ${h.calls.length} calls`) });
+    expect(await runSetup(h.deps)).toBe(0);
+    expect(order).toEqual(['asked after 7 calls']);
+    const plain = harness();
+    expect(await runSetup(plain.deps)).toBe(0);
+  });
+});
+
 describe('setupStatus (F9, the onboarding sheet)', () => {
   const run = (version: RunResult, auth: RunResult) => async (a: string[]) => (a[0] === '--version' ? version : auth);
   const OK0: RunResult = { code: 0, stdout: '', stderr: '' };

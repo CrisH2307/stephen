@@ -514,6 +514,15 @@ export async function doctor(network = false, json = false): Promise<number> {
     add({ ok: true, info: true, label: 'Saved output', detail: cfg.output.saveDir });
     for (const c of await voiceOutputChecks({ home: cfg.home, rawVoice: (cfg as Partial<HubConfig>).voice ?? {}, network })) add(c);
 
+    try {
+      const { DEFAULT_WEATHER } = await import('./accounts/weather.js');
+      const w = (await import('./accounts/config.js')).parseAccountsConfig((cfg as Partial<HubConfig>).accounts ?? {}).weather;
+      if (w.enabled && w.latitude === DEFAULT_WEATHER.latitude && w.longitude === DEFAULT_WEATHER.longitude) {
+        add({ ok: true, info: true, label: 'Weather place', detail: `Weather uses ${DEFAULT_WEATHER.label} (the built-in place). Set yours: stephen accounts weather set <your city>` });
+      }
+    } catch {
+      // a bad accounts section is reported where the config is checked
+    }
     add({ ok: true, info: true, label: 'Modes', detail: `chrome: ${cfg.chrome.mode} · zen: ${cfg.zen.mode} · default browser: ${cfg.defaultBrowser} · confirm: ${cfg.safety.confirm}` });
   }
 
@@ -595,6 +604,7 @@ async function setup(): Promise<number> {
     launcherPath: zenLauncherAppPath(),
     cliPath,
     log: (l) => console.log(l),
+    ...(process.stdin.isTTY && process.stdout.isTTY ? { askWeather: async () => (await import('./connect/accounts-cli.js')).askWeatherCity() } : {}),
   });
 }
 
