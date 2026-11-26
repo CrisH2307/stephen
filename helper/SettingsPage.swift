@@ -470,14 +470,14 @@ private struct PrivacySettingsPane: View {
     problem = nil
     done = nil
     model.saveReplay(on) { err in
-      problem = err.map { "Could not change it: \($0)" }
+      problem = err  // already one plain sentence (plainFailure)
       if err == nil && !on { askDelete = true }
     }
   }
 
   private func delete() {
     model.deleteRecordings { err in
-      if let e = err { problem = "Could not delete them: \(e)" } else { done = "Deleted." }
+      if let e = err { problem = e } else { done = "Deleted." }
     }
   }
 }
