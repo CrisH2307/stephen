@@ -1,4 +1,5 @@
 /** src/lib/fs.ts and src/lib/process.ts: the one private-file writer/reader, private folders, pid probe. */
+import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -134,5 +135,19 @@ describe('appendPrivateLineCapped and readPrivateRegularFile', () => {
     writeFileSync(f, '12345');
     expect(readPrivateRegularFile(f, 5)).toBe('12345');
     expect(readPrivateRegularFile(f, 4)).toBeNull();
+  });
+});
+
+describe('a FIFO in place of a private file (#388 review)', () => {
+  it('readPrivateJsonFile and readPrivateRegularFile refuse it at once, never wait on it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'stephen-fifo-'));
+    try {
+      const f = join(dir, 'memory.json');
+      execFileSync('mkfifo', [f]);
+      expect(readPrivateJsonFile(f)).toEqual({ error: 'is not a regular file' });
+      expect(readPrivateRegularFile(f, 1024)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

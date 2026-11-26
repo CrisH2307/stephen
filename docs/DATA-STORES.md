@@ -28,6 +28,23 @@ sent to us.
 | Account secrets | macOS Keychain (services `stephen-<name>`, for example `stephen-canvas`, `stephen-canvas-url`, `stephen-notion`, `stephen-calendar-ics`, `stephen-google-oauth`, `stephen-elevenlabs`, and one per Gmail account) | Kept until removed | Gmail: `stephen disconnect gmail <label>`. ElevenLabs: `stephen voice-key delete`. Canvas, Notion, the calendar address and the Google sign-in client: no command yet (task R10); remove them in Keychain Access | Tokens and keys, never shown to the model |
 | Account secrets in a `.env` file (older setups) | `.env` in the Stephen folder, next to `package.json` (`src/accounts/secrets.ts`) | Kept until you delete it | Delete the lines or the file | Tokens and keys, never shown to the model |
 
+## Moving it to another Mac (export and import)
+
+- `stephen data export <new folder>` copies your settings (`config.json`), memory and timers into a new folder that only
+  you can open (folder 0700, files 0600). Add `--history` to include conversation history. A `manifest.json` in the
+  folder says what is inside, the export format and the Stephen version.
+- Never in an export: Keychain items, `.env` files, memory suggestions, logs, telemetry, incidents, jobs and
+  recordings. A `config.json` with a key that looks like a secret stops the export (move the secret to the Keychain
+  first). Your `"home"` folder setting is left out, because it names a folder on this Mac.
+- `stephen data import <folder>` replaces those stores on this Mac. It runs only while Stephen is stopped, never follows
+  a link, and reads every file with the store's own reader. If any file or item does not read cleanly, nothing changes.
+  It lists what it will replace and asks first (`--yes` for scripts). Settings come in only with `--config`, because
+  they can loosen safety (allowed sites, trust, account addresses, the jobs folder, the daily limit): it then names every
+  setting that changes, by name, before it asks. Without `--config`, your settings here stay. History days in the export replace the same days
+  here; other days stay.
+- Treat the export folder like your diary: it holds what you asked Stephen to remember. Delete it when you are done.
+  Code: `src/app/data-export.ts`.
+
 # Everything that leaves the Mac
 
 Only these leave the Mac. Nothing is sent to us (Cris) unless the person sends a report. Source: docs/ARCHITECTURE-PLAN.md

@@ -136,7 +136,7 @@ export function dataLines(p: DataPlaces, userHome: string = homedir()): string[]
 /** `jobsRoot` (config `jobs.root`) comes from src/cli.ts, which may load src/jobs on demand; src/app may not. */
 export function runDataCli(argv: string[], jobsRoot: string, out: (line: string) => void = console.log): number {
   if (argv.length) {
-    console.error('Usage: stephen data\n       stephen data delete --all');
+    console.error('Usage: stephen data\n       stephen data delete --all\n       stephen data export <new folder> [--history]\n       stephen data import <folder> [--config] [--yes]');
     return 2;
   }
   for (const line of dataLines({ home: loadConfig().home, jobsRoot: expandPath(jobsRoot, homedir()) })) out(line);

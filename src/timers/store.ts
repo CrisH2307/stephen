@@ -44,6 +44,30 @@ export interface TimerStoreOptions {
   log?: (line: string) => void;
 }
 
+/** A timers.json value → its valid items, due order (bad items dropped). Pure; R20's import reuses it. */
+export function parseTimerItems(state: unknown): TimerItem[] {
+  const raw = (state as { items?: unknown } | null)?.items;
+  if (!Array.isArray(raw)) return [];
+  const items: TimerItem[] = [];
+  for (const x of raw.slice(0, MAX_TIMERS)) {
+    const i = x as Partial<TimerItem>;
+    if (typeof i?.id !== 'string' || !/^t\d{1,12}$/.test(i.id)) continue;
+    if (i.kind !== 'timer' && i.kind !== 'reminder') continue;
+    if (typeof i.dueAt !== 'number' || !Number.isSafeInteger(i.dueAt) || typeof i.createdAt !== 'number') continue;
+    const text = typeof i.text === 'string' ? cleanMemoryText(i.text).slice(0, MAX_TEXT) : '';
+    items.push({
+      id: i.id,
+      kind: i.kind,
+      text,
+      dueAt: i.dueAt,
+      createdAt: i.createdAt,
+      ...(typeof i.durationMs === 'number' ? { durationMs: i.durationMs } : {}),
+      ...(i.wake === true ? { wake: true as const } : {}),
+    });
+  }
+  return items.sort((a, b) => a.dueAt - b.dueAt);
+}
+
 export class TimerStore {
   private items: TimerItem[] = [];
   private timer: NodeJS.Timeout | null = null;
@@ -66,26 +90,8 @@ export class TimerStore {
       this.o.log?.(`timers file ${this.path} ${r.error} — starting with no timers`);
       return;
     }
-    const raw = (r.state as { items?: unknown } | null)?.items;
-    if (!Array.isArray(raw)) return;
-    for (const x of raw.slice(0, MAX_TIMERS)) {
-      const i = x as Partial<TimerItem>;
-      if (typeof i?.id !== 'string' || !/^t\d{1,12}$/.test(i.id)) continue;
-      if (i.kind !== 'timer' && i.kind !== 'reminder') continue;
-      if (typeof i.dueAt !== 'number' || !Number.isSafeInteger(i.dueAt) || typeof i.createdAt !== 'number') continue;
-      const text = typeof i.text === 'string' ? cleanMemoryText(i.text).slice(0, MAX_TEXT) : '';
-      this.items.push({
-        id: i.id,
-        kind: i.kind,
-        text,
-        dueAt: i.dueAt,
-        createdAt: i.createdAt,
-        ...(typeof i.durationMs === 'number' ? { durationMs: i.durationMs } : {}),
-        ...(i.wake === true ? { wake: true as const } : {}),
-      });
-      this.seq = Math.max(this.seq, Number(i.id.slice(1)));
-    }
-    this.items.sort((a, b) => a.dueAt - b.dueAt);
+    this.items = parseTimerItems(r.state);
+    for (const i of this.items) this.seq = Math.max(this.seq, Number(i.id.slice(1)));
   }
 
   private save(): void {

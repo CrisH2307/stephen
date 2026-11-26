@@ -119,7 +119,8 @@ export function appendPrivateLineCapped(file: string, line: string, maxBytes: nu
 /** Read a private regular file as text: O_NOFOLLOW, regular, ≤ `maxBytes`. A missing, symlinked, odd or big file reads as null. */
 export function readPrivateRegularFile(file: string, maxBytes: number): string | null {
   try {
-    const fd = openSync(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    // O_NONBLOCK: a FIFO in the file's place must not hang the open (#388 review); fstat below then refuses it.
+    const fd = openSync(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0));
     try {
       const st = fstatSync(fd);
       return st.isFile() && st.size <= maxBytes ? readFileSync(fd, 'utf8') : null;
