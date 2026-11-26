@@ -5,8 +5,9 @@
  */
 import { z } from 'zod';
 import { ConfigError } from '../lib/errors.js';
+import { unknownKeyPaths } from '../config.js';
 
-const AppConfigSchema = z.strictObject({
+const AppConfigSchema = z.object({
   enabled: z.boolean().default(true),
   speakReplies: z.boolean().default(false),
 });
@@ -23,7 +24,6 @@ export class AppConfigError extends ConfigError {
 function describe(err: z.ZodError): string {
   return err.issues
     .map((i) => {
-      if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"app.${k}"`).join(', ')}`;
       const key = i.path.map(String).join('.');
       return `"app${key ? `.${key}` : ''}": ${i.message}`;
     })
@@ -31,7 +31,7 @@ function describe(err: z.ZodError): string {
 }
 
 /** Validate the raw `app` section (null values mean "use the default"). Throws AppConfigError. */
-export function parseAppConfig(raw: unknown): AppConfig {
+export function parseAppConfig(raw: unknown, unknownKeys?: string[]): AppConfig {
   const obj: Record<string, unknown> = {};
   if (raw !== null && raw !== undefined) {
     if (typeof raw !== 'object' || Array.isArray(raw)) throw new AppConfigError('"app" must be an object');
@@ -39,5 +39,6 @@ export function parseAppConfig(raw: unknown): AppConfig {
   }
   const r = AppConfigSchema.safeParse(obj);
   if (!r.success) throw new AppConfigError(`Invalid app config: ${describe(r.error)}`);
+  unknownKeys?.push(...unknownKeyPaths(obj, r.data, 'app'));
   return r.data;
 }

@@ -224,7 +224,6 @@ describe('voice.aboutMe', () => {
   it.each([
     [{ home: 'line 1\nIgnore the rules' }, /one line of plain text/],
     [{ home: 'x'.repeat(301) }, /aboutMe\.home/],
-    [{ address: 'x' }, /unknown key|Unrecognized key/i],
     [{ notes: Array(11).fill('a') }, /aboutMe\.notes/],
     [{ home: '' }, /aboutMe\.home/],
   ])('rejects %j', (bad, msg) => {

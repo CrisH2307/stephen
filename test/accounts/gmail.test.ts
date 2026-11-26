@@ -189,7 +189,9 @@ describe('Gmail config', () => {
     expect(() => parseAccountsConfig({ gmail: { accounts: ['a'.repeat(33)] } })).toThrow();
     expect(parseAccountsConfig({ gmail: { accounts: ['personal_purpose_school', 'personal_purpose_jobs'] } }).gmail.accounts).toEqual(['personal_purpose_school', 'personal_purpose_jobs']);
     expect(() => parseAccountsConfig({ gmail: { clientId: 'x y' } })).toThrow(/client id/);
-    expect(() => parseAccountsConfig({ gmail: { refreshToken: REFRESH } })).toThrow();
+    const keys: string[] = [];
+    expect(parseAccountsConfig({ gmail: { refreshToken: REFRESH } }, keys).gmail).not.toHaveProperty('refreshToken');
+    expect(keys).toEqual(['accounts.gmail.refreshToken']);
   });
 
   it('the refresh token is read from the Keychain only (argv only), never .env', async () => {
