@@ -7,6 +7,7 @@ import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
+import { otherUserCount, sharedMacReason } from './lib/other-users.js';
 import { parseTtsConfig } from './voice/tts/index.js';
 import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
 import { execFile } from 'node:child_process';
@@ -421,6 +422,15 @@ export async function doctor(network = false, json = false): Promise<number> {
     });
     if (!chromeExists && !zenPath) {
       add({ ok: false, label: 'At least one browser available', fix: 'Install Chrome or Zen (see above).', blocking: true });
+    }
+    if (zenPath) {
+      // B5: count only, never a name. Stephen will not start Zen's open port on a shared Mac (src/drivers/zen.ts).
+      const others = await otherUserCount();
+      add(
+        others === 0
+          ? { ok: true, label: 'Zen remote-control port', detail: 'only your account on this Mac' }
+          : { ok: false, label: 'Zen remote-control port', detail: sharedMacReason(others), fix: 'Use Chrome with Stephen on this Mac. Zen works with Stephen only on a Mac with one user account (until the Zen add-on, ADR-009).' },
+      );
     }
     const zenAttach = isZenAttachOnly(cfg);
     add({
