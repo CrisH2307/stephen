@@ -582,7 +582,7 @@ MainActor.assumeIsolated {
   statusMenu = StatusMenu(
     checkPermission: { CGPreflightListenEventAccess() }, openWindow: { showStephenWindow() },
     click: { askBox?.toggle() }, control: stephenControl, recordingOn: { appModel?.recordingOn ?? false },
-    working: { appModel?.isWorking ?? false }, stopWork: { appModel?.stopChat() },
+    working: { appModel?.canStop ?? false }, stopWork: { appModel?.stopChat() },
     quit: { shutdownAndExit(0) })
   let model = sharedAppModel()
   model.opened("askbox")

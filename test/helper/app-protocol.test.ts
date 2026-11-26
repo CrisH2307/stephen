@@ -1115,12 +1115,27 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(chat).toContain('QuietButton("Stop", symbol: "stop.fill") { model.stopChat() }.accessibilityLabel("Stop Stephen")');
     const main = read('main.swift');
     expect(main).toContain('stopItem.isHidden = !working()');
-    expect(main).toContain('working: { appModel?.isWorking ?? false }, stopWork: { appModel?.stopChat() },');
+    expect(main).toContain('working: { appModel?.canStop ?? false }, stopWork: { appModel?.stopChat() },');
     // A stopped command is a grey info line; once a tool ran, it says the step may already have happened.
     const client = read('AppClient.swift');
     expect(client).toContain('addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])');
     const line = client.match(/func stoppedLine\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(line).toContain('tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."');
+  });
+
+  it('T6 step 2: Stop leaves jobs alone, then offers Stop them too under the stopped line; Stop also while speaking', () => {
+    const client = read('AppClient.swift');
+    // The cancelled path marks its line and reads jobs.list; Stop them too sends jobs.stop per running job.
+    expect(client).toMatch(/stoppedLine\(tools:[^\n]*\n\s*stoppedBubble = chat\.last\?\.id\n\s*refreshJobs\(\)/);
+    expect(client).toContain('for j in jobs where j.isRunning { stopJob(j.id) }');
+    expect(client).toContain('n == 1 ? "1 job is still running." : "\\(n) jobs are still running."');
+    expect(client).toContain('var canStop: Bool { return isWorking || state == "speaking" }');
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('if thread.last?.id == model.stoppedBubble && running > 0 {');
+    expect(chat).toContain('QuietButton("Stop them too", destructive: true) { model.stopRunningJobs() }');
+    expect(chat).toContain('} else if model.canStop {');
+    expect(read('main.swift')).toContain('working: { appModel?.canStop ?? false }');
+    expect(read('AskBox.swift')).toContain('case .chat where model.canStop: model.stopChat()');
   });
 
   it('Ask box strip (S9, R7): the state word with its dot; the chat title only in the ⋯ menu, verbatim', () => {
