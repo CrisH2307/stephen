@@ -22,6 +22,7 @@ const FAKE: [string, () => ClaudeOutcome, string][] = [
   ['claude_offline', () => parseClaudeOutput('', 1, 'Error: getaddrinfo ENOTFOUND api.anthropic.com\n'), 'no DNS'],
   ['claude_offline', () => parseClaudeOutput(result('error_during_execution', 'API Error: Connection error.'), 1), 'connection error'],
   ['claude_other', () => parseClaudeOutput(result('error_max_turns', ''), 1), 'max turns'],
+  ['claude_other', () => parseClaudeOutput(result('error_max_turns', 'Usage limit reached · limit resets 3pm'), 1), 'max turns, limit phrase in the text'],
   ['claude_other', () => parseClaudeOutput('', 2, 'Error: something broke\n'), 'unknown'],
 ];
 
@@ -51,6 +52,15 @@ describe('R5: plain reasons when Claude fails', () => {
     if (line) expect(r.reply).toBe(`${line} ${LOCAL_STILL_WORKS}`);
     if (code === 'claude_usage_limit') expect(r.reply).toBe(`You've reached your Claude plan limit. It resets at 3pm. ${LOCAL_STILL_WORKS}`);
     if (code === 'claude_other') expect(r.reply).not.toContain(LOCAL_STILL_WORKS);
+  });
+
+  it('the subtype decides first: limit wording in a max-turns or budget result (a page can steer it) is ignored', () => {
+    for (const [subtype, line] of [['error_max_turns', 'I ran out of steps before finishing.'], ['error_max_budget_usd', 'That would cost more than allowed, so I stopped.']]) {
+      const o = parseClaudeOutput(result(subtype!, "You've hit your limit · resets 3pm"), 1);
+      expect(o).toMatchObject({ kind: 'error', message: line });
+      if (o.kind !== 'error') throw new Error('not an error');
+      expect(o.failure ?? claudeFailure(o.message)).toBe('claude_other');
+    }
   });
 
   it('"timers and memory still work" is said once per run, not on every failure', async () => {
