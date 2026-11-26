@@ -38,7 +38,7 @@ import {
   wantsWeb,
   type JobSpec,
 } from './spec.js';
-import { isFinal, jobVersions, jobsDir, listJobStates, listJobStatesAsync, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
+import { isFinal, jobVersions, jobsDir, listJobStates, listJobStatesAsync, logRaw, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
 
 export type GitFn = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -124,10 +124,6 @@ export const JOB_WORKTREE_FAILED = "I couldn't make a git worktree for the job. 
 export const JOB_COPY_FAILED = "I couldn't copy the old job folder. The job did not start.";
 export const JOB_FILES_FAILED = "I couldn't write the job's files. The job did not start.";
 export const JOB_RUNNER_FAILED = "I couldn't start the job runner. The job did not start.";
-/** The raw reason behind a plain refusal, for the listener log (stderr). Never shown to the user. */
-function logRaw(what: string, detail: string): void {
-  console.error(`jobs: ${what}: ${detail}`);
-}
 
 /**
  * Walk the old job folder `src` without following any symlink: regular files and folders only (symlinks, sockets and
