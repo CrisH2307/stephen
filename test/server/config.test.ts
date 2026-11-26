@@ -190,6 +190,16 @@ describe('loadConfig', () => {
     expect(userConfigUnknownKeys(raw)).toEqual(['safety.allowEval', 'chorme']);
   });
 
+  it.each([
+    [{ chrome: { mode: 'real', chromeFoo: 1 } }, 'chrome.chromeFoo'],
+    [{ zen: { mode: 'real', zenFoo: 1 } }, 'zen.zenFoo'],
+    [{ output: { saveDir: '/tmp/x', outFoo: 1 } }, 'output.outFoo'],
+  ])('an unknown key in a core section (%j) loads and is listed by doctor', (raw, path) => {
+    writeJson(join(HOME, '.stephen/config.json'), raw);
+    expect(() => loadConfig(undefined, { HOME })).not.toThrow();
+    expect(userConfigUnknownKeys(raw)).toEqual([path]);
+  });
+
   it('a non-object config is rejected', () => {
     writeJson(join(HOME, '.stephen/config.json'), '[1,2]');
     expectInvalid(() => loadConfig(undefined, { HOME }), 'Invalid config');
