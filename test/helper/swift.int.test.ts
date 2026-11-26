@@ -229,6 +229,16 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     expect(readHelperNonce(sock)).not.toBe(nonce);
   });
 
+  it('#392 review: with the key file gone, the client says so plainly instead of "connection closed before hello"', async () => {
+    const sock = mk();
+    await start(sock);
+    rmSync(join(dirname(sock), 'helper.nonce'));
+    const c = new HelperClient({ home: dirname(dirname(sock)), socketPath: sock, launch: false, connectTimeoutMs: 1500 });
+    kills.push(() => c.close());
+    const r = await c.start();
+    expect(r).toMatchObject({ ok: false, reason: expect.stringMatching(/key file .*helper\.nonce is missing or not readable.*install-helper/) });
+  });
+
   it('handles commands: state (incl. JSON escapes), query_audio; ignores malformed, unknown and over-long lines', async () => {
     const sock = mk();
     const h = await start(sock);
