@@ -1,6 +1,6 @@
 /** The incident workflow's strict checks: only `stephen report` lines reach the agent, only a checked answer is posted. */
 import { describe, expect, it } from 'vitest';
-import { checkFindings, findingsComment, parseIncidentIssue } from '../../src/telemetry/incident-bot.js';
+import { checkFindings, findingsComment, inboxLine, parseIncidentIssue } from '../../src/telemetry/incident-bot.js';
 import { parseIncidentRecord } from '../../src/telemetry/incidents.js';
 import { formatReport } from '../../src/telemetry/report.js';
 
@@ -110,10 +110,27 @@ describe('checkFindings', () => {
   it('passes a well-formed answer and formats it inside a code block', () => {
     const f = checkFindings(ok, exists)!;
     expect(f).toEqual({ ...ok, summary: ok.summary });
-    const { comment, inbox } = findingsComment(f, 42, 'https://github.com/CrisH2307/stephen/actions/runs/1');
-    expect(comment).toContain('```text\nThe socket closes before the reply.\nRetry once.\n```');
-    expect(inbox.split('\n').slice(0, 2)).toEqual(['from: incident-bot', 'to: dev']);
-    expect(inbox).toContain('#42');
+    const marker = '<!-- ladder:abc -->';
+    const comment = findingsComment(f, marker, ['L1 draft', 'L2 high'], true).split('\n');
+    expect(comment.slice(0, 4)).toEqual(['from: incident-bot', marker, 'Trail: L1 draft, L2 high', '']);
+    expect(comment.join('\n')).toContain('```text\nCause: socket_closed_early (confidence medium)\n');
+    expect(comment.join('\n')).toContain('The socket closes before the reply.\nRetry once.\n```');
+    expect(comment.join('\n')).not.toMatch(/https?:|@|\[/);
+  });
+
+  it('says so when the ladder escalates, and keeps no model text outside the block', () => {
+    const f = checkFindings(ok, exists)!;
+    const escalated = findingsComment(f, '<!-- ladder:abc -->', ['L2 medium'], false);
+    expect(escalated).toContain('Not resolved. Cris decides.');
+    expect(escalated.indexOf('Cause:')).toBeGreaterThan(escalated.indexOf('```text'));
+    const none = findingsComment(null, '<!-- ladder:abc -->', ['L1 none', 'L2 failed'], false);
+    expect(none).not.toContain('```');
+    expect(none).toContain('Not resolved. Cris decides.');
+  });
+
+  it('builds the inbox line from numbers and the level only', () => {
+    expect(inboxLine(12, 3, 'high')).toBe('from: incident-bot\nto: dev\n\nIncident #12: level L3, confidence high. Findings on #12.');
+    expect(inboxLine(12, 5, 'none')).toContain('level L5, confidence none');
   });
 
   it.each([

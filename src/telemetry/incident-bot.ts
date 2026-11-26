@@ -89,21 +89,24 @@ export function checkFindings(raw: unknown, fileExists: (path: string) => boolea
   return { cause: o.cause, confidence: o.confidence, files: o.files as string[], test: o.test, summary: o.summary.trim() };
 }
 
-/** The issue comment and the one inbox line. The summary sits in a code block: no links, images or @mentions work there. */
-export function findingsComment(f: Findings, issue: number, runUrl: string): { comment: string; inbox: string } {
-  const comment = [
-    'Incident bot findings (an agent read the repo; nothing was run).',
+/**
+ * The issue comment. Line 1 is `from: incident-bot`, so the bot's own comment is data, never a task (AGENTS.md). The
+ * marker is hidden in GitHub and tells the script this body was answered. All model text sits in one text code block:
+ * no links, images or @mentions work there.
+ */
+export function findingsComment(f: Findings | null, marker: string, trail: string[], resolved: boolean): string {
+  const block = f ? ['```text', `Cause: ${f.cause} (confidence ${f.confidence})`, `Files: ${f.files.join(', ') || 'none named'}`, `Test to add: ${f.test || 'none named'}`, '', f.summary, '```'] : [];
+  return [
+    'from: incident-bot',
+    marker,
+    `Trail: ${trail.join(', ')}`,
     '',
-    `- Cause: \`${f.cause}\` (confidence ${f.confidence})`,
-    `- Files: ${f.files.length ? f.files.map((p) => `\`${p}\``).join(', ') : 'none named'}`,
-    `- Test to add: ${f.test ? `\`${f.test}\`` : 'none named'}`,
-    '',
-    '```text',
-    f.summary,
-    '```',
-    '',
-    `Run: ${runUrl}`,
+    ...(resolved ? [] : ['Not resolved. Cris decides.']),
+    ...block,
   ].join('\n');
-  const inbox = ['from: incident-bot', 'to: dev', '', `Incident #${issue}: cause \`${f.cause}\`, confidence ${f.confidence}. Findings are on #${issue}.`].join('\n');
-  return { comment, inbox };
+}
+
+/** The one line for the dev inbox (#274). Numbers and the level only: it never carries model text. */
+export function inboxLine(issue: number, level: number, confidence: Findings['confidence'] | 'none'): string {
+  return ['from: incident-bot', 'to: dev', '', `Incident #${issue}: level L${level}, confidence ${confidence}. Findings on #${issue}.`].join('\n');
 }
