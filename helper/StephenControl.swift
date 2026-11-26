@@ -104,7 +104,11 @@ func phoneText(_ msg: AppMessage) -> String {
 
 /** nil when Zen for Stephen is ready, else why not (the `zen` answer's message or an error). */
 func zenProblem(_ msg: AppMessage) -> String? {
-  if msg.type == "zen" { return msg.ok == true ? nil : msg.message ?? ZEN_OPEN_FAILED } // the launcher's own words
+  if msg.type == "zen" {  // the launcher's own words, or the plain line when it said nothing
+    if msg.ok == true { return nil }
+    let m = msg.message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return m.isEmpty ? ZEN_OPEN_FAILED : m
+  }
   return plainFailure(msg.message, ZEN_OPEN_FAILED)
 }
 
