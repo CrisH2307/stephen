@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { buildClaudeArgs } from '../../src/voice/claude.js';
 import { PTT_NEEDS_HELPER } from '../../src/voice/helper-link.js';
 import { runListen, runVoiceSetup, voiceModelsReady, type ListenEnv } from '../../src/voice/index.js';
 import { symlinkSync } from 'node:fs';
-import { ASR_ARCHIVES, KWS_MODEL, VAD_MODEL } from '../../src/voice/models.js';
+import { ASR_ARCHIVES, KWS_MODEL, VAD_MODEL, requiredArchives } from '../../src/voice/models.js';
+import { DEFAULT_ASR_MODEL } from '../../src/voice/config.js';
 import { FakeHelper } from './fakes.js';
 import { fakeClaudePath, fakeInstall, prepareKwsModel, readFakeLog, RecordingChimes, RecordingSpeaker } from './helpers.js';
 
@@ -245,6 +247,41 @@ describe('stephen listen --text', () => {
       expect(typeof v === 'number' || /^[a-z]+$/.test(String(v))).toBe(true);
     }
     expect(t.out.join('\n') + t.err.join('\n')).not.toMatch(/offline|evil|https/);
+  });
+
+  it('F9c: one voice-setup at a time: a live lock is "busy"; a lock whose pid is gone is taken over', async () => {
+    const root = join(tmp, 'models-lock');
+    mkdirSync(root, { recursive: true });
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)']);
+    try {
+      writeFileSync(join(root, '.voice-setup.lock'), String(child.pid));
+      const t = env({}, { modelsRoot: root, download: async () => Promise.reject(new Error('must not download')) });
+      expect(await runVoiceSetup(['--json-progress'], t.e)).toBe(1);
+      expect(t.out.map((l) => JSON.parse(l))).toEqual([{ event: 'failed', reason: 'busy' }]);
+    } finally {
+      child.kill();
+    }
+    writeFileSync(join(root, '.voice-setup.lock'), '999999999');
+    const t2 = env({}, { modelsRoot: root, download: async () => Promise.reject(new Error('x')) });
+    expect(await runVoiceSetup(['--json-progress'], t2.e)).toBe(1);
+    expect(JSON.parse(t2.out.at(-1)!)).toEqual({ event: 'failed', reason: 'download' });
+    expect(existsSync(join(root, '.voice-setup.lock'))).toBe(false); // released
+  });
+
+  it('F9c: models in place but a wake phrase the model cannot use is "keywords", not an internet problem', async () => {
+    const root = join(tmp, 'models-kw');
+    for (const m of requiredArchives(DEFAULT_ASR_MODEL)) {
+      const dir = join(root, m.dir);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, '.stephen-model.json'), JSON.stringify({ sha256: m.sha256 }));
+      for (const f of m.keep) {
+        mkdirSync(dirname(join(dir, f)), { recursive: true });
+        writeFileSync(join(dir, f), '');
+      }
+    }
+    const t = env({}, { modelsRoot: root, download: async () => Promise.reject(new Error('must not download')) });
+    expect(await runVoiceSetup(['--json-progress'], t.e)).toBe(1);
+    expect(JSON.parse(t.out.at(-1)!)).toEqual({ event: 'failed', reason: 'keywords' });
   });
 
   it('F9: voiceModelsReady is false while the models are missing', async () => {
