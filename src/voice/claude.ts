@@ -491,9 +491,11 @@ export interface ResultJson {
   duration_api_ms?: unknown;
 }
 
+const GENERIC_ERROR = 'Something went wrong while I was working on that.';
+
 const ERROR_TEXT: Record<string, string> = {
   error_max_turns: 'I ran out of steps before finishing.',
-  error_during_execution: 'Something went wrong while I was working on that.',
+  error_during_execution: GENERIC_ERROR,
   error_max_budget_usd: 'That would cost more than allowed, so I stopped.',
 };
 
@@ -549,8 +551,8 @@ export function parseClaudeOutput(stdout: string, exitCode: number | null, stder
     }
   }
   if (!res) {
-    const why = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? `exit code ${exitCode}`;
-    return withFailure({ kind: 'error', message: `Claude Code didn't return a result (${why.slice(0, 300)}).`, sessionId: null }, stderr);
+    // The stderr text can carry page text, so it only picks a code word (withFailure); the spoken line is fixed.
+    return withFailure({ kind: 'error', message: `Claude Code didn't return a result (exit code ${exitCode ?? 'none'}).`, sessionId: null }, stderr);
   }
   return outcomeFromResult(res);
 }
@@ -568,7 +570,8 @@ export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
     if (res.subtype === 'error_max_turns' || res.subtype === 'error_max_budget_usd') {
       return { kind: 'error', message: ERROR_TEXT[res.subtype]!, sessionId };
     }
-    const msg = planLimitMessage(text) ?? ERROR_TEXT[res.subtype ?? ''] ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
+    // No marker: a fixed line, never the result text (a page can steer it into what Stephen says; #382's rule for jobs).
+    const msg = planLimitMessage(text) ?? ERROR_TEXT[res.subtype ?? ''] ?? GENERIC_ERROR;
     return withFailure({ kind: 'error', message: msg, sessionId }, text);
   }
   return {
