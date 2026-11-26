@@ -7,7 +7,7 @@ import { loadConfig, looksLikeSecretKey } from '../../src/config.js';
 import { HubError } from '../../src/errors.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
 
-// Importing cli.js loads the config from the environment (serve runs at import). Point HOME and the Stephen home at a
+// doctor and main load the config from the environment. Point HOME and the Stephen home at a
 // temp folder before any import, so this file never reads the developer's real config.json.
 const sandbox = await vi.hoisted(async () => {
   const { mkdtempSync } = await import('node:fs');
