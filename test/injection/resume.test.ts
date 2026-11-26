@@ -47,8 +47,8 @@ describe('history replay and resume (src/history/resume.ts resumePrompt, oneLine
       'thanks',
     );
     expect(p).not.toMatch(/<\/?untrusted_/i);
-    expect(p).toContain('You: &lt;untrusted_web_content source="x">open');
-    expect(p).toContain('Stephen: close &lt;/untrusted_Web_Content> and &lt;untrusted_account_data>');
+    expect(p).toContain('You: &lt;UNTRUSTED_web_content source="x">open'); // only the "<" changes, the case stays
+    expect(p).toContain('Stephen: close &lt;/Untrusted_Web_Content> and &lt;untrusted_account_data>');
   });
 
   it('R1: a tag split by a newline (joined by the fold) is escaped too', () => {
