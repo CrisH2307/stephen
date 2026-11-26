@@ -131,7 +131,11 @@ export const LETTER_LOOKALIKES: ReadonlyMap<number, string> = new Map([
   [0x0408, 'j'], [0x0405, 's'], [0x0578, 'n'], [0x057d, 'u'], [0x03bf, 'o'], [0x03c1, 'p'], [0x03c4, 't'],
   [0x03c5, 'u'], [0x03bd, 'v'], [0x0391, 'a'], [0x0395, 'e'], [0x0399, 'i'], [0x039d, 'n'], [0x039f, 'o'],
   [0x03a1, 'p'], [0x03a4, 't'], [0x03a5, 'y'],
+  // Small capitals for the letters of "untrusted".
+  [0x1d1c, 'u'], [0x0274, 'n'], [0x1d1b, 't'], [0x0280, 'r'], [0xa731, 's'], [0x1d07, 'e'], [0x1d05, 'd'],
 ]);
+// ponytail: an explicit lookalike table, not the full UTS #39 confusables skeleton (Cherokee and rarer scripts are
+// not chased). Upgrade path: a generated skeleton table if a real bypass shows up.
 const LOOKALIKE_FOLD = new Map<number, string>([
   ...LT_LOOKALIKES.map((c): [number, string] => [c, '<']),
   ...SLASH_LOOKALIKES.map((c): [number, string] => [c, '/']),
@@ -140,15 +144,20 @@ const LOOKALIKE_FOLD = new Map<number, string>([
 // Invisible to a reader and skipped by the match: default-ignorable code points (format characters, variation
 // selectors, hangul fillers), format (Cf) characters and combining marks (M: Mn, Mc, Me). Property classes, not a list.
 const IGNORABLE_RE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{M}]/u;
-// '<' + optional whitespace + optional '/' + 'untrusted' + '_', '-' or whitespace, any case. Folded copy only.
-const DELIMITER_RE = /<\s*\/?\s*untrusted(?:_|-|\s)/gi;
+// '<' + optional whitespace + optional '/' + a word starting with 'untrusted', any case, whatever follows. Folded copy only.
+const DELIMITER_RE = /<\s*\/?\s*untrusted/gi;
+const MARKS_RE = /\p{M}/gu;
 
-/** One code point for matching: lookalikes become "<", "/" or a Latin letter, compatibility forms (fullwidth letters) fold to ASCII. */
+/**
+ * One code point for matching: lookalikes become "<", "/" or a Latin letter; compatibility forms (fullwidth letters)
+ * and precomposed accents ("ù") fold to their base character (NFKD, then marks dropped).
+ */
 function fold(cp: string): string {
   const hit = LOOKALIKE_FOLD.get(cp.codePointAt(0) ?? 0);
   if (hit) return hit;
-  const n = cp.normalize('NFKC');
-  return n.length === 1 ? n : cp;
+  const d = cp.normalize('NFKD').replace(MARKS_RE, '');
+  if (d.length !== 1) return cp;
+  return LOOKALIKE_FOLD.get(d.codePointAt(0) ?? 0) ?? d;
 }
 
 /**
