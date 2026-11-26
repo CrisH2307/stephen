@@ -202,13 +202,16 @@ export function readUserConfigFile(env: NodeJS.ProcessEnv = process.env): unknow
   return readConfigFile(configFilePath(env));
 }
 
+/** The whole key name, not a substring: hotkey, monkey, secretary or tokenLimit are not secrets. */
+const SECRET_NAME_RE = /^(api|access|secret|private|refresh|client|auth)?[_-]?(key|token|secret|password)$/i;
+
 /**
  * A key name that looks like it holds a secret (key, token, secret or password). Secrets belong in the Keychain, never
  * in config.json, so such a key stops the start. `apiKeyFile` is a path, not a secret. Takes a dotted path or a bare name.
  */
 export function looksLikeSecretKey(path: string): boolean {
   const name = path.slice(path.lastIndexOf('.') + 1);
-  return name !== 'apiKeyFile' && /key|token|secret|password/i.test(name);
+  return name !== 'apiKeyFile' && SECRET_NAME_RE.test(name);
 }
 
 /** Strip null/undefined so they never overwrite a lower layer. */
