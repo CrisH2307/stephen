@@ -61,8 +61,18 @@ OpenCode Zen keeping prompts (the same content-free lines and public code as L1a
   names set, and the free model still answers with the temp `XDG_DATA_HOME` (no saved login);
 - a prompt that asks for a shell, a file write or a web fetch gets no tool call;
 - the `--format json` output has the answer in a `part` with `type: "text"`, the shape `opencodeText` reads.
+- the run is created `--archived`: `opencode session list` with the same temp env shows no L1b session.
 
-The canary result goes here. The trail shows `L1a draft` or `L1a none`, then `L1b ...`.
+Cris said yes to (1) on 2026-11-26: "if there is a free model that can do the job, then just do it."
+
+Canary 2026-11-26 (opencode 2.3.2, fake input only): not passed yet. The free model answered with a 429 "Free usage
+limit reached" (retry after about 8 hours), so the answer shape, the tool denial and the prompt checks are still open.
+What it did show: only the temp config folder was read (`conf/opencode`), no MCP server or plugin loaded, and no path under
+the real `HOME` appeared in the debug log. A 429 is a normal L1b failure: `opencodeText`
+finds no text part, so L1b gives no draft and L2 runs. Run the canary again after the limit resets; L1b stays off until
+it passes.
+
+The trail shows `L1a draft` or `L1a none`, then `L1b ...`.
 
 ## The move-up rule
 
