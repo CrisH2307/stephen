@@ -9,7 +9,7 @@
 import { createTts, type TtsSpeaker } from './tts/index.js';
 import { TalkStore, talkFromConfig } from '../app/talk.js';
 import { ModelStore } from '../app/model.js';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isPidAlive, sleep } from '../lib/process.js';
@@ -302,22 +302,43 @@ class KeywordsError extends Error {}
 function lockModels(root: string): (() => void) | null {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const lock = join(root, '.voice-setup.lock');
-  for (let i = 0; i < 2; i++) {
+  const take = `${lock}.takeover`;
+  const create = (path: string): boolean => {
     try {
-      writeFileSync(lock, String(process.pid), { flag: 'wx', mode: 0o600 });
-      return () => rmSync(lock, { force: true });
+      writeFileSync(path, String(process.pid), { flag: 'wx', mode: 0o600 });
+      return true;
     } catch {
-      let pid = 0;
-      try {
-        pid = Number(readFileSync(lock, 'utf8').trim());
-      } catch {
-        // gone between the two calls: try again
-      }
-      if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && isPidAlive(pid)) return null;
-      rmSync(lock, { force: true }); // stale: its run is gone
+      return false;
     }
+  };
+  const holderAlive = (): boolean => {
+    try {
+      const pid = Number(readFileSync(lock, 'utf8').trim());
+      return Number.isInteger(pid) && pid > 0 && pid !== process.pid && isPidAlive(pid);
+    } catch {
+      return false; // gone, or unreadable: nobody holds it
+    }
+  };
+  const release = () => rmSync(lock, { force: true });
+  if (create(lock)) return release;
+  if (holderAlive()) return null;
+  // A dead run's lock: one taker at a time (O_EXCL on a second file, #401 review), so two runs never both remove it
+  // and both go on. The taker checks again under its own lock; the other one says busy.
+  if (!create(take)) {
+    try {
+      if (Date.now() - statSync(take).mtimeMs > 60_000) rmSync(take, { force: true }); // a taker that died
+    } catch {
+      // already gone
+    }
+    return null;
   }
-  return null;
+  try {
+    if (holderAlive()) return null;
+    rmSync(lock, { force: true });
+    return create(lock) ? release : null;
+  } finally {
+    rmSync(take, { force: true });
+  }
 }
 
 /** `stephen voice-setup`: download + verify + extract the speech models (never re-downloads). */

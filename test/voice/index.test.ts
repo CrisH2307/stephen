@@ -266,6 +266,13 @@ describe('stephen listen --text', () => {
     expect(await runVoiceSetup(['--json-progress'], t2.e)).toBe(1);
     expect(JSON.parse(t2.out.at(-1)!)).toEqual({ event: 'failed', reason: 'download' });
     expect(existsSync(join(root, '.voice-setup.lock'))).toBe(false); // released
+    // #401 review: while another run is taking over a dead lock (its takeover file is fresh), this one says busy.
+    writeFileSync(join(root, '.voice-setup.lock'), '999999999');
+    writeFileSync(join(root, '.voice-setup.lock.takeover'), '999999998');
+    const t3 = env({}, { modelsRoot: root, download: async () => Promise.reject(new Error('must not download')) });
+    expect(await runVoiceSetup(['--json-progress'], t3.e)).toBe(1);
+    expect(t3.out.map((l) => JSON.parse(l))).toEqual([{ event: 'failed', reason: 'busy' }]);
+    expect(readFileSync(join(root, '.voice-setup.lock'), 'utf8')).toBe('999999999'); // not removed by the loser
   });
 
   it('F9c: models in place but a wake phrase the model cannot use is "keywords", not an internet problem', async () => {
