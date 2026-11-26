@@ -68,6 +68,11 @@ func stoppedLine(tools: [String], steps: [ChatStep]) -> String {
   return tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."
 }
 
+/// T6 step 2: Stop leaves jobs alone. Under the stopped line, say how many still run.
+func jobsStillRunning(_ n: Int) -> String {
+  return n == 1 ? "1 job is still running." : "\(n) jobs are still running."
+}
+
 struct HistoryDay: Identifiable {
   /** Day key, e.g. "2026-11-01" (local time). */
   let id: String
@@ -134,6 +139,8 @@ final class AppModel: ObservableObject {
 
   @Published private(set) var jobs: [JobRow] = []
   @Published private(set) var jobsNotice: String? = nil
+  /// T6 step 2: the id of the last "Stopped." line. Under it the thread offers "Stop them too" while jobs run.
+  @Published private(set) var stoppedBubble: Int? = nil
   /** ADR-010: "Job started: <id>" after an Edit request starts; the dialog never named the id (it is fixed at the start). */
   @Published private(set) var jobStarted: String? = nil
 
@@ -494,6 +501,8 @@ final class AppModel: ObservableObject {
     // T6: a stopped command is one grey line, in words. A step that already ran can't be taken back.
     if reply.isEmpty && outcome == "cancelled" {
       addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])
+      stoppedBubble = chat.last?.id
+      refreshJobs()
       return
     }
     if reply.isEmpty { reply = "(no reply)" }
@@ -813,6 +822,11 @@ final class AppModel: ObservableObject {
       }
       self.refreshJobs()
     }
+  }
+
+  /** T6 step 2: "Stop them too", the owner's own click. Each running job gets its own jobs.stop. */
+  func stopRunningJobs() {
+    for j in jobs where j.isRunning { stopJob(j.id) }
   }
 
   /**
