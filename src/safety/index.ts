@@ -39,8 +39,41 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// '<' + optional whitespace/zero-width + optional '/' + … + 'untrusted_web_content', any case.
-const DELIMITER_RE = /<([\s\u200b-\u200d\u2060\ufeff]*\/?[\s\u200b-\u200d\u2060\ufeff]*untrusted_web_content)/gi;
+// Opening-bracket lookalikes that NFKC does not fold to "<" (NFKC does fold U+FF1C and U+FE64).
+const BRACKET_LOOKALIKES = new Set(['\u2039', '\u2329', '\u276c', '\u27e8', '\u3008', '\u300a']);
+const ZERO_WIDTH = /[\u200b-\u200d\u2060\ufeff]/;
+// '<' + optional whitespace + optional '/' + 'untrusted_web_content', any case. Runs on the folded copy only.
+const DELIMITER_RE = /<\s*\/?\s*untrusted_web_content/gi;
+
+/** One UTF-16 unit for matching: lookalike brackets become "<", compatibility forms (fullwidth letters, solidus) fold to ASCII. */
+function fold(ch: string): string {
+  if (BRACKET_LOOKALIKES.has(ch)) return '<';
+  const n = ch.normalize('NFKC');
+  return n.length === 1 ? n : ch;
+}
+
+/**
+ * Neutralize each "<" that opens a delimiter-like sequence as "&lt;". Matching runs on a folded copy (any case,
+ * lookalike brackets and fullwidth forms folded, zero-width characters skipped). Only the opening character of each
+ * match is replaced in the original text, so everything else stays as written.
+ */
+function escapeDelimiters(text: string): string {
+  let folded = '';
+  const origin = new Uint32Array(text.length); // folded index -> original index (one unit per kept character)
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charAt(i);
+    if (ZERO_WIDTH.test(ch)) continue;
+    folded += ch < '\x80' ? ch : fold(ch);
+    origin[n++] = i;
+  }
+  const opens = new Set<number>();
+  for (const m of folded.matchAll(DELIMITER_RE)) opens.add(origin[m.index ?? 0] ?? 0);
+  if (opens.size === 0) return text;
+  let out = '';
+  for (let i = 0; i < text.length; i++) out += opens.has(i) ? '&lt;' : text.charAt(i);
+  return out;
+}
 
 /**
  * Wrap page-derived text so the model treats it as data:
@@ -55,7 +88,7 @@ export function wrapUntrusted(source: string, url: string, text: string): string
   } catch {
     /* unknown */
   }
-  const safe = text.replace(DELIMITER_RE, '&lt;$1');
+  const safe = escapeDelimiters(text);
   return `<untrusted_web_content source="${escapeAttr(source)}" origin="${escapeAttr(origin)}">\n${safe}\n</untrusted_web_content>`;
 }
 
