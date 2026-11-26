@@ -169,6 +169,8 @@ Stephen finds your profile from Zen's `profiles.ini`; set `"zen": { "profilePath
 
 **Security trade-off  read this.** While Zen runs with Stephen access, its remote-control port listens on `127.0.0.1` (this Mac only) with **no password**: any program running on your Mac as any user could control that Zen  read your signed-in pages, click, type. That's how Firefox/Zen remote control works, and it's the same reason Chrome refuses remote debugging on its default profile unless you switch it on yourself. Stephen's safety rules only apply to what *Claude* does through Stephen, not to other programs. So: when you don't need Claude in Zen, quit Zen (⌘Q) and open it normally with Zen's own icon. A Zen started by Zen for Stephen keeps Stephen access until you quit it, even after Claude Code exits.
 
+**Shared Macs.** If this Mac has other user accounts, Stephen does not start Zen with that port at all: `stephen zen-launch` stops with the reason, and `stephen doctor` shows it (as a count of accounts, never their names). Use Chrome with Stephen there: it asks you to Allow each connection. Zen will work on a shared Mac once the Zen add-on (ADR-009) replaces the port.
+
 **Prefer a separate Zen just for Claude?** The previous default is still there: a separate "agent" Zen window with its own profile (`~/.stephen/profiles/zen`), started by Stephen and running alongside your normal Zen. It starts logged out  sign in once in that window to the sites you want Claude to use. Set in `~/.stephen/config.json`:
 
 ```json
