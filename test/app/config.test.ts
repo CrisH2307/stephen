@@ -16,9 +16,11 @@ describe('parseAppConfig', () => {
     expect(parseAppConfig({ enabled: false, speakReplies: true })).toEqual({ enabled: false, speakReplies: true });
   });
 
-  it('refuses unknown keys and wrong types', () => {
-    expect(() => parseAppConfig({ token: 'x' })).toThrow(AppConfigError);
-    expect(() => parseAppConfig({ token: 'x' })).toThrow('unknown key "app.token"');
+  it('ignores unknown keys (listed for doctor) and refuses wrong types', () => {
+    const unknown: string[] = [];
+    expect(parseAppConfig({ token: 'x' }, unknown)).toEqual({ enabled: true, speakReplies: false });
+    expect(unknown).toEqual(['app.token']);
+    expect(() => parseAppConfig({ speakReplies: 'yes' })).toThrow(AppConfigError);
     expect(() => parseAppConfig({ speakReplies: 'yes' })).toThrow(/"app.speakReplies"/);
     expect(() => parseAppConfig([])).toThrow('"app" must be an object');
   });

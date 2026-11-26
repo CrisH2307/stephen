@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { SAMPLE_RATE, decodeWav16k } from './wav.js';
+import { sleep } from '../lib/process.js';
 
 /** Samples per frame everywhere in the pipeline (32 ms at 16 kHz; Silero VAD's window). */
 export const FRAME = 512;
@@ -13,8 +14,6 @@ export interface AudioSource {
   read(): Promise<Float32Array | null>;
   stop(): Promise<void>;
 }
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
  * In-memory source (tests, `--wav`). `realtime` paces frames: 1 = real time, 2 = twice as fast,

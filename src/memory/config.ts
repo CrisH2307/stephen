@@ -2,8 +2,9 @@
 import { z } from 'zod';
 import { MAX_MEMORY_ITEMS } from './store.js';
 import { ConfigError } from '../lib/errors.js';
+import { unknownKeyPaths } from '../config.js';
 
-const MemoryConfigSchema = z.strictObject({
+const MemoryConfigSchema = z.object({
   /** Use saved memories and the "remember …" / "forget …" voice commands. */
   enabled: z.boolean().default(true),
   /** A "remember …" said after the wake word (not push-to-talk) asks in a dialog first: a video can say it too. */
@@ -24,7 +25,6 @@ export class MemoryConfigError extends ConfigError {
 function describe(err: z.ZodError): string {
   return err.issues
     .map((i) => {
-      if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"memory.${k}"`).join(', ')}`;
       const key = i.path.map(String).join('.');
       return `"memory${key ? `.${key}` : ''}": ${i.message}`;
     })
@@ -32,7 +32,7 @@ function describe(err: z.ZodError): string {
 }
 
 /** Validate the raw `memory` section (null values mean "use the default"). Throws MemoryConfigError. */
-export function parseMemoryConfig(raw: unknown): MemoryConfig {
+export function parseMemoryConfig(raw: unknown, unknownKeys?: string[]): MemoryConfig {
   const obj: Record<string, unknown> = {};
   if (raw !== null && raw !== undefined) {
     if (typeof raw !== 'object' || Array.isArray(raw)) throw new MemoryConfigError('"memory" must be an object');
@@ -40,5 +40,6 @@ export function parseMemoryConfig(raw: unknown): MemoryConfig {
   }
   const r = MemoryConfigSchema.safeParse(obj);
   if (!r.success) throw new MemoryConfigError(`Invalid memory config: ${describe(r.error)}`);
+  unknownKeys?.push(...unknownKeyPaths(obj, r.data, 'memory'));
   return r.data;
 }

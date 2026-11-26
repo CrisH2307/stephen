@@ -1,4 +1,4 @@
-import { lstatSync } from 'node:fs';
+import { lstatSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, relative, resolve } from 'node:path';
 
@@ -84,7 +84,8 @@ export function withoutSecrets(env: NodeJS.ProcessEnv, home: string = homedir())
 
 /**
  * The shell's CLAUDE_CONFIG_DIR when it is safe to use, else undefined (then Claude uses ~/.claude): an absolute path,
- * inside the person's home folder, and a real folder (not a symlink). Returned resolved.
+ * inside the person's home folder, and a real folder (not a symlink). Returned resolved. The check runs on the real
+ * path too, so a symlinked folder on the way (inside the home) cannot point outside it (R23 review L7).
  */
 export function claudeConfigDir(env: NodeJS.ProcessEnv, home: string = homedir()): string | undefined {
   const v = env.CLAUDE_CONFIG_DIR?.trim();
@@ -93,7 +94,9 @@ export function claudeConfigDir(env: NodeJS.ProcessEnv, home: string = homedir()
   const rel = relative(resolve(home), dir);
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined;
   try {
-    return lstatSync(dir).isDirectory() ? dir : undefined;
+    if (!lstatSync(dir).isDirectory()) return undefined;
+    const real = relative(realpathSync(home), realpathSync(dir));
+    return real && !real.startsWith('..') && !isAbsolute(real) ? dir : undefined;
   } catch {
     return undefined;
   }
