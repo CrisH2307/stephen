@@ -42,7 +42,7 @@ import {
 import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
 import { HubError, errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
-import { runSetup } from './setup.js';
+import { runSetup, setupStatus } from './setup.js';
 import { execNoThrow } from './lib/process.js';
 import { runUpdate } from './update.js';
 import { pageEngine } from './page/index.js';
@@ -672,6 +672,12 @@ export async function main(argv: string[]): Promise<number> {
     case 'install':
       return install(rest.includes('--run'));
     case 'setup':
+      if (rest.length === 1 && rest[0] === '--status') {
+        // F9: one JSON line of code words for the onboarding sheet; nothing else is printed.
+        const { voiceModelsReady } = await import('./voice/index.js');
+        console.log(JSON.stringify(await setupStatus({ runClaude: defaultRunClaude, modelsReady: () => voiceModelsReady() })));
+        return 0;
+      }
       return setup();
     case 'update':
       return update();

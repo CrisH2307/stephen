@@ -104,6 +104,9 @@ private struct MainWindowView: View {
   @AppStorage("sidebarCollapsed") private var collapsed = false
   /// The expanded sidebar's content width, dragged on the divider (clamped by SidebarMetrics).
   @AppStorage("sidebarWidth") private var sidebarWidth = Double(SidebarMetrics.expanded)
+  /// F9: the first-run setup sheet shows until it is finished once.
+  @AppStorage("onboarded") private var onboarded = false
+  @State private var showSetup = false
 
   var body: some View {
     let width = SidebarMetrics.clamp(CGFloat(sidebarWidth))
@@ -135,6 +138,12 @@ private struct MainWindowView: View {
     // A wider sidebar needs a wider window, so the pages keep their measured room (#154). The icon rail needs none.
     .frame(minWidth: WindowMetrics.minContent.width + (collapsed ? 0 : max(0, width - SidebarMetrics.expanded)),
            minHeight: WindowMetrics.minContent.height)
+    .onAppear { if !onboarded { showSetup = true } }
+    .onChange(of: onboarded) { if !$0 { showSetup = true } }  // Settings, About: Run setup again
+    .sheet(isPresented: $showSetup) {
+      OnboardingSheet(control: control, finish: { onboarded = true; showSetup = false }, later: { showSetup = false })
+        .stephenThemedBySettings()
+    }
   }
 
   /// On every page while a question waits (#138). Safety: it only opens the Ask box, where the card is. No Allow, no

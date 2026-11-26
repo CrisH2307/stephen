@@ -9,9 +9,10 @@
 import { createTts, type TtsSpeaker } from './tts/index.js';
 import { TalkStore, talkFromConfig } from '../app/talk.js';
 import { ModelStore } from '../app/model.js';
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { sleep } from '../lib/process.js';
+import { isPidAlive, sleep } from '../lib/process.js';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
@@ -75,7 +76,7 @@ import { soundControl, type SoundControl } from './media-command.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
 import { MemoryRouter } from './memory-router.js';
-import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelPaths } from './models.js';
+import { ensureModels, isInstalled, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelEvent, type ModelPaths } from './models.js';
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
@@ -108,6 +109,8 @@ export interface Engines {
 
 /** Everything runListen touches outside itself — injectable for tests. */
 export interface ListenEnv {
+  /** F9b: model download progress as code words (voice-setup --json-progress). */
+  onModelEvent?: (e: ModelEvent) => void;
   loadConfig?: () => {
     home: string;
     voice: Record<string, unknown>;
@@ -276,13 +279,66 @@ async function setupModels(
   env: ListenEnv,
   out: (l: string) => void,
 ): Promise<ModelPaths> {
-  const installed = await ensureModels(root, requiredArchives(asr), { log: out, download: env.download });
+  const installed = await ensureModels(root, requiredArchives(asr), { log: out, download: env.download, ...(env.onModelEvent ? { onEvent: env.onModelEvent } : {}) });
   const paths = modelPaths(root, asr);
   // Tokenize the configured phrases now, so a phrase the model can't spot fails here with a clear message.
   await mkdir(workDir, { recursive: true, mode: 0o700 });
-  writeKeywordsFile(paths, spotterOptions(cfg, workDir));
+  try {
+    writeKeywordsFile(paths, spotterOptions(cfg, workDir));
+  } catch (e) {
+    throw new KeywordsError((e as Error).message);
+  }
   if (installed.length) out(`Speech models ready in ${root}.`);
   return paths;
+}
+
+/** The models are in place but the wake phrase cannot be used (F9b review: not an internet problem). */
+class KeywordsError extends Error {}
+
+/**
+ * One voice-setup at a time per models folder (F9b review): `<root>/.voice-setup.lock` holds the pid. A lock whose pid
+ * is gone is taken over. Returns a release function, or null when another live run holds it.
+ */
+function lockModels(root: string): (() => void) | null {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const lock = join(root, '.voice-setup.lock');
+  const take = `${lock}.takeover`;
+  const create = (path: string): boolean => {
+    try {
+      writeFileSync(path, String(process.pid), { flag: 'wx', mode: 0o600 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const holderAlive = (): boolean => {
+    try {
+      const pid = Number(readFileSync(lock, 'utf8').trim());
+      return Number.isInteger(pid) && pid > 0 && pid !== process.pid && isPidAlive(pid);
+    } catch {
+      return false; // gone, or unreadable: nobody holds it
+    }
+  };
+  const release = () => rmSync(lock, { force: true });
+  if (create(lock)) return release;
+  if (holderAlive()) return null;
+  // A dead run's lock: one taker at a time (O_EXCL on a second file, #401 review), so two runs never both remove it
+  // and both go on. The taker checks again under its own lock; the other one says busy.
+  if (!create(take)) {
+    try {
+      if (Date.now() - statSync(take).mtimeMs > 60_000) rmSync(take, { force: true }); // a taker that died
+    } catch {
+      // already gone
+    }
+    return null;
+  }
+  try {
+    if (holderAlive()) return null;
+    rmSync(lock, { force: true });
+    return create(lock) ? release : null;
+  } finally {
+    rmSync(take, { force: true });
+  }
 }
 
 /** `stephen voice-setup`: download + verify + extract the speech models (never re-downloads). */
@@ -293,13 +349,52 @@ export async function runVoiceSetup(argv: string[], env: ListenEnv = {}): Promis
     out('stephen voice-setup   Download the "Hey Stephen" speech models (wake word, VAD, speech-to-text) into <stephen home>/models');
     return 0;
   }
-  if (argv.length) {
-    err(`Unknown option "${argv[0]}". Usage: stephen voice-setup`);
+  // F9b: --json-progress prints only code-word JSON lines (the setup sheet's own text goes with each), no free text.
+  const json = argv.length === 1 && argv[0] === '--json-progress';
+  if (argv.length && !json) {
+    err(`Unknown option "${argv[0]}". Usage: stephen voice-setup [--json-progress]`);
     return 2;
   }
-  const loaded = loadVoice(env, err);
-  if (!loaded) return 2;
+  const emit = (e: object) => out(JSON.stringify(e));
+  const loaded = loadVoice(env, json ? () => {} : err);
+  if (!loaded) {
+    if (json) emit({ event: 'failed', reason: 'config' });
+    return 2;
+  }
   const root = env.modelsRoot ?? modelsDir(loaded.home);
+  const release = lockModels(root);
+  if (!release) {
+    if (json) emit({ event: 'failed', reason: 'busy' });
+    else err('Another voice-setup is running for these models. Wait for it to finish, then run this again.');
+    return 1;
+  }
+  try {
+    return await voiceSetupLocked(root, loaded, json, emit, env, out, err);
+  } finally {
+    release();
+  }
+}
+
+async function voiceSetupLocked(
+  root: string,
+  loaded: NonNullable<ReturnType<typeof loadVoice>>,
+  json: boolean,
+  emit: (e: object) => void,
+  env: ListenEnv,
+  out: (l: string) => void,
+  err: (l: string) => void,
+): Promise<number> {
+  if (json) {
+    try {
+      const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
+      await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), { ...env, onModelEvent: emit }, () => {});
+      emit({ event: 'done' });
+      return 0;
+    } catch (e) {
+      emit({ event: 'failed', reason: e instanceof KeywordsError ? 'keywords' : 'download' });
+      return 1;
+    }
+  }
   try {
     const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
     await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), env, out);
@@ -997,4 +1092,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       process.off('exit', onExit);
     }
   }
+}
+
+/** F9: are the speech models for the configured speech-to-text in place? (`stephen setup --status`). Reads only. */
+export async function voiceModelsReady(env: ListenEnv = {}): Promise<boolean> {
+  const loaded = loadVoice(env, () => {});
+  if (!loaded) return false;
+  const root = env.modelsRoot ?? modelsDir(loaded.home);
+  for (const m of requiredArchives(loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL)) if (!(await isInstalled(root, m))) return false;
+  return true;
 }

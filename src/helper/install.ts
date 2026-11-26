@@ -20,9 +20,9 @@ export const INSTALL_HELPER_USAGE = 'stephen install-helper [--dry-run] [--force
 export const HELPER_SOURCES = [
   'Core.swift', 'Theme.swift',
   'Components/Sidebar.swift', 'Components/Controls.swift', 'Components/Lists.swift', 'Components/ChatThread.swift',
-  'AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift', 'AppWindow.swift', 'AskBox.swift', 'MainWindow.swift', 'HomeView.swift', 'Palette.swift', 'MemoryPage.swift', 'ConversationsPage.swift', 'JobsPage.swift', 'AppearanceSettings.swift', 'SettingsPage.swift', 'main.swift',
+  'AppProtocol.swift', 'AppConnection.swift', 'AppClient.swift', 'AppConfirm.swift', 'StephenControl.swift', 'AppWindow.swift', 'AskBox.swift', 'MainWindow.swift', 'OnboardingSheet.swift', 'HomeView.swift', 'Palette.swift', 'MemoryPage.swift', 'ConversationsPage.swift', 'JobsPage.swift', 'AppearanceSettings.swift', 'SettingsPage.swift', 'main.swift',
 ] as const;
-export const HELPER_FRAMEWORKS = ['AppKit', 'CoreAudio', 'CoreGraphics', 'ServiceManagement', 'SwiftUI'] as const;
+export const HELPER_FRAMEWORKS = ['AppKit', 'AVFoundation', 'CoreAudio', 'CoreGraphics', 'ServiceManagement', 'SwiftUI'] as const;
 /** The start of the line install-helper prints when it skipped the build. update and setup match it to tell a skip from a rebuild. */
 export const HELPER_UNCHANGED = 'Nothing changed';
 export const XCODE_TOOLS_FIX = 'Install Apple\'s command line tools: run `xcode-select --install` (or install Xcode), then run `stephen install-helper` again.';

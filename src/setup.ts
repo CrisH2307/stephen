@@ -54,6 +54,24 @@ export const PERMISSION_LINES = [
 
 export const FIRST_COMMAND = 'Hold F5 and say: what time is it';
 
+/**
+ * F9: where a first run stands, as code words only, for the helper's onboarding sheet (`stephen setup --status`). The
+ * sheet shows its own fixed text for each word, never output from Claude Code or the network (#382, #390).
+ */
+export interface SetupStatus {
+  claude: 'missing' | 'signed_out' | 'ok';
+  models: 'missing' | 'ok';
+}
+
+export async function setupStatus(deps: Pick<SetupDeps, 'runClaude'> & { modelsReady: () => Promise<boolean> }): Promise<SetupStatus> {
+  const models = (await deps.modelsReady().catch(() => false)) ? 'ok' : 'missing';
+  const ver = await deps.runClaude(['--version']);
+  if (ver.notFound || ver.code !== 0) return { claude: 'missing', models };
+  const auth = await deps.runClaude(['auth', 'status']);
+  if (auth.code !== 0 || /"loggedIn":\s*false/.test(auth.stdout)) return { claude: 'signed_out', models };
+  return { claude: 'ok', models };
+}
+
 /** Run the steps. Returns the exit code: 0 when everything is ready, 1 at the first red line. */
 export async function runSetup(deps: SetupDeps): Promise<number> {
   const { log } = deps;
