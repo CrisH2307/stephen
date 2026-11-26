@@ -241,6 +241,21 @@ struct ActionChain: View {
   }
 }
 
+/// The question card keeps its warn outline all round, no side stripe: the most distinct shape, in every theme (#139).
+/// Paper: a white card, the warn edge at 2 pt and the hard ink shadow, so it still stands apart from the ink-edged
+/// cards around it.
+private struct ConfirmCard: ViewModifier {
+  @Environment(\.stephenTheme) var t
+  func body(content: Content) -> some View {
+    if t.paper {
+      content.paperBox(t, fill: t.surface, radius: 16, edge: t.warn)
+    } else {
+      content.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
+        .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))
+    }
+  }
+}
+
 /// The gate's question as a message: computed facts first, model and page text quoted and labelled (the gate's own
 /// text). The full fact list is kept, in a short scroll, so the owner can decide from it alone, as with the dialog.
 struct ConfirmMessage: View {
@@ -252,19 +267,19 @@ struct ConfirmMessage: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.s) {
       Text(verbatim: "Needs your OK").safetyLabelStyle(t)
-      Text(verbatim: question.title).font(TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
+      Text(verbatim: question.title).font(t.paper ? paperHead(16) : TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
       ScrollView {
-        Text(verbatim: question.body).font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)
+        Text(verbatim: question.body).font(TypeScale.secondary).foregroundColor(t.paper ? t.ink : t.ink2).textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(t.paper ? Space.s : 0)
+          .background(RoundedRectangle(cornerRadius: Corner.button).fill(t.paper ? Theme.sky : Color.clear))
       }
       .frame(maxHeight: 160).fixedSize(horizontal: false, vertical: true)
       .accessibilityLabel("Details: \(question.body)")
       ConfirmButtons(question: question, waiting: waiting, answer: answer)
     }
     .padding(Space.m)
-    .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.surface2))
-    // A 1.5 pt warn outline all round, no side stripe: the most distinct shape, in every theme (#139).
-    .overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))
+    .modifier(ConfirmCard())
     .accessibilityElement(children: .contain)
   }
 }
