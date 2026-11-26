@@ -10,6 +10,7 @@
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reduceLinks } from '../accounts/result.js';
+import { escapeUntrustedTags } from '../safety/index.js';
 import { stripUnsafe, truncate } from '../safety/text.js';
 
 /** The only tools a job has (`--tools`); the init message must list exactly these (runner checks it). */
@@ -296,10 +297,10 @@ const mixed = (t: string) => /[a-z]/.test(t) && /[A-Z]/.test(t) && (t.match(/\d/
  */
 export function cleanJobOutput(text: unknown, max = SUMMARY_MAX): string {
   const raw = typeof text === 'string' ? text.slice(0, max * 8) : '';
-  const s = reduceLinks(stripUnsafe(raw.normalize('NFKC')))
+  const masked = reduceLinks(stripUnsafe(raw.normalize('NFKC')))
     .replace(KEY_SHAPED_RE, '[secret]')
-    .replace(MIXED_TOKEN_RE, (t) => (mixed(t) ? '[secret]' : t))
-    .replace(/<(\/?)untrusted_/gi, '‹$1untrusted_')
+    .replace(MIXED_TOKEN_RE, (t) => (mixed(t) ? '[secret]' : t));
+  const s = escapeUntrustedTags(masked)
     .replace(/\s+/g, ' ')
     .trim();
   return truncate(s, max);
