@@ -63,7 +63,7 @@ Safety list (`SAFETY_PATHS` in `src/telemetry/incident-ladder.ts`, with a test):
 (the memory, timer and job write paths), and `src/lib/fs.ts`, the atomic write helper they all share.
 
 Caps: at most 2 ladder runs per issue per day, and at most 6 Claude runs (L2 to L4) per day in all. Both are counted
-from the comments on open incident issues (the trail line and the marker, by an allowed author, on today's UTC date).
+from the comments on incident issues touched today, open or closed (the trail line and the marker, by an allowed author, on today's UTC date).
 There is no local file. A run that is stopped before it posts is not counted. Cris's 75% usage rule wins: he simply
 does not run the script.
 
@@ -102,7 +102,9 @@ Default without his answer: his normal login, fixed commands only.
 4. It copies the `qa` tip with `git archive` (without `test/fixtures`) into a temp folder.
 5. It runs L1, then L2 and up by the rule.
 6. It posts one comment: the marker, the trail (for example `L1 draft, L2 low, L3 high`) and the final answer in a code
-   block. On L5 it adds the `needs-cris` label and the #274 line.
+   block. On L5 it then adds the `needs-cris` label and the #274 line. The comment goes first, so a later failure
+   never makes the next run spend the Claude levels again. The script checks that the label exists before any level
+   runs.
 
 ## What changes in the repo
 
