@@ -19,6 +19,8 @@ Tests named "eval" are `inject` cases in `src/eval/cases.ts`. They run the real 
 - **Real protection gaps (a test shows the gap, it.fails):** none open. Fixed: W1 and W1b (lookalike closing tags
   in every wrapped text, #361), R1 (resume quote escapes `<untrusted_`, #348), M1 (the screenshot page URL is inside
   the untrusted block, #353).
+- **Fixed in #373:** T2 (the delimiter check runs in linear time, so a long whitespace run after `<` in page text no
+  longer takes seconds). Test: `test/safety/delimiter-perf.test.ts`.
 - **Fixed in #364:** J2 (`stephen jobs show` prints the job summary inside `<untrusted_job_output>`) and L2 (an edited
   job's prompt says the earlier job's files are data). Tests: `test/injection/job-frames.test.ts`.
 - **Not built yet:** incident issue text (ADR-014 phase 2), job output frame (needed once output or files reach a
@@ -82,6 +84,12 @@ Documentation fix (no code): `docs/SYSTEM-DESIGN-STEPHEN.md` sections 4.13 and 5
 `<untrusted_job_output>`. The code does not frame it. Either build the frame (when output or files reach a model, see
 L2) or change the doc to say output never reaches a model prompt. That second option is not true for edited jobs, so
 L2 must be fixed first.
+
+6. **T2, delimiter check speed. FIXED in #373.** File: `src/safety/text.ts` (`DELIMITER_RE`, used by
+   `escapeUntrustedTags`). The old pattern had two optional whitespace runs around an optional `/`, so a page could
+   send a huge run of spaces after `<` and the check took time that grew with the square of the run (200,000 spaces
+   took about 14 seconds). Now `/<\s*(?:\/\s*)?untrusted/gi`: one run, then an optional `/` with its own run, linear
+   time. Test: `test/safety/delimiter-perf.test.ts` (long runs finish within a 200 ms bound).
 
 ## Planned, not built
 
