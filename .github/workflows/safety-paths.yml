@@ -1,0 +1,35 @@
+name: safety-paths
+
+# B9 (docs/ARCHITECTURE-PLAN.md): a PR that changes a safety path needs "[DEV REVIEW]" in its title.
+# Its own workflow, so a title edit reruns only this check, not the full test suite. The title reaches the script
+# through env: only. No secrets, read-only token, no pull_request_target.
+
+on:
+  pull_request:
+    branches: [qa, main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safety-paths-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  safety-paths:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The PR's merge commit and its first parent (the base), enough for the diff.
+          fetch-depth: 2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Safety paths need [DEV REVIEW] in the title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/safety-paths.mjs
