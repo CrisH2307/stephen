@@ -185,15 +185,27 @@ describe('WarmClaude against the fake stream-json claude', () => {
     await p.kill();
   });
 
+  // Each case waits for its own event, not a race against one short clock (#376): a reply (MCP failed, initialize
+  // refused) comes as soon as the fake sends it, under setup's 3 s guard that also covers a slow spawn. Only the two
+  // timeout cases use the clock: 'no-init' times out initialize itself (a slow spawn gives the same error), and
+  // 'pending' moves the clock past the connect deadline once initialize has answered.
   it.each([
-    ['MCP failed', { FAKE_CLAUDE_MCP: 'failed' }, /MCP status: failed/],
-    ['MCP never connects', { FAKE_CLAUDE_MCP: 'pending' }, /didn't connect in time/],
-    ['initialize refused', { FAKE_CLAUDE_MODE: 'init-error' }, /refused the request \(initialize refused\)/],
-    ['initialize never answered', { FAKE_CLAUDE_MODE: 'no-init' }, /didn't answer initialize/],
-  ])('%s: not ready, fails closed (process group killed, persona deleted)', async (_what, env, why) => {
-    const t = setup(env, { readyTimeoutMs: 400 });
+    ['MCP failed', { FAKE_CLAUDE_MCP: 'failed' }, /MCP status: failed/, 'event'],
+    ['MCP never connects', { FAKE_CLAUDE_MCP: 'pending' }, /didn't connect in time/, 'deadline'],
+    ['initialize refused', { FAKE_CLAUDE_MODE: 'init-error' }, /refused the request \(initialize refused\)/, 'event'],
+    ['initialize never answered', { FAKE_CLAUDE_MODE: 'no-init' }, /didn't answer initialize/, 'init-timeout'],
+  ] as const)('%s: not ready, fails closed (process group killed, persona deleted)', async (_what, env, why, wait) => {
+    let skew = 0;
+    const t = setup(env, wait === 'init-timeout' ? { readyTimeoutMs: 400 } : { now: () => Date.now() + skew });
     const p = new WarmClaude(t.o, undefined);
-    await expect(p.ready()).rejects.toThrow(why);
+    const ready = p.ready();
+    if (wait === 'deadline') {
+      // initialize answered: boot has already set the connect deadline and sent the first mcp_status (both run
+      // synchronously before this line), so its 'pending' answer finds the clock past the deadline.
+      await p.initialized;
+      skew = 60_000;
+    }
+    await expect(ready).rejects.toThrow(why);
     const turn = await p.turn('hi');
     expect(turn.kind).not.toBe('ok');
     await p.kill();
