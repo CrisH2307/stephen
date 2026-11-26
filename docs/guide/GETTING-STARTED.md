@@ -132,7 +132,9 @@ the previous version's id, so you can go back.
 
 ## Removing Stephen
 
-The [privacy page](../PRIVACY.md#9-deleting-everything) lists every step to delete Stephen and everything it
-kept.
+[How to leave](../FIRST-5-MINUTES.md#how-to-leave) lists every step, in order. The
+[privacy page](../PRIVACY.md#9-deleting-everything) says what each store holds.
+
+New to the Stephen window? [Your first 5 minutes](../FIRST-5-MINUTES.md) walks through the setup sheet.
 
 Next: [using Stephen every day](USING-STEPHEN.md).
