@@ -41,7 +41,7 @@ function escapeAttr(s: string): string {
 
 // Opening-bracket lookalikes that NFKC does not fold to "<" (NFKC does fold U+FF1C and U+FE64).
 const BRACKET_LOOKALIKES = new Set(['\u2039', '\u2329', '\u276c', '\u27e8', '\u3008', '\u300a']);
-const ZERO_WIDTH = /[\u200b-\u200d\u2060\ufeff]/;
+const ZERO_WIDTH = /[\u00ad\u200b-\u200d\u2060\ufeff]/;
 // '<' + optional whitespace + optional '/' + 'untrusted_web_content', any case. Runs on the folded copy only.
 const DELIMITER_RE = /<\s*\/?\s*untrusted_web_content/gi;
 
