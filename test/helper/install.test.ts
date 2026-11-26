@@ -92,7 +92,7 @@ describe('install-helper', () => {
       '/src/Core.swift', '/src/Theme.swift',
       '/src/Components/Sidebar.swift', '/src/Components/Controls.swift', '/src/Components/Lists.swift', '/src/Components/ChatThread.swift',
       '/src/AppProtocol.swift', '/src/AppConnection.swift', '/src/AppClient.swift', '/src/AppConfirm.swift', '/src/StephenControl.swift', '/src/AppWindow.swift', '/src/AskBox.swift', '/src/MainWindow.swift', '/src/OnboardingSheet.swift', '/src/HomeView.swift', '/src/Palette.swift', '/src/MemoryPage.swift', '/src/ConversationsPage.swift', '/src/JobsPage.swift', '/src/AppearanceSettings.swift', '/src/SettingsPage.swift', '/src/main.swift',
-      '-framework', 'AppKit', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'ServiceManagement', '-framework', 'SwiftUI',
+      '-framework', 'AppKit', '-framework', 'AVFoundation', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'ServiceManagement', '-framework', 'SwiftUI',
     ]);
     expect(swiftcArgs('/src', '/o', null)).not.toContain('-sdk');
     expect(codesignArgs('/A/Stephen Helper.app')).toEqual(['--force', '--sign', '-', '--identifier', 'dev.stephen.helper', '/A/Stephen Helper.app']);
