@@ -1,9 +1,11 @@
 /**
  * Command-grammar classifier, SHADOW MODE (docs/research/PRODUCT-PLAN-2026-11.md 2.5 and 7.0 E6, PLAN-REVIEW 3.5).
  *
- * Pure and deterministic: no I/O, no clock, no model, no network. It only LABELS a request Tier 1 (fast path)
- * or Tier 2 (model); it never acts. One real use: after a wake word while sound plays, src/voice/media-command.ts
- * lets through only a Tier 1 media verb (issue #205).
+ * Pure and deterministic: no I/O, no clock, no model, no network. It only LABELS a request Tier 1 (would not need
+ * the model) or Tier 2 (model); it never acts. The label goes on latency rows. One real use: after a wake word
+ * while sound plays, src/voice/media-command.ts lets through only a Tier 1 media verb, run without the model
+ * (issue #205). This label never routes a command; the memory, timer and job routers in src/voice/assistant.ts
+ * answer their own commands without the model, before the classifier label matters.
  *
  * Trust rule: OwnerLists hold owner-controlled names ONLY (installed app names, owner-written site aliases).
  * NEVER put tab titles, page text, playlists read from a page, or memory text in them: a page could name itself
