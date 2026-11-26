@@ -188,7 +188,7 @@ describe('Canvas formatting', () => {
 
 describe('accounts config', () => {
   it('defaults, validation', () => {
-    expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true }, notion: { enabled: true }, gmail: { enabled: true, accounts: [] }, weather: { enabled: true, latitude: 43.6532, longitude: -79.3832, label: 'Toronto, ON' } });
+    expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true }, notion: { enabled: true }, gmail: { enabled: true, accounts: [] }, weather: { enabled: true, latitude: 43.65, longitude: -79.38, label: 'Toronto, ON' } });
     expect(() => parseAccountsConfig({ canvas: { url: 'http://x.ca' } })).toThrow(/https/);
     expect(() => parseAccountsConfig({ timeZone: 'Mars/Base' })).toThrow(/time zone/);
     const keys: string[] = [];
