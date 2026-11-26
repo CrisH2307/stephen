@@ -233,7 +233,7 @@ describe('parseClaudeOutput', () => {
       message: 'I ran out of steps before finishing.',
       sessionId: 's',
     });
-    expect(parseClaudeOutput('nope', 1, 'Error: not logged in\n')).toEqual({ kind: 'error', message: "Claude Code didn't return a result (Error: not logged in).", sessionId: null });
+    expect(parseClaudeOutput('nope', 1, 'Error: not logged in\n')).toEqual({ kind: 'error', message: "Claude Code didn't return a result (Error: not logged in).", sessionId: null, failure: 'claude_signed_out' });
     expect(parseClaudeOutput(JSON.stringify({ type: 'result', result: 'x', session_id: '../../etc' }), 0)).toMatchObject({ sessionId: null });
   });
 });
