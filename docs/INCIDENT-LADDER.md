@@ -40,7 +40,9 @@ parser and the sandbox do that.
 
 L1 providers: the design says only providers whose free-tier terms say they do not train on the input. That check is
 not done. For now L1 is pinned to one model name, `gpt-oss-120b`, in `src/telemetry/incident-ladder.ts`, and any other
-name (`auto`, `fusion`, `free-router`, `kilo-auto`, a `claude-*` name) is refused. Cris confirms the terms before L1 runs.
+name (`auto`, `fusion`, `free-router`, `kilo-auto`, a `claude-*` name) is refused. L1 runs only when
+`INCIDENT_L1_MODEL=gpt-oss-120b` is set: that is Cris's opt-in after he checks the terms. Without it the ladder starts
+at L2.
 
 OpenCode is not L1 yet. Its global config on this Mac loads a browser tool and other MCP servers. It can become L1
 once a canary shows an isolated config with no MCP, no edit, no shell and no web.
