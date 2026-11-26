@@ -24,7 +24,7 @@ stephen accounts test canvas  Read your Canvas once: your name and what's due in
 stephen accounts test calendar  Read your Google Calendar feed once: events in the next 7 days
 stephen accounts test notion  Read your Notion to-do database once: how many open to-dos
 stephen accounts weather      Show the place the weather tool uses (a built-in default until you set yours)
-stephen accounts weather set <latitude> <longitude> [label…]  Save your place in config.json (e.g. set 43.9 -78.9 Oshawa, ON)
+stephen accounts weather set <latitude> <longitude> [label…]  Save your place in config.json (e.g. set 40.7 -74.0 New York, NY)
 stephen accounts test weather  Read the weather once for that place
 stephen connect gmail <label>  Sign in to a Gmail account once (read-only; label like "personal"; needs accounts.gmail.clientId)
 stephen disconnect gmail <label>  Forget that Gmail account (Keychain item and config entry)`;
