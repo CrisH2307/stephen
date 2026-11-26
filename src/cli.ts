@@ -802,21 +802,36 @@ function crashIncident(cmd: string | undefined, e: unknown): void {
   }
 }
 
-const argv0 = process.argv[2];
-// A monitor only watches: Node still prints the error and exits as before. An uncaught crash is an incident for
-// every command, one-shot ones too (part "other"); a one-shot command that fails normally is not (below).
-process.on('uncaughtExceptionMonitor', (e) => crashIncident(argv0, e));
-main(process.argv.slice(2)).then(
-  (code) => {
-    if (code >= 0) process.exitCode = code;
-  },
-  (e: unknown) => {
-    // A long-running part that failed is an incident; a one-shot command's error is shown to the person already.
-    if (incidentPart(argv0) !== 'other') crashIncident(argv0, e);
-    console.error(`stephen: ${errorMessage(e)}`);
-    process.exit(1);
-  },
-);
+/**
+ * True only when this file is the program (`node dist/cli.js`, or the `stephen` bin link to it). A test that imports
+ * this file must not start `serve`: it used to start a real MCP server in the test process, whose late
+ * `console.log = console.error` made the doctor test read nothing (#109).
+ */
+export function isEntry(argv1: string | undefined = process.argv[1]): boolean {
+  try {
+    return !!argv1 && realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntry()) {
+  const argv0 = process.argv[2];
+  // A monitor only watches: Node still prints the error and exits as before. An uncaught crash is an incident for
+  // every command, one-shot ones too (part "other"); a one-shot command that fails normally is not (below).
+  process.on('uncaughtExceptionMonitor', (e) => crashIncident(argv0, e));
+  main(process.argv.slice(2)).then(
+    (code) => {
+      if (code >= 0) process.exitCode = code;
+    },
+    (e: unknown) => {
+      // A long-running part that failed is an incident; a one-shot command's error is shown to the person already.
+      if (incidentPart(argv0) !== 'other') crashIncident(argv0, e);
+      console.error(`stephen: ${errorMessage(e)}`);
+      process.exit(1);
+    },
+  );
+}
 
 /**
  * Personal files that belong in Stephen's home folder, not the repo (docs/PLAN-WORK-SPLIT.md §12): a repo copy (a job's
