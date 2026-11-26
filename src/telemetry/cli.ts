@@ -285,3 +285,108 @@ export async function runLatencyCli(argv: string[], e: LatencyEnv = {}): Promise
   out(a.json ? JSON.stringify(report, null, 2) : formatReport(report));
   return 0;
 }
+
+// ───────────── stephen report --week (F13) ─────────────
+
+/**
+ * `stephen report --week` (F13): a weekly summary a friend can paste to Cris. Content-free on purpose: it is built only
+ * from parsed latency and incident records, so every value is a number, a code word, a version or a date. No command
+ * text, page, host, name or path can reach it (the parsers drop every free-text field).
+ */
+export const WEEK_DAYS = 7;
+const VERSION_RE = /^\d{1,4}(\.\d{1,6}){0,3}$/;
+/** Trigger outcomes that were not a command (nothing was asked). */
+const NOT_A_COMMAND = new Set(['wake_ignored', 'no_wake', 'no_speech', 'short_press']);
+
+export interface WeeklySummary {
+  from: string;
+  to: string;
+  /** Oldest day first, every one of the 7 local days, zeros included. */
+  days: { day: string; commands: number; failed: number; jobs: number; usd: number }[];
+  incidents: Record<string, number>;
+  /** speech → reply of ok commands, split local routers and the model. */
+  local: SpanStats | null;
+  model: SpanStats | null;
+  commands: number;
+  failed: number;
+  jobs: number;
+  usd: number;
+  stephen: string;
+  claude: string;
+}
+
+const safeVersion = (v: string | null | undefined): string => (v && VERSION_RE.test(v) ? v : 'unknown');
+
+export function buildWeekly(
+  latency: readonly LatencyRecord[],
+  incidents: readonly { ts: string; code: string }[],
+  now: Date,
+  versions: { stephen?: string | null; claude?: string | null },
+): WeeklySummary {
+  const dayList = Array.from({ length: WEEK_DAYS }, (_, i) => localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (WEEK_DAYS - 1 - i))));
+  const days = new Map(dayList.map((day) => [day, { day, commands: 0, failed: 0, jobs: 0, usd: 0 }]));
+  const local: number[] = [];
+  const model: number[] = [];
+  for (const r of latency) {
+    const d = days.get(localDate(new Date(r.ts)));
+    if (!d || NOT_A_COMMAND.has(r.outcome)) continue;
+    d.commands++;
+    if (r.outcome === 'error') d.failed++;
+    if (r.route === 'job') d.jobs++;
+    if (r.costUsd !== undefined) d.usd += r.costUsd;
+    const ms = r.outcome === 'ok' ? spanMs(r, 'speech', 'replyReady') : null;
+    if (ms !== null) (r.route === 'model' ? model : local).push(ms);
+  }
+  const inc: Record<string, number> = {};
+  for (const i of incidents) if (days.has(localDate(new Date(i.ts)))) bump(inc, i.code);
+  const rows = [...days.values()].map((d) => ({ ...d, usd: Math.round(d.usd * 100) / 100 }));
+  const sum = (k: 'commands' | 'failed' | 'jobs') => rows.reduce((n, d) => n + d[k], 0);
+  return {
+    from: dayList[0]!,
+    to: dayList[WEEK_DAYS - 1]!,
+    days: rows,
+    incidents: inc,
+    local: local.length ? stats(local) : null,
+    model: model.length ? stats(model) : null,
+    commands: sum('commands'),
+    failed: sum('failed'),
+    jobs: sum('jobs'),
+    usd: Math.round(rows.reduce((n, d) => n + d.usd, 0) * 100) / 100,
+    stephen: safeVersion(versions.stephen),
+    claude: safeVersion(versions.claude),
+  };
+}
+
+export function formatWeekly(s: WeeklySummary): string {
+  const time = (name: string, t: SpanStats | null) => `${name}: ${t ? `median ${t.p50} ms, p95 ${t.p95} ms (n=${t.n})` : 'no timed commands'}`;
+  return [
+    `Stephen week ${s.from} to ${s.to}`,
+    `Stephen ${s.stephen}, Claude Code ${s.claude}`,
+    `Commands ${s.commands}, failed ${s.failed}, jobs started ${s.jobs}, model cost ${s.usd.toFixed(2)} USD`,
+    time('Local commands, speech to reply', s.local),
+    time('Model commands, speech to reply', s.model),
+    `Incidents: ${Object.keys(s.incidents).length ? counts(Object.fromEntries(Object.entries(s.incidents).sort(([a], [b]) => a.localeCompare(b)))) : 'none'}`,
+    'Per day (commands, failed, jobs, cost USD):',
+    ...s.days.map((d) => `  ${d.day}  ${d.commands}  ${d.failed}  ${d.jobs}  ${d.usd.toFixed(2)}`),
+  ].join('\n');
+}
+
+export interface WeeklyEnv {
+  monitor?: Pick<LatencyMonitor, 'read'>;
+  incidents?: { ts: string; code: string }[];
+  now?: Date;
+  stephen?: string | null;
+  claude?: string | null;
+  out?: (l: string) => void;
+}
+
+/** Prints the summary. Reads only the local logs; sends nothing. */
+export async function runWeeklyCli(e: WeeklyEnv = {}): Promise<number> {
+  const now = e.now ?? new Date();
+  let home: string | null = null;
+  const homeOf = () => (home ??= loadConfig().home);
+  const latency = (e.monitor ?? new LatencyMonitor({ home: homeOf() })).read(WEEK_DAYS + 1);
+  const incidents = e.incidents ?? (await import('./incidents.js')).readIncidents(homeOf(), 10_000);
+  (e.out ?? ((l: string) => console.log(l)))(formatWeekly(buildWeekly(latency, incidents, now, { stephen: e.stephen, claude: e.claude })));
+  return 0;
+}
