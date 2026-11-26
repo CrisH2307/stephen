@@ -276,11 +276,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   /** "Recording F5 commands": shown only while the replay recorder is on (issue #48). Not clickable. */
   private let recordingItem: NSMenuItem
   private let recordingOn: @MainActor () -> Bool
+  /** T6: "Stop", shown only while Stephen works on a command. It sends chat.stop; running jobs keep going. */
+  private let stopItem: NSMenuItem
+  private let working: @MainActor () -> Bool
+  private let stopWork: @MainActor () -> Void
 
   init(
     checkPermission: @escaping () -> Bool, openWindow: @escaping @MainActor () -> Void,
     click: @escaping @MainActor () -> Void, control: StephenControl, recordingOn: @escaping @MainActor () -> Bool,
-    quit: @escaping () -> Void
+    working: @escaping @MainActor () -> Bool, stopWork: @escaping @MainActor () -> Void, quit: @escaping () -> Void
   ) {
     self.checkPermission = checkPermission
     openWindowAction = openWindow
@@ -291,6 +295,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     phoneItem = NSMenuItem(title: "Phone link", action: nil, keyEquivalent: "")
     recordingItem = NSMenuItem(title: "Recording F5 commands", action: nil, keyEquivalent: "")
     self.recordingOn = recordingOn
+    stopItem = NSMenuItem(title: "Stop", action: nil, keyEquivalent: "")
+    self.working = working
+    self.stopWork = stopWork
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     header = NSMenuItem(title: "Stephen Helper", action: nil, keyEquivalent: "")
     permission = NSMenuItem(title: "Input Monitoring", action: nil, keyEquivalent: "")
@@ -306,6 +313,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     recordingItem.isEnabled = false
     recordingItem.isHidden = true
     menu.addItem(recordingItem)
+    stopItem.target = self
+    stopItem.action = #selector(stopClicked(_:))
+    stopItem.isHidden = true
+    menu.addItem(stopItem)
     let openItem = NSMenuItem(title: "Open Stephen…", action: #selector(openWindowClicked(_:)), keyEquivalent: "")
     openItem.target = self
     openItem.isEnabled = true
@@ -367,6 +378,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     startStop.isEnabled = control.listener != .running(fromApp: false)
     phoneItem.state = control.phoneLinkOn() ? .on : .off
     recordingItem.isHidden = !recordingOn()
+    stopItem.isHidden = !working()
     render()
   }
 
@@ -394,6 +406,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   @objc func startStopClicked(_ sender: Any?) {
     let report: (String?) -> Void = { [weak self] why in if let why = why { self?.show("Stephen", why) } }
     if control.listener == .stopped { control.start(report) } else { control.stop(report) }
+  }
+
+  @objc func stopClicked(_ sender: Any?) {
+    stopWork()
   }
 
   @objc func phoneClicked(_ sender: Any?) {
@@ -566,6 +582,7 @@ MainActor.assumeIsolated {
   statusMenu = StatusMenu(
     checkPermission: { CGPreflightListenEventAccess() }, openWindow: { showStephenWindow() },
     click: { askBox?.toggle() }, control: stephenControl, recordingOn: { appModel?.recordingOn ?? false },
+    working: { appModel?.isWorking ?? false }, stopWork: { appModel?.stopChat() },
     quit: { shutdownAndExit(0) })
   let model = sharedAppModel()
   model.opened("askbox")

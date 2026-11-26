@@ -170,7 +170,9 @@ extension View {
   func paperBox<S: InsettableShape>(_ t: Theme, fill: Color, shape: S, pop: CGFloat = 4, edge: Color? = nil) -> some View {
     // The shadow is a second ink shape behind, not .shadow(): crisp, and drawn the same on and off screen.
     return background(ZStack { if pop > 0 { shape.fill(t.ink).offset(x: pop, y: pop) }; shape.fill(fill) })
-      .overlay(shape.strokeBorder(edge ?? t.ink, lineWidth: 2))
+      // drawingGroup: on recent macOS a plain stroke of a full-round shape (a pill) draws stray ink bits at its sides.
+      // The flattened edge is clean (T6, the Stop pill).
+      .overlay(shape.strokeBorder(edge ?? t.ink, lineWidth: 2).drawingGroup())
   }
 }
 

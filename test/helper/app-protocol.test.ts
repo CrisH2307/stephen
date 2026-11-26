@@ -1109,6 +1109,20 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(recent).not.toMatch(/sendChat|model\.\w+\(/);
   });
 
+  it('T6 step 1: Stop next to Working, a Stop menu item while working, and an honest stopped line', () => {
+    const chat = read('Components/ChatThread.swift');
+    // Ask box and Home share the thread: one Stop button, it sends chat.stop only (jobs keep running).
+    expect(chat).toContain('QuietButton("Stop", symbol: "stop.fill") { model.stopChat() }.accessibilityLabel("Stop Stephen")');
+    const main = read('main.swift');
+    expect(main).toContain('stopItem.isHidden = !working()');
+    expect(main).toContain('working: { appModel?.isWorking ?? false }, stopWork: { appModel?.stopChat() },');
+    // A stopped command is a grey info line; once a tool ran, it says the step may already have happened.
+    const client = read('AppClient.swift');
+    expect(client).toContain('addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])');
+    const line = client.match(/func stoppedLine\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(line).toContain('tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."');
+  });
+
   it('Ask box strip (S9, R7): the state word with its dot; the chat title only in the ⋯ menu, verbatim', () => {
     const box = read('AskBox.swift');
     const strip = box.match(/private var topStrip: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
