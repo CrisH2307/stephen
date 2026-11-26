@@ -255,6 +255,8 @@ final class AudioWatcher {
 
 // ───────────────────────────── menu bar ─────────────────────────────
 
+/** R7: the menu line when the helper itself can't start (socket, permissions). The raw reason goes to helper.log only. */
+let HELPER_START_FAILED = "Stephen Helper couldn't start. The details are in helper.log in your Stephen logs folder."
 let INPUT_MONITORING_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
 
 @MainActor
@@ -612,7 +614,7 @@ MainActor.assumeIsolated {
     if text.contains("already listening") {
       exit(0)  // another helper for this home is running; it keeps serving
     }
-    statusMenu?.setProblem("error: \(text) (see \(home)/logs/helper.log)")
+    statusMenu?.setProblem(HELPER_START_FAILED)  // the raw reason is in helper.log (logged above)
   }
   audioWatcher.start()
   if granted && !keyTap.install() { log("event tap could not be created even though Input Monitoring is granted") }

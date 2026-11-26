@@ -74,5 +74,14 @@ check(plainFailure("This conversation changed. Open it again.", CONVERSATIONS_ED
 check(plainFailure("Only the Stephen window can delete a version.", CONVERSATIONS_DELETE_FAILED) == "Only the Stephen window can delete a version.", "refusal kept")
 check(plainFailure("error", CHAT_SEND_FAILED) == "Couldn't send that right now.", "Home chat send")
 
+// R7: a Zen failure with no words of its own shows the plain line, never a blank one.
+func zen(_ json: String) -> AppMessage { return try! JSONDecoder().decode(AppMessage.self, from: Data(json.utf8)) }
+check(zenProblem(zen(#"{"type":"zen","ok":true}"#)) == nil, "zen ok")
+check(zenProblem(zen(#"{"type":"zen","ok":false,"message":""}"#)) == ZEN_OPEN_FAILED, "zen empty message")
+check(zenProblem(zen(#"{"type":"zen","ok":false,"message":"  "}"#)) == ZEN_OPEN_FAILED, "zen blank message")
+check(zenProblem(zen(#"{"type":"zen","ok":false}"#)) == ZEN_OPEN_FAILED, "zen no message")
+check(zenProblem(zen(#"{"type":"zen","ok":false,"message":"Open Zen once, then try again."}"#)) == "Open Zen once, then try again.", "zen own words kept")
+check(zenProblem(zen(#"{"type":"error","message":"EACCES /Users/x"}"#)) == ZEN_OPEN_FAILED, "zen error")
+
 if failed > 0 { exit(1) }
 print("ok")
