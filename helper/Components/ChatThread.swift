@@ -30,6 +30,15 @@ struct ChatThreadView: View {
           ForEach(thread) { b in
             ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil, links: links).id(b.id)
           }
+          // T6 step 2: Stop left the jobs alone. Offer to stop them too, under the stopped line only.
+          let running = model.jobs.filter { $0.isRunning }.count
+          if thread.last?.id == model.stoppedBubble && running > 0 {
+            HStack(spacing: Space.s) {
+              Text(verbatim: jobsStillRunning(running)).font(TypeScale.secondary).foregroundColor(t.ink2)
+              QuietButton("Stop them too", destructive: true) { model.stopRunningJobs() }
+            }
+            .id("jobs")
+          }
           if let q = model.confirms.first {
             ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
               .modifier(PaperBacking())
