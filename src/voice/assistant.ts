@@ -3,6 +3,7 @@
  * `--text` and the Stephen app's typed chat (src/app/server.ts): call command(text, {source, raw}).
  */
 import { newConversationId, newHistoryId } from '../history/store.js';
+import { FAILURE_LINES } from '../lib/claude-failure.js';
 import { claudeFailure, type ClaudeFailure, type ClaudeOutcome, type ModelTimes } from './claude.js';
 import { LIMIT_REACHED, LIMIT_WARNING, type DailyLimit } from './daily-limit.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
@@ -127,16 +128,7 @@ export const RESUME_GONE_MESSAGE = 'That conversation is no longer saved.';
 /** A resumed message a local router answered (timer, memory, job): the earlier chat was not used. */
 export const RESUME_NOT_USED_MESSAGE = 'The earlier chat was not used for this.';
 
-/**
- * R5: the plain line for a failed model run Stephen recognizes. claude_usage_limit keeps the plan limit message (it may
- * hold the reset time); claude_other keeps the run's own message.
- */
-export const FAILURE_LINES: Partial<Record<ClaudeFailure, string>> = {
-  claude_missing: "I can't find Claude Code on this Mac. Run stephen doctor to see how to fix it.",
-  claude_signed_out: 'Claude Code is signed out. Open Terminal, run claude, and sign in again.',
-  claude_busy: 'Claude is busy right now. Try again in a minute.',
-  claude_offline: "I can't reach Claude right now. Check the internet.",
-};
+export { FAILURE_LINES };
 /** Said once per listener run, after the first recognized failure: the local routers do not need Claude. */
 export const LOCAL_STILL_WORKS = 'Timers and memory still work.';
 
