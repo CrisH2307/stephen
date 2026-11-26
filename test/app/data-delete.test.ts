@@ -183,6 +183,8 @@ describe('stephen data delete --all (R10)', () => {
     expect(w.out).toContain('Not deleted:');
     expect(w.out.some((l) => l.includes('Other files in ~/Documents'))).toBe(true);
     expect(w.out.some((l) => l.includes('~/Documents/.env: an old settings file'))).toBe(true);
+    // #397 review: the login item is macOS's, so R10 names it instead of leaving Stephen to start again.
+    expect(w.out.some((l) => l.includes('"Start Stephen at login", if you turned it on: turn it off'))).toBe(true);
   });
 
   it('an old .env outside the Stephen folder is named, kept, and its contents never shown', async () => {

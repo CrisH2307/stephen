@@ -309,6 +309,8 @@ export async function deleteAllData(d: DeleteDeps): Promise<number> {
   for (const f of d.envFiles) {
     if (exists(f)) notDeleted.push(`${show(f)}: an old settings file that may still hold account keys. Delete it yourself if you no longer need it.`);
   }
+  // A login item is macOS's, not a file: R10 cannot turn it off, and it would start Stephen again (#397 review).
+  notDeleted.push('"Start Stephen at login", if you turned it on: turn it off in Stephen\'s Settings, About (or System Settings, General, Login Items), or Stephen starts again at your next login and makes new files.');
   if (notDeleted.length) {
     d.out('Not deleted:');
     for (const l of notDeleted) d.out(`  ${l}`);

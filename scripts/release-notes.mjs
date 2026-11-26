@@ -15,6 +15,8 @@ export function plain(text) {
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links keep their words
     .replace(/`([^`]*)`/g, '$1')
     .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, '$1$2')
+    .replace(/(^|[^\w*])\*([^*\s](?:[^*]*[^*\s])?)\*(?![\w*])/g, '$1$2') // *italics*
+    .replace(/(^|[^\w])_([^_\s](?:[^_]*[^_\s])?)_(?!\w)/g, '$1$2') // _italics_, never snake_case
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -26,10 +28,12 @@ export function releaseNotes(changelog, version) {
   const start = lines.findIndex((l) => new RegExp(`^## \\[?${esc}\\]?(\\s|$)`).test(l));
   if (start < 0) return null;
   const date = /\((\d{4}-\d{2}-\d{2})\)/.exec(lines[start])?.[1];
-  const out = [`Stephen ${version}${date ? ` (${date})` : ''}`];
+  const head = `Stephen ${version}${date ? ` (${date})` : ''}`;
+  // Sections in order; a heading with no bullets is left out, so no label stands alone.
+  const sections = [{ label: null, bullets: [] }];
   let bullet = null;
   const flush = () => {
-    if (bullet !== null) out.push(`- ${plain(bullet)}`);
+    if (bullet !== null) sections.at(-1).bullets.push(`- ${plain(bullet)}`);
     bullet = null;
   };
   for (const l of lines.slice(start + 1)) {
@@ -38,13 +42,15 @@ export function releaseNotes(changelog, version) {
     if (h) {
       flush();
       const key = h[1].trim().toLowerCase();
-      out.push('', `${HEADINGS[key] ?? plain(h[1])}:`);
+      sections.push({ label: `${HEADINGS[key] ?? plain(h[1])}:`, bullets: [] });
     } else if (/^\s*[-*] +/.test(l)) {
       flush();
       bullet = l.replace(/^\s*[-*] +/, '');
     } else if (bullet !== null && l.trim()) bullet += ` ${l.trim()}`; // a wrapped bullet
   }
   flush();
+  const out = [head];
+  for (const sec of sections.filter((x) => x.bullets.length)) out.push(...(sec.label ? ['', sec.label] : []), ...sec.bullets);
   return out.length > 1 ? out.join('\n') : null;
 }
 
