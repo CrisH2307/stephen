@@ -65,6 +65,7 @@ Every commit counts on Cris's GitHub profile, so keep them correct:
 ## Team roles (Cris, 2026-11-25)
 
 - Chat titles are "STATUS | Role | job". Status words: WORKING, INREVIEW, WAITING (needs Cris), DONE, CLOSED. Rename the chat when the status changes.
+- A session title set at start, including a proposed card's title, already uses "STATUS | Role | job". The top lead checks all titles each heartbeat.
 - Every agent has one role, one split task, a list of files it owns and must not touch, and the skills or model that fit. No two agents share files or a task.
 - Every coder reads the code first and follows the ponytail ladder: reuse before adding, smallest correct change, root-cause fixes, one runnable check.
 - Every code PR gets a code review as well as any safety review: `code-review`, `ponytail:ponytail-review`, `simplify`, `test-audit` (Sonnet for normal code, Opus for safety code).
