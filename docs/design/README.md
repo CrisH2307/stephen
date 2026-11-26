@@ -33,7 +33,7 @@ here.
    settings, the window. The **tool server** (`stephen serve`) is the only thing the model can call. A test scans
    the import graph and fails if tool server code could reach the memory, history, app, timer or job code.
 3. **One gate.** Every browser and desktop action and every private read in the tool server goes through the
-   **safety gate**. (One exception, `announce`, only speaks a line and checks taint and the rate limit itself.) It runs
+   **safety gate**. (One exception, `announce`, only speaks a line and checks taint and the rate limit itself, by design (#306).) It runs
    one policy pass over all its rules, such as taint (has the model read something private?), egress (could this
    action leak it?) and the rate limit. Deny beats ask. "Ask" means the owner must click Allow or Deny.
 4. **Local first.** Wake word, speech to text and the simple commands run on the Mac. Only the command, the memory
