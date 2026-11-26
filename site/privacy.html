@@ -5,56 +5,60 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stephen privacy</title>
 <meta name="description" content="What Stephen keeps on your Mac, for how long, and how to delete it.">
+<meta name="theme-color" content="#0F1B33">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><div class="wrap">
-<strong>Stephen</strong>
-<nav aria-label="Main" style="display:flex;gap:18px;flex-wrap:wrap">
-<a href="index.html">Home</a>
-<a href="beta.html">Get the beta</a>
-<a href="privacy.html" aria-current="page">Privacy</a>
-<a href="https://github.com/CrisH2307/stephen">GitHub</a>
-</nav>
-</div></header>
-<main><div class="wrap">
-<h1>Privacy</h1>
-<p class="lede">Stephen has no server. Nothing is sent to us.</p>
-<p>Stephen keeps its data in <code>~/.stephen</code>, in folders and files only you can read, unless your config says otherwise.</p>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap top">
+  <a class="mark" href="index.html"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>Stephen</a>
+  <nav aria-label="Main">
+    <a href="beta.html">Get the beta</a>
+    <a href="privacy.html" aria-current="page">Privacy</a>
+    <a class="gh" href="https://github.com/CrisH2307/stephen">GitHub</a>
+  </nav>
+</header>
 
-<h2>What leaves your Mac</h2>
-<ul>
-<li>The text of your command, and what Stephen reads to answer it (a page, an email), go to Claude through your own Claude account.</li>
-<li>Calls to accounts you connect, such as Gmail or Canvas, are made from your Mac.</li>
-<li>Your audio is not uploaded. The wake word and transcription run on your Mac.</li>
-</ul>
+<main id="main" class="narrow page">
+  <h1>Privacy</h1>
+  <p class="lede">Stephen has no server. Nothing is sent to us.</p>
 
-<h2>What stays on your Mac</h2>
-<div class="table"><table>
-<thead><tr><th>What</th><th>Kept for</th><th>How to delete it</th></tr></thead>
-<tbody>
-<tr><td>Things you asked it to remember</td><td>Until you forget them. At most 30.</td><td>Say "forget ...", or use <code>stephen memory</code></td></tr>
-<tr><td>Memory suggestions</td><td>Until you keep or skip them. At most 20.</td><td>Skip on the Memory page</td></tr>
-<tr><td>Timers and reminders</td><td>Until done or cancelled. At most 20.</td><td>"Cancel the timer"</td></tr>
-<tr><td>Conversation history</td><td>7 days by default. You can set 0 to 30.</td><td><code>stephen history clear</code></td></tr>
-<tr><td>Claude Code transcripts of your commands</td><td>Deleted when the conversation ends</td><td><code>stephen history clear</code></td></tr>
-<tr><td>F5 recordings (off unless you turn them on)</td><td>30 days, at most 100</td><td>Settings, Privacy, or <code>stephen replay delete --all</code></td></tr>
-<tr><td>Speed numbers</td><td>30 days. No words in them.</td><td>Delete the folder</td></tr>
-<tr><td>Crash records</td><td>30 days. No words in them.</td><td>Delete the folder</td></tr>
-<tr><td>Safety audit log</td><td>Rotates at 5 MB, keeps 3 files. Typed text shows as a length only.</td><td>Delete the files</td></tr>
-<tr><td>Job state and logs</td><td>30 days after a job ends</td><td>Deleted after 30 days</td></tr>
-<tr><td>Job output folders in <code>~/Stephen Jobs</code></td><td>Until you delete them</td><td>Delete the folder in Finder</td></tr>
-<tr><td>Passwords and tokens for connected accounts</td><td>In the macOS Keychain until you disconnect. Never shown to the model.</td><td><code>stephen disconnect &lt;account&gt;</code></td></tr>
-</tbody></table></div>
+  <section class="facts" aria-label="In short">
+    <div><h2>Your audio</h2><p>Stays on your Mac. Speech to text runs there.</p></div>
+    <div><h2>Sent to Claude</h2><p>Your request as text, and what Stephen reads to answer it, through your own account.</p></div>
+    <div><h2>Your passwords</h2><p>Stay in the macOS Keychain. Never shown to the model.</p></div>
+  </section>
 
-<h2>Crash reports</h2>
-<p>A crash record holds times, versions and code words only. It holds no words you said, web addresses, page text, names or audio. It is sent only when you run <code>stephen report</code> and type y after reading it.</p>
+  <h2>What stays on your Mac</h2>
+  <p>Everything lives in <code>~/.stephen</code>, readable only by you unless your config says otherwise.</p>
+  <div class="table"><table>
+    <thead><tr><th scope="col">What</th><th scope="col">Kept for</th><th scope="col">How to delete it</th></tr></thead>
+    <tbody>
+      <tr><td>Things you asked it to remember</td><td>Until you forget them. At most 30.</td><td>Say "forget ...", or <code>stephen memory</code></td></tr>
+      <tr><td>Memory suggestions</td><td>Until you keep or skip them. At most 20.</td><td>Skip on the Memory page</td></tr>
+      <tr><td>Timers and reminders</td><td>Until done or cancelled. At most 20.</td><td>"Cancel the timer"</td></tr>
+      <tr><td>Conversation history</td><td>7 days by default. You can set 0 to 30.</td><td><code>stephen history clear</code></td></tr>
+      <tr><td>Claude Code transcripts</td><td>Deleted when the conversation ends</td><td><code>stephen history clear</code></td></tr>
+      <tr><td>F5 recordings, off unless you turn them on</td><td>30 days, at most 100</td><td><code>stephen replay delete --all</code></td></tr>
+      <tr><td>Speed numbers and crash records</td><td>30 days. No words in them.</td><td>Delete the folder</td></tr>
+      <tr><td>Safety audit log</td><td>3 files of 5 MB. Typed text shows as a length only.</td><td>Delete the files</td></tr>
+      <tr><td>Job state and logs</td><td>30 days after a job ends</td><td>Deleted after 30 days</td></tr>
+      <tr><td>Job output in <code>~/Stephen Jobs</code></td><td>Until you delete it</td><td>Delete the folder in Finder</td></tr>
+      <tr><td>Passwords and tokens</td><td>In the Keychain until you disconnect</td><td><code>stephen disconnect &lt;account&gt;</code></td></tr>
+    </tbody>
+  </table></div>
 
-<h2>This website</h2>
-<p>This site is plain pages on GitHub Pages. It has no tracking script and loads nothing from other sites. GitHub, which hosts it, may keep its own server logs.</p>
+  <h2>Crash reports</h2>
+  <p>A crash record holds times, versions and code words only. No words you said, web addresses, page text, names or audio. It is sent only when you run <code>stephen report</code> and type y after reading it.</p>
 
-<p>The source for this page is <a href="https://github.com/CrisH2307/stephen/blob/main/docs/DATA-STORES.md">docs/DATA-STORES.md</a>.</p>
-</div></main>
-<footer><div class="wrap">Stephen is open source under the MIT license. It is not an official Anthropic product.</div></footer>
+  <h2>This website</h2>
+  <p>Plain pages on GitHub Pages. No tracking, no cookies, nothing loaded from other sites. GitHub may keep its own server logs.</p>
+  <p class="small">Source: <a href="https://github.com/CrisH2307/stephen/blob/main/docs/DATA-STORES.md">docs/DATA-STORES.md</a></p>
+</main>
+
+<footer><div class="wrap">
+  <span>Open source under the MIT license. Not an official Anthropic product.</span>
+  <span class="links"><a href="privacy.html">Privacy</a><a href="https://github.com/CrisH2307/stephen">GitHub</a></span>
+</div></footer>
 </body>
 </html>
