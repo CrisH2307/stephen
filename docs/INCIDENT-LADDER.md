@@ -127,7 +127,8 @@ Standing config on Cris's Mac, so Cris installs it himself. The daily caps stay 
 counted from the comments), and launchd never starts a second copy while one is still running.
 
 1. Save this as `~/Library/LaunchAgents/com.stephen.incident-ladder.plist`, with `REPO` replaced by the full path of
-   the Stephen checkout (the folder with `package.json`):
+   a separate Stephen clone kept on `qa` (not the checkout the agents work in), and `USER` by your Mac user name
+   (launchd does not expand `~`). The log stays in your own Library, where no other user can plant a link:
 
    ```xml
    <?xml version="1.0" encoding="UTF-8"?>
@@ -139,8 +140,8 @@ counted from the comments), and launchd never starts a second copy while one is 
      <array><string>/bin/zsh</string><string>-lc</string><string>cd "REPO" &amp;&amp; npm run incident-ladder</string></array>
      <key>StartInterval</key><integer>600</integer>
      <key>RunAtLoad</key><false/>
-     <key>StandardOutPath</key><string>/tmp/stephen-incident-ladder.log</string>
-     <key>StandardErrorPath</key><string>/tmp/stephen-incident-ladder.log</string>
+     <key>StandardOutPath</key><string>/Users/USER/Library/Logs/stephen-incident-ladder.log</string>
+     <key>StandardErrorPath</key><string>/Users/USER/Library/Logs/stephen-incident-ladder.log</string>
    </dict>
    </plist>
    ```
@@ -148,11 +149,13 @@ counted from the comments), and launchd never starts a second copy while one is 
    `zsh -l` loads Cris's own PATH, so `node`, `npm`, `gh` and `claude` are found as in Terminal. To use the free first
    level, add `export INCIDENT_L1_MODEL=gpt-oss-120b; ` before `cd` (see #367).
 2. Turn it on: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stephen.incident-ladder.plist`
-3. Check it: `tail /tmp/stephen-incident-ladder.log` after 10 minutes. With no incident it prints
+3. Check it: `tail ~/Library/Logs/stephen-incident-ladder.log` after 10 minutes. With no incident it prints
    `No open incident issues from an allowed author.`
 4. Turn it off: `launchctl bootout gui/$(id -u)/com.stephen.incident-ladder`
 
-The script builds from the checkout it runs in and reads `origin/qa`, so keep that checkout on `qa` or `main`.
+The script builds from the clone it runs in and reads `origin/qa`. Use a separate clone for the timer (for example
+`git clone https://github.com/CrisH2307/stephen ~/stephen-ladder`, then `git checkout qa` there and `npm install` once),
+so an agent's branch in the shared checkout never runs on the timer.
 
 ## Needs Cris's OK
 
