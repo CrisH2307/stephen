@@ -585,6 +585,8 @@ export class JobManager {
       web: plan.web,
       sessionId: randomUUID(),
       ...(plan.repo ? { repo: plan.repo } : {}),
+      // R9 L2: the folder or branch was copied from an earlier job; the prompt says so.
+      ...(plan.edit ? { earlier: true } : {}),
     };
     const f = jobFiles(metaDir);
     const now = this.now();

@@ -12,8 +12,9 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { AppServer } from '../../src/app/server.js';
 import { COPY_GONE, COPY_MAX_FILES, COPY_TOO_BIG, EDIT_STOP_FIRST, copyJobFolder, type GitFn } from '../../src/jobs/manager.js';
 import { JobRouter } from '../../src/jobs/router.js';
-import { EDIT_RECORD_HEAD, EDIT_REQUEST_MAX, EDIT_REQUEST_TOO_LONG, TASK_MAX, editedTask, requestOf } from '../../src/jobs/spec.js';
+import { EDIT_RECORD_HEAD, EDIT_REQUEST_MAX, EDIT_REQUEST_TOO_LONG, TASK_MAX, editedTask, jobFiles, requestOf } from '../../src/jobs/spec.js';
 import { parseJobState, readJobState, statePath, writeJobState, type JobState } from '../../src/jobs/state.js';
+import { readPrivateJsonFile } from '../../src/lib/fs.js';
 import type { ConfirmPrompt } from '../../src/types.js';
 import { appJobs, jobVersions } from '../../src/voice/job-rows.js';
 import { TestClient } from '../app/helpers.js';
@@ -671,4 +672,22 @@ describe('jobs.edit over app.sock: the window only', () => {
     expect(await w.request({ id: 'e2', type: 'jobs.edit', jobId: `${TODAY}-x`, text: 'a'.repeat(501) })).toMatchObject({ type: 'error', message: expect.stringMatching(/too long/) });
     expect(s.d.shown).toEqual([]);
   });
+});
+
+describe('R9 L2: an edited job says it starts from an earlier job\'s files (src/jobs/manager.ts)', () => {
+  const specOf = (h: Harness, id: string) => {
+    const r = readPrivateJsonFile(jobFiles(join(h.home, 'jobs', id)).spec);
+    if (!('state' in r)) throw new Error('no spec.json');
+    return (r.state as { spec: { earlier?: boolean; task: string } }).spec;
+  };
+
+  it('the edit\'s spec is marked earlier (its prompt will say the files are data); a new job\'s is not', async () => {
+    const h = harness(tmp);
+    const old = await oldJob(h, 'write my lab report draft');
+    const d = dialog('approved');
+    const r = await new JobRouter({ jobs: h.manager, confirmer: d.confirmer }).editJob(old.id, 'write my lab report draft for SOFE 3980');
+    if ('refused' in r) throw new Error(r.refused);
+    expect(specOf(h, r.id).earlier).toBe(true);
+    expect(specOf(h, old.id).earlier).toBeUndefined();
+  }, 60_000);
 });

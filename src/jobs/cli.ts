@@ -12,6 +12,7 @@ import { clean } from '../safety/text.js';
 import { parseJobsConfig } from './config.js';
 import { JobManager, jobIdArg } from './manager.js';
 import { runSupervisor } from './runner.js';
+import { cleanJobOutput } from './spec.js';
 import { isFinal, purgeJobs, type JobState } from './state.js';
 
 export const JOBS_HELP = `stephen jobs: background jobs ("Stephen, start a job to …"; each one asks in a dialog first)
@@ -112,13 +113,16 @@ export async function runJobsCli(argv: string[], e: JobsCliEnv = {}): Promise<nu
   }
   if (cmd === 'show') {
     const summaryFile = join(j.cwd, 'SUMMARY.md');
+    // R9 J2: the summary is job output, read from pages (rule 6). It is framed like the other untrusted text, so an
+    // agent that reads this command's output through its shell sees it as data (cleanJobOutput escapes any <untrusted_ tag).
+    const summary = cleanJobOutput(j.summary, 2000);
     out(
       [
         `${j.id}: ${j.status}`,
         `Folder: ${j.folder}`,
         ...(existsSync(summaryFile) ? [`Summary file: ${summaryFile}`] : []),
         'Summary (written by the job, so check it; links and codes are hidden):',
-        j.summary ? `  ${clean(j.summary, 2000)}` : '  (none yet)',
+        summary ? `<untrusted_job_output>\n${summary}\n</untrusted_job_output>` : '(none yet)',
       ].join('\n'),
     );
     return 0;

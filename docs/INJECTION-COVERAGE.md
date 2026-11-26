@@ -10,7 +10,7 @@ Tests named "eval" are `inject` cases in `src/eval/cases.ts`. They run the real 
 ## Summary
 
 - **Covered in CI, no protection gap:** Gmail, Notion, Canvas announcements, memory proposals, job task
-  from the wake word or phone (L1), job output summary (no model path found).
+  from the wake word or phone (L1).
 - **Covered in CI:** web page text (snapshot, read_text, find), tab titles, page titles, dialog text. They share one
   wrapper. W1 and W1b (lookalike closing tags) are fixed (#361). The screenshot result URL gap (M1) is fixed (#353).
 - **Coverage gaps (protection exists, no test in CI or eval only):** calendar and Canvas framing (tests added with R9),
@@ -19,8 +19,8 @@ Tests named "eval" are `inject` cases in `src/eval/cases.ts`. They run the real 
 - **Real protection gaps (a test shows the gap, it.fails):** none open. Fixed: W1 and W1b (lookalike closing tags
   in every wrapped text, #361), R1 (resume quote escapes `<untrusted_`, #348), M1 (the screenshot page URL is inside
   the untrusted block, #353).
-- **Open fix PRs:** J2 and L2 (job summary and edited-job files framed as data, #364).
-- **Design gap, todo only:** L2 (an edited job reads the old job's files, which may hold web-read text, with no frame).
+- **Fixed in #364:** J2 (`stephen jobs show` prints the job summary inside `<untrusted_job_output>`) and L2 (an edited
+  job's prompt says the earlier job's files are data). Tests: `test/injection/job-frames.test.ts`.
 - **Not built yet:** incident issue text (ADR-014 phase 2), job output frame (needed once output or files reach a
   model), untrusted memory origins (only needed when they exist).
 
@@ -69,12 +69,12 @@ Each fix changes code under `src/` and needs `[DEV REVIEW]` and an independent r
 3. **M1, page URL in the screenshot result. FIXED in #353.** File: `src/server/tools.ts` (the screenshot result text at line 631).
    Proposed fix: move the URL inside a `wrapUntrusted` block, or print only the reduced URL (`reduceUrl`, as the private
    tab line does). Test to flip: `test/injection/web-text.test.ts` ("gap M1"), from `it.fails` to `it`.
-4. **L2, files of an edited job. Open fix: #364.** Files: `src/jobs/manager.ts` (edit branch at lines 392-405, worktree cut at 527-531,
+4. **L2, files of an edited job. Fixed in #364.** Files: `src/jobs/manager.ts` (edit branch at lines 392-405, worktree cut at 527-531,
    folder copy at 535-560), `src/jobs/spec.ts` (`framedTask`, `jobPersona`). Proposed fix: in the new job's prompt, mark
    the copied or branch files as earlier work that may hold third-party text, and state in the dialog that the edited
    job starts from the old job's output. Or start a clean folder and carry only the owner's words. Test to add:
    `it.todo` "gap L2" in `test/injection/planned.test.ts`, then a real test.
-5. **J2, job summary printed by the CLI. Open fix: #364.** File: `src/jobs/cli.ts:121`. Proposed fix: wrap the printed summary in
+5. **J2, job summary printed by the CLI. Fixed in #364.** File: `src/jobs/cli.ts:121`. Proposed fix: wrap the printed summary in
    `wrapUntrusted`, or make the command output owner-only and say so in its help text, so an agent cannot read it as a
    tool result. Needs `[DEV REVIEW]`.
 
@@ -86,7 +86,7 @@ L2 must be fixed first.
 ## Planned, not built
 
 - Job output frame: `it.todo` in `test/injection/planned.test.ts`.
-- Edited job files (L2): `it.todo` in the same file.
+- Edited job files (L2): real tests in `test/injection/job-frames.test.ts` (#364).
 - Untrusted memory origins refuse imperative text: `it.todo` in the same file. Needed before any email, canvas or web
   origin is added (SYSTEM-DESIGN 4.15).
 - Incident issue text parser (ADR-014 phase 2): `it.todo` in the same file. The parser must keep code words and numbers
