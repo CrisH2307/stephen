@@ -3,6 +3,7 @@
  * `io` seam. No real network, no real gh, no real model. Needs `npm run build` (the script reads its rules from dist/).
  */
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ALLOWED_AUTHOR_IDS } from '../../src/telemetry/incident-ladder.js';
 import { parseIncidentRecord } from '../../src/telemetry/incidents.js';
@@ -189,5 +190,10 @@ describe('free levels first (docs/design/INCIDENT-LADDER-FREE-FIRST.md)', () => 
     expect(opts.env!.GH_TOKEN).toBeUndefined();
     expect(opts.env!.OPENCODE_CONFIG!.startsWith(opts.env!.XDG_CONFIG_HOME!)).toBe(true);
     expect(opts.cwd).toMatch(/l1b-[^/]+\/cwd$/);
+    expect(opts.env!.HOME).not.toBe(homedir());
+    expect(opts.cwd!.startsWith(opts.env!.HOME!)).toBe(true);
+    expect(opts.env!.XDG_DATA_HOME!.startsWith(opts.env!.HOME!)).toBe(true);
+    for (const k of ['OPENCODE_DISABLE_CLAUDE_CODE', 'OPENCODE_DISABLE_CLAUDE_CODE_PROMPT', 'OPENCODE_DISABLE_CLAUDE_CODE_SKILLS', 'OPENCODE_DISABLE_PROJECT_CONFIG'])
+      expect(opts.env![k]).toBe('1');
   });
 });
