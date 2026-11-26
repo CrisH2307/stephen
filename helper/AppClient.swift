@@ -63,6 +63,11 @@ struct ChatStep: Decodable, Equatable {
   let status: String
 }
 
+/// T6: the line after Stop. A tool that already ran (a click, typed text) can't be taken back, so say so.
+func stoppedLine(tools: [String], steps: [ChatStep]) -> String {
+  return tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."
+}
+
 struct HistoryDay: Identifiable {
   /** Day key, e.g. "2026-11-01" (local time). */
   let id: String
@@ -484,7 +489,11 @@ final class AppModel: ObservableObject {
     }
     let outcome = msg.outcome ?? "ok"
     var reply = msg.reply ?? ""
-    if reply.isEmpty && outcome == "cancelled" { reply = "Stopped." }
+    // T6: a stopped command is one grey line, in words. A step that already ran can't be taken back.
+    if reply.isEmpty && outcome == "cancelled" {
+      addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])
+      return
+    }
     if reply.isEmpty { reply = "(no reply)" }
     let steps = msg.steps ?? []
     var detailParts: [String] = []
