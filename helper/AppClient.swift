@@ -226,6 +226,8 @@ final class AppModel: ObservableObject {
   }
 
   var isWorking: Bool { return state == "working" || !awaitingReplies.isEmpty }
+  /// T6: Stop is offered while Stephen works or speaks (chat.stop also cuts a spoken reply short).
+  var canStop: Bool { return isWorking || state == "speaking" }
 
   private func connect() {
     if connection == .connecting { return }

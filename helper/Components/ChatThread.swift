@@ -40,10 +40,10 @@ struct ChatThreadView: View {
                   .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
               )
               .id("confirm")
-          } else if model.isWorking {
+          } else if model.canStop {
             // T6: a visible Stop (Esc still works). It sends chat.stop only; running jobs keep going.
             HStack(spacing: Space.s) {
-              Text(verbatim: "Working…").font(TypeScale.secondary).foregroundColor(t.ink2)
+              Text(verbatim: model.isWorking ? "Working…" : "Speaking…").font(TypeScale.secondary).foregroundColor(t.ink2)
                 .accessibilityLabel("Working. Press Escape to stop.")
               QuietButton("Stop", symbol: "stop.fill") { model.stopChat() }.accessibilityLabel("Stop Stephen")
             }
