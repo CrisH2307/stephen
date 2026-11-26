@@ -593,6 +593,11 @@ func makePrivateDir(_ path: String, mode: mode_t = 0o700) throws {
       throw HelperFailure("mkdir \(prefix): \(errnoText())")
     }
   }
+  // lstat, not stat: a link in place of the folder must never get its target's permissions changed (#392 review).
+  var st = stat()
+  guard lstat(path, &st) == 0 else { throw HelperFailure("lstat \(path): \(errnoText())") }
+  guard (st.st_mode & S_IFMT) == S_IFDIR else { throw HelperFailure("\(path) is a link or not a folder; not using it") }
+  guard st.st_uid == getuid() else { throw HelperFailure("\(path) belongs to another user; not using it") }
   if chmod(path, mode) != 0 { throw HelperFailure("chmod \(path): \(errnoText())") }
 }
 
