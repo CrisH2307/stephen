@@ -6,14 +6,14 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { INCIDENT_CODES, incidentDir, readIncidents } from '../../src/telemetry/incidents.js';
 import { LatencyMonitor } from '../../src/telemetry/latency.js';
 import { Assistant, FAILURE_LINES, LOCAL_STILL_WORKS, type CommandReport } from '../../src/voice/assistant.js';
-import { CLAUDE_FAILURES, claudeFailure, claudeNotFound, parseClaudeOutput, type ClaudeOutcome } from '../../src/voice/claude.js';
+import { CLAUDE_FAILURES, claudeFailure, CLAUDE_NOT_FOUND, parseClaudeOutput, type ClaudeOutcome } from '../../src/voice/claude.js';
 import { RecordingChimes, RecordingSpeaker } from './helpers.js';
 
 const result = (subtype: string, text: string) => JSON.stringify({ type: 'result', subtype, is_error: true, result: text, session_id: null });
 
 /** What a fake claude prints for each case (stdout, exit code, stderr), as the runner hands it to parseClaudeOutput. */
 const FAKE: [string, () => ClaudeOutcome, string][] = [
-  ['claude_missing', () => ({ kind: 'error', message: claudeNotFound('claude'), sessionId: null }), 'spawn ENOENT'],
+  ['claude_missing', () => ({ kind: 'error', message: CLAUDE_NOT_FOUND, sessionId: null }), 'spawn ENOENT'],
   ['claude_signed_out', () => parseClaudeOutput('', 1, 'Error: not logged in. Please run /login\n'), 'no result, signed out'],
   ['claude_signed_out', () => parseClaudeOutput(result('error_during_execution', 'Invalid API key · Please run /login'), 1), 'result, invalid key'],
   ['claude_usage_limit', () => parseClaudeOutput(result('error_during_execution', 'Usage limit reached · limit resets 3pm'), 1), 'plan limit'],

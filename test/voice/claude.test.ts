@@ -9,7 +9,8 @@ import {
   DISALLOWED_TOOLS,
   LOCKDOWN_ARGS,
   buildClaudeArgs,
-  claudeNotFound,
+  CLAUDE_NOT_FOUND,
+  CLAUDE_START_FAILED,
   claudeSpawnOptions,
   mcpConfig,
   parseClaudeOutput,
@@ -349,11 +350,30 @@ describe('ClaudeRunner with a fake claude', () => {
     expect(await g.runner.run('x')).toEqual({ kind: 'error', message: "Claude Code didn't return a result (exit code 1).", sessionId: null });
   });
 
-  it('reports a missing claude binary clearly', async () => {
-    const runner = new ClaudeRunner({ ...settings, claudePath: join(tmp, 'no-such-claude'), cwd: tmp });
-    const r = await runner.run('x');
-    expect(r).toMatchObject({ kind: 'error' });
-    expect((r as { message: string }).message).toMatch(/Claude Code was not found/);
+  it('reports a missing claude binary clearly; the path is in the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const runner = new ClaudeRunner({ ...settings, claudePath: join(tmp, 'no-such-claude'), cwd: tmp });
+      expect(await runner.run('x')).toMatchObject({ kind: 'error', message: CLAUDE_NOT_FOUND });
+      expect(spy.mock.calls.flat().join('\n')).toContain('no-such-claude');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('R7: a spawn that throws says one plain sentence; the raw reason is in the log only', async () => {
+    const raw = 'EACCES: permission denied, /Users/x/secret';
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const spawnFn: SpawnFn = () => {
+        throw new Error(raw);
+      };
+      const runner = new ClaudeRunner({ ...settings, cwd: tmp, spawn: spawnFn });
+      expect(await runner.run('x')).toEqual({ kind: 'error', message: CLAUDE_START_FAILED, sessionId: null });
+      expect(spy.mock.calls.flat().join('\n')).toContain(raw);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('one helper gives the spawn options for both wrappers: scrubbed env, own group, no shell (#202 B1)', () => {
@@ -362,7 +382,7 @@ describe('ClaudeRunner with a fake claude', () => {
       const o = claudeSpawnOptions({ cwd: tmp, env }, stdin);
       expect(o).toEqual({ cwd: tmp, env: { PATH: '/bin' }, stdio: [stdin, 'pipe', 'pipe'], detached: true, shell: false });
     }
-    expect(claudeNotFound('/x/claude')).toBe('Claude Code was not found ("/x/claude"). Install it, or set "voice": {"claudePath": "…"}.');
+    expect(CLAUDE_NOT_FOUND).toBe('Claude Code was not found. Install it, or set "voice": {"claudePath": "…"}.');
   });
 
   it.each(['hang', 'hang-stubborn'])('cancel kills the whole process group (%s)', async (mode) => {
