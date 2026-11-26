@@ -111,7 +111,7 @@ A full page of what Stephen knows about you, kept up to date from your chats and
   show as New items to Keep.
 - **Safety (unchanged rule: the model never writes memory)**: Stephen only *proposes*; nothing is saved until you
   press Keep or Edit. Proposals from third-party text (email, Canvas, web) are labelled with their source.
-- Data: existing `memory.list` / `memory.add` / `memory.forget`, plus new `memory.graph` (nodes, links, kinds),
+- Data: existing `memory.list` / `memory.update` / `memory.forget`, plus new `memory.graph` (nodes, links, kinds),
   `memory.suggestions`, `memory.keep` / `memory.skip`, `memory.usage` (bytes used / budget).
 
 ## 8. Settings
