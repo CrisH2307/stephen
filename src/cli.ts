@@ -259,6 +259,11 @@ async function doctor(network = false, json = false): Promise<number> {
     add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
   }
 
+  const dropped = (await import('./voice/claude.js')).droppedEndpointEnv(process.env);
+  if (dropped.length) {
+    add({ ok: true, info: true, label: 'Claude endpoint', detail: `${dropped.join(', ')} set in this shell: Stephen does not pass it to Claude (voice, phone or jobs). A proxy set only in the shell is not used, so on a network that needs one, Claude cannot connect.` });
+  }
+
   const homeInfo = resolveStephenHome();
   if (homeInfo.legacy) {
     add({ ok: true, info: true, label: 'Home folder', detail: legacyHomeNotice(homeInfo.dir) });
@@ -377,8 +382,9 @@ async function doctor(network = false, json = false): Promise<number> {
 
     for (const c of await helperDoctorChecks(cfg.home)) add(c);
 
+    const claudeEnv = (await import('./lib/claude-env.js')).withoutSecrets(process.env);
     const claudeVersion = await new Promise<string | null>((res) => {
-      execFile(String(((cfg as Partial<HubConfig>).voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
+      execFile(String(((cfg as Partial<HubConfig>).voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { env: claudeEnv, timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
     });
     add((await import('./voice/claude.js')).claudeVersionCheck(claudeVersion));
 

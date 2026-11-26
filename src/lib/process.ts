@@ -3,15 +3,17 @@ import { execFile, execFileSync, type ExecFileException } from 'node:child_proce
 
 /**
  * Run a program with execFile (no shell). Never rejects. `code` is the exit code, 0 on success,
- * null when the program failed without one (could not start, killed by the timeout).
+ * null when the program failed without one (could not start, killed by the timeout). `env`: the child's whole
+ * environment (default: this process's).
  */
 export function execNoThrow(
   file: string,
   args: string[],
   timeoutMs: number,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ code: number | null; stdout: string; stderr: string; error: ExecFileException | null }> {
   return new Promise((resolve) => {
-    execFile(file, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+    execFile(file, args, { timeout: timeoutMs, ...(env ? { env } : {}) }, (err, stdout, stderr) => {
       const code = err ? (typeof err.code === 'number' ? err.code : null) : 0;
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), error: err });
     });

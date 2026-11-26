@@ -158,7 +158,8 @@ describe('R7-12: the voice Claude does not inherit a parent Claude Code session'
       ANTHROPIC_API_KEY: 'k',
       NOTION_API: 'secret',
     });
-    expect(env).toEqual({ PATH: '/bin', HOME: '/h', CLAUDE_CODE_OAUTH_TOKEN: 'tok', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CONFIG_DIR: '/cfg', ANTHROPIC_API_KEY: 'k' });
+    // CLAUDE_CONFIG_DIR '/cfg' is not inside the home folder, so it is dropped (R23 review L1, test/voice/anthropic-env.test.ts).
+    expect(env).toEqual({ PATH: '/bin', HOME: '/h', CLAUDE_CODE_OAUTH_TOKEN: 'tok', CLAUDE_CODE_USE_BEDROCK: '1', ANTHROPIC_API_KEY: 'k' });
     for (const k of KEPT_CLAUDE_CODE_ENV) expect(k).toMatch(/^CLAUDE_CODE_(OAUTH_TOKEN|USE_|SKIP_|CLIENT_)/);
   });
 });

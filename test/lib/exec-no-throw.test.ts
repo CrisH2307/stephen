@@ -15,6 +15,11 @@ describe('execNoThrow', () => {
     expect(r.stderr).toBe('bad');
   });
 
+  it('passes the given env as the whole environment of the child', async () => {
+    const r = await execNoThrow(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(Object.keys(process.env).filter((k) => k.startsWith("R23_"))))'], 10_000, { R23_KEEP: '1' });
+    expect(JSON.parse(r.stdout)).toEqual(['R23_KEEP']);
+  });
+
   it('never rejects when the program is missing: code null, ENOENT', async () => {
     const r = await execNoThrow('/no/such/program-202', [], 10_000);
     expect(r.code).toBeNull();
