@@ -50,6 +50,9 @@ export interface ZenResult {
   message: string;
 }
 
+/** R7: the plain sentence for a failed zen.open. The launcher's own output goes to the log only. */
+export const ZEN_OPEN_FAILED = "Couldn't open Zen for Stephen. If Zen is already open, quit it, then try again.";
+
 /** What AppServer calls for phone.on, phone.off, zen.open and doctor.run. */
 export interface AppControl {
   phoneOn(): Promise<PhoneResult>;
@@ -126,7 +129,10 @@ export function appControl(o: AppControlOptions): AppControl {
 
     async openZen() {
       const r = await run(['zen-launch']);
-      return { ok: r.code === 0, message: clean(`${r.stdout}\n${r.stderr}`.trim(), 2000) };
+      const out = clean(`${r.stdout}\n${r.stderr}`.trim(), 2000);
+      if (r.code === 0) return { ok: true, message: out };
+      log(`zen-launch: exit ${r.code}: ${out}`); // R7: the launcher's raw words go to the log only
+      return { ok: false, message: ZEN_OPEN_FAILED };
     },
 
     async doctor() {
