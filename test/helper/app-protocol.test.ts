@@ -1144,10 +1144,25 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(control).toContain('p.arguments = [info.cli, "voice-setup", "--json-progress"]');
     expect(control).toContain('let MODEL_EVENTS: Set<String> = ["downloading", "extracting", "installed", "done", "failed"]');
     expect(control.match(/p\.standardError = FileHandle\.nullDevice/g)?.length).toBeGreaterThanOrEqual(2);
-    for (const e of ['downloading', 'extracting', 'installed', 'failed']) expect(sheet).toContain(`case "${e}": return "`);
+    for (const e of ['downloading', 'extracting', 'installed']) expect(sheet).toContain(`case "${e}": return "`);
+    expect(sheet).toContain('default: return "The download stopped. Check the internet, then press Retry.');
     expect(sheet).toContain('Text(verbatim: modelSetupLine(models, progress))');
     expect(sheet).toContain('PrimaryButton(progress?.event == "failed" ? "Retry" : "Download")');
-    expect(sheet).toContain('.frame(width: 560, height: 540'); // fits the 860 x 640 minimum window
+    expect(sheet).toContain('.frame(width: 560, height: 560'); // fits the 860 x 640 minimum window (scrolls inside)
+  });
+
+  it('F9c: permissions are read from macOS, Run setup again reopens the sheet, one download per helper, its own line per failure', () => {
+    const sheet = read('OnboardingSheet.swift');
+    const control = read('StephenControl.swift');
+    for (const k of ['Privacy_Microphone', 'Privacy_ListenEvent', 'Privacy_Accessibility']) expect(sheet).toContain(k);
+    expect(sheet).toContain('AVCaptureDevice.authorizationStatus(for: .audio) == .authorized');
+    expect(sheet).toContain('case "input": return CGPreflightListenEventAccess()');
+    for (const r of ['keywords', 'busy', 'config']) expect(sheet).toContain(`case "${r}": return "`);
+    expect(control).toContain('let MODEL_FAIL_REASONS: Set<String> = ["download", "keywords", "busy", "config"]');
+    expect(control).toContain('if setupWatchers.count > 1 {');
+    expect(read('SettingsPage.swift')).toContain('QuietButton("Run setup again") { UserDefaults.standard.set(false, forKey: "onboarded") }');
+    expect(read('MainWindow.swift')).toContain('.onChange(of: onboarded) { if !$0 { showSetup = true } }');
+    expect(read('Info.plist')).toContain('NSMicrophoneUsageDescription'); // requestAccess needs it, or the app quits
   });
 
   it('#189: Settings uses the Mac controls: every switch shows its label on the theme accent, no StephenSwitch', () => {
