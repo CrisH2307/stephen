@@ -20,7 +20,8 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { type Socket, createConnection } from 'node:net';
 import { LineFramer, encodeCommand, parseHelperLine } from './framing.js';
-import { helperAppPath, helperLogPath, helperSocketPath } from './paths.js';
+import { readPrivateJsonFile } from '../lib/fs.js';
+import { helperAppPath, helperLogPath, helperNoncePath, helperSocketPath } from './paths.js';
 import type { HelperCommand, HelperEvent } from './protocol.js';
 
 export type HelperEventType = HelperEvent['type'];
@@ -240,6 +241,12 @@ export class HelperClient implements IHelperClient {
       socket.on('error', (e: NodeJS.ErrnoException) => {
         settle({ ok: false, reason: e.code ?? e.message });
       });
+      // F15: the first line is the helper's per-launch nonce, or the helper drops this client before its hello.
+      socket.once('connect', () => {
+        const nonce = readHelperNonce(this.socketPath);
+        if (nonce) socket.write(`${JSON.stringify({ type: 'auth', nonce })}\n`);
+        else this.opts.log(`no readable ${helperNoncePath(this.socketPath)}: the helper will refuse this connection`);
+      });
       socket.on('close', () => {
         settle({ ok: false, reason: 'connection closed before hello' });
         if (this.conn === conn) this.onDrop(conn);
@@ -340,6 +347,13 @@ function safe(fn: () => void, log: (l: string) => void): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** The nonce from helper.nonce (0600, this user's, never a link), or null. */
+export function readHelperNonce(socketPath: string): string | null {
+  const r = readPrivateJsonFile(helperNoncePath(socketPath), 1024);
+  const n = 'state' in r ? (r.state as { nonce?: unknown } | null)?.nonce : null;
+  return typeof n === 'string' && /^[0-9a-f]{64}$/.test(n) ? n : null;
 }
 
 /**
