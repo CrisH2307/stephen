@@ -80,6 +80,7 @@ describe('stephen report --week', () => {
     expect(s.days.find((d) => d.day === '2026-11-26')!.jobUsd).toBe(1.5);
     expect(s.days.find((d) => d.day === '2026-11-23')!.jobUsd).toBe(2);
     expect(formatWeekly(s)).toContain('job cost 3.50 USD');
+    expect(formatWeekly(s)).toContain('  2026-11-26: commands 0, failed 0, jobs 0, model 0.00 USD, job 1.50 USD'); // labelled for a friend
   });
 
   it('a version that is not digits and dots shows as unknown', () => {

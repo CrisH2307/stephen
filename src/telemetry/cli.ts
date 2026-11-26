@@ -374,8 +374,8 @@ export function formatWeekly(s: WeeklySummary): string {
     time('Local commands, speech to reply', s.local),
     time('Model commands, speech to reply', s.model),
     `Incidents: ${Object.keys(s.incidents).length ? counts(Object.fromEntries(Object.entries(s.incidents).sort(([a], [b]) => a.localeCompare(b)))) : 'none'}`,
-    'Per day (commands, failed, jobs, cost USD, job cost USD):',
-    ...s.days.map((d) => `  ${d.day}  ${d.commands}  ${d.failed}  ${d.jobs}  ${d.usd.toFixed(2)}  ${d.jobUsd.toFixed(2)}`),
+    'Per day:',
+    ...s.days.map((d) => `  ${d.day}: commands ${d.commands}, failed ${d.failed}, jobs ${d.jobs}, model ${d.usd.toFixed(2)} USD, job ${d.jobUsd.toFixed(2)} USD`),
   ].join('\n');
 }
 
