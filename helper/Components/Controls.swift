@@ -60,7 +60,7 @@ private struct ButtonFace: ViewModifier {
   let fill: Color?
   func body(content: Content) -> some View {
     if t.paper {
-      content.paperBox(t, fill: fill ?? t.surface, radius: 999, pop: 3)
+      content.paperBox(t, fill: fill ?? t.surface, shape: Capsule(), pop: 3)
     } else if let fill {
       content.background(RoundedRectangle(cornerRadius: Corner.button).fill(fill))
     } else {
