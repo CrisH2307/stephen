@@ -5,6 +5,7 @@ import { HubError, errorMessage, isHubError } from '../errors.js';
 import { timed } from '../lib/step-timer.js';
 import { parseRef } from '../refs.js';
 import { buildConfirmer } from '../safety/confirm.js';
+import { hostOf } from '../safety/domains.js';
 import { redactValue, wrapUntrusted, type ElicitFn, type SafetyDeps } from '../safety/index.js';
 import type {
   ActionKind,
@@ -755,14 +756,6 @@ function originOf(url: string): string {
   try {
     const u = new URL(url);
     return u.origin !== 'null' ? u.origin : `${u.protocol}…`;
-  } catch {
-    return '';
-  }
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
   } catch {
     return '';
   }
