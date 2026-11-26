@@ -4,8 +4,9 @@ Cris liked the student look of the new website (#323) and asked for it in the ap
 
 ## What it is
 
-- A sixth theme, **Paper**, next to Light, Dark, Navy, Rose and Sun. Navy and the others do not change.
-  Pick it in Settings > Appearance or with "Theme: Paper" in the ⌘K palette.
+- A sixth theme, **Paper**, next to Light, Dark, Navy, Rose and Sun. The others do not change.
+- Paper is the default (Cris's call): a new install, or anyone who never saved a theme, starts in Paper.
+  A theme someone already picked is kept. Navy and the rest stay in Settings > Appearance and the ⌘K palette.
 - The colours are the website's (`site/style.css`): paper ground `#FBF8F1`, ink `#15151A`, ink-2 `#4A4A57`,
   blue buttons `#1F4FC4`, a lavender Ask box `#E7E1FF`, a pale blue details block `#D9ECFF`, and the one yellow
   (`#FFF1B8`, a softer step of the site's `#FFD84D`) for a selected row.
@@ -18,7 +19,8 @@ Cris liked the student look of the new website (#323) and asked for it in the ap
 All in `Theme.swift` tokens plus small `if t.paper` branches, so other themes draw exactly as before:
 
 - The Ask box card (`AskBox.swift`): lavender, ink edge, hard shadow, and a "Stephen" title in the strip.
-- The question card (`ChatThread.swift`, `ConfirmMessage`): white, the details in a pale blue block.
+- The question card (`ChatThread.swift`): the card itself, its fill and its 1.5 pt warn outline, is the same in every
+  theme (a safety test guards it). Paper only adds a hard ink block behind it, and the details in a pale blue block.
 - Buttons and the ask field (`Components/Controls.swift`): these are shared, so Paper's main window gets the
   pill buttons and outlined field too.
 
@@ -29,7 +31,7 @@ All in `Theme.swift` tokens plus small `if t.paper` branches, so other themes dr
 - Allow is never the default: no default key, no extra size, no extra shadow. Allow and Deny now share one width
   (76 pt minimum, in every theme) and the same edge and shadow. As in every theme, Allow is the filled button and Deny the outlined one; nothing
   else sets Allow apart.
-- The question card keeps its warn outline (#139), at 2 pt in Paper, so it still stands apart from the other
+- The question card keeps its 1.5 pt warn outline (#139) in every theme, Paper too, so it stands apart from the
   ink-edged cards. The "Needs your OK" label stays.
 
 ## Accessibility
@@ -43,4 +45,3 @@ All in `Theme.swift` tokens plus small `if t.paper` branches, so other themes dr
 
 - No dot grid: the Ask box floats over other apps, and a grid on lavender is busy. It could go on Home's ground later.
 - No press animation on buttons (the site has one). Add it later behind Reduce Motion if Cris wants it.
-- Paper is not the default theme. That is Cris's call.
