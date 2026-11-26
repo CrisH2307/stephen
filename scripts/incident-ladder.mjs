@@ -31,14 +31,15 @@ import {
   LADDER_RUNS_PER_ISSUE_PER_DAY,
   ladderPrompt,
   ladderRunsToday,
-  ladderSettings,
   markerFor,
   nextLevel,
   parseModelJson,
   pickL1Model,
   QA_REF,
   resolves,
+  withHomeDeny,
 } from '../dist/telemetry/incident-ladder.js';
+import { jobSettings } from '../dist/jobs/spec.js';
 
 const REPO = 'CrisH2307/stephen';
 const [OWNER, NAME] = REPO.split('/');
@@ -129,7 +130,8 @@ async function handleIssue(issue, comments, budget, today) {
     await rm(tar, { force: true });
     await rm(join(copy, 'test', 'fixtures'), { recursive: true, force: true });
     const settingsFile = join(meta, 'settings.json');
-    await writeFile(settingsFile, JSON.stringify(ladderSettings(join(homedir(), '.stephen'), ROOT)), { mode: 0o600 });
+    const settings = withHomeDeny(jobSettings({ stephenHome: join(homedir(), '.stephen'), stephenRepo: ROOT }));
+    await writeFile(settingsFile, JSON.stringify(settings), { mode: 0o600 });
 
     const fileOk = (p) => {
       try {
