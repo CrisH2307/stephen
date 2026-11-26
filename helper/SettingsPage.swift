@@ -494,6 +494,9 @@ private struct AboutSettingsPane: View {
   var body: some View {
     Form {
       Section {
+        FormRow("First-run setup", detail: "Check Claude Code, the voice models and the Mac permissions again.") {
+          QuietButton("Run setup again") { UserDefaults.standard.set(false, forKey: "onboarded") }
+        }
         FormRow("Config file", detail: model.configPath ?? "unknown") {
           QuietButton("Open") { openConfigFile(model.configPath) }
         }

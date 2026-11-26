@@ -139,6 +139,7 @@ private struct MainWindowView: View {
     .frame(minWidth: WindowMetrics.minContent.width + (collapsed ? 0 : max(0, width - SidebarMetrics.expanded)),
            minHeight: WindowMetrics.minContent.height)
     .onAppear { if !onboarded { showSetup = true } }
+    .onChange(of: onboarded) { if !$0 { showSetup = true } }  // Settings, About: Run setup again
     .sheet(isPresented: $showSetup) {
       OnboardingSheet(control: control, finish: { onboarded = true; showSetup = false }, later: { showSetup = false })
         .stephenThemedBySettings()
