@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configUnknownKeys, doctor, ignoredKeysNotice, startConfigCheck } from '../../src/cli.js';
+import { configUnknownKeys, doctor, ignoredKeysNotice, main, startConfigCheck } from '../../src/cli.js';
 import { loadConfig, looksLikeSecretKey } from '../../src/config.js';
 import { HubError } from '../../src/errors.js';
 import { parseVoiceConfig } from '../../src/voice/config.js';
@@ -112,6 +112,25 @@ describe('start check', () => {
     await expect(startConfigCheck(env)).resolves.toBeUndefined();
     expect(log).toHaveBeenCalledWith('[stephen] config: ignored keys fooBar (run stephen doctor)');
     log.mockRestore();
+  });
+});
+
+describe('listen start path', () => {
+  it('listen refuses a secret-looking key before it starts anything', async () => {
+    const home = useConfig({ voice: { elevenlabs: { apiKey: 'sk-SECRET-VALUE-9' } } });
+    const keep = { STEPHEN_HOME: process.env.STEPHEN_HOME, STEPHEN_CONFIG: process.env.STEPHEN_CONFIG };
+    process.env.STEPHEN_HOME = join(home, '.stephen');
+    process.env.STEPHEN_CONFIG = join(home, '.stephen', 'config.json');
+    try {
+      const err = await main(['listen']).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HubError);
+      expect((err as Error).message).toMatch(/Keychain/);
+    } finally {
+      for (const [k, v] of Object.entries(keep)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 });
 
