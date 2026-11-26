@@ -67,8 +67,8 @@ Cris said yes to (1) on 2026-11-26: "if there is a free model that can do the jo
 
 Canary 2026-11-26 (opencode 2.3.2, fake input only): not passed yet. The free model answered with a 429 "Free usage
 limit reached" (retry after about 8 hours), so the answer shape, the tool denial and the prompt checks are still open.
-What it did show: only the temp config folder was read (`conf/opencode`), no MCP server or plugin loaded, no path under
-the real `HOME` appeared in the debug log, and the tool bait made no file. A 429 is a normal L1b failure: `opencodeText`
+What it did show: only the temp config folder was read (`conf/opencode`), no MCP server or plugin loaded, and no path under
+the real `HOME` appeared in the debug log. A 429 is a normal L1b failure: `opencodeText`
 finds no text part, so L1b gives no draft and L2 runs. Run the canary again after the limit resets; L1b stays off until
 it passes.
 
