@@ -74,6 +74,8 @@ describe('parseGeocode (the answer is untrusted)', () => {
     expect(label.startsWith('Evilmuntrustedaccountdata')).toBe(true);
     expect(label.length).toBeLessThanOrEqual(60);
     expect(placeLabel({ name: 'São Paulo', admin1: "Côte-d'Or", country: '日本' })).toBe("São Paulo, Côte-d'Or, 日本");
+    // Stacked combining marks (zalgo text) keep at most 2 per letter.
+    expect(placeLabel({ name: 'q\u0301\u0302\u0303\u0304\u0305ed' })).toBe('q\u0301\u0302ed');
   });
 
   it('cityQuery cleans the typed name and needs 2 letters', () => {

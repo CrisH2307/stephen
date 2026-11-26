@@ -74,7 +74,7 @@ export function parseWeather(data: unknown, day: WeatherDay): Weather {
 
 const deg = (n: number) => `${Math.round(n)}°C`;
 
-/** The header and lines of the data block (the label is the owner's own config text, cleaned anyway). No coordinates. */
+/** The header and lines of the data block. The label is the owner's text or a geocoder name the owner picked (cleaned there), cleaned again here. No coordinates. */
 export function formatWeather(w: Weather, place: Pick<WeatherPlace, 'label'>, day: WeatherDay): { header: string; lines: string[] } {
   const label = field(place.label, 60) || 'your location';
   const rain = w.rain === null ? '' : `, ${Math.round(w.rain)}% chance of rain`;
