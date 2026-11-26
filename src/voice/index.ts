@@ -577,7 +577,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         return tts;
       };
       if (talk.get().speak) {
-        void ttsFor().warm().catch(() => {});
+        void ttsFor().warm().catch((e: unknown) => err(`Note: the voice could not warm up (${(e as Error).message}).`));
       }
       speaker = { speak: (t) => ttsFor().speak(t) };
     }
