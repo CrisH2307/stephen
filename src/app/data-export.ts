@@ -85,6 +85,9 @@ async function readParts(src: { config: string; dir: string }, history: boolean,
   if (cfg && 'error' in cfg) return bad(CONFIG, cfg.error);
   if (cfg) {
     if (!cfg.value || typeof cfg.value !== 'object' || Array.isArray(cfg.value)) return bad(CONFIG, 'is not a settings object');
+    // Setting names are printed before the import question, so each must be plain: an escape code in a name could
+    // erase the list on screen and hide a loosened setting (#388 review).
+    if (!plainNames(cfg.value)) return bad(CONFIG, 'has a setting name with unusual characters (not shown)');
     // "home" names a folder on this Mac: the export leaves it out (and says so); an import never takes it.
     if ('home' in cfg.value) {
       if (!forExport) return bad(CONFIG, 'sets "home" (a folder on the other Mac); remove that line first');
@@ -131,7 +134,8 @@ async function readParts(src: { config: string; dir: string }, history: boolean,
     }
     let entries = 0;
     for (const n of names.sort()) {
-      if (!DAY_FILE_RE.test(n)) return bad(`history/${n}`, 'is not a history day file');
+      // The name is checked before it is ever printed: a file name can hold terminal escape codes (#388 review).
+      if (!DAY_FILE_RE.test(n)) return bad('history/', 'has a file that is not a history day file (name not shown)');
       const text = kindOf(join(dir, n)) === 'link' ? null : readPrivateRegularFile(join(dir, n), MAX_FILE_BYTES);
       if (text === null) return bad(`history/${n}`, 'is a link, not a plain file, or too large');
       const lines: string[] = [];
@@ -151,6 +155,15 @@ async function readParts(src: { config: string; dir: string }, history: boolean,
     if (names.length) parts.push({ name: '', text: '', what: `${entries} conversation history entr${entries === 1 ? 'y' : 'ies'}` });
   }
   return { parts };
+}
+
+const PLAIN_NAME = /^[A-Za-z0-9_.[\]-]{1,80}$/;
+
+/** Every key, at every depth, is a plain name. */
+function plainNames(v: unknown): boolean {
+  if (Array.isArray(v)) return v.every(plainNames);
+  if (!v || typeof v !== 'object') return true;
+  return Object.entries(v).every(([k, x]) => PLAIN_NAME.test(k) && plainNames(x));
 }
 
 const summary = (parts: Part[]) => parts.filter((p) => p.what).map((p) => p.what);
@@ -254,7 +267,12 @@ export async function importData(src: string, o: { yes: boolean; config: boolean
   for (const l of lines) d.out(`  ${l}`);
   if (cfgPart && o.config) {
     const now = readJson(d.configPath);
-    const changes = changedSettings(now && 'value' in now ? now.value : {}, JSON.parse(cfgPart.text));
+    const current = now && 'value' in now ? now.value : {};
+    if (!plainNames(current)) {
+      d.err(`Your current ${CONFIG} has a setting name with unusual characters (not shown). Fix it first. Nothing was changed.`);
+      return 1;
+    }
+    const changes = changedSettings(current, JSON.parse(cfgPart.text));
     d.out(changes.length ? 'Settings that change (check each one: some can loosen safety):' : 'Your settings stay the same.');
     for (const c of changes) d.out(`  ${c}`);
   }
