@@ -48,6 +48,6 @@ Stephen has no server of its own. Each person runs it on their own Mac with thei
 - Not "instant". The wake word is still slow today (see the [introduction](INTRODUCTION.md#honest-limits-today)).
 - Not "private from Anthropic". What you ask, and what Claude reads to answer, goes to Anthropic under your own
   Claude account, like when you use Claude yourself. [What leaves your Mac](SAFETY-IN-PLAIN-WORDS.md#what-leaves-your-mac)
-  lists it all.
+  lists every destination.
 
 Next: [how we built it](HOW-WE-BUILT-IT.md).

@@ -93,18 +93,22 @@ careful:
 **Stays on your Mac:** your voice, the wake word, speech to text, your memory list, your conversation history (7
 days by default), the [audit log](GLOSSARY.md#audit-log) and your account keys.
 
-**Goes out, only when needed:**
+**Goes out, only when needed.** The picture shows the main ones; this table has every one:
 
-| To | What |
-|---|---|
-| Anthropic, under your own Claude account | Your command as text, the things you asked Stephen to remember, and what Claude reads to answer (a page, an email) |
-| Accounts you connected (Gmail, Calendar, Canvas, Notion) | Read requests only |
-| Websites | What you ask Stephen to open |
-| YouTube | The search words when you ask it to play something |
-| Open-Meteo (weather) | The location of the place in your settings |
-| ElevenLabs | The reply text, only if you added a key and chose that voice |
-| GitHub and npm | Your IP address, when Stephen downloads a model or updates |
-| Cris | Nothing, unless you send a crash report yourself |
+| To | What | When |
+|---|---|---|
+| Anthropic, under your own Claude account | Your command as text, the things you asked Stephen to remember, and what Claude reads to answer (a page, an email, Canvas, your calendar, Notion) | Every command that needs the AI |
+| Anthropic, background jobs | The job's task, and what the job reads and writes in its folder | Each job you allow |
+| Anthropic, phone link | The phone conversation | Only while you have the phone link turned on |
+| Gmail, Canvas, Notion | Read requests, with your own sign-in or key | When you ask about that account |
+| Your calendar feed (the secret calendar address you set) | One request for the feed | When you ask about your calendar or your day |
+| Websites | What you ask Stephen to open. A job you start "with web" also searches and reads web pages | When you ask |
+| YouTube and YouTube Music | The search words when you ask it to play something | When you ask to play something |
+| Open-Meteo (weather) | The location of the place in your settings | When you ask for the weather or your day |
+| ElevenLabs | The reply text | Only if you added a key and chose that voice |
+| GitHub | Your IP address when Stephen downloads a model or updates. A crash report only after you type "y"; it is posted with your own GitHub sign-in, so your GitHub name shows on it | First setup, each update, each report you send |
+| The npm package registry | Your IP address and the package names Stephen needs | Setup and each update |
+| Cris | Nothing, unless you send a crash report yourself | |
 
 There is no tracking, no analytics and no advertising. The full, exact list is in the [privacy page](../PRIVACY.md),
 and every file Stephen keeps is in [data stores](../DATA-STORES.md).
