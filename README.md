@@ -28,6 +28,8 @@ Once Stephen is set up, try these four things in order:
 4. **Ask it to do something risky,** like clicking Send on a form you filled. A card appears with **Deny** and
    **Allow**. Click **Deny** to see that nothing happens.
 
+New words in this page, like "wake word"? The [glossary](docs/guide/GLOSSARY.md) explains each one.
+
 ## Set it up
 
 You need:
@@ -71,6 +73,9 @@ What Stephen keeps, what leaves your Mac and how to delete it: [privacy](docs/PR
 | Page | For |
 |---|---|
 | [The guide](docs/guide/README.md) | Everyone: what Stephen is and how to use it |
+| [Getting started](docs/guide/GETTING-STARTED.md) | Setup, step by step, with pictures |
+| [Safety in plain words](docs/guide/SAFETY-IN-PLAIN-WORDS.md) | How Stephen keeps you in charge |
+| [Glossary](docs/guide/GLOSSARY.md) | Plain-word meanings of the technical words |
 | [Full technical setup](docs/guide/ADVANCED-SETUP.md) | Every command, setting and fix |
 | [Privacy](docs/PRIVACY.md) | What Stephen keeps and what leaves your Mac |
 
