@@ -23,7 +23,7 @@
  * WarmConversationRunner (conversation.ts) owns when a process lives and dies; this class only drives one.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { groupAlive } from '../lib/process.js';
+import { groupAlive, sleep } from '../lib/process.js';
 import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
 import type { Trust } from './assistant.js';
 import {
@@ -129,7 +129,6 @@ export function userMessageLine(prompt: string): string {
 }
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.());
 
 export class WarmClaude implements WarmProcess {
   readonly spawnedAt: number;
@@ -318,7 +317,7 @@ export class WarmClaude implements WarmProcess {
       if (status === 'connected') return;
       if (status !== 'pending') throw new Error(`Stephen's tools didn't start (MCP status: ${status}).`);
       if (this.now() >= deadline) throw new Error("Stephen's tools didn't connect in time.");
-      await sleep(this.o.mcpPollMs ?? WARM_MCP_POLL_MS);
+      await sleep(this.o.mcpPollMs ?? WARM_MCP_POLL_MS, { unref: true });
     }
   }
 
@@ -490,11 +489,11 @@ export class WarmClaude implements WarmProcess {
       // claude is gone; wait for the rest of its group (the stephen serve) too, so nothing can still write the
       // conversation's state file once the caller resets it (kill before reset).
       const until = this.now() + grace;
-      while (groupAlive(pid) && this.now() < until) await sleep(25);
+      while (groupAlive(pid) && this.now() < until) await sleep(25, { unref: true });
       if (groupAlive(pid)) {
         killGroup(pid, 'SIGKILL');
         const last = this.now() + 1000;
-        while (groupAlive(pid) && this.now() < last) await sleep(25);
+        while (groupAlive(pid) && this.now() < last) await sleep(25, { unref: true });
       }
       clearTimeout(hard);
       // Claude Code is gone, so nothing can start this instance's serve again: its lock can go.

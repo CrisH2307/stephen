@@ -191,7 +191,9 @@ describe('accounts config', () => {
     expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true }, notion: { enabled: true }, gmail: { enabled: true, accounts: [] }, weather: { enabled: true, latitude: 43.6532, longitude: -79.3832, label: 'Toronto, ON' } });
     expect(() => parseAccountsConfig({ canvas: { url: 'http://x.ca' } })).toThrow(/https/);
     expect(() => parseAccountsConfig({ timeZone: 'Mars/Base' })).toThrow(/time zone/);
-    expect(() => parseAccountsConfig({ canvas: { token: 'x' } })).toThrow();
+    const keys: string[] = [];
+    expect(() => parseAccountsConfig({ canvas: { token: 'x' }, fooBar: 1 }, keys)).not.toThrow();
+    expect(keys.sort()).toEqual(['accounts.canvas.token', 'accounts.fooBar']);
   });
 });
 

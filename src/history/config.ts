@@ -5,11 +5,12 @@
  */
 import { z } from 'zod';
 import { ConfigError } from '../lib/errors.js';
+import { unknownKeyPaths } from '../config.js';
 
 export const DEFAULT_HISTORY_RETENTION_DAYS = 7;
 export const MAX_HISTORY_RETENTION_DAYS = 30;
 
-const HistoryConfigSchema = z.strictObject({
+const HistoryConfigSchema = z.object({
   retentionDays: z.number().int().min(0).max(MAX_HISTORY_RETENTION_DAYS).optional(),
 });
 
@@ -27,7 +28,6 @@ export class HistoryConfigError extends ConfigError {
 function describe(err: z.ZodError): string {
   return err.issues
     .map((i) => {
-      if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"history.${k}"`).join(', ')}`;
       const key = i.path.map(String).join('.');
       return `"history${key ? `.${key}` : ''}": ${i.message}`;
     })
@@ -35,7 +35,7 @@ function describe(err: z.ZodError): string {
 }
 
 /** Validate the raw `history` section (null values mean "use the default"). Throws HistoryConfigError. */
-export function parseHistoryConfig(raw: unknown): HistoryConfig {
+export function parseHistoryConfig(raw: unknown, unknownKeys?: string[]): HistoryConfig {
   const obj: Record<string, unknown> = {};
   if (raw !== null && raw !== undefined) {
     if (typeof raw !== 'object' || Array.isArray(raw)) throw new HistoryConfigError('"history" must be an object');
@@ -43,5 +43,6 @@ export function parseHistoryConfig(raw: unknown): HistoryConfig {
   }
   const r = HistoryConfigSchema.safeParse(obj);
   if (!r.success) throw new HistoryConfigError(`Invalid history config: ${describe(r.error)}`);
+  unknownKeys?.push(...unknownKeyPaths(obj, r.data, 'history'));
   return { retentionDays: r.data.retentionDays ?? DEFAULT_HISTORY_RETENTION_DAYS };
 }

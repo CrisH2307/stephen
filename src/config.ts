@@ -88,11 +88,12 @@ const prefs = z
   .refine((r) => !Object.hasOwn(r, 'remote.prefs.recommended'), 'remote.prefs.recommended is managed by Stephen')
   .nullish();
 
-const UserConfigSchema = z.strictObject({
+// Unknown keys are dropped, not refused: userConfigUnknownKeys lists them for doctor.
+const UserConfigSchema = z.object({
   home: optPath,
   defaultBrowser: z.enum(['chrome', 'zen']).nullish(),
   chrome: z
-    .strictObject({
+    .object({
       mode,
       executablePath: optPath,
       userDataDir: optPath,
@@ -101,7 +102,7 @@ const UserConfigSchema = z.strictObject({
     })
     .nullish(),
   zen: z
-    .strictObject({
+    .object({
       mode,
       executablePath: optPath,
       profilePath: optPath,
@@ -113,7 +114,7 @@ const UserConfigSchema = z.strictObject({
     })
     .nullish(),
   safety: z
-    .strictObject({
+    .object({
       confirm: z.enum(['auto', 'elicit', 'dialog', 'deny']).nullish(),
       blockedDomains: strList,
       sensitiveDomains: strList,
@@ -124,7 +125,7 @@ const UserConfigSchema = z.strictObject({
     })
     .nullish(),
   output: z
-    .strictObject({
+    .object({
       maxSnapshotChars: int(1000, 2_000_000),
       maxTextChars: int(1000, 2_000_000),
       saveDir: optPath,
@@ -169,6 +170,66 @@ function validate(raw: unknown, source: string): ParsedUserConfig {
     throw new HubError('INVALID_ARG', `Invalid config in ${source}: ${describeIssues(r.error)}`);
   }
   return r.data;
+}
+
+/**
+ * Dotted paths (e.g. "voice.fooBar") of the keys in `raw` that `parsed` does not keep. The readers drop unknown keys
+ * instead of refusing them, so `stephen doctor` can name them. Only key names are returned, never values.
+ */
+export function unknownKeyPaths(raw: unknown, parsed: unknown, prefix = ''): string[] {
+  if (!isPlainObject(raw) || !isPlainObject(parsed)) return [];
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(raw)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (Object.hasOwn(parsed, k)) out.push(...unknownKeyPaths(v, parsed[k], path));
+    else out.push(path);
+  }
+  return out;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Unknown keys in a raw config.json: top level and the keys of the sections validated here. [] if it is invalid. */
+export function userConfigUnknownKeys(raw: unknown): string[] {
+  const r = UserConfigSchema.safeParse(raw ?? {});
+  return r.success ? unknownKeyPaths(raw ?? {}, r.data) : [];
+}
+
+/** The parsed config.json at the path loadConfig reads (an empty object when there is no file). Throws on bad JSON. */
+export function readUserConfigFile(env: NodeJS.ProcessEnv = process.env): unknown {
+  return readConfigFile(configFilePath(env));
+}
+
+/**
+ * A key name that looks like it holds a secret: its last word is key, token, secret, password, passwd, bearer or
+ * cookie. Secrets belong in the Keychain, never in config.json, so such a key stops the start. Takes a dotted path or a
+ * bare name. hotkey and hotKey are a shortcut, and apiKeyFile is a path, so neither counts.
+ */
+const SECRET_LAST_WORDS = new Set(['key', 'token', 'secret', 'password', 'passwd', 'bearer', 'cookie']);
+
+/** Words of a key name: camelCase, `_` and `-` separate them ("openaiApiKey" gives openai, api, key). */
+function keyWords(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+}
+
+export function looksLikeSecretKey(path: string): boolean {
+  const words = keyWords(path.slice(path.lastIndexOf('.') + 1));
+  if (words.join('') === 'hotkey') return false;
+  return SECRET_LAST_WORDS.has(words.at(-1) ?? '');
+}
+
+export const UNUSUAL_KEY_NAME = 'an unusual key name';
+
+/** A key name fit to print: at most 40 characters of letters, digits, _ and -, with dots between segments. */
+export function showKeyName(path: string): string {
+  return path.length <= 40 && /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/.test(path) ? path : UNUSUAL_KEY_NAME;
 }
 
 /** Strip null/undefined so they never overwrite a lower layer. */

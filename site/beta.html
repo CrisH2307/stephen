@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get the Stephen beta</title>
+<meta name="description" content="How to set up the Stephen friends beta on your Mac.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap top">
+  <a class="mark" href="index.html"><span class="tile" aria-hidden="true"></span>Stephen</a>
+  <nav aria-label="Main">
+    <a href="beta.html" aria-current="page">Get the beta</a>
+    <a href="privacy.html">Privacy</a>
+    <a class="gh" href="https://github.com/CrisH2307/stephen">GitHub</a>
+  </nav>
+</header>
+
+<main id="main" class="narrow page">
+  <h1>Get the beta</h1>
+  <p class="lede">Setup is a few Terminal commands and three Mac permission clicks. Cris will help you with the first one.</p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>A Mac with Apple silicon (M1 or newer) and macOS 14 or newer. No Intel Macs.</li>
+    <li>Node.js 22 or 24.</li>
+    <li>Claude Code, signed in. Stephen runs on your own Claude plan.</li>
+    <li>Zen or Google Chrome. For your own signed-in Chrome, version 144 or newer.</li>
+  </ul>
+
+  <h2>Install</h2>
+  <p>Run these one at a time:</p>
+  <pre>git clone https://github.com/CrisH2307/stephen.git
+cd stephen
+npm install
+npm run build
+npm link</pre>
+  <pre>stephen setup</pre>
+  <p>Setup checks your Mac, builds the Stephen Helper app, and creates the "Zen for Stephen" app. Then turn on "Stephen Helper" for Microphone, Input Monitoring and Accessibility in System Settings, Privacy &amp; Security. Setup never asks for a password or a key. If something is wrong, it says what to do, and you can run it again.</p>
+
+  <h2>Your first command</h2>
+  <p>Hold F5 and say: what time is it.</p>
+
+  <h2>Update</h2>
+  <pre>stephen update</pre>
+
+  <h2>Good to know</h2>
+  <ul>
+    <li>The app is not notarized by Apple yet. After an update, macOS may ask for permission again.</li>
+    <li>"Hey Stephen" is slower than holding F5.</li>
+    <li>While Zen runs for Stephen, other programs on your Mac can reach its control port. Quit Zen when you are not using Stephen.</li>
+  </ul>
+
+  <h2>Something wrong?</h2>
+  <ul>
+    <li>Run <code>stephen doctor</code>. It tells you what is wrong with your setup.</li>
+    <li>After a crash, run <code>stephen report</code>. It shows you the file and sends nothing until you type y.</li>
+    <li>Anything else: open an issue on <a href="https://github.com/CrisH2307/stephen/issues/new/choose">GitHub</a>. Issues are public, so do not paste private text. For a security problem, use the private link on that page.</li>
+  </ul>
+</main>
+
+<footer><div class="wrap">
+  <span>Open source under the MIT license. Not an official Anthropic product.</span>
+  <span class="links"><a href="privacy.html">Privacy</a><a href="https://github.com/CrisH2307/stephen">GitHub</a></span>
+</div></footer>
+</body>
+</html>

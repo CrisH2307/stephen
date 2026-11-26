@@ -7,6 +7,7 @@
 import { homedir } from 'node:os';
 import { z } from 'zod';
 import { ConfigError } from '../../lib/errors.js';
+import { unknownKeyPaths } from '../../config.js';
 
 /** The owner's ElevenLabs voice ("Noah Yang"). */
 export const DEFAULT_ELEVENLABS_VOICE_ID = 'YEBbZ0itqHW31uoXSBns';
@@ -34,7 +35,7 @@ export const DEFAULT_KOKORO_SPEAKER: KokoroSpeakerName = 'am_michael';
 export const TTS_PROVIDER_SETTINGS = ['auto', 'elevenlabs', 'kokoro', 'say'] as const;
 export type TtsProviderSetting = (typeof TTS_PROVIDER_SETTINGS)[number];
 
-const ElevenLabsSchema = z.strictObject({
+const ElevenLabsSchema = z.object({
   voiceId: z
     .string()
     .trim()
@@ -51,7 +52,7 @@ const ElevenLabsSchema = z.strictObject({
   timeoutSec: z.number().min(1).max(30).default(8),
 });
 
-const KokoroSchema = z.strictObject({
+const KokoroSchema = z.object({
   /** Speaker name (e.g. "am_michael", "bf_emma") or its id 0–10. */
   speaker: z.union([z.enum(KOKORO_SPEAKERS), z.number().int().min(0).max(KOKORO_SPEAKERS.length - 1)]).default(DEFAULT_KOKORO_SPEAKER),
   /** 1 = normal; 1.2 = 20 % faster. */
@@ -95,7 +96,7 @@ export class TtsConfigError extends ConfigError {
 }
 
 /** Validate the voice-output keys of the raw "voice" section (other keys are ignored). Throws TtsConfigError. */
-export function parseTtsConfig(rawVoice: unknown): TtsConfig {
+export function parseTtsConfig(rawVoice: unknown, unknownKeys?: string[]): TtsConfig {
   const obj: Record<string, unknown> = {};
   if (rawVoice !== null && rawVoice !== undefined) {
     if (typeof rawVoice !== 'object' || Array.isArray(rawVoice)) throw new TtsConfigError('"voice" must be an object');
@@ -108,12 +109,12 @@ export function parseTtsConfig(rawVoice: unknown): TtsConfig {
   if (!r.success) {
     const msg = r.error.issues
       .map((i) => {
-        if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"voice.${[...i.path, k].join('.')}"`).join(', ')}`;
         return `"voice.${i.path.map(String).join('.')}": ${i.message}`;
       })
       .join('; ');
     throw new TtsConfigError(`Invalid voice output config: ${msg}`);
   }
+  unknownKeys?.push(...unknownKeyPaths(obj, r.data, 'voice'));
   return { ...r.data, voice: r.data.voice ?? null, rate: r.data.rate ?? null };
 }
 

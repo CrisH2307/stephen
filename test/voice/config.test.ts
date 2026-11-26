@@ -86,7 +86,6 @@ describe('parseVoiceConfig', () => {
   });
 
   it.each([
-    [{ wakeword: 'x' }, /unknown key "voice.wakeword"/],
     [{ stopPhrase: 'stop' }, /voice.stopPhrase.*2–4 plain English words/],
     [{ wakePhrases: [] }, /voice.wakePhrases/],
     [{ wakePhrases: ['hey stephen', 'hey 2'] }, /voice.wakePhrases.1/],
@@ -139,7 +138,6 @@ describe('parseVoiceConfig', () => {
     [{ dailyLimit: { usd: '1' } }, /voice.dailyLimit.usd/],
     [{ dailyLimit: { usd: NaN } }, /voice.dailyLimit.usd/],
     [{ dailyLimit: { enabled: 'yes' } }, /voice.dailyLimit.enabled/],
-    [{ dailyLimit: { usd: 1, foo: 1 } }, /unknown key "voice.dailyLimit.foo"/],
     [{ dailyLimit: 5 }, /dailyLimit/],
   ])('rejects dailyLimit %j', (raw, msg) => {
     expect(() => parseVoiceConfig(raw)).toThrow(VoiceConfigError);
