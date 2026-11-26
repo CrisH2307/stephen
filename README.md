@@ -10,8 +10,9 @@ it in your browser (Zen or Chrome) or on your Mac. The AI behind it is Claude, o
 **It asks before anything risky.** Before it sends, buys, deletes or posts, a card shows you what it wants to do.
 Nothing happens until you click **Allow**. A spoken "yes" never counts.
 
-**Your voice stays on your Mac.** The wake word and speech to text run on your Mac. Only the text of your command
-goes to Claude.
+**Your voice stays on your Mac.** The wake word and speech to text run on your Mac. Audio never leaves it. What
+goes to Claude is your command as text, the things you asked Stephen to remember, and what Stephen reads to answer
+you (a web page, an email).
 
 > **Status: friends beta.** Stephen is early. It runs on Macs with Apple silicon (M1 or newer) and macOS 14 or
 > newer. Some things are slow. Tell us what breaks.
@@ -32,7 +33,7 @@ Once Stephen is set up, try these four things in order:
 You need:
 
 - A Mac with Apple silicon (M1 or newer) and macOS 14 or newer.
-- Node 22 or 24.
+- Node 22 or 24 (20.19 or newer also works).
 - Claude Code, installed and signed in with your own Claude account.
 - About 30 minutes the first time.
 
