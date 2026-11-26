@@ -93,6 +93,10 @@ Usage:
   stephen data           What Stephen keeps on this Mac: each place, its size, how long it stays, how to delete it
   stephen data delete --all
                          Delete everything Stephen keeps (asks first, then asks again about your job folder)
+  stephen data export <new folder> [--history]
+                         Copy your settings, memory and timers (and history) into a new private folder (no secrets)
+  stephen data import <folder> [--config] [--yes]
+                         Replace them from such a folder (Stephen must be stopped; asks first; settings only with --config)
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
   stephen report [--last N]
@@ -687,6 +691,11 @@ export async function main(argv: string[]): Promise<number> {
     case 'data': {
       const { root } = (await import('./jobs/config.js')).parseJobsConfig(loadConfig().jobs ?? {});
       const data = await import('./app/data-cli.js');
+      if (rest[0] === 'export' || rest[0] === 'import') {
+        // R20. The secret-key check is the one the start uses (configUnknownKeys, here in cli.ts).
+        const configSecretKeys = async (path: string) => (await configUnknownKeys({ ...process.env, STEPHEN_CONFIG: path }, true)).filter(looksLikeSecretKey);
+        return (await import('./app/data-export.js')).runDataMove(rest, { configSecretKeys, version: packageVersion() });
+      }
       if (rest[0] !== 'delete') return data.runDataCli(rest, root);
       // R10: the Keychain delete and Gmail disconnect are owner-only (src/connect), loaded here on demand.
       const { keychainDelete } = await import('./connect/keychain-write.js');
