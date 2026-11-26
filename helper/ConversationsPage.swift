@@ -116,6 +116,21 @@ func conversationFacts(_ entry: HistoryEntry, lines: [DoneLine], source: String,
 let CONVERSATIONS_LOADING = "Loading your conversations..."
 let CONVERSATIONS_LIST_FAILED = "Couldn't load your conversations right now."
 let CONVERSATIONS_EMPTY = "Nothing yet. Ask Stephen something and it shows here."
+let CONVERSATIONS_EDIT_FAILED = "Couldn't send your edit right now."
+let CONVERSATIONS_OLDER_FAILED = "Couldn't load older conversations right now."
+let CONVERSATIONS_CLEAR_FAILED = "Couldn't clear your history right now."
+let CONVERSATIONS_DELETE_FAILED = "Couldn't delete that version right now."
+let RECENT_ACTIONS_FAILED = "Couldn't load recent actions right now."
+
+/**
+ * R7: a failed action in plain words, never a raw "error". The listener's own sentence is kept because it says what to
+ * do ("This conversation changed. Open it again."); a bare word, a code or an exception text gets `fallback` instead.
+ * ponytail: "a sentence" means a capital first and a period last; a list of known messages if that ever misfires.
+ */
+func plainFailure(_ message: String?, _ fallback: String) -> String {
+  guard let m = message?.trimmingCharacters(in: .whitespacesAndNewlines), m.first?.isUppercase == true, m.hasSuffix(".") else { return fallback }
+  return m
+}
 
 struct ConversationsPage: View {
   @Environment(\.stephenTheme) var t
