@@ -3,6 +3,7 @@ import type { ConfirmPrompt, Confirmer, IAuditLog, ISafetyGate, ResolvedConfig }
 import { AuditLog } from './audit.js';
 import { buildConfirmer, redactValue as redact } from './confirm.js';
 import { SafetyGate } from './gate.js';
+import { escapeUntrustedTags } from './text.js';
 import type { LandingVerdict } from './policy.js';
 
 export type ElicitFn = (prompt: ConfirmPrompt) => Promise<'accept' | 'decline' | 'cancel'>;
@@ -39,9 +40,6 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// '<' + optional whitespace/zero-width + optional '/' + … + 'untrusted_web_content', any case.
-const DELIMITER_RE = /<([\s\u200b-\u200d\u2060\ufeff]*\/?[\s\u200b-\u200d\u2060\ufeff]*untrusted_web_content)/gi;
-
 /**
  * Wrap page-derived text so the model treats it as data:
  * <untrusted_web_content source="z1" origin="https://example.com">…</untrusted_web_content>
@@ -55,7 +53,7 @@ export function wrapUntrusted(source: string, url: string, text: string): string
   } catch {
     /* unknown */
   }
-  const safe = text.replace(DELIMITER_RE, '&lt;$1');
+  const safe = escapeUntrustedTags(text);
   return `<untrusted_web_content source="${escapeAttr(source)}" origin="${escapeAttr(origin)}">\n${safe}\n</untrusted_web_content>`;
 }
 
