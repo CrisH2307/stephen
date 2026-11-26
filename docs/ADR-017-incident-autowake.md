@@ -57,5 +57,5 @@ Cris's feedback on #330 (2026-11-25).
 - An issue by an id not on the list gets no comment (test with a fake API answer).
 - Planted free text never reaches any level (the parser fuzz test from #330).
 - A level with low confidence, a failed check or a safety file moves up (tests of the move-up rule).
-- The same body never gets two comments (state file test).
+- The same body never gets two comments (the ladder marker in the issue comments, tested).
 - A canary `claude -p` run with the ladder's flags cannot read outside the checkout, run Bash or use an MCP tool.
