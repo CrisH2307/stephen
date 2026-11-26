@@ -432,7 +432,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
       expect(body).toMatch(/let m = plainFailure\(msg\.message, CONVERSATIONS_EDIT_FAILED\)\s*self\.addBubble\(\.problem, m, detail: ""\)\s*self\.historyNotice = m/);
     });
     it('plainFailure keeps only a sentence, else the fallback', () => {
-      const fn = conv.match(/func plainFailure\([\s\S]*?\n\}/)?.[0] ?? '';
+      const fn = client.match(/func plainFailure\([\s\S]*?\n\}/)?.[0] ?? '';
       expect(fn).toContain('m.first?.isUppercase == true, m.hasSuffix(".") else { return fallback }');
     });
   });
