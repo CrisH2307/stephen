@@ -123,6 +123,7 @@ export const JOB_FOLDER_FAILED = "I couldn't make the job folder. The job did no
 export const JOB_WORKTREE_FAILED = "I couldn't make a git worktree for the job. The job did not start.";
 export const JOB_COPY_FAILED = "I couldn't copy the old job folder. The job did not start.";
 export const JOB_FILES_FAILED = "I couldn't write the job's files. The job did not start.";
+export const JOB_RUNNER_FAILED = "I couldn't start the job runner. The job did not start.";
 /** The raw reason behind a plain refusal, for the listener log (stderr). Never shown to the user. */
 function logRaw(what: string, detail: string): void {
   console.error(`jobs: ${what}: ${detail}`);
@@ -661,10 +662,10 @@ export class JobManager {
         detached: true,
         shell: false,
       });
-      child.on('error', (e) => this.failQueued(plan.id, `Could not start the job runner (${e.message}).`));
+      child.on('error', (e) => this.runnerFailed(plan.id, e.message));
       child.unref();
     } catch (e) {
-      this.failQueued(plan.id, `Could not start the job runner (${(e as Error).message}).`);
+      this.runnerFailed(plan.id, (e as Error).message);
       return readJobState(home, plan.id) ?? state;
     }
     return state;
@@ -675,6 +676,12 @@ export class JobManager {
     void this.o.audit
       ?.append({ tool: 'job_start', outcome: 'denied', confirmation: outcome, args: { id: plan.id, task: plan.task, web: plan.web, source } })
       .catch(() => undefined);
+  }
+
+  /** R7: the job's error is one plain sentence; the raw spawn error goes to the log only. */
+  private runnerFailed(id: string, detail: string): void {
+    logRaw('job runner', detail);
+    this.failQueued(id, JOB_RUNNER_FAILED);
   }
 
   private failQueued(id: string, error: string): void {
