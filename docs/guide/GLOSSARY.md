@@ -153,7 +153,7 @@ every other key, and never sends or saves what you type.
 
 A longer task Stephen does in the background while you do something else. It works in its own folder and you can
 stop it any time.
-*Example:* "While I'm cooking, find three cheap flights to Montreal and write them in a file."
+*Example:* "While I'm cooking, write a first draft of my lab report."
 
 ## K
 
