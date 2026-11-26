@@ -150,7 +150,8 @@ describe('#2 reads note every frame URL', () => {
     h.page.frameList = ['https://mail.example.com/inbox', 'https://vault.bitwarden.com/#/vault'];
     const res = await h.call('read_text', { tab: 'z1' });
     expect(res.isError).toBe(true);
-    expect(textOf(res)).toMatch(/frame from a blocked site \(vault\.bitwarden\.com\)/);
+    expect(textOf(res)).toContain('frame from a blocked site.');
+    expect(textOf(res)).toContain('Frame site: vault.bitwarden.com');
     expect(h.engine.readText).not.toHaveBeenCalled();
   });
 });
@@ -306,7 +307,8 @@ describe('#12 landing on a blocked site after an action', () => {
     const res = await h.call('click', { target: 'z1:e4', intent: 'x' });
     expect(res.isError).toBe(true);
     const t = textOf(res);
-    expect(t).toContain('ended on a blocked site (vault.bitwarden.com)');
+    expect(t).toContain('ended on a blocked site,');
+    expect(t).toContain('Blocked site: vault.bitwarden.com');
     expect(t).toContain('about:blank');
     expect(t).not.toContain('212 items');
     expect(t).not.toContain('#/vault');
