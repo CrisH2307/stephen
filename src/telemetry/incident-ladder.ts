@@ -187,10 +187,11 @@ export function parseModelJson(text: string): unknown {
 
 // ───────────── the free level and the Claude levels ─────────────
 
-/** The only free models L1 may use. Auto routers and Claude slots are not on it. The provider terms check is not done yet (see docs/INCIDENT-LADDER.md). */
+/** The only free models L1 may use. Auto routers and Claude slots are not on it. */
 export const L1_MODELS: readonly string[] = ['gpt-oss-120b'];
+/** L1 runs only when Cris names the model in INCIDENT_L1_MODEL: that is his opt-in after he checks the provider terms. */
 export function pickL1Model(env: string | undefined): string | null {
-  const m = (env ?? '').trim() || L1_MODELS[0]!;
+  const m = (env ?? '').trim();
   return L1_MODELS.includes(m) ? m : null;
 }
 

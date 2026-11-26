@@ -154,8 +154,9 @@ describe('what the models get', () => {
     expect(out).toBe('src/voice/claude.ts:12: ‹b›socket‹/b›');
   });
 
-  it('pickL1Model allows only the pinned free model', () => {
-    expect(pickL1Model(undefined)).toBe('gpt-oss-120b');
+  it('pickL1Model allows only the pinned free model, and only when named', () => {
+    expect(pickL1Model(undefined)).toBeNull();
+    expect(pickL1Model('')).toBeNull();
     expect(pickL1Model('gpt-oss-120b')).toBe('gpt-oss-120b');
     for (const bad of ['auto', 'fusion', 'free-router', 'kilo-auto', 'claude-haiku-5-5', 'claude-sonnet-4']) expect(pickL1Model(bad)).toBeNull();
   });
