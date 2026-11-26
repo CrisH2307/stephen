@@ -1,6 +1,7 @@
 # Design note: ask the weather city at first run
 
-Status: proposal, no code yet. Follow-up to B8 (#387), which removed the other personal defaults but kept
+Status: built (Cris said yes to both questions on 2026-11-26). Open-Meteo's free API is for non-commercial use, under
+10,000 calls a day; the city list credits GeoNames (CC BY 4.0). Follow-up to B8 (#387), which removed the other personal defaults but kept
 `DEFAULT_WEATHER` (Toronto, ON) as the only built-in place.
 
 ## The problem

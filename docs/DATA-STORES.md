@@ -57,7 +57,8 @@ section 7.2, checked against the code on 2026-11-25.
 | Anthropic, phone link | The phone conversation, through Claude Code's remote control | Only while `stephen phone on` is on | `src/phone/cli.ts` |
 | Google (Gmail, Calendar), Canvas, Notion | Read requests with the person's own token or secret calendar address | When a tool reads that account | `src/accounts/` |
 | ElevenLabs (only if the person set a key and chose that voice) | The reply text to be spoken | Every spoken reply | `src/voice/tts/elevenlabs.ts` |
-| Open-Meteo | The configured place's latitude and longitude (Toronto by default) | "What's the weather", the morning briefing | `src/accounts/weather.ts` |
+| Open-Meteo | The configured place's latitude and longitude, rounded to about 1 km (Toronto by default) | "What's the weather", the morning briefing | `src/accounts/weather.ts` |
+| Open-Meteo geocoding | The city name the person typed, once; only the picked place is kept, not the typed text | `stephen setup` (optional question) or `stephen accounts weather set <city>` | `src/accounts/geocode.ts` |
 | YouTube | The search words when the person asks Stephen to play something (Stephen reads the search page itself) | "Play ..." | `src/desktop/media.ts`, `src/desktop/play.ts` |
 | GitHub | The person's IP address: speech model download, `stephen update` (git pull). An incident report only after the person types "y" | First run; each update; on "y" | `src/voice/models.ts`, `src/update.ts`, `src/telemetry/report.ts` |
 | The npm registry | The person's IP address and the package names Stephen needs | `stephen setup` and each `stephen update` (npm install) | `src/update.ts` |
