@@ -5,13 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stephen: talk to your Mac</title>
 <meta name="description" content="Stephen is a voice assistant for your Mac and browser. It asks before anything risky.">
-<meta name="theme-color" content="#0F1B33">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap top">
-  <a class="mark" href="index.html" aria-current="page"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>Stephen</a>
+  <a class="mark" href="index.html" aria-current="page">Stephen <span class="dot" aria-hidden="true"></span></a>
   <nav aria-label="Main">
     <a href="beta.html">Get the beta</a>
     <a href="privacy.html">Privacy</a>
@@ -19,53 +18,61 @@
   </nav>
 </header>
 
-<main id="main" class="wrap">
-  <section class="hero">
+<main id="main">
+  <section class="wrap hero">
     <div>
-      <h1>Talk to your Mac. Stay in charge.</h1>
-      <p class="lede">Stephen is a voice assistant for your Mac and browser. Say "Hey Stephen" or hold F5. It asks before anything risky.</p>
+      <h1>Talk to your Mac. It asks before anything risky.</h1>
+      <p class="lede">Stephen is a voice assistant for your Mac and browser. Say "Hey Stephen" or hold F5, and it does the clicking for you.</p>
       <div class="cta">
         <a class="btn" href="beta.html">Get the beta</a>
-        <span class="small">Friends beta. Open source.</span>
+        <span class="small">Friends beta for Mac. Open source.</span>
       </div>
     </div>
 
     <figure class="demo">
-      <div class="box play" role="img" aria-label="Drawing: you ask Stephen to book a study room. It opens the page and fills in the form, then asks you before it clicks the button. You choose Allow or Deny.">
-        <div class="strip"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg><b>Stephen</b></div>
-        <div class="said">Book study room 2 at the library for 3 pm.<small>Push to talk (F5)</small></div>
-        <ul class="steps">
-          <li>Opened the library page</li>
-          <li>Filled in room 2, 3 pm</li>
-        </ul>
-        <div class="ask">
-          <p>Stephen wants to click a button</p>
-          <p class="site">Site: library.school.example</p>
-          <div class="buttons"><span>Deny</span><span class="allow">Allow</span></div>
+      <div class="askbox" role="img" aria-label="Drawing: you ask Stephen to book a study room. It opens the page, chooses the room and fills in the form. Before it submits, it asks you, and you click Allow or Deny.">
+        <div class="strip"><b>Stephen</b> · Book a study room</div>
+        <div class="thread play">
+          <div class="me">Book a study room at the library for 3 pm today.</div>
+          <div class="src">Push to talk (F5)</div>
+          <div class="plan"><ol>
+            <li><span>Open library.school.example</span><span class="chip c-ok">Allowed</span></li>
+            <li><span>Choose Study room 2</span><span class="chip c-ok">Allowed</span></li>
+            <li><span>Fill in the form</span><span class="chip c-ok">Allowed</span></li>
+            <li><span>Submit the form</span><span class="chip c-ask">Asks you</span></li>
+          </ol></div>
+          <div class="card">
+            <p class="q">Submit this form?</p>
+            <p class="why">Submitting always needs your click.</p>
+            <div class="verbatim">Room: Study room 2<br>Today, 3:00 to 4:00 pm</div>
+            <div class="choice"><span>Deny</span><span class="allow">Allow</span></div>
+          </div>
         </div>
       </div>
-      <figcaption>A simple drawing of the Ask box. The site is an example.</figcaption>
+      <figcaption>A drawing of the Ask box. The library site is an example.</figcaption>
     </figure>
   </section>
 
-  <section class="promises" aria-label="Three promises">
-    <div>
-      <h2>It asks first.</h2>
-      <p>Sending, submitting and other risky steps wait for your click on Allow. A spoken yes never counts.</p>
-    </div>
-    <div>
-      <h2>Pages are data, not orders.</h2>
-      <p>Web pages and emails are read as data, never as your words. Stephen is built and tested to resist hidden orders.</p>
-    </div>
-    <div>
-      <h2>Your speech stays on your Mac.</h2>
-      <p>Speech to text runs on the Mac. Claude gets the text of your request through your own account. Stephen has no server.</p>
+  <section class="band" aria-label="Three promises">
+    <div class="wrap promises">
+      <div>
+        <h2>It asks first.</h2>
+        <p>Sending, submitting and other risky steps wait for your click on Allow. A spoken yes never counts.</p>
+      </div>
+      <div>
+        <h2>Pages are data, not orders.</h2>
+        <p>Web pages and emails are read as data, never as your words. Stephen is built and tested to resist hidden orders.</p>
+      </div>
+      <div>
+        <h2>Your speech stays on your Mac.</h2>
+        <p>Speech to text runs on the Mac. Claude gets the text of your request through your own account. Stephen has no server.</p>
+      </div>
     </div>
   </section>
 
-  <section class="close">
-    <h2>Try the friends beta.</h2>
-    <p>It is early, and some things are slow. You need a Mac with Apple silicon, macOS 14 or newer, and your own Claude plan.</p>
+  <section class="wrap close">
+    <h2>Want to try it?</h2>
+    <p>The beta is for friends right now. It is early, and some things are slow. You need a Mac with Apple silicon and your own Claude plan.</p>
     <a class="btn" href="beta.html">Get the beta</a>
   </section>
 </main>
