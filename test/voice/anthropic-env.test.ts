@@ -134,6 +134,17 @@ describe('R23 review L1: one safe CLAUDE_CONFIG_DIR for Claude and for transcrip
     expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: join(home, '.claude-link', 'cfg') }, home)).toBeUndefined();
   });
 
+  it('T8 (#346 review): with a symlinked home, a real folder inside it is kept and the real-path check still holds', () => {
+    mkdirSync(join(tmp, 'real-home', '.claude-alt'), { recursive: true });
+    mkdirSync(join(tmp, 'real-home-outside'), { recursive: true });
+    symlinkSync(join(tmp, 'real-home'), join(tmp, 'linked-home'));
+    symlinkSync(join(tmp, 'real-home-outside'), join(tmp, 'real-home', '.escape'));
+    const linked = join(tmp, 'linked-home');
+    expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: join(linked, '.claude-alt') }, linked)).toBe(join(linked, '.claude-alt'));
+    mkdirSync(join(tmp, 'real-home-outside', 'cfg'), { recursive: true });
+    expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: join(linked, '.escape', 'cfg') }, linked)).toBeUndefined();
+  });
+
   it('outside the home, relative, missing, a symlink or the home itself: dropped', () => {
     for (const bad of [join(tmp, 'outside'), '.claude-alt', join(home, 'missing'), join(home, '.claude-link'), home, '']) {
       expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: bad }, home), bad).toBeUndefined();

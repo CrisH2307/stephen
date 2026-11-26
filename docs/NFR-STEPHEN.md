@@ -12,10 +12,10 @@ and from `docs/ADR-008-MEASUREMENTS.md`.
 
 | | Value |
 |---|---|
-| Today | Model never writes memory, timers or jobs (no tool exists; import-boundary tests). Every action and private read goes through the SafetyGate (policy, taint, egress, rate limit, native dialog). Allow and Deny are clicks only. Independent reviews REVIEW-1 to REVIEW-10B, each finding fixed with a named test. `stephen eval` inject cases pass against the real model. |
+| Today | Model never writes memory, timers or jobs (no tool exists; import-boundary tests). Every action and private read goes through the SafetyGate (policy, taint, egress, rate limit, native dialog). One exception by design: `announce` (a spoken line before sound plays) skips `gate.check`, because it touches no page, sends nothing off the Mac and says nothing once private data was read (#306). Allow and Deny are clicks only. Independent reviews REVIEW-1 to REVIEW-10B, each finding fixed with a named test. `stephen eval` inject cases pass against the real model. |
 | Target | Zero known High findings at every release. Every safety change has `[DEV REVIEW]` and an independent review. Inject cases: 100% pass on every release. |
-| Gap | Eval is not run per release (it costs model tokens). Open items: announce has no `gate.check`, private reads are not audited, #296 (overdue job Claude not killed). |
-| Next step | Add `stephen eval --only inject` to the release checklist (step 4b). Fix the three open items, one PR each, dev lane. |
+| Gap | Eval is not run per release (it costs model tokens). Open item: #296 (overdue job Claude not killed). Private reads are audited (one line per read, tool and trust only, `auditPrivateRead` in `src/safety/gate.ts`). |
+| Next step | Add `stephen eval --only inject` to the release checklist (step 4b). Fix #296, dev lane. |
 
 ## 2. Privacy
 
@@ -69,6 +69,7 @@ and compare turns. ADR-008 measurement 4 (F5 "open Safari" x20) is still open an
 |---|---|
 | Today | Each model run returns its cost (`costUsd` from Claude Code), but it is not saved or summed. Jobs have a budget (default 5 USD each). Routers (memory, timers, jobs) cost nothing. |
 | Target | A free daily limit, on by default (Cris, 2026-11-23). Each person runs Stephen on their own Claude account, so we pay nothing; the limit protects them. Default: a starting guess of 1 USD of model use a day, fixed after one week of real numbers. Stephen warns once at 80% ("You have used most of today's limit"), and at 100% says "Today's limit is used. It resets at midnight." and starts no new model run. Always free and never blocked: "stop", memory, timers, job status. Jobs count too and keep their own budget. The owner can change the limit in Settings. |
+| Jobs and the limit | At 100% a new job is refused: "Today's limit is used. The job did not start." (#362, `JOB_LIMIT_USED` in `src/jobs/manager.ts`). A running job is never stopped. A job's cost is counted when it ends, so a job started below 100% can go past the limit (its own budget is 5 USD by default, the day limit 1 USD). If today's total cannot be read it counts as 0, so runs and jobs still start (fail open by design, `src/voice/daily-limit.ts`, #305). |
 | Gap | Built in `qa` (2026-11-24): cost per run in the latency record (#302), the daily limit setting and cost line (#305), the 80% warning and the stop at 100% (#309). Left: pick the default number from one week of real use. |
 | Next step | 1. Save each run's cost in the latency record (a number, no content). 2. A cost line per day in `stephen latency`, so we see real use for a week. 3. Then the limit, the 80% warning and the Settings field, with the number picked from that week. |
 

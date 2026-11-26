@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="380" viewBox="0 0 960 380" role="img" aria-labelledby="sc-t sc-d">
+  <title id="sc-t">How the safety gate decides</title>
+  <desc id="sc-d">Three columns. Do it: safe steps Stephen just does, such as opening YouTube or reading a page. Ask you first: risky steps, such as clicking Send, Pay, Buy, Delete or Post, uploading a file, or opening a bank site. You choose Allow or Deny. Refuse: Stephen never does these, such as typing into a password field or opening a terminal. No answer in 2 minutes counts as Deny. A spoken yes never counts.</desc>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="1.2" fill="#E2DBC9"/>
+    </pattern>
+  </defs>
+  <style>
+    .h { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; text-anchor: middle; }
+    .f { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; font-size: 17px; fill: #15151A; text-anchor: middle; }
+    .d { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-size: 14px; fill: #4A4A57; text-anchor: middle; }
+    .i { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-size: 15px; fill: #15151A; }
+  </style>
+
+  <rect width="960" height="380" fill="#FBF8F1"/>
+  <rect width="960" height="380" fill="url(#dots)"/>
+
+  <!-- Column 1: Do it -->
+  <rect x="34" y="44" width="288" height="300" rx="18" fill="#15151A"/>
+  <rect x="30" y="40" width="288" height="300" rx="18" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <rect x="46" y="58" width="256" height="44" rx="22" fill="#D8F4E4" stroke="#15151A" stroke-width="2"/>
+  <text class="h" x="174" y="87" font-size="20">Do it</text>
+  <text class="d" x="174" y="126">Safe. Stephen just does it.</text>
+  <rect x="50" y="149" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="68" y="160">Open YouTube</text>
+  <rect x="50" y="181" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="68" y="192">Read a page out loud</text>
+  <rect x="50" y="213" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="68" y="224">Check the weather</text>
+  <rect x="50" y="245" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="68" y="256">Read your calendar</text>
+
+  <!-- Column 2: Ask you first -->
+  <rect x="340" y="44" width="288" height="300" rx="18" fill="#15151A"/>
+  <rect x="336" y="40" width="288" height="300" rx="18" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <rect x="352" y="58" width="256" height="44" rx="22" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="h" x="480" y="87" font-size="20">Ask you first</text>
+  <text class="d" x="480" y="126">You choose Allow or Deny.</text>
+  <rect x="356" y="149" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="374" y="160">Click Send, Pay, Buy,</text>
+  <text class="i" x="374" y="180">Delete or Post.</text>
+  <rect x="356" y="201" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="374" y="212">Upload a file.</text>
+  <rect x="356" y="233" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="374" y="244">Open a bank or other</text>
+  <text class="i" x="374" y="264">sensitive site.</text>
+  <rect x="356" y="285" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="374" y="296">Type into a new site</text>
+  <text class="i" x="374" y="316">after reading email.</text>
+
+  <!-- Column 3: Refuse -->
+  <rect x="646" y="44" width="288" height="300" rx="18" fill="#15151A"/>
+  <rect x="642" y="40" width="288" height="300" rx="18" fill="#FFFFFF" stroke="#B3261E" stroke-width="3"/>
+  <rect x="658" y="58" width="256" height="44" rx="22" fill="#FFE0E8" stroke="#B3261E" stroke-width="2"/>
+  <text class="h" x="786" y="87" font-size="20">Refuse</text>
+  <text class="d" x="786" y="126">Stephen says no. Always.</text>
+  <rect x="662" y="149" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="680" y="160">Type into a password</text>
+  <rect x="662" y="181" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="680" y="192">Type a code or card number</text>
+  <rect x="662" y="213" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="680" y="224">Open a terminal or</text>
+  <text class="i" x="680" y="244">System Settings.</text>
+  <rect x="662" y="265" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="680" y="276">Open password vaults</text>
+  <rect x="662" y="297" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="680" y="308">Open chrome:// or</text>
+  <text class="i" x="680" y="328">file:// pages</text>
+
+  <text class="f" x="480" y="368">No answer in 2 minutes = Deny. A spoken yes never counts.</text>
+</svg>

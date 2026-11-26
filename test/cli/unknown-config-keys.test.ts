@@ -119,6 +119,29 @@ describe('doctor output', () => {
   });
 });
 
+describe('T8 (#338 post-merge review L5): a secret-looking key inside an unknown value', () => {
+  it('a key inside an unknown array of objects is found, and the start stops without its name or value', async () => {
+    useConfig({ extras: [{ name: 'a' }, { apikey: 'sk-SECRET-VALUE-ARR' }] });
+    expect((await configUnknownKeys(env, true)).sort()).toEqual(['extras', 'extras.1.apikey']);
+    const err = await startConfigCheck(env).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HubError);
+    expect((err as Error).message).not.toContain('sk-SECRET-VALUE-ARR');
+    expect((err as Error).message).not.toContain('extras');
+  });
+  it('a key inside an unknown object under a known section is found too', async () => {
+    useConfig({ voice: { plugin: { authToken: 'tok-SECRET-VALUE-OBJ' } } });
+    expect(await configUnknownKeys(env)).toContain('voice.plugin.authToken');
+    expect(await startConfigCheck(env).catch((e: unknown) => e)).toBeInstanceOf(HubError);
+  });
+  it('an unknown array with no secret-looking key still only warns', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    useConfig({ extras: [{ name: 'a' }, 2, null] });
+    await expect(startConfigCheck(env)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith('[stephen] config: ignored keys extras (run stephen doctor)');
+    log.mockRestore();
+  });
+});
+
 describe('start check', () => {
   it('a secret-looking key stops the start, and the message does not name it', async () => {
     useConfig({ voice: { elevenlabs: { apiKey: 'sk-SECRET-VALUE-9' } } });
@@ -221,11 +244,15 @@ describe('secret-looking key names (the last word of the name)', () => {
     'apiKey', 'api_key', 'token', 'password', 'clientSecret', 'voice.elevenlabs.apiKey', 'gmail.refreshToken', 'accessToken',
     'openaiApiKey', 'anthropicApiKey', 'githubToken', 'botToken', 'oauthToken', 'sessionToken', 'webhookSecret', 'dbPassword',
     'bearer', 'cookie',
+    // T8 (#338 post-merge review L4): one-word names and the other secret words.
+    'apikey', 'openai_apikey', 'authtoken', 'githubaccesstoken', 'privatekey', 'awsSecretkey', 'pwd', 'dbPwd', 'pat', 'githubPat',
+    'passphrase', 'credentials', 'gmail.credential', 'adminpassword',
   ])('%s is refused', (k) => {
     expect(looksLikeSecretKey(k)).toBe(true);
   });
   it.each([
     'apiKeyFile', 'voice.elevenlabs.apiKeyFile', 'voiceId', 'claudePath', 'hotkey', 'hotKey', 'monkey', 'secretary', 'tokenLimit', 'keyboardShortcut',
+    'turkey', 'maxTokens', 'pattern', 'path', 'credentialsFile', 'keyword',
   ])('%s is allowed', (k) => {
     expect(looksLikeSecretKey(k)).toBe(false);
   });

@@ -14,7 +14,7 @@
  * The fresh start and `--assume-private-read` are the runners' part (HandleOptions.resume in src/voice/assistant.ts).
  */
 import { trustOf, type Trust } from '../voice/assistant.js';
-import { truncate } from '../safety/text.js';
+import { escapeUntrustedTags, truncate } from '../safety/text.js';
 import { HISTORY_SOURCES, MAX_STEP_CHARS, type HistoryEntry, type HistorySource } from './store.js';
 
 /** At most this many stored turns are quoted (one turn = what was said and Stephen's reply). */
@@ -47,12 +47,12 @@ export function mayQuote(source: unknown, current: Trust): boolean {
 
 /**
  * One line of stored text: whitespace and line breaks folded (\s covers U+2028 and U+2029; U+0085 is added), so stored
- * text can never start a line of its own; and the wrapper's own head and end lines become "[...]", so stored text can
- * never look like the start or the end of the record.
+ * text can never start a line of its own; an untrusted-block tag (with lookalike or invisible characters too) gets "&lt;" from the shared escapeUntrustedTags
+ * (as in wrapUntrusted, field() and cleanJobOutput), so stored text can never fake one; and the wrapper's own head and end lines become "[...]", so
+ * stored text can never look like the start or the end of the record.
  */
 const oneLine = (s: string) =>
-  s
-    .replace(/[\s\u0085]+/g, ' ')
+  escapeUntrustedTags(s.replace(/[\s\u0085]+/g, ' '))
     .split(RESUME_WRAPPER_HEAD)
     .join('[...]')
     .split(RESUME_WRAPPER_END)

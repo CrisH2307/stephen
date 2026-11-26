@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="460" viewBox="0 0 960 460" role="img" aria-labelledby="wl-t wl-d">
+  <title id="wl-t">What leaves your Mac</title>
+  <desc id="wl-d">Stays on your Mac: voice audio, wake word detection, speech to text, memory list, conversation history, audit log, and account keys in the Keychain. Only these leave: your command and memories to Anthropic under your Claude account, read requests to services you connected, what you ask to open on websites, YouTube search words, your place's coordinates for weather, reply text to ElevenLabs if you chose that voice, your IP address to GitHub and npm. Cris, the maker, gets nothing unless you send a crash report.</desc>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="1.2" fill="#E2DBC9"/>
+    </pattern>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#15151A"/>
+    </marker>
+  </defs>
+  <style>
+    .h { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; }
+    .f { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; font-size: 22px; fill: #15151A; }
+    .b { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-weight: 700; font-size: 14px; fill: #15151A; }
+    .d { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-size: 13px; fill: #4A4A57; }
+    .i { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-size: 15px; fill: #15151A; }
+    .t { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; font-size: 16px; fill: #15151A; }
+  </style>
+
+  <rect width="960" height="460" fill="#FBF8F1"/>
+  <rect width="960" height="460" fill="url(#dots)"/>
+
+  <text class="f" x="30" y="34">What leaves your Mac</text>
+
+  <!-- Your Mac box -->
+  <rect x="34" y="56" width="300" height="392" rx="24" fill="#15151A"/>
+  <rect x="30" y="52" width="300" height="392" rx="24" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="h" x="54" y="92" font-size="24">Your Mac</text>
+  <text class="d" x="54" y="118">Stays here, never sent</text>
+  <rect x="54" y="141" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="70" y="152">Your voice audio</text>
+  <rect x="54" y="169" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="70" y="180">Wake word detection</text>
+  <rect x="54" y="197" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="70" y="208">Speech to text</text>
+  <rect x="54" y="225" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="70" y="236">Memory list</text>
+  <rect x="54" y="253" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="70" y="264">Conversation history</text>
+  <text class="i" x="70" y="284">(7 days by default)</text>
+  <rect x="54" y="301" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="70" y="312">Audit log</text>
+  <rect x="54" y="329" width="8" height="8" fill="#15151A"/>
+  <text class="i" x="70" y="340">Account keys in the Keychain</text>
+  <text class="i" x="70" y="360">(never shown to the AI)</text>
+  <text class="b" x="54" y="420">Only the arrows leave your Mac.</text>
+
+  <!-- Arrows from Your Mac -->
+  <line x1="332" y1="248" x2="416" y2="73" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="332" y1="248" x2="416" y2="123" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="332" y1="248" x2="416" y2="173" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="332" y1="248" x2="416" y2="223" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="332" y1="248" x2="416" y2="273" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="332" y1="248" x2="416" y2="323" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="332" y1="248" x2="416" y2="373" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="332" y1="248" x2="416" y2="423" stroke="#15151A" stroke-width="2" marker-end="url(#ar)"/>
+
+  <!-- Destination 1: Anthropic -->
+  <rect x="424" y="56" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="52" width="510" height="42" rx="12" fill="#E7E1FF" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="70">Anthropic (under your Claude account)</text>
+  <text class="d" x="436" y="87">Your command, things to remember, and page or email text</text>
+
+  <!-- Destination 2: connected services -->
+  <rect x="424" y="106" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="102" width="510" height="42" rx="12" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="120">Services you connected</text>
+  <text class="d" x="436" y="137">Gmail, Calendar, Canvas, Notion: read requests only</text>
+
+  <!-- Destination 3: websites -->
+  <rect x="424" y="156" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="152" width="510" height="42" rx="12" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="170">Websites</text>
+  <text class="d" x="436" y="187">What you ask Stephen to open</text>
+
+  <!-- Destination 4: YouTube -->
+  <rect x="424" y="206" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="202" width="510" height="42" rx="12" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="220">YouTube</text>
+  <text class="d" x="436" y="237">Search words, only when you ask to play something</text>
+
+  <!-- Destination 5: Open-Meteo -->
+  <rect x="424" y="256" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="252" width="510" height="42" rx="12" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="270">Open-Meteo (weather)</text>
+  <text class="d" x="436" y="287">Your place's latitude and longitude</text>
+
+  <!-- Destination 6: ElevenLabs -->
+  <rect x="424" y="306" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="302" width="510" height="42" rx="12" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="320">ElevenLabs (voice)</text>
+  <text class="d" x="436" y="337">Reply text only, if you added a key and chose the voice</text>
+
+  <!-- Destination 7: GitHub and npm -->
+  <rect x="424" y="356" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="352" width="510" height="42" rx="12" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="370">GitHub and npm</text>
+  <text class="d" x="436" y="387">Your IP address, when models or updates download</text>
+
+  <!-- Destination 8: Cris -->
+  <rect x="424" y="406" width="510" height="42" rx="12" fill="#15151A"/>
+  <rect x="420" y="402" width="510" height="42" rx="12" fill="#D8F4E4" stroke="#15151A" stroke-width="2"/>
+  <text class="t" x="436" y="420">Cris (the maker)</text>
+  <text class="d" x="436" y="437">Nothing, unless you send a crash report</text>
+</svg>

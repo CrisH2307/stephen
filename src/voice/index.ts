@@ -11,6 +11,7 @@ import { TalkStore, talkFromConfig } from '../app/talk.js';
 import { ModelStore } from '../app/model.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { sleep } from '../lib/process.js';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
@@ -576,7 +577,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         return tts;
       };
       if (talk.get().speak) {
-        void ttsFor().warm().catch(() => {});
+        void ttsFor().warm().catch((e: unknown) => err(`Note: the voice could not warm up (${(e as Error).message}).`));
       }
       speaker = { speak: (t) => ttsFor().speak(t) };
     }
@@ -614,6 +615,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
           cliPath,
           ...(env.jobSpawn ? { spawn: env.jobSpawn } : {}),
           ...(env.now ? { now: env.now } : {}),
+          // The same daily cost limit as a model run (DailyLimit below, read at each start): at 100% no new job.
+          dailyLimitUsed: (): boolean => dailyLimit?.allowed() === false,
         });
   if (jobManager) {
     try {
@@ -936,7 +939,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
           if (run) {
             pending.length = 0;
             await run.catch(() => undefined);
-          } else await new Promise((r) => setTimeout(r, 500));
+          } else await sleep(500);
         }
         pending.length = 0;
       } finally {

@@ -226,9 +226,15 @@ async function serve(argv: string[] = []): Promise<void> {
 /** Sections whose readers serve and listen never load: their code stays out of the start-up path (memory, history). */
 const COLD_SECTIONS = ['memory', 'history', 'jobs', 'app'];
 
-/** Every dotted path in a raw section whose key name looks like a secret (any depth). */
+/** The raw value at a dotted path (undefined when a segment is missing). Key names with a dot are not reached. */
+function valueAt(raw: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((v, k) => (v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined), raw);
+}
+
+/** Every dotted path in a raw value whose key name looks like a secret (any depth, arrays included). */
 function secretKeyPaths(value: unknown, prefix: string): string[] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  if (!value || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap((v, i) => secretKeyPaths(v, `${prefix}.${i}`));
   return Object.entries(value).flatMap(([k, v]) => {
     const path = `${prefix}.${k}`;
     return [...(looksLikeSecretKey(path) ? [path] : []), ...secretKeyPaths(v, path)];
@@ -272,6 +278,8 @@ export async function configUnknownKeys(env: NodeJS.ProcessEnv = process.env, st
     }
     for (const key of sink) found.add(key);
   }
+  // An unknown key is reported by its own name; a secret-looking key inside its value (an object or an array) too.
+  for (const path of [...found]) for (const inner of secretKeyPaths(valueAt(raw, path), path)) found.add(inner);
   return [...found];
 }
 
@@ -352,7 +360,7 @@ export async function doctor(network = false, json = false): Promise<number> {
       }
     }
   } catch (e) {
-    add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
+    add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see docs/guide/ADVANCED-SETUP.md#configuration).`, blocking: true });
   }
 
   const dropped = (await import('./voice/claude.js')).droppedEndpointEnv(process.env);

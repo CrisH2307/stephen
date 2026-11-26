@@ -58,7 +58,7 @@ const claudeModel = z.string().trim().regex(CLAUDE_MODEL_RE, 'claudeModel must b
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORTS)[number];
 
-/** The voice default: the fastest model (see docs/VOICE.md "Model" for the speed/quality trade-off). */
+/** The voice default model (see docs/VOICE.md "Model" for the speed/quality trade-off). */
 export const DEFAULT_VOICE_CLAUDE_MODEL = 'sonnet';
 
 /** null/absent → the voice default; "default" → no --model flag (Claude Code's own default). */
@@ -110,8 +110,8 @@ const VoiceConfigSchema = z
     /** Path or command name of the Claude Code CLI. */
     claudePath: z.string().trim().min(1).max(1000).default('claude'),
     /**
-     * Model for the headless session (`claude --model`). Default "haiku": the fastest model, plenty for one-shot
-     * voice commands. Use "sonnet" (or a full model name) for better judgement on harder requests, or "default"
+     * Model for the headless session (`claude --model`). Default "sonnet" (DEFAULT_VOICE_CLAUDE_MODEL). Use "haiku" for
+     * faster one-shot replies, a full model name, or "default"
      * for Claude Code's own default (no --model flag). See docs/VOICE.md "Model".
      */
     claudeModel: claudeModel.nullish(),

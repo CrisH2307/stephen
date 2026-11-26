@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520" role="img" aria-labelledby="ab-title ab-desc">
+  <title id="ab-title">The Ask box under the Stephen menu bar icon</title>
+  <desc id="ab-desc">A menu bar with Stephen's icon on the right. Under it, the Ask box shows a typed command, "set a timer for 10 minutes", Stephen's reply, "Timer set for 10 minutes.", and a text field. Yellow numbered callouts mark the menu bar icon, your words, Stephen's reply and the text field, with a legend on the left.</desc>
+  <style>
+    .h { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; }
+    .b { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #15151A; }
+    .s { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #4A4A57; }
+    .n { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; font-size: 15px; }
+    .bd { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; }
+    .ln { fill: none; stroke: #15151A; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+  <rect width="900" height="520" fill="#FBF8F1"/>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="11" cy="11" r="1.2" fill="#E2DBC9"/>
+    </pattern>
+  </defs>
+  <rect width="900" height="520" fill="url(#dots)"/>
+
+  <text class="h" x="40" y="40" font-size="22">The Ask box</text>
+
+  <!-- Menu bar -->
+  <rect x="40" y="50" width="820" height="38" rx="10" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <circle cx="700" cy="69" r="8" class="ln"/>
+
+  <!-- Legend (left) -->
+  <text class="bd" x="40" y="116" font-size="16">What the numbers mean</text>
+  <line x1="40" y1="128" x2="420" y2="128" stroke="#E2DBC9" stroke-width="2"/>
+
+  <circle cx="60" cy="150" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="60" y="155" text-anchor="middle">1</text>
+  <text class="bd" x="86" y="146" font-size="16">Menu bar icon</text>
+  <text class="s" x="86" y="167" font-size="14">Click it, or hold F5, to open this box.</text>
+
+  <circle cx="60" cy="230" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="60" y="235" text-anchor="middle">2</text>
+  <text class="bd" x="86" y="226" font-size="16">Your words</text>
+  <text class="s" x="86" y="247" font-size="14">What you typed or said.</text>
+
+  <circle cx="60" cy="310" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="60" y="315" text-anchor="middle">3</text>
+  <text class="bd" x="86" y="306" font-size="16">Stephen's reply</text>
+  <text class="s" x="86" y="327" font-size="14">The answer, shown as plain text.</text>
+
+  <circle cx="60" cy="390" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="60" y="395" text-anchor="middle">4</text>
+  <text class="bd" x="86" y="386" font-size="16">Text field</text>
+  <text class="s" x="86" y="407" font-size="14">Type, then press Return to send.</text>
+
+  <!-- Ask box panel (right, under the icon) -->
+  <rect x="464" y="110" width="380" height="380" rx="18" fill="#15151A"/>
+  <rect x="460" y="106" width="380" height="380" rx="18" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+
+  <!-- Top strip: state word, more, close -->
+  <rect x="480" y="120" width="104" height="26" rx="13" fill="#D8F4E4" stroke="#15151A" stroke-width="1.5"/>
+  <circle cx="494" cy="133" r="5" fill="#1F7A45"/>
+  <text class="bd" x="504" y="138" font-size="14">Ready</text>
+  <circle cx="728" cy="133" r="2.4" fill="#15151A"/>
+  <circle cx="738" cy="133" r="2.4" fill="#15151A"/>
+  <circle cx="748" cy="133" r="2.4" fill="#15151A"/>
+  <path d="M782 127 L794 139 M794 127 L782 139" class="ln"/>
+  <line x1="476" y1="158" x2="824" y2="158" stroke="#E2DBC9" stroke-width="2"/>
+
+  <!-- Your words -->
+  <rect x="570" y="174" width="250" height="38" rx="12" fill="#E7E1FF" stroke="#15151A" stroke-width="1.5"/>
+  <text class="b" x="586" y="198" font-size="14">set a timer for 10 minutes</text>
+
+  <!-- Stephen's reply -->
+  <rect x="480" y="226" width="240" height="38" rx="12" fill="#D9ECFF" stroke="#15151A" stroke-width="1.5"/>
+  <text class="b" x="496" y="250" font-size="14">Timer set for 10 minutes.</text>
+
+  <!-- Text field -->
+  <rect x="480" y="390" width="300" height="48" rx="12" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <text class="s" x="496" y="419" font-size="14">Type to Stephen</text>
+  <text class="s" x="480" y="460" font-size="13">Press Return to send.</text>
+
+  <!-- Callouts on the panel -->
+  <line x1="640" y1="24" x2="690" y2="62" stroke="#15151A" stroke-width="1.5"/>
+  <circle cx="640" cy="24" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="640" y="29" text-anchor="middle">1</text>
+
+  <circle cx="548" cy="193" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="548" y="198" text-anchor="middle">2</text>
+
+  <circle cx="738" cy="245" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="738" y="250" text-anchor="middle">3</text>
+
+  <circle cx="804" cy="414" r="14" fill="#FFD84D" stroke="#15151A" stroke-width="2"/>
+  <text class="n" x="804" y="419" text-anchor="middle">4</text>
+</svg>
