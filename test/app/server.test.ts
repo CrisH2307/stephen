@@ -638,16 +638,16 @@ describe('memory, history, settings, audit, window', () => {
       { ts: '2026-11-01T14:03:23.000Z', tool: 'click', kind: 'click', urlBefore: 'https://www.youtube.com/', outcome: 'ok', ...secret },
     ] as AuditEntry[];
     const h = await harness({ audit: { recent: async () => entries } });
-    const a = (await h.client.request({ id: 'a', type: 'audit.recent' })) as { entries: AuditEntry[] };
+    const a = (await h.client.request({ id: 'a', type: 'audit.recent' })) as unknown as { entries: AuditEntry[] };
     expect(a.entries[0]).toEqual({ ts: '2026-11-01T14:03:20.000Z', tool: 'click', kind: 'click', urlBefore: 'https://mail.google.com/mail/u/0/', outcome: 'error' });
     expect(JSON.stringify(a.entries.slice(0, 2))).not.toContain('771204');
     expect(a.entries[2]).toEqual(entries[2]); // not built in: kept, unless the owner lists it
     expect(a.entries[3]).toEqual(entries[3]);
     const own = await harness({ audit: { recent: async () => entries }, isPrivateUrl: (u) => u.includes('intranet.example.org') });
-    const b = (await own.client.request({ id: 'b', type: 'audit.recent' })) as { entries: AuditEntry[] };
+    const b = (await own.client.request({ id: 'b', type: 'audit.recent' })) as unknown as { entries: AuditEntry[] };
     expect(b.entries[2]).not.toHaveProperty('element');
     expect(b.entries[3]).toEqual(entries[3]);
-    expect(entries[0].element).toBe(secret.element); // the log's own entries are not changed
+    expect(entries[0]?.element).toBe(secret.element); // the log's own entries are not changed
   });
 
   it('phone.on / phone.off / zen.open / doctor.run answer from the control; errors and a missing control say why', async () => {

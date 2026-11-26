@@ -98,7 +98,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     const sock = appSocketPath(t.home);
     await waitFor(() => existsSync(sock), 10_000, 'app.sock');
     const c = await TestClient.connect(sock);
-    const a = (await c.request({ id: 'a', type: 'audit.recent' })) as { entries: Record<string, unknown>[] };
+    const a = (await c.request({ id: 'a', type: 'audit.recent' })) as unknown as { entries: Record<string, unknown>[] };
     const byUrl = (u: string) => a.entries.find((e) => String(e.urlBefore).startsWith(u))!;
     for (const u of ['https://mail.google.com', 'https://intranet.example.org']) {
       expect(byUrl(u)).toMatchObject({ tool: 'click', kind: 'click', outcome: 'error' });
