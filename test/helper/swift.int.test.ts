@@ -402,7 +402,7 @@ run(`Swift core (${SWIFTC ?? 'no swiftc'})`, () => {
     expect(b.ok).toBe(true);
   }, 1_200_000);
 
-  it.runIf(process.platform === 'darwin')('T6 step 4: Activity rows say host only, never args or error text, quote and cut page text', () => {
+  it.runIf(process.platform === 'darwin')('T6 step 4: Activity rows say host only, never args or error text, quote and cut page text; R7 failures in plain words', () => {
     const bin = join(work, 'activity');
     const sources = HELPER_SOURCES.filter((f) => f !== 'main.swift').map((f) => join(ROOT, 'helper', f));
     const args = ['-swift-version', '5', '-o', bin, ...sources, join(ROOT, 'test', 'helper', 'swift', 'activity', 'main.swift'), ...HELPER_FRAMEWORKS.flatMap((f) => ['-framework', f])];

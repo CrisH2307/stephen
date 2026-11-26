@@ -1,5 +1,6 @@
-// T6 step 4: the Activity row text rules, run against the real helper sources (every HELPER_SOURCES file except
-// helper/main.swift). Prints "ok", or each failed check and exits 1. Driven by test/helper/swift.int.test.ts.
+// T6 step 4: the Activity row text rules, and R7 failure lines in plain words (plainFailure), run against the real
+// helper sources (every HELPER_SOURCES file except helper/main.swift). Prints "ok", or each failed check and exits 1.
+// Driven by test/helper/swift.int.test.ts.
 
 import Foundation
 
@@ -62,6 +63,15 @@ check(opened.count == 1, "new tab folds: \(opened.count) rows")
 
 // Nothing secret reaches any row.
 for r in rows { for s in ["s3cret", "771204", "my secret", "watch", "token"] { check(!r.text.contains(s), "leak \(s) in \(r.text)") } }
+
+// R7 (Conversations and Activity): a failed action in plain words. The listener's sentence is kept, anything else is not.
+check(plainFailure(nil, CONVERSATIONS_CLEAR_FAILED) == "Couldn't clear your history right now.", "no message")
+check(plainFailure("error", CONVERSATIONS_EDIT_FAILED) == "Couldn't send your edit right now.", "bare error")
+check(plainFailure("not available in this listener", CONVERSATIONS_DELETE_FAILED) == CONVERSATIONS_DELETE_FAILED, "lower-case code")
+check(plainFailure("EACCES: permission denied, open '/Users/x/.stephen/history.jsonl'", CONVERSATIONS_OLDER_FAILED) == CONVERSATIONS_OLDER_FAILED, "exception text")
+check(plainFailure("  ", RECENT_ACTIONS_FAILED) == RECENT_ACTIONS_FAILED, "blank")
+check(plainFailure("This conversation changed. Open it again.", CONVERSATIONS_EDIT_FAILED) == "This conversation changed. Open it again.", "listener sentence kept")
+check(plainFailure("Only the Stephen window can delete a version.", CONVERSATIONS_DELETE_FAILED) == "Only the Stephen window can delete a version.", "refusal kept")
 
 if failed > 0 { exit(1) }
 print("ok")
