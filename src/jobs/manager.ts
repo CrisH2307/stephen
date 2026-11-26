@@ -118,6 +118,15 @@ export const COPY_MAX_BYTES = 500 * 1024 * 1024;
 export const COPY_MAX_FILES = 10_000;
 export const COPY_TOO_BIG = 'The old job folder is too big to copy. Start a new job instead.';
 export const COPY_GONE = "The old job folder isn't there any more (or isn't a plain folder in your jobs folder). Start a new job instead.";
+/** R7: a job start that fails on disk or in git says one plain sentence. The raw detail goes to the log only. */
+export const JOB_FOLDER_FAILED = "I couldn't make the job folder. The job did not start.";
+export const JOB_WORKTREE_FAILED = "I couldn't make a git worktree for the job. The job did not start.";
+export const JOB_COPY_FAILED = "I couldn't copy the old job folder. The job did not start.";
+export const JOB_FILES_FAILED = "I couldn't write the job's files. The job did not start.";
+/** The raw reason behind a plain refusal, for the listener log (stderr). Never shown to the user. */
+function logRaw(what: string, detail: string): void {
+  console.error(`jobs: ${what}: ${detail}`);
+}
 
 /**
  * Walk the old job folder `src` without following any symlink: regular files and folders only (symlinks, sockets and
@@ -524,7 +533,8 @@ export class JobManager {
       mkdirSync(metaDir, { mode: 0o700 }); // fresh too
       if (lstatSync(metaDir).isSymbolicLink()) throw new Error(`${metaDir} is a symlink`);
     } catch (e) {
-      return { refused: `I couldn't make the job folder (${(e as Error).message}).` };
+      logRaw('job folder', (e as Error).message);
+      return { refused: JOB_FOLDER_FAILED };
     }
     if (plan.repo) {
       // ADR-010: an edited code job's new branch is cut from the old job's branch; the old worktree is never used.
@@ -534,7 +544,8 @@ export class JobManager {
         // [DEV REVIEW] Nothing half-made stays behind: the claimed job folder and meta folder go, as for a failed copy.
         rmSync(folder, { recursive: true, force: true });
         rmSync(metaDir, { recursive: true, force: true });
-        return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
+        logRaw(`git worktree of ${plan.repo.name}`, r.stderr.trim().split('\n').at(-1)?.slice(0, 160) || 'git failed');
+        return { refused: JOB_WORKTREE_FAILED };
       }
     } else if (plan.edit) {
       // ADR-010 [DEV REVIEW]: a copy of the old job's folder (shown in the dialog), checked against the caps again as it
@@ -545,7 +556,8 @@ export class JobManager {
         const from = plan.edit.copyFrom ?? '';
         copied = oldFolderOk(from, dirname(folder)) ? copyJobFolder(from, folder) : { error: COPY_GONE };
       } catch (e) {
-        copied = { error: `I couldn't copy the old job folder (${(e as Error).message}).` };
+        logRaw('copy old job folder', (e as Error).message);
+        copied = { error: JOB_COPY_FAILED };
       }
       if ('error' in copied) {
         rmSync(folder, { recursive: true, force: true });
@@ -627,7 +639,8 @@ export class JobManager {
       writePrivateJsonFileSync(f.spec, sup);
       writeJobState(home, state);
     } catch (e) {
-      return { refused: `I couldn't write the job's files (${(e as Error).message}).` };
+      logRaw('job files', (e as Error).message);
+      return { refused: JOB_FILES_FAILED };
     }
     void this.o.audit
       ?.append({
