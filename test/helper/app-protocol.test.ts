@@ -650,7 +650,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(all).not.toContain('‹ Personal');
     expect(all).not.toContain('Back to Personal');
     const main = read('MainWindow.swift');
-    expect(main).toContain('case home, conversations, jobs, memory, settings\n');
+    expect(main).toContain('case home, conversations, activity, jobs, memory, settings\n');
     const page = read('MemoryPage.swift');
     expect(page).not.toContain('nav.');
     expect(page).toContain('.onExitCommand { editing = false; editingProposal = nil }');
@@ -774,6 +774,23 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Refused: ');
     expect(conv).toContain('Clear all conversations?');
     expect(conv).toContain('Text(verbatim: entry.said)');
+  });
+
+  it('T6 step 4: Activity reads only, shows every string verbatim, and never uses args, intent or error text', () => {
+    const act = read('ActivityPage.swift');
+    expect(read('MainWindow.swift')).toContain('case .activity: ActivityPage(model: model, nav: nav)');
+    expect(act.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    expect(act).toContain('Text(verbatim: row.text)');
+    // Only reads and refreshes, plus the versions read a Conversations row makes when it opens.
+    const calls = [...new Set(act.match(/model\.\w+(?=\()/g) ?? [])].sort();
+    expect(calls).toEqual(['model.loadVersions', 'model.refreshAudit', 'model.refreshHistory', 'model.refreshJobs']);
+    expect(act).not.toMatch(/AppRequest|\.send\(|chatSend|stopJob/);
+    // Never shown: args (not decoded at all), the model's intent, error text. URLs only through activityHost.
+    expect(read('AppProtocol.swift')).not.toMatch(/struct AuditEntry[\s\S]*?\bargs\b[\s\S]*?\n\}/);
+    expect(act).not.toMatch(/\.(intent|error|args)\b/);
+    expect(act.match(/\.url(Before|After)\b(?!\.isEmpty)/g)?.length).toBe(act.match(/activityHost\([^)]*\.url(Before|After)\)/g)?.length);
+    expect(read('AppProtocol.swift')).toContain('case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd }');
+    expect(read('AppClient.swift')).toContain('static let auditLimit = 200');
   });
 
   it('ADR-007 recents: history strings in Conversations are Text(verbatim:); no send or retry; v2 adds only Open in chat', () => {
@@ -913,7 +930,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
     const main = read('MainWindow.swift');
-    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .activity, .jobs]');
     expect(main).toContain('static let control: [Page] = [.memory, .settings]');
     expect(main).toContain('SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }');
     expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');

@@ -1,17 +1,17 @@
 // Stephen Helper: the main window's frame (UI v4 shell, docs/research/UI-V4-IA-PLAN.md sections 5, 7 and 8).
 // Sidebar (glass): wordmark and collapse (⌘\, 60 pt icon rail, remembered), two groups: Talk (Home, Conversations,
-// Jobs) and Control (Memory, Settings), ⌘1…⌘5, then at the bottom left the solid "Recording on" sign and the state row.
+// Activity, Jobs) and Control (Memory, Settings), ⌘1…⌘6, then at the bottom left the solid "Recording on" sign and the state row.
 // Content column: the toolbar (glass: page title, page actions, Search ⌘K), the waiting-question banner (solid), then
 // the page. The ⌘K palette (Palette.swift) opens over the page, under the banner.
 
 import AppKit
 import SwiftUI
 
-/** The window's pages. The five sidebar rows are Page.talk + Page.control (⌘1…⌘5). */
+/** The window's pages. The six sidebar rows are Page.talk + Page.control (⌘1…⌘6). */
 enum Page: String, CaseIterable, Identifiable {
-  case home, conversations, jobs, memory, settings
+  case home, conversations, activity, jobs, memory, settings
 
-  static let talk: [Page] = [.home, .conversations, .jobs]
+  static let talk: [Page] = [.home, .conversations, .activity, .jobs]
   static let control: [Page] = [.memory, .settings]
 
   var id: String { return rawValue }
@@ -20,6 +20,7 @@ enum Page: String, CaseIterable, Identifiable {
     switch self {
     case .home: return "Home"
     case .conversations: return "Conversations"
+    case .activity: return "Activity"
     case .jobs: return "Jobs"
     case .memory: return "Memory"
     case .settings: return "Settings"
@@ -30,13 +31,14 @@ enum Page: String, CaseIterable, Identifiable {
     switch self {
     case .home: return "house"
     case .conversations: return "bubble.left.and.bubble.right"
+    case .activity: return "clock.arrow.circlepath"
     case .jobs: return "tray.full"
     case .memory: return "note.text"
     case .settings: return "gearshape"
     }
   }
 
-  /** "1"…"5" for the sidebar pages (⌘1…⌘5). */
+  /** "1"…"6" for the sidebar pages (⌘1…⌘6). */
   var key: KeyEquivalent? {
     guard let i = (Page.talk + Page.control).firstIndex(of: self) else { return nil }
     return KeyEquivalent(Character(String(i + 1)))
@@ -181,6 +183,7 @@ private struct MainWindowView: View {
       switch nav.page {
       case .home: HomeView(model: model, nav: nav, actions: actions)
       case .conversations: ConversationsPage(model: model, nav: nav)
+      case .activity: ActivityPage(model: model, nav: nav)
       case .jobs: JobsView(model: model)
       case .settings: SettingsView(model: model, nav: nav, control: control)
       case .memory: MemoryPage(model: model)

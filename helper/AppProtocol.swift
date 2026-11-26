@@ -494,8 +494,12 @@ struct AuditEntry: Decodable, Equatable {
   var urlAfter: String = ""
   var verdict: String = ""
   var error: String = ""
+  /** "not-needed" | "approved" | "declined" | "unavailable": the owner's answer, for Activity's "you allowed". */
+  var confirmation: String = ""
+  /** The command id (`h_<16 hex>`), equal to the history id. "" on older lines. A label for joining, never an input. */
+  var cmd: String = ""
 
-  enum CodingKeys: String, CodingKey { case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error }
+  enum CodingKeys: String, CodingKey { case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -509,6 +513,8 @@ struct AuditEntry: Decodable, Equatable {
     urlAfter = (try? c.decodeIfPresent(String.self, forKey: .urlAfter)) ?? ""
     verdict = (try? c.decodeIfPresent(String.self, forKey: .verdict)) ?? ""
     error = (try? c.decodeIfPresent(String.self, forKey: .error)) ?? ""
+    confirmation = (try? c.decodeIfPresent(String.self, forKey: .confirmation)) ?? ""
+    cmd = (try? c.decodeIfPresent(String.self, forKey: .cmd)) ?? ""
   }
 }
 
