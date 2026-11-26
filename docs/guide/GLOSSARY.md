@@ -172,7 +172,7 @@ every other key, and never sends or saves what you type.
 
 ### Job
 
-A longer task Claude does in the background while you do something else. It starts only after you click Start,
+A longer task Claude does in the background while you do something else. It starts only after you click Allow,
 works in its own folder inside a *sandbox*, and you can stop it any time.
 *Example:* "While I'm cooking, write a first draft of my lab report."
 
