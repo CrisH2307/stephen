@@ -112,7 +112,8 @@ struct Theme: Equatable {
 // MARK: scale (plan section 9)
 
 enum Corner {
-  static let askBox: CGFloat = 14, list: CGFloat = 12, button: CGFloat = 10, row: CGFloat = 8
+  /// paperAskBox: the Paper Ask box, rounder like the website's cards.
+  static let askBox: CGFloat = 14, paperAskBox: CGFloat = 18, list: CGFloat = 12, button: CGFloat = 10, row: CGFloat = 8
 }
 
 /// v3.2: roomier than v3.1 (was 4, 8, 12, 16, 24, 32). Still a 2 pt grid; page padding is xxl, section gaps xl.
@@ -168,7 +169,7 @@ extension View {
 
   func paperBox<S: InsettableShape>(_ t: Theme, fill: Color, shape: S, pop: CGFloat = 4, edge: Color? = nil) -> some View {
     // The shadow is a second ink shape behind, not .shadow(): crisp, and drawn the same on and off screen.
-    return background(ZStack { shape.fill(t.ink).offset(x: pop, y: pop); shape.fill(fill) })
+    return background(ZStack { if pop > 0 { shape.fill(t.ink).offset(x: pop, y: pop) }; shape.fill(fill) })
       .overlay(shape.strokeBorder(edge ?? t.ink, lineWidth: 2))
   }
 }

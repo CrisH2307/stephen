@@ -131,7 +131,7 @@ struct AskBoxView: View {
     .fixedSize(horizontal: false, vertical: true)
     .background(GeometryReader { g in Color.clear.preference(key: AskBoxSizeKey.self, value: g.size) })
     .frame(height: cardHeight > 0 ? cardHeight : nil, alignment: .top)
-    .clipShape(RoundedRectangle(cornerRadius: t.paper ? 18 : Corner.askBox, style: .continuous))
+    .clipShape(RoundedRectangle(cornerRadius: t.paper ? Corner.paperAskBox : Corner.askBox, style: .continuous))
     .modifier(AskCard())
     .background(shortcuts)
     .onPreferenceChange(AskBoxSizeKey.self) { size in follow(size.height) }
@@ -268,7 +268,7 @@ private struct AskCard: ViewModifier {
   @Environment(\.stephenTheme) var t
   func body(content: Content) -> some View {
     if t.paper {
-      content.paperBox(t, fill: t.askFill, radius: 18)
+      content.paperBox(t, fill: t.askFill, radius: Corner.paperAskBox)
     } else {
       content
         .background(RoundedRectangle(cornerRadius: Corner.askBox).fill(t.surface).shadow(color: .black.opacity(0.18), radius: 14, y: 6))
