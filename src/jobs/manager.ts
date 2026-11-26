@@ -77,6 +77,8 @@ export interface JobManagerOptions {
   cliPath?: string;
   stephenRepo?: string;
   now?: () => number;
+  /** True once today's daily cost limit is used (voice DailyLimit.allowed). A new job is refused; a running one is not stopped. */
+  dailyLimitUsed?: () => boolean;
   /** Starts the supervisor (tests). */
   spawn?: SpawnFn;
   git?: GitFn;
@@ -107,6 +109,8 @@ export interface JobPlan {
   edit?: { of: string; version: number; base: string; copyFrom?: string; files?: number; bytes?: number; fromBranch?: string };
 }
 
+/** A new job at 100% of today's cost limit. Running jobs are not stopped. */
+export const JOB_LIMIT_USED = "Today's limit is used. The job did not start.";
 /** ADR-010: Edit request is off while a job is queued or running (threat E9). */
 export const EDIT_STOP_FIRST = 'Stop the job first to change its request.';
 /** ADR-010 copy caps for an edited job's folder (threat E10). */
@@ -282,8 +286,9 @@ export class JobManager {
     return `${w.y}-${String(w.mo + 1).padStart(2, '0')}-${String(w.d).padStart(2, '0')}`;
   }
 
-  /** Why another job can't start now ('' = it can): the running cap and the daily cap (rule 5). */
+  /** Why another job can't start now ('' = it can): today's cost limit, the running cap and the daily cap (rule 5). */
   capError(): string {
+    if (this.o.dailyLimitUsed?.()) return JOB_LIMIT_USED;
     const all = this.list();
     const running = all.filter((j) => !isFinal(j.status)).length;
     if (running >= this.o.config.maxRunning) return `${running} jobs are already running, the most at once. Stop one or wait for it to finish.`;
