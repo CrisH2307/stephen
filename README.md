@@ -2,6 +2,7 @@
 
 <p align="center">
   <img src="docs/guide/images/hero.svg" alt="Stephen's Ask box under the Mac menu bar. You say: Hey Stephen, open YouTube. Stephen answers. A card asks Deny or Allow before Stephen clicks Send." width="860">
+  <br><sub>Illustration with made-up sample text, not a real screenshot.</sub>
 </p>
 
 **Stephen is a voice helper for your Mac.** You say "Hey Stephen, open YouTube", or hold F5 and talk, and it does
@@ -27,6 +28,8 @@ Once Stephen is set up, try these four things in order:
    (This one needs your calendar connected first.)
 4. **Ask it to do something risky,** like clicking Send on a form you filled. A card appears with **Deny** and
    **Allow**. Click **Deny** to see that nothing happens.
+
+New words in this page, like "wake word"? The [glossary](docs/guide/GLOSSARY.md) explains each one.
 
 ## Set it up
 
@@ -71,6 +74,9 @@ What Stephen keeps, what leaves your Mac and how to delete it: [privacy](docs/PR
 | Page | For |
 |---|---|
 | [The guide](docs/guide/README.md) | Everyone: what Stephen is and how to use it |
+| [Getting started](docs/guide/GETTING-STARTED.md) | Setup, step by step, with pictures |
+| [Safety in plain words](docs/guide/SAFETY-IN-PLAIN-WORDS.md) | How Stephen keeps you in charge |
+| [Glossary](docs/guide/GLOSSARY.md) | Plain-word meanings of the technical words |
 | [Full technical setup](docs/guide/ADVANCED-SETUP.md) | Every command, setting and fix |
 | [Privacy](docs/PRIVACY.md) | What Stephen keeps and what leaves your Mac |
 

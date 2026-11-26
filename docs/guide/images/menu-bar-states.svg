@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260" role="img" aria-labelledby="mb-title mb-desc">
+  <title id="mb-title">Stephen menu bar icon states</title>
+  <desc id="mb-desc">Five menu bar icons in a row, each with its label: Idle (empty circle), Listening (ear), Recording (microphone, red), Working (hourglass), Speaking (speaker with sound waves). A note below says a ! after the icon means Input Monitoring is off.</desc>
+  <style>
+    .h { font-family: "Avenir Next", Avenir, -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; }
+    .b { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #15151A; }
+    .s { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #4A4A57; }
+    .lbl { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-weight: 700; fill: #15151A; font-size: 16px; }
+    .ln { fill: none; stroke: #15151A; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+  <rect width="900" height="260" fill="#FBF8F1"/>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="11" cy="11" r="1.2" fill="#E2DBC9"/>
+    </pattern>
+  </defs>
+  <rect width="900" height="260" fill="url(#dots)"/>
+
+  <text class="h" x="40" y="44" font-size="22">Stephen's menu bar icon</text>
+
+  <!-- Chip 1: idle -->
+  <rect x="44" y="68" width="150" height="100" rx="16" fill="#15151A"/>
+  <rect x="40" y="64" width="150" height="100" rx="16" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <circle cx="115" cy="98" r="16" class="ln"/>
+  <text class="lbl" x="115" y="150" text-anchor="middle">Idle</text>
+
+  <!-- Chip 2: listening (ear) -->
+  <rect x="214" y="68" width="150" height="100" rx="16" fill="#15151A"/>
+  <rect x="210" y="64" width="150" height="100" rx="16" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <path class="ln" d="M279 84 C291 84 294 96 291 104 C289 110 283 112 281 110 C279 108 281 106 282 104 C285 98 280 94 276 98 C272 102 270 112 280 116"/>
+  <text class="lbl" x="285" y="150" text-anchor="middle">Listening</text>
+
+  <!-- Chip 3: recording (mic) -->
+  <rect x="384" y="68" width="150" height="100" rx="16" fill="#15151A"/>
+  <rect x="380" y="64" width="150" height="100" rx="16" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <rect x="449" y="84" width="12" height="18" rx="6" fill="none" stroke="#D93025" stroke-width="2.5"/>
+  <path d="M445 96 Q445 108 455 108 Q465 108 465 96" fill="none" stroke="#D93025" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M455 108 V116 M449 116 H461" fill="none" stroke="#D93025" stroke-width="2.5" stroke-linecap="round"/>
+  <text class="lbl" x="455" y="150" text-anchor="middle">Recording</text>
+
+  <!-- Chip 4: working (hourglass) -->
+  <rect x="554" y="68" width="150" height="100" rx="16" fill="#15151A"/>
+  <rect x="550" y="64" width="150" height="100" rx="16" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <path class="ln" d="M616 84 H634 M616 112 H634 M618 84 V90 L625 98 L632 90 V84 M618 112 V106 L625 98 L632 106 V112"/>
+  <text class="lbl" x="625" y="150" text-anchor="middle">Working</text>
+
+  <!-- Chip 5: speaking (speaker with waves) -->
+  <rect x="724" y="68" width="150" height="100" rx="16" fill="#15151A"/>
+  <rect x="720" y="64" width="150" height="100" rx="16" fill="#FFFFFF" stroke="#15151A" stroke-width="2"/>
+  <path class="ln" d="M781 94 H786 L795 86 V110 L786 102 H781 Z"/>
+  <path class="ln" d="M800 93 Q804 98 800 103"/>
+  <path class="ln" d="M805 88 Q812 98 805 108"/>
+  <text class="lbl" x="795" y="150" text-anchor="middle">Speaking</text>
+
+  <text class="s" x="40" y="214" font-size="15">A ! after the icon means Input Monitoring is off.</text>
+</svg>
