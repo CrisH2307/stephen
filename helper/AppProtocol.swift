@@ -12,8 +12,6 @@ let APP_PROTOCOL_VERSION = "1"
 let APP_MAX_LINE_BYTES = 256 * 1024
 /** chat.send text limit (characters). */
 let APP_CHAT_MAX_CHARS = 2000
-/** memory.json holds at most this many items (section 2). */
-let APP_MEMORY_MAX_ITEMS = 30
 /** Requests without a response after this long fail with "timed out". */
 let APP_REQUEST_TIMEOUT_SECONDS = 15.0
 /** While someone (window or Ask box) wants the connection and Stephen isn't reachable, the first retry waits this long. */
@@ -185,9 +183,6 @@ struct AppRequest: Encodable {
   }
   static func historyClear(_ id: String) -> AppRequest { return AppRequest(id: id, type: "history.clear") }
   static func memoryList(_ id: String) -> AppRequest { return AppRequest(id: id, type: "memory.list") }
-  static func memoryAdd(_ id: String, text: String) -> AppRequest {
-    return AppRequest(id: id, type: "memory.add", text: text)
-  }
   static func memoryUpdate(_ id: String, memId: String, text: String) -> AppRequest {
     return AppRequest(id: id, type: "memory.update", text: text, memId: memId)
   }
