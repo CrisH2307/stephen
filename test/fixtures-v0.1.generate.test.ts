@@ -20,8 +20,10 @@ import { appendToolLog } from '../src/server/tool-log.js';
 import { recordIncident } from '../src/telemetry/incidents.js';
 import { LatencyMonitor } from '../src/telemetry/latency.js';
 import { TimerStore } from '../src/timers/store.js';
+import { Conversation } from '../src/voice/conversation.js';
 
-export const T0 = new Date(2026, 10, 25, 9, 30).getTime();
+/** 2026-11-25 14:30 UTC, in every time zone. */
+export const T0 = Date.UTC(2026, 10, 25, 14, 30);
 const OUT = resolve(__dirname, 'fixtures/v0.1');
 const first = (dir: string) => join(dir, readdirSync(dir).sort()[0]!);
 
@@ -70,7 +72,7 @@ describe.runIf(process.env.STEPHEN_GEN_FIXTURES === '1')('generate the v0.1 fixt
 
     const audit = new AuditLog({ path: join(home, 'audit.log') });
     await audit.append({ ts: at.toISOString(), tool: 'navigate', outcome: 'ok', intent: 'open the example page' });
-    copyFileSync(join(home, 'audit.log'), join(OUT, 'audit.log'));
+    copyFileSync(join(home, 'audit.log'), join(OUT, 'audit.log.fixture')); // .gitignore drops *.log
 
     mkdirSync(join(home, 'voice'), { recursive: true, mode: 0o700 });
     appendToolLog(join(home, 'voice', 'tool-log.jsonl'), { tool: 'navigate', isError: false, ms: 120, cmd: 'h_0000000000000001' });
@@ -80,6 +82,10 @@ describe.runIf(process.env.STEPHEN_GEN_FIXTURES === '1')('generate the v0.1 fixt
       version: 1, privateReads: [{ host: 'mail.google.com', scope: 'mail.google.com', at: T0 }], trustedHosts: ['example.com'],
     });
     copyFileSync(join(home, 'voice', 'conversation-state.json'), join(OUT, 'conversation-state.json'));
+
+    // The follow-up conversation (src/voice/conversation.ts): the Claude session id, its end time and its trust.
+    new Conversation({ dir: join(home, 'voice'), windowSec: 120, now: () => T0 }).remember('11111111-2222-4333-8444-555555555555', undefined, 'trusted');
+    copyFileSync(join(home, 'voice', 'conversation.json'), join(OUT, 'conversation.json'));
 
     const rec = new ReplayRecorder({ home, enabled: () => true, now: () => T0, userHome: join(home, 'user'), excludeFromBackups: async () => {} });
     rec.capture({ id: 'h_0000000000000003', source: 'voice-ptt', startedAt: T0, audio: new Float32Array(160), transcript: 'open the example page' });

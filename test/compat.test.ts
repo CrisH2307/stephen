@@ -5,8 +5,9 @@
  * Never edit a v0.1 fixture; a later version adds a v0.2 folder next to it.
  *
  * Covered: settings (config.json, saved as settings.json because .gitignore drops config.json), memory, memory
- * suggestions, timers, a history line, a latency line, an incident line, a job state, the audit log, the tool log,
- * the conversation trust state, and an F5 recording with its label.
+ * suggestions, timers, a history line, a latency line, an incident line, a job state, the audit log (saved as
+ * audit.log.fixture because .gitignore drops *.log), the tool log, the follow-up conversation, the conversation trust
+ * state, and an F5 recording with its label.
  * Not covered, on purpose: Claude Code's own transcripts (Claude Code's format, not ours), the Keychain, and the old
  * .env file (the person's own, read only for known names).
  */
@@ -28,9 +29,11 @@ import { readToolLog } from '../src/server/tool-log.js';
 import { parseIncidentRecord } from '../src/telemetry/incidents.js';
 import { parseLatencyRecord } from '../src/telemetry/latency.js';
 import { TimerStore } from '../src/timers/store.js';
+import { Conversation } from '../src/voice/conversation.js';
 
 const FIX = resolve(__dirname, 'fixtures/v0.1');
-const T0 = new Date(2026, 10, 25, 9, 30).getTime();
+/** 2026-11-25 14:30 UTC, the time the fixtures were written, in every time zone. */
+const T0 = Date.UTC(2026, 10, 25, 14, 30);
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-compat-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -112,7 +115,7 @@ describe("B10: today's code reads the v0.1 files", () => {
 
   it('audit log: the entry keeps its tool, outcome and intent', async () => {
     const home = newHome();
-    const path = restore('audit.log', join(home, 'audit.log'));
+    const path = restore('audit.log.fixture', join(home, 'audit.log')); // stored as .fixture: .gitignore drops *.log
     expect(await new AuditLog({ path }).recent(10)).toEqual([
       expect.objectContaining({ tool: 'navigate', outcome: 'ok', intent: 'open the example page' }),
     ]);
@@ -122,6 +125,14 @@ describe("B10: today's code reads the v0.1 files", () => {
     const home = newHome();
     const path = restore('tool-log.jsonl', join(home, 'voice', 'tool-log.jsonl'));
     expect(readToolLog(path)).toEqual([{ tool: 'navigate', isError: false, ms: 120, cmd: 'h_0000000000000001' }]);
+  });
+
+  it('follow-up conversation: inside the window, a command of the same trust resumes the saved session', () => {
+    const home = newHome();
+    restore('conversation.json', join(home, 'voice', 'conversation.json'));
+    const conv = new Conversation({ dir: join(home, 'voice'), windowSec: 120, now: () => T0 + 10_000 });
+    expect(conv.peek('trusted')).toBe('11111111-2222-4333-8444-555555555555');
+    expect(conv.peek('wake')).toBeNull();
   });
 
   it('conversation trust state: the private read and the approved host survive', () => {
