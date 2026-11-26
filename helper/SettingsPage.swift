@@ -5,6 +5,7 @@
 // name, so panes have no big title. Personal's parts live here (About you, the permission table, Connected, Routines).
 
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 /** Show `item` when Settings opens next (the pane is remembered under "settingsPane"). */
@@ -493,6 +494,7 @@ private struct AboutSettingsPane: View {
 
   var body: some View {
     Form {
+      Section { LoginItemRow() }
       Section {
         FormRow("Config file", detail: model.configPath ?? "unknown") {
           QuietButton("Open") { openConfigFile(model.configPath) }
@@ -516,6 +518,46 @@ private struct AboutSettingsPane: View {
 
   private func openDoctor(_ result: String) {
     if !result.isEmpty { UserDefaults.standard.set(true, forKey: Self.doctorKey) }
+  }
+}
+
+/**
+ * F5: "Start Stephen at login" (SMAppService, macOS 13+; the helper needs macOS 14). The switch shows what macOS says,
+ * not what was asked: after a change it reads the status again. Needs approval: macOS lists Stephen Helper in System
+ * Settings > General > Login Items, and the row says so.
+ */
+private struct LoginItemRow: View {
+  @Environment(\.stephenTheme) var t
+  @State private var status = SMAppService.mainApp.status
+  @State private var problem: String? = nil
+
+  var body: some View {
+    let on = Binding(get: { status == .enabled || status == .requiresApproval }, set: { change($0) })
+    VStack(alignment: .leading, spacing: Space.xs) {
+      Toggle("Start Stephen at login", isOn: on).tint(t.accent)
+      Note(detail)
+    }
+    .onAppear { status = SMAppService.mainApp.status }
+  }
+
+  private var detail: String {
+    if let p = problem { return p }
+    switch status {
+    case .requiresApproval: return "Turn on Stephen Helper in System Settings, General, Login Items."
+    case .enabled: return "Stephen's menu bar icon opens when you log in."
+    default: return "Off: open Stephen yourself after you log in."
+    }
+  }
+
+  private func change(_ want: Bool) {
+    problem = nil
+    do {
+      if want { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+    } catch {
+      problem = "macOS said no: \(error.localizedDescription)"
+    }
+    status = SMAppService.mainApp.status
+    if status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
   }
 }
 

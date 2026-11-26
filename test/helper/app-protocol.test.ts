@@ -1129,6 +1129,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const appearance = read('AppearanceSettings.swift');
     expect(settings).toContain('Toggle("Speak replies out loud", isOn: bind(\\.speak)).tint(t.accent)');
     expect(settings).toContain('Toggle("Explain steps as you go", isOn: bind(\\.explain)).tint(t.accent)');
+    expect(settings).toContain('Toggle("Start Stephen at login", isOn: on).tint(t.accent)'); // F5
     expect(appearance).toContain('.tint(t.accent)');
     expect(appearance).toContain('Text(verbatim: "Follow the Mac")');
     expect(appearance).toContain('Text(verbatim: "Light by day, Dark at night. The window and the Ask box change together.")');
