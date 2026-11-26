@@ -146,6 +146,7 @@ function harness(opts: HarnessOpts = {}): Harness {
   const { line = 'WebDriver BiDi listening on ws://127.0.0.1:4444', exitCode, connectError, ...deps } = opts;
   h.driver = new ZenDriver(tc.cfg, {
     isExecutable: async () => true,
+    otherUserCount: async () => 0, // B5: a single-user Mac unless a test says otherwise
     isProcessRunning: async () => false,
     isPidAlive: () => false,
     listenTimeoutMs: 300,
@@ -656,6 +657,22 @@ describe('ZenDriver.inspect / launchForClaude (zen-launch)', () => {
     expect(probes).toEqual(['ws://127.0.0.1:7777/session', 'ws://127.0.0.1:7777/session']);
     expect(h.connects).toHaveLength(0); // never opens a BiDi session
     expect(existsSync(statePath())).toBe(true);
+  });
+
+  it.each([[2], [null]])('B5: with other user accounts (%s), no Zen is started and the reason names only a count', async (others) => {
+    tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
+    const dir = realProfile();
+    const h = harness({ resolveRealProfile: async () => dir, otherUserCount: async () => others });
+    await expect(h.driver.launchForClaude()).rejects.toMatchObject({ code: 'NEEDS_USER', message: expect.stringMatching(others === null ? /couldn't check/ : /2 other user accounts.*Chrome/) });
+    expect(h.spawns).toHaveLength(0);
+    expect(existsSync(statePath())).toBe(false);
+  });
+
+  it('B5: launch "auto" on a shared Mac does not start Zen either', async () => {
+    tc = makeTestConfig({ zen: { extraArgs: [] } });
+    const h = harness({ otherUserCount: async () => 1 });
+    await expect(h.driver.connect('agent')).rejects.toMatchObject({ code: 'NEEDS_USER' });
+    expect(h.spawns).toHaveLength(0);
   });
 
   it('launchForClaude: launches the real profile detached, writes state WITHOUT an owner, opens no session', async () => {
