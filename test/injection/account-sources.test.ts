@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { type Announcement, formatAnnouncements } from '../../src/accounts/canvas.js';
 import { formatInstances, instancesBetween, parseIcs } from '../../src/accounts/calendar.js';
 import { accountBlock, field } from '../../src/accounts/result.js';
-import { LT_LOOKALIKES, SLASH_LOOKALIKES } from '../../src/safety/index.js';
+import { LT_LOOKALIKES, SLASH_LOOKALIKES } from '../../src/safety/text.js';
 import { cleanJobOutput } from '../../src/jobs/spec.js';
 
 const TZ = 'America/Toronto';

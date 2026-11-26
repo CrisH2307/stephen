@@ -7,7 +7,8 @@
  * positive control for the same call is a separate plain `it` that must pass.
  */
 import { describe, expect, it } from 'vitest';
-import { LT_LOOKALIKES, SLASH_LOOKALIKES, wrapUntrusted } from '../../src/safety/index.js';
+import { wrapUntrusted } from '../../src/safety/index.js';
+import { LT_LOOKALIKES, SLASH_LOOKALIKES } from '../../src/safety/text.js';
 import { FakePage, setup, textOf } from '../server/fakes.js';
 
 const BLOCK = /<untrusted_web_content[\s\S]*?<\/untrusted_web_content>/g;

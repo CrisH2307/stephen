@@ -10,8 +10,7 @@
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reduceLinks } from '../accounts/result.js';
-import { escapeUntrustedTags } from '../safety/index.js';
-import { stripUnsafe, truncate } from '../safety/text.js';
+import { escapeUntrustedTags, stripUnsafe, truncate } from '../safety/text.js';
 
 /** The only tools a job has (`--tools`); the init message must list exactly these (runner checks it). */
 export const JOB_TOOLS = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep'] as const;

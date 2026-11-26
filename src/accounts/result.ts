@@ -4,8 +4,7 @@
  * email bodies, Notion text) is cleaned: HTML stripped, control/bidi characters removed, delimiters escaped,
  * links reduced to their host, one-time codes masked, and the whole block capped.
  */
-import { escapeUntrustedTags } from '../safety/index.js';
-import { stripUnsafe } from '../safety/text.js';
+import { escapeUntrustedTags, stripUnsafe } from '../safety/text.js';
 import type { PrivateDataSource } from '../safety/egress.js';
 
 export const MAX_RESULT_CHARS = 6000;
