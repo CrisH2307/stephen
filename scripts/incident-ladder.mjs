@@ -54,7 +54,8 @@ const oneLine = (e) => String(e?.message ?? e).split('\n')[0];
 /** Runs a program with argv (never a shell). Resolves with stdout; rejects with the error. */
 function run(file, args, opts = {}) {
   return new Promise((resolveRun, reject) => {
-    execFile(file, args, { maxBuffer: 20 * 1024 * 1024, ...opts }, (err, stdout) => (err ? reject(err) : resolveRun(stdout)));
+    const child = execFile(file, args, { maxBuffer: 20 * 1024 * 1024, ...opts }, (err, stdout) => (err ? reject(err) : resolveRun(stdout)));
+    child.stdin?.end();
   });
 }
 
@@ -178,11 +179,12 @@ async function handleIssue(issue, comments, budget, today) {
       if (!resolved) log(`#${n}: dry run, would add label needs-cris and post the #${INBOX_ISSUE} line.`);
       return;
     }
+    // The label goes first: if it fails, nothing is posted, so the marker is never written for a run that did not finish.
+    if (!resolved) await run('gh', ['issue', 'edit', String(n), '--repo', REPO, '--add-label', 'needs-cris']);
     const commentFile = join(work, 'comment.md');
     await writeFile(commentFile, `${comment}\n`);
     await run('gh', ['issue', 'comment', String(n), '--repo', REPO, '--body-file', commentFile]);
     if (!resolved) {
-      await run('gh', ['issue', 'edit', String(n), '--repo', REPO, '--add-label', 'needs-cris']);
       const inboxFile = join(work, 'inbox.md');
       await writeFile(inboxFile, `${inboxLine(n, 5, shown ? shown.confidence : 'none')}\n`);
       await run('gh', ['issue', 'comment', String(INBOX_ISSUE), '--repo', REPO, '--body-file', inboxFile]);
@@ -193,17 +195,30 @@ async function handleIssue(issue, comments, budget, today) {
   }
 }
 
+/** Every page of a GitHub REST list (100 per page). */
+async function listAll(path) {
+  const out = [];
+  for (let page = 1; ; page++) {
+    const batch = await ghJson([`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`]);
+    out.push(...batch);
+    if (batch.length < 100) return out;
+  }
+}
+
 async function main() {
-  const listed = await ghJson([`repos/${REPO}/issues?labels=incident&state=open&per_page=100`]);
+  const today = dayUtc(new Date());
+  // Open and closed incident issues touched today: the daily cap counts Claude runs on all of them.
   // The author check comes first: a body from any other id is never read.
-  const mine = listed.filter((i) => !i.pull_request && ALLOWED_AUTHOR_IDS.includes(i.user?.id));
+  const touched = (await listAll(`repos/${REPO}/issues?labels=incident&state=all&since=${today}T00:00:00Z`)).filter(
+    (i) => !i.pull_request && ALLOWED_AUTHOR_IDS.includes(i.user?.id),
+  );
+  const mine = touched.filter((i) => i.state === 'open');
   if (!mine.length) return log('No open incident issues from an allowed author.');
   if (!existsSync(join(ROOT, 'dist', 'telemetry', 'incident-ladder.js'))) throw new Error('Run npm run build first (dist/ is missing).');
   await run('git', ['fetch', '--quiet', 'origin', 'qa'], { cwd: ROOT });
 
-  const today = dayUtc(new Date());
   const commentsOf = new Map();
-  for (const i of mine) commentsOf.set(i.number, await ghJson([`repos/${REPO}/issues/${i.number}/comments?per_page=100`]));
+  for (const i of touched) commentsOf.set(i.number, await listAll(`repos/${REPO}/issues/${i.number}/comments`));
   const budget = { used: claudeRunsToday([...commentsOf.values()].flat(), today) };
   for (const i of mine) {
     try {
