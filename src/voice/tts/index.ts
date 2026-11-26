@@ -71,7 +71,7 @@ export interface TtsPlan {
 export interface TtsSpeaker extends Speaker {
   /** Resolves the provider order (key lookup, model check) — done once, then cached. */
   plan(): Promise<TtsPlan>;
-  /** Look up the key and load the local model now, so the first reply isn't slower. Never rejects. */
+  /** Look up the key and load the local model now, so the first reply isn't slower. Rejects if that fails; the caller logs it. */
   warm(): Promise<void>;
   /** The provider that spoke the last finished reply (null before the first one). */
   readonly lastProvider: TtsProviderName | null;
@@ -174,16 +174,14 @@ export function createTts(cfg: TtsConfig, deps: TtsDeps): TtsSpeaker {
     get lastProvider() {
       return last;
     },
+    // Rejects when the warm-up fails; the caller logs it. speak() does not depend on a warm-up.
+    // Rejects when the warm-up fails; the caller logs it. speak() does not depend on a warm-up.
     async warm() {
-      try {
-        const { plan, key } = await getPlan();
-        const first = plan.providers.find((p) => !dead.has(p));
-        // Kokoro takes 1–2 s to load: do it now when it is first, or the fallback right after ElevenLabs.
-        if (plan.providers.includes('kokoro') && (first === 'kokoro' || first === 'elevenlabs')) {
-          await (provider('kokoro', key) as KokoroSpeaker).warm();
-        }
-      } catch {
-        /* reported when it is used */
+      const { plan, key } = await getPlan();
+      const first = plan.providers.find((p) => !dead.has(p));
+      // Kokoro takes 1–2 s to load: do it now when it is first, or the fallback right after ElevenLabs.
+      if (plan.providers.includes('kokoro') && (first === 'kokoro' || first === 'elevenlabs')) {
+        await (provider('kokoro', key) as KokoroSpeaker).warm();
       }
     },
     speak(text: string): SpeakHandle {

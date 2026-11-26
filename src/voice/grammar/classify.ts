@@ -98,7 +98,7 @@ function resolve(text: string, lists: OwnerLists, kinds: ReadonlyArray<'app' | '
   if (exact.size === 1) return [...exact.values()][0]!;
   if (exact.size > 1) return no('ambiguous_entity');
   // ponytail: edit distance 1 (2 for names of 8+ letters); a near match only ever yields a hint.
-  const near = pool.find((e) => { const n = plainWords(e.name); return n.length >= 4 && levenshtein(t, n, n.length >= 8 ? 2 : 1) <= (n.length >= 8 ? 2 : 1); });
+  const near = pool.find((e) => { const n = plainWords(e.name); const max = n.length >= 8 ? 2 : 1; return n.length >= 4 && levenshtein(t, n, max) <= max; });
   return near ? no('fuzzy_only', near.name) : no('unknown_entity');
 }
 const isEntity = (r: Entity | Classification): r is Entity => 'kind' in r;
