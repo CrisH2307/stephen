@@ -1,5 +1,12 @@
 {
-  "chrome": { "mode": "agent" },
-  "memory": { "enabled": true, "newOption": 2 },
-  "futureThing": { "on": true }
+  "chrome": {
+    "mode": "agent"
+  },
+  "memory": {
+    "enabled": true,
+    "newOption": 2
+  },
+  "futureThing": {
+    "on": true
+  }
 }

@@ -1,1 +1,1 @@
-{"version":1,"items":[{"id":"t1","kind":"timer","text":"tea","dueAt":1795617600000,"createdAt":1795617000000,"durationMs":600000},{"id":"t2","kind":"reminder","text":"call mom","dueAt":1795620600000,"createdAt":1795617000000}]}
+{"version":1,"items":[{"id":"t1","kind":"timer","text":"example timer","dueAt":1795617600000,"createdAt":1795617000000,"durationMs":600000},{"id":"t2","kind":"reminder","text":"example reminder","dueAt":1795620600000,"createdAt":1795617000000}]}
