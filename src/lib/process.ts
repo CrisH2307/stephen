@@ -115,6 +115,14 @@ export function startedWithinJob(startedAt: number, jobStart: number, platform: 
   return startedAt >= Math.floor(jobStart / 1000) * 1000 - slack;
 }
 
+/** Resolve after `ms`. `unref`: the timer does not keep the process alive (warm-claude's polling loops). */
+export function sleep(ms: number, opts: { unref?: boolean } = {}): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (opts.unref) timer.unref();
+  });
+}
+
 /** Is any process of group `pid` still there? */
 export function groupAlive(pid: number): boolean {
   try {

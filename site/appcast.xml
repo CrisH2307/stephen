@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reserved update feed address: https://crish2307.github.io/stephen/appcast.xml
+     Empty on purpose. No update is published yet. The release job will fill this file later. -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Stephen updates</title>
+    <link>https://crish2307.github.io/stephen/</link>
+    <description>No updates yet.</description>
+  </channel>
+</rss>
