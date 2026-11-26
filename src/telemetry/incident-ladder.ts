@@ -39,7 +39,14 @@ export const SAFETY_PATHS: readonly string[] = [
   'src/lib/fs.ts',
 ];
 
-export const isSafetyPath = (p: string): boolean => SAFETY_PATHS.some((s) => (s.endsWith('/') ? p.startsWith(s) : p === s));
+/** Case-insensitive: macOS folders are, and checkFindings accepts any case under src/. */
+export const isSafetyPath = (p: string): boolean => {
+  const q = p.toLowerCase();
+  return SAFETY_PATHS.some((s0) => {
+    const s = s0.toLowerCase();
+    return s.endsWith('/') ? q.startsWith(s) : q === s;
+  });
+};
 const touchesSafety = (f: Findings | null): boolean => !!f && f.files.some(isSafetyPath);
 
 /** L1 never resolves alone. L2 to L4 resolve on a checked, high-confidence answer with a cause and files, and no safety file. */

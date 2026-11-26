@@ -38,6 +38,8 @@ describe('safety list', () => {
     ['src/jobs/manager.ts', true],
     ['src/app/protocol.ts', true],
     ['src/lib/fs.ts', true],
+    ['src/Safety/Policy.ts', true],
+    ['helper/appconfirm.swift', true],
     ['src/safetyx/a.ts', false],
     ['src/memory/intent.ts', false],
     ['src/app/config.ts', false],
