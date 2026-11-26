@@ -8,7 +8,8 @@ export function wrapUntrusted(source: string, url: string, text: string): string
   // Like the real one: only the origin of the URL goes in the attribute, never its path or hash.
   let origin = 'unknown';
   try {
-    origin = new URL(url).origin;
+    const u = new URL(url);
+    origin = u.origin !== 'null' ? u.origin : u.protocol === 'about:' ? u.href.split(/[?#]/)[0] ?? u.protocol : u.protocol;
   } catch {
     /* unknown */
   }
