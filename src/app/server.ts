@@ -30,10 +30,9 @@ import { MEMORY_MESSAGES, type MemoryResult, type MemoryStore } from '../memory/
 import type { ProposalStore } from '../memory/proposals.js';
 import { memoryGraph } from './memory-graph.js';
 import type { ModelChanges } from './model.js';
-import { compileLists, isPrivateUrl } from '../safety/policy.js';
 import { truncate } from '../safety/text.js';
 import type { AuditEntry } from '../types.js';
-import type { ChatStep } from './steps.js';
+import { BUILTIN_PRIVATE, hidePrivateFields, type ChatStep } from './steps.js';
 import type { CommandReport, ResumeRequest } from '../voice/assistant.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 import {
@@ -57,23 +56,6 @@ import type { PersonalSummary } from './personal.js';
 import type { UsageReport } from './usage.js';
 
 /** `<home>/run/app.sock` */
-const BUILTIN_LISTS = compileLists({ blockedDomains: [], sensitiveDomains: [] });
-const BUILTIN_PRIVATE = (url: string): boolean => isPrivateUrl(url, BUILTIN_LISTS);
-
-/**
- * T6 step 3 (docs/design/STOP-AND-ACTIVITY.md): an audit entry on a private site leaves app.sock without its element
- * label, intent, error and args. A Gmail row label can hold a code; the listener can't know what the owner already saw.
- */
-export function hidePrivateFields(e: AuditEntry, isPrivate: (url: string) => boolean): AuditEntry {
-  if (![e.urlBefore, e.urlAfter].some((u) => u !== undefined && isPrivate(u))) return e;
-  const out = { ...e };
-  delete out.element;
-  delete out.intent;
-  delete out.error;
-  delete out.args;
-  return out;
-}
-
 export function appSocketPath(home: string): string {
   return join(home, 'run', 'app.sock');
 }
