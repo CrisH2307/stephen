@@ -148,3 +148,26 @@ describe('R23 review M1: the help probe also gets the allow-listed env', () => {
     expect(seen).toContain('ANTHROPIC_API_KEY');
   });
 });
+
+describe('R23 review M1: install runs claude mcp with the allow-listed env', () => {
+  it('defaultRunClaude gives claude no proxy, NODE_OPTIONS or endpoint variable', async () => {
+    const bin = join(tmp, 'bin-install');
+    mkdirSync(bin, { recursive: true });
+    const out = join(tmp, 'install-env.txt');
+    writeFileSync(join(bin, 'claude'), `#!/bin/sh\nenv > "${out}"\n`);
+    chmodSync(join(bin, 'claude'), 0o755);
+    const keep = { ...process.env };
+    try {
+      Object.assign(process.env, { PATH: `${bin}:${process.env.PATH}`, HTTPS_PROXY: 'http://mitm.example:8080', ANTHROPIC_BASE_URL: 'https://proxy.example', ANTHROPIC_API_KEY: 'sk-ant-fake' });
+      const { defaultRunClaude } = await import('../../src/install.js');
+      await defaultRunClaude(['mcp', 'list']);
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in keep)) delete process.env[k];
+      Object.assign(process.env, keep);
+    }
+    const seen = readFileSync(out, 'utf8').split('\n').map((l) => l.split('=')[0]);
+    expect(seen).not.toContain('HTTPS_PROXY');
+    expect(seen).not.toContain('ANTHROPIC_BASE_URL');
+    expect(seen).toContain('ANTHROPIC_API_KEY');
+  });
+});
