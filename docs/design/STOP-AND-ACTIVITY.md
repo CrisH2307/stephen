@@ -79,7 +79,9 @@ The thread line says so in plain words (see above). Stephen does not try to undo
 
 ## What the Activity view reads, and what it must never show
 
-**Reads:** `audit.recent`, `history.list` and `jobs.list`. Nothing new is logged for T6.
+**Reads:** `audit.recent`, `history.list` and `jobs.list`. Nothing new is logged for T6. `audit.recent` returns at
+most 200 entries (`APP_AUDIT_LIMIT_MAX` in `src/app/protocol.ts`), so a busy day can show less than 24 hours. The page
+then says `Showing the last 200 actions.`
 
 **Never shows:**
 
@@ -87,8 +89,11 @@ The thread line says so in plain words (see above). Stephen does not try to undo
 - Full URLs. Only the host. Paths and queries can hold tokens or search words.
 - Page text, replies of tools, and the job's `log.jsonl` (the model's transcript). The page never reads it.
 - `error` strings. They can quote a page. The line says `failed` only.
-- Element labels from private sites (mail and the other sites in the private list). A Gmail row label can hold
-  "your code is 771204". The line then says `Clicked a row on mail.google.com`. `recent_actions` uses the same rule. Build step 3 does this in the listener.
+- For private sites (mail and the other sites in the private list): the element label, the `intent` and the
+  `error`. A Gmail row label can hold "your code is 771204". The line then says `Clicked a row on mail.google.com`.
+  This is stricter than `recent_actions` (`src/server/tools.ts`), which shows them once the site was read in the
+  session: the listener does not know what this session read, so Activity always hides them. Build step 3 does this
+  in the listener.
 
 **Untrusted text is framed:** element labels come from web pages and `intent` is written by the model. When shown,
 they are in quotes, one line, cleaned (`clean` in `src/safety/text.ts`, as the audit already does), cut at 60
@@ -122,16 +127,16 @@ reflex press safe for long jobs.
    line when a tool was running (from the `chat.done` `cancelled` outcome and its `tools`). Helper only. Size S.
 2. **Stop them too** for running jobs: after Stop, the helper reads `jobs.list` and offers one button that sends
    `jobs.stop` for each running job. Helper only. Size S.
-3. **Private labels hidden at the source**: the listener drops element labels of private sites from `audit.recent`
-   before they reach the helper, so neither Activity nor Conversations shows them. The private list is built into
+3. **Private fields hidden at the source**: the listener drops the element label, `intent` and `error` of entries on
+   private sites from `audit.recent` before they reach the helper, so neither Activity nor Conversations shows them.
+   This also fixes raw error text in Conversations today (`helper/ConversationsPage.swift`, the "Refused: ..." line
+   shows `a.error`). The private list is built into
    the policy (`isPrivateUrl` and `compileLists` in `src/safety/policy.ts`), not in `settings.get`, so the helper
    cannot do this itself. Touches the app.sock answer, so `[DEV REVIEW]` and an independent review. Size S.
 4. **Activity page** (after step 3): the sidebar row, the list, the row text builder with the "never show" rules,
-   and one Swift test for the row text (host only, no args, no error text, quotes and the 60 character cut). Helper
-   only. Size M.
-5. **Join by command id**, not by time: audit entries carry `cmd` today. If history ids are the same ids, Activity and
-   Conversations join on it and the "two commands at once could swap lines" ceiling goes away. Check at build time.
-   Size S.
+   and one Swift test for the row text (host only, no args, no error text, quotes and the 60 character cut). It joins
+   audit entries to their command by `cmd`, which equals the history id (`src/app/steps.ts` already joins this way),
+   and falls back to time only for old lines without `cmd`. Helper only. Size M.
 
 Each coding brief copies the AGENTS.md coding responsibilities. Opus codes; screenshots of every UI step in the PR.
 
