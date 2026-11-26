@@ -80,7 +80,7 @@ export interface CheckEnv {
 export const ZEN_IFRAME_HINT =
   'Zen could not deliver a click into a cross-site iframe (a known Gecko automation limitation with site isolation). ' +
   'If you need that, add "zen": {"extraPrefs": {"fission.webContentIsolationStrategy": 0}} to ~/.stephen/config.json, quit the agent Zen window, and re-run the selftest. ' +
-  'This only affects the Stephen agent profile, but it weakens site isolation there (see README, "Zen and cross-site iframes").';
+  'This only affects the Stephen agent profile, but it weakens site isolation there (see docs/guide/ADVANCED-SETUP.md#zen-use-the-zen-you-already-have-open, "Zen and cross-site iframes").';
 
 /** A check failed; `hint` tells the user what to do. */
 export class CheckFailure extends Error {
