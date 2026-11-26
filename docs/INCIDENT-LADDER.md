@@ -47,13 +47,22 @@ at L2.
 L1 has two free steps (docs/design/INCIDENT-LADDER-FREE-FIRST.md). L1a is the freellm model above. L1b runs only when
 L1a gave no draft: one OpenCode Zen free model, pinned in `L1B_MODELS` (`opencode/deepseek-v4.1-flash-free`). It runs
 `opencode run --standalone --archived --format json -m <model>`, never `--auto`, in an empty temp folder, with env from
-`withoutSecrets`, a 45 second timeout, and a temp config (also as `XDG_CONFIG_HOME`, so the global config with its MCP
-servers is not read) that has no MCP, no plugins and denies every tool. Like L1a it never resolves alone.
+`withoutSecrets`, a 45 second timeout, and a temp config that has no MCP, no plugins and denies every tool. `HOME`,
+`XDG_CONFIG_HOME` and `XDG_DATA_HOME` point into the temp folder, so the global config with its MCP servers and the
+files in `~/.claude` are not read, and `OPENCODE_DISABLE_CLAUDE_CODE`, `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT`,
+`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` and `OPENCODE_DISABLE_PROJECT_CONFIG` are `1` (names read from opencode 2.3.2).
+Like L1a it never resolves alone.
 
 L1b is off until Cris sets `INCIDENT_L1B_MODEL=opencode/deepseek-v4.1-flash-free`. Before that: (1) Cris says yes to
 OpenCode Zen keeping prompts (the same content-free lines and public code as L1a), and (2) a canary with the real
-`opencode` shows the temp config is read, no MCP server loads, and a prompt that asks for a shell, a file write or a
-web fetch gets no tool call. The canary result goes here. The trail shows `L1a draft` or `L1a none`, then `L1b ...`.
+`opencode` shows:
+- the temp config is read, and no MCP server or plugin loads;
+- nothing from `~/.claude` (CLAUDE.md, skills) reaches the prompt, with the temp `HOME` and the `OPENCODE_DISABLE_*`
+  names set, and the free model still answers with the temp `XDG_DATA_HOME` (no saved login);
+- a prompt that asks for a shell, a file write or a web fetch gets no tool call;
+- the `--format json` output has the answer in a `part` with `type: "text"`, the shape `opencodeText` reads.
+
+The canary result goes here. The trail shows `L1a draft` or `L1a none`, then `L1b ...`.
 
 ## The move-up rule
 
