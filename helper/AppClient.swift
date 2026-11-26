@@ -83,6 +83,16 @@ func jobsStillRunning(_ n: Int) -> String {
 
 /// R7: what the Home chat says when a send fails and the listener gave no plain sentence.
 let CHAT_SEND_FAILED = "Couldn't send that right now."
+/// R7: the same for the Memory, Settings, Accounts and Jobs pages.
+let MEMORY_CHANGE_FAILED = "Couldn't change your memory right now."
+let MEMORY_KEEP_FAILED = "Couldn't keep that memory right now."
+let MEMORY_SUGGESTIONS_FAILED = "Couldn't update your memory suggestions right now."
+let SETTINGS_LOAD_FAILED = "Couldn't load your settings right now."
+let SETTINGS_SAVE_FAILED = "Couldn't save your settings right now."
+let RECORDINGS_DELETE_FAILED = "Couldn't delete your recordings right now."
+let ACCOUNTS_FAILED = "Couldn't check your accounts right now."
+let JOBS_STOP_FAILED = "Couldn't stop that job right now."
+let JOBS_EDIT_FAILED = "Couldn't start the edited job right now."
 
 /**
  * R7: a failed action in plain words, never a raw "error". The listener's own sentence is kept because it says what to
@@ -569,7 +579,7 @@ final class AppModel: ObservableObject {
         self.assign(\.memoryNotice, isChange ? "Saved. Stephen starts a fresh conversation with the next command." : nil)
       } else {
         // A failed list is said by the Memory page states (graphListOk), never as a raw "error". A failed change says why.
-        self.assign(\.memoryNotice, isChange ? msg.message ?? "error" : nil)
+        self.assign(\.memoryNotice, isChange ? plainFailure(msg.message, MEMORY_CHANGE_FAILED) : nil)
       }
     }
   }
@@ -624,7 +634,7 @@ final class AppModel: ObservableObject {
         self.memory = msg.items ?? []
         self.memoryPageNotice = nil
       } else {
-        self.memoryPageNotice = msg.message ?? "error"
+        self.memoryPageNotice = plainFailure(msg.message, MEMORY_KEEP_FAILED)
       }
       self.refreshMemoryPage()
     }
@@ -641,7 +651,7 @@ final class AppModel: ObservableObject {
     if msg.type == "suggestions" {
       assign(\.suggestions, msg.suggestions ?? [])
     } else {
-      assign(\.memoryPageNotice, msg.message ?? "error")
+      assign(\.memoryPageNotice, plainFailure(msg.message, MEMORY_SUGGESTIONS_FAILED))
     }
   }
 
@@ -739,7 +749,7 @@ final class AppModel: ObservableObject {
         self.assign(\.configPath, msg.configPath)
         self.assign(\.settingsNotice, nil)
       } else {
-        self.assign(\.settingsNotice, msg.message ?? "error")
+        self.assign(\.settingsNotice, plainFailure(msg.message, SETTINGS_LOAD_FAILED))
       }
     }
   }
@@ -754,7 +764,7 @@ final class AppModel: ObservableObject {
         self.configJSON = msg.config
         done(nil)
       } else {
-        done(msg.message ?? "error")
+        done(plainFailure(msg.message, SETTINGS_SAVE_FAILED))
       }
     }
   }
@@ -768,7 +778,7 @@ final class AppModel: ObservableObject {
         self.configJSON = msg.config
         done(nil)
       } else {
-        done(msg.message ?? "error")
+        done(plainFailure(msg.message, SETTINGS_SAVE_FAILED))
       }
     }
   }
@@ -781,14 +791,14 @@ final class AppModel: ObservableObject {
         self.configJSON = msg.config
         done(nil)
       } else {
-        done(msg.message ?? "error")
+        done(plainFailure(msg.message, SETTINGS_SAVE_FAILED))
       }
     }
   }
 
   /** The switch's "Delete": every saved recording (`stephen replay delete --all`). */
   func deleteRecordings(done: @escaping (String?) -> Void) {
-    request(AppRequest.replayDelete(newId())) { msg in done(msg.type == "ok" ? nil : (msg.message ?? "error")) }
+    request(AppRequest.replayDelete(newId())) { msg in done(msg.type == "ok" ? nil : plainFailure(msg.message, RECORDINGS_DELETE_FAILED)) }
   }
 
   func refreshAudit() {
@@ -810,7 +820,7 @@ final class AppModel: ObservableObject {
         self.assign(\.accounts, msg.accounts ?? [])
         self.assign(\.accountsNotice, msg.note)
       } else {
-        self.assign(\.accountsNotice, msg.message ?? "error")
+        self.assign(\.accountsNotice, plainFailure(msg.message, ACCOUNTS_FAILED))
       }
     }
   }
@@ -855,7 +865,7 @@ final class AppModel: ObservableObject {
         if let i = self.jobs.firstIndex(where: { $0.id == row.id }) { self.jobs[i] = row }
         self.jobsNotice = nil
       } else {
-        self.jobsNotice = msg.message ?? "error"
+        self.jobsNotice = plainFailure(msg.message, JOBS_STOP_FAILED)
       }
       self.refreshJobs()
     }
@@ -875,7 +885,7 @@ final class AppModel: ObservableObject {
     request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS) { [weak self] msg in
       guard let self = self else { return }
       // The real id (with its -v<N>) is known only now that the job started; the dialog never named it.
-      if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \(row.id)" } else { self.jobsNotice = msg.message ?? "error"; self.jobStarted = nil }
+      if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \(row.id)" } else { self.jobsNotice = plainFailure(msg.message, JOBS_EDIT_FAILED); self.jobStarted = nil }
       self.refreshJobs()
     }
   }
