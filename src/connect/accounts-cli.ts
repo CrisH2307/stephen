@@ -6,7 +6,7 @@
 import { configFilePath, loadConfig } from '../config.js';
 import { updateConfigSection } from '../config-write.js';
 import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow } from '../accounts/calendar.js';
-import { CanvasClient, DEFAULT_CANVAS_URL, formatDue } from '../accounts/canvas.js';
+import { CANVAS_URL_MISSING, CanvasClient, formatDue } from '../accounts/canvas.js';
 import { ApiClient } from '../accounts/http.js';
 import { NO_TODO_DATABASE, NotionClient } from '../accounts/notion.js';
 import { field } from '../accounts/result.js';
@@ -23,7 +23,7 @@ stephen accounts set <name>   Store one in the Keychain (hidden prompt, or piped
 stephen accounts test canvas  Read your Canvas once: your name and what's due in the next 7 days
 stephen accounts test calendar  Read your Google Calendar feed once: events in the next 7 days
 stephen accounts test notion  Read your Notion to-do database once: how many open to-dos
-stephen accounts weather      Show the place the weather tool uses (default Toronto, ON)
+stephen accounts weather      Show the place the weather tool uses (a built-in default until you set yours)
 stephen accounts weather set <latitude> <longitude> [label…]  Save your place in config.json (e.g. set 43.9 -78.9 Oshawa, ON)
 stephen accounts test weather  Read the weather once for that place
 stephen connect gmail <label>  Sign in to a Gmail account once (read-only; label like "personal"; needs accounts.gmail.clientId)
@@ -122,7 +122,11 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
       err(`No Canvas token found. Put CANVAS_API=<token> in Stephen's .env (chmod 600) or the Keychain item "stephen-canvas".${token.notes.length ? ` (${token.notes.join('; ')})` : ''}`);
       return 1;
     }
-    const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', e.secrets)).value ?? DEFAULT_CANVAS_URL;
+    const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', e.secrets)).value;
+    if (!url) {
+      err(CANVAS_URL_MISSING);
+      return 1;
+    }
     try {
       const c = new CanvasClient({ origin: url, token: token.value, ...(e.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
       const name = await c.whoAmI();
@@ -184,7 +188,7 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
     const longitude = Number(argv[3]);
     const label = argv.slice(4).join(' ').trim();
     if (argv.length < 4 || argv[2] === '' || argv[3] === '' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      err('Usage: stephen accounts weather set <latitude> <longitude> [label…]   e.g. weather set 43.6532 -79.3832 Toronto, ON');
+      err('Usage: stephen accounts weather set <latitude> <longitude> [label…]   e.g. weather set 40.7128 -74.0060 New York, NY');
       return 2;
     }
     const place = { latitude, longitude, label: label || `${latitude}, ${longitude}` };
