@@ -33,7 +33,8 @@ Two commands, then three permission clicks. If something is wrong, setup stops a
 
 - A Mac, with Node 22 or 24.
 - Claude Code installed and signed in.
-- Apple's command line tools (if they are missing, setup tells you the one command to run).
+- Apple's command line tools, installed first with `xcode-select --install` (`git` needs them too).
+- If `npm link` fails with EACCES (the Node from nodejs.org), run `sudo npm link`.
 
 ### Install
 
@@ -47,12 +48,14 @@ stephen setup
 
 ### What setup does
 
-1. Checks Node and Claude Code.
-2. Registers Stephen with Claude Code.
-3. Creates the "Zen for Stephen" app (drag it to your Dock).
-4. Builds the Stephen Helper app.
-5. Runs `stephen doctor`.
-6. Lists the three Mac permissions: Microphone, Input Monitoring and Accessibility. Each one is in System Settings > Privacy & Security. Turn on "Stephen Helper".
+1. Checks Node.
+2. Checks that Claude Code is installed and signed in.
+3. Registers Stephen with Claude Code.
+4. Creates the "Zen for Stephen" app (drag it to your Dock).
+5. Builds the Stephen Helper app.
+6. Runs `stephen doctor`.
+
+Then it asks for a weather city (Return skips) and lists the three Mac permissions: Microphone, Input Monitoring and Accessibility. Each one is in System Settings > Privacy & Security. Turn on "Stephen Helper".
 
 Setup never asks for a password or a key.
 
