@@ -57,7 +57,7 @@ and the reply.
 
 A diary Stephen keeps on your Mac of every action it took in your browser: when, where, and the reason given. Text
 it typed is saved only as a length, never the words.
-*Example:* Ask "what did you just do?" and Stephen reads its recent entries back to you.
+*Example:* Ask Stephen what it just did in your browser, and it reads its recent entries back to you.
 
 ## B
 
@@ -143,8 +143,8 @@ A check of the code by a different person or agent than the one who wrote it, lo
 
 ### Input Monitoring
 
-A Mac permission that lets the Stephen Helper app notice when you press F5, Fn and Option, or Esc. It never sees
-what you type.
+A Mac permission that lets the Stephen Helper app notice when you press F5, Fn and Option, or Esc. It ignores
+every other key, and never sends or saves what you type.
 *Example:* Without Input Monitoring, holding F5 does nothing.
 
 ## J
@@ -159,8 +159,8 @@ stop it any time.
 
 ### Keychain
 
-The Mac's built-in safe for passwords and keys. Stephen keeps the keys for your connected accounts there, and never
-shows them to the AI model.
+The Mac's built-in safe for passwords and keys. Stephen keeps the keys for your connected accounts there (older
+setups may use a `.env` file instead), and never shows them to the AI model.
 *Example:* Your Canvas token sits in the Keychain, not in a plain text file.
 
 ## L
@@ -193,7 +193,8 @@ make Stephen forget it.
 
 The strip across the top of your Mac's screen. Stephen's icon lives on the right side, and its shape shows what
 Stephen is doing.
-*Example:* An empty circle means idle. A full circle means listening.
+*Example:* An empty circle means idle, an ear means listening, a microphone means recording, an hourglass means
+working and a speaker means talking.
 
 ## N
 
@@ -219,7 +220,7 @@ Accessibility.
 
 ### Persona
 
-The short note that tells Claude how to behave as Stephen: be brief, be friendly, ask before risky steps.
+The short note that tells Claude how to behave as Stephen, for example to keep spoken replies short.
 *Example:* The persona is why Stephen answers in one sentence instead of a long essay.
 
 ### Prompt
@@ -242,7 +243,8 @@ A proposed change to the code, shown side by side with the old version, so peopl
 
 ### Rate limit
 
-A cap on how fast something can happen. Stephen allows at most 40 page actions per minute by default, then pauses.
+A cap on how fast something can happen. By default Stephen allows at most 40 actions per minute (clicks, typing,
+scrolls and account reads all count), then pauses.
 *Example:* If something went wrong and Stephen kept clicking, the rate limit would stop it.
 
 ### Repository (repo)
