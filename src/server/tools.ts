@@ -628,7 +628,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
             { type: 'image', data: Buffer.from(png).toString('base64'), mimeType: 'image/png' },
             {
               type: 'text',
-              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''} at ${url}, ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${clipNote ? `\n${clipNote}` : ''}${hub.alertNotes(tab)}`,
+              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''}, ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${clipNote ? `\n${clipNote}` : ''}\n${wrapUntrusted(tab, url, `Page URL: ${url}`)}${hub.alertNotes(tab)}`,
             },
           ],
         };
