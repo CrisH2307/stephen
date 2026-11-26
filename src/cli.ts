@@ -332,7 +332,7 @@ export async function doctor(network = false, json = false): Promise<number> {
     for (const key of await configUnknownKeys()) {
       if (looksLikeSecretKey(key)) {
         // The name is never shown. A secret in config.json stops the start, so this one is a blocking problem.
-        add({ ok: false, blocking: true, label: 'Secret in config.json', detail: 'a key whose name looks like a secret (name not shown); start is refused', fix: `Remove it from ${configFilePath()}. Secrets belong in the macOS Keychain (ElevenLabs can also read apiKeyFile).` });
+        add({ ok: false, blocking: true, label: 'Secret in config.json', detail: 'a key whose name looks like a secret (name not shown); `stephen serve` and `stephen listen` refuse to start', fix: `Remove it from ${configFilePath()}. Secrets belong in the macOS Keychain (ElevenLabs can also read apiKeyFile).` });
       } else {
         // Info only: Stephen ignores the key, so it is not a problem with the setup.
         add({ ok: true, info: true, label: 'Unknown config key', detail: `"${key}" is ignored, not a Stephen setting. Remove it or fix the spelling in ${configFilePath()}.` });
@@ -604,7 +604,7 @@ async function installLauncher(argv: string[]): Promise<number> {
 
 // ───────────────────────────── main ─────────────────────────────
 
-async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const [cmd = 'serve', ...rest] = argv;
   switch (cmd) {
     case 'serve':
