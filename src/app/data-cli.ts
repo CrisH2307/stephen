@@ -1,9 +1,9 @@
 /**
  * `stephen data` (B6): what Stephen keeps on this Mac, how big it is, how long it stays and how to delete it.
  * The list mirrors docs/DATA-STORES.md (test/app/data-list.test.ts keeps the two in step). It reads sizes only,
- * never file contents, and deletes nothing; R10 ("delete all my data") reuses STORES.
+ * never file contents, and deletes nothing; R10 ("delete all my data") reuses STORES and filesOf.
  */
-import { readdirSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { expandPath, loadConfig } from '../config.js';
@@ -18,7 +18,10 @@ export interface DataPlaces {
 export interface Store {
   /** The "What" column of docs/DATA-STORES.md. */
   what: string;
-  /** Files or folders on disk. A `*` in the last part matches by name in that folder. Empty: not a plain file. */
+  /**
+   * Files or folders on disk. A `*` in the last part matches by name in that folder, like the shell: it does not
+   * match names that start with a dot. Empty: not a plain file.
+   */
   paths: (p: DataPlaces) => string[];
   /** Shown instead of the paths when there is no plain file to measure. */
   where?: string;
@@ -42,7 +45,7 @@ export const STORES: readonly Store[] = [
   { what: 'Incidents', paths: h('incidents/'), kept: '30 days', remove: 'deleted after 30 days, or delete the folder' },
   { what: 'Safety audit log', paths: h('audit.log*'), kept: 'up to 4 files of 5 MB', remove: 'delete the files' },
   { what: 'Tool log', paths: h('voice', 'tool-log.jsonl'), kept: 'emptied before each command', remove: 'delete the file' },
-  { what: 'Job state and logs', paths: h('jobs/'), kept: '30 days after the job ends', remove: 'deleted after 30 days' },
+  { what: 'Job state and logs', paths: h('jobs', '*'), kept: '30 days after the job ends', remove: 'deleted after 30 days' },
   { what: 'Announced jobs', paths: h('jobs', '.announced.json'), kept: 'kept (job ids only)', remove: 'delete the file' },
   { what: 'Job output folders', paths: (p) => [`${p.jobsRoot}/`], kept: 'until you delete them', remove: 'delete the folder in Finder' },
   { what: 'Helper log', paths: h('logs', 'helper.log*'), kept: 'about 1 MB, one old copy', remove: 'delete the files' },
@@ -52,10 +55,13 @@ export const STORES: readonly Store[] = [
   { what: 'Account secrets in a `.env` file (older setups)', paths: () => [], where: '.env in the Stephen folder', kept: 'until you delete it', remove: 'delete the lines or the file' },
 ];
 
-/** Bytes in a file, or in every file under a folder; 0 when missing. */
+/**
+ * Bytes in a file, or in every file under a folder; 0 when missing. lstat, never stat: a link counts as itself and
+ * is never followed, so a link to a big folder or a link loop cannot make `stephen data` walk forever.
+ */
 function bytesOf(path: string): number {
   try {
-    const st = statSync(path);
+    const st = lstatSync(path);
     if (!st.isDirectory()) return st.size;
     return readdirSync(path).reduce((n, name) => n + bytesOf(join(path, name)), 0);
   } catch {
@@ -63,10 +69,9 @@ function bytesOf(path: string): number {
   }
 }
 
-/** Total size of a store, or null when none of its files exist yet. */
-export function storeSize(s: Store, p: DataPlaces): number | null {
-  let total = 0;
-  let found = false;
+/** The files and folders of a store that exist now (globs expanded). Read-only; R10 deletes these. */
+export function filesOf(s: Store, p: DataPlaces): string[] {
+  const found: string[] = [];
   for (const raw of s.paths(p)) {
     const path = raw.endsWith('/') ? raw.slice(0, -1) : raw;
     const name = basename(path);
@@ -74,22 +79,29 @@ export function storeSize(s: Store, p: DataPlaces): number | null {
     if (name.includes('*')) {
       const re = new RegExp(`^${name.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
       try {
-        matches = readdirSync(dirname(path)).filter((f) => re.test(f)).map((f) => join(dirname(path), f));
+        matches = readdirSync(dirname(path))
+          .filter((f) => re.test(f) && (name.startsWith('.') || !f.startsWith('.')))
+          .map((f) => join(dirname(path), f));
       } catch {
         matches = [];
       }
     }
     for (const m of matches) {
       try {
-        statSync(m);
-        found = true;
-        total += bytesOf(m);
+        lstatSync(m);
+        found.push(m);
       } catch {
         // not created yet
       }
     }
   }
-  return found ? total : null;
+  return found;
+}
+
+/** Total size of a store, or null when none of its files exist yet. */
+export function storeSize(s: Store, p: DataPlaces): number | null {
+  const files = filesOf(s, p);
+  return files.length ? files.reduce((n, f) => n + bytesOf(f), 0) : null;
 }
 
 export function formatBytes(n: number): string {
