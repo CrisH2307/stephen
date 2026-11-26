@@ -615,6 +615,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
           cliPath,
           ...(env.jobSpawn ? { spawn: env.jobSpawn } : {}),
           ...(env.now ? { now: env.now } : {}),
+          // The same daily cost limit as a model run (DailyLimit below, read at each start): at 100% no new job.
+          dailyLimitUsed: (): boolean => dailyLimit?.allowed() === false,
         });
   if (jobManager) {
     try {
