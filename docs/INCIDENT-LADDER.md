@@ -44,8 +44,25 @@ name (`auto`, `fusion`, `free-router`, `kilo-auto`, a `claude-*` name) is refuse
 `INCIDENT_L1_MODEL=gpt-oss-120b` is set: that is Cris's opt-in after he checks the terms. Without it the ladder starts
 at L2.
 
-OpenCode is not L1 yet. Its global config on this Mac loads a browser tool and other MCP servers. It can become L1
-once a canary shows an isolated config with no MCP, no edit, no shell and no web.
+L1 has two free steps (docs/design/INCIDENT-LADDER-FREE-FIRST.md). L1a is the freellm model above. L1b runs only when
+L1a gave no draft: one OpenCode Zen free model, pinned in `L1B_MODELS` (`opencode/deepseek-v4.1-flash-free`). It runs
+`opencode run --standalone --archived --format json -m <model>`, never `--auto`, in an empty temp folder, with env from
+`withoutSecrets`, a 45 second timeout, and a temp config that has no MCP, no plugins and denies every tool. `HOME`,
+`XDG_CONFIG_HOME` and `XDG_DATA_HOME` point into the temp folder, so the global config with its MCP servers and the
+files in `~/.claude` are not read, and `OPENCODE_DISABLE_CLAUDE_CODE`, `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT`,
+`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` and `OPENCODE_DISABLE_PROJECT_CONFIG` are `1` (names read from opencode 2.3.2).
+Like L1a it never resolves alone.
+
+L1b is off until Cris sets `INCIDENT_L1B_MODEL=opencode/deepseek-v4.1-flash-free`. Before that: (1) Cris says yes to
+OpenCode Zen keeping prompts (the same content-free lines and public code as L1a), and (2) a canary with the real
+`opencode` shows:
+- the temp config is read, and no MCP server or plugin loads;
+- nothing from `~/.claude` (CLAUDE.md, skills) reaches the prompt, with the temp `HOME` and the `OPENCODE_DISABLE_*`
+  names set, and the free model still answers with the temp `XDG_DATA_HOME` (no saved login);
+- a prompt that asks for a shell, a file write or a web fetch gets no tool call;
+- the `--format json` output has the answer in a `part` with `type: "text"`, the shape `opencodeText` reads.
+
+The canary result goes here. The trail shows `L1a draft` or `L1a none`, then `L1b ...`.
 
 ## The move-up rule
 
@@ -100,8 +117,8 @@ Default without his answer: his normal login, fixed commands only.
    no local state file.
 3. It parses the body. No lines: nothing happens.
 4. It copies the `qa` tip with `git archive` (without `test/fixtures`) into a temp folder.
-5. It runs L1, then L2 and up by the rule.
-6. It posts one comment: the marker, the trail (for example `L1 draft, L2 low, L3 high`) and the final answer in a code
+5. It runs L1a, then L1b if L1a gave no draft, then L2 and up by the rule.
+6. It posts one comment: the marker, the trail (for example `L1a none, L1b draft, L2 low, L3 high`) and the final answer in a code
    block. On L5 it then adds the `needs-cris` label and the #274 line. The comment goes first, so a later failure
    never makes the next run spend the Claude levels again. The script checks that the label exists before any level
    runs.

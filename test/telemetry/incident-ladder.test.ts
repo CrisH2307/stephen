@@ -16,6 +16,10 @@ import {
   markerFor,
   nextLevel,
   parseModelJson,
+  opencodeArgs,
+  opencodeText,
+  OPENCODE_L1B_CONFIG,
+  pickL1bModel,
   pickL1Model,
   resolves,
   type IssueComment,
@@ -159,6 +163,23 @@ describe('what the models get', () => {
     expect(pickL1Model('')).toBeNull();
     expect(pickL1Model('gpt-oss-120b')).toBe('gpt-oss-120b');
     for (const bad of ['auto', 'fusion', 'free-router', 'kilo-auto', 'claude-haiku-5-5', 'claude-sonnet-4']) expect(pickL1Model(bad)).toBeNull();
+  });
+
+  it('pickL1bModel allows only the pinned OpenCode free model, and only when named', () => {
+    expect(pickL1bModel(undefined)).toBeNull();
+    expect(pickL1bModel('opencode/deepseek-v4.1-flash-free')).toBe('opencode/deepseek-v4.1-flash-free');
+    for (const bad of ['auto', 'fusion', 'free-router', 'claude-haiku-5-5', 'opencode/big-pickle', 'freellmapi/gpt-oss-120b', 'opencode/auto-free'])
+      expect(pickL1bModel(bad)).toBeNull();
+  });
+
+  it('L1b runs opencode without --auto, with every tool denied, and reads the last text part', () => {
+    expect(opencodeArgs('m', 'p')).not.toContain('--auto');
+    expect(OPENCODE_L1B_CONFIG.mcp).toEqual({});
+    expect(OPENCODE_L1B_CONFIG.tools['*']).toBe(false);
+    expect(OPENCODE_L1B_CONFIG.permission['*']).toBe('deny');
+    const ev = (type: string, text: string) => JSON.stringify({ part: { type, text } });
+    expect(opencodeText([ev('text', 'a'), 'noise', ev('reasoning', 'r'), ev('text', 'b')].join('\n'))).toBe('b');
+    expect(opencodeText('nothing\n')).toBeNull();
   });
 
   it('parseModelJson reads a bare object or one inside a code fence, and nothing else', () => {
