@@ -109,6 +109,15 @@ describe('doctor output', () => {
     expect(text.out).toContain('Secret in config.json');
   });
 
+  it('an unknown desktop key is a blocking problem and an unknown accounts key a problem, by name', async () => {
+    const d = JSON.parse((await runDoctor({ desktop: { blockedApp: ['Steam'] } }, true)).out) as { checks: { label: string; ok: boolean; blocking?: boolean; detail?: string }[] };
+    expect(d.checks).toContainEqual(expect.objectContaining({ label: 'Unknown config key', ok: false, blocking: true, detail: expect.stringContaining('"desktop.blockedApp" is not a Stephen setting, so Stephen will not start') }));
+    const a = JSON.parse((await runDoctor({ accounts: { wether: {} } }, true)).out) as { checks: { label: string; ok: boolean; blocking?: boolean; detail?: string }[] };
+    const line = a.checks.find((c) => c.label === 'Unknown config key');
+    expect(line).toMatchObject({ ok: false, detail: expect.stringContaining('"accounts.wether" is not a Stephen setting, so the account tools are off') });
+    expect(line?.blocking).toBeFalsy();
+  });
+
   it('an unknown key under accounts is listed by doctor, and a secret-looking one blocks the start', async () => {
     useConfig({ accounts: { fooBar: 1, canvas: { token: 'tok-SECRET-VALUE-4' } } });
     expect((await configUnknownKeys(env)).sort()).toEqual(['accounts.canvas.token', 'accounts.fooBar']);
@@ -286,9 +295,9 @@ describe('unknown config keys are a doctor warning, not a start failure', () => 
     expect(() => parseVoiceConfig({ fooBar: 1, claudePath: 5 })).toThrow(/"voice\.claudePath"/);
   });
 
-  it('safety keys keep their checks; an unknown safety key is only listed', async () => {
+  it('safety keys keep their checks; an unknown safety key is listed and refuses to load', async () => {
     useConfig({ safety: { allowEval: true } });
-    expect(() => loadConfig(undefined, env)).not.toThrow();
+    expect(() => loadConfig(undefined, env)).toThrow(/unknown key: "safety\.allowEval"/);
     expect(await configUnknownKeys(env)).toEqual(['safety.allowEval']);
 
     useConfig({ safety: { maxActionsPerMinute: 0 } });

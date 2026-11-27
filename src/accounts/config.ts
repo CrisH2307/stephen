@@ -11,7 +11,7 @@ import { DEFAULT_WEATHER } from './weather.js';
 import { normalizeNotionId } from './notion.js';
 import { GMAIL_LABEL_RE } from './secrets.js';
 import { ConfigError } from '../lib/errors.js';
-import { unknownKeyPaths } from '../config.js';
+import { unknownKeyPaths, unknownKeysMessage } from '../config.js';
 
 const service = z.object({ enabled: z.boolean().default(true) });
 
@@ -48,12 +48,16 @@ export type AccountsConfig = z.infer<typeof schema>;
 
 export class AccountsConfigError extends ConfigError {}
 
-/** Validate the raw "accounts" section. Unknown keys are dropped and listed in `unknownKeys` (names only, for doctor). */
+/** Validate the raw "accounts" section. Unknown keys are listed in `unknownKeys` (names only, for doctor), then refused. */
 export function parseAccountsConfig(raw: unknown, unknownKeys?: string[]): AccountsConfig {
   const r = schema.safeParse(raw ?? {});
   if (!r.success) throw new AccountsConfigError(`config.json "accounts": ${r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')}`);
   const c = r.data;
-  unknownKeys?.push(...unknownKeyPaths(raw ?? {}, c, 'accounts'));
+  // A typo here would drop a setting silently, so it is refused, not dropped. The keys still go to unknownKeys first,
+  // so doctor and the start check can name them (a secret-looking one stops the start with the Keychain message).
+  const typos = unknownKeyPaths(raw ?? {}, c, 'accounts');
+  unknownKeys?.push(...typos);
+  if (typos.length) throw new AccountsConfigError(`config.json "accounts": ${unknownKeysMessage(typos)}`);
   if (c.timeZone) {
     try {
       new Intl.DateTimeFormat('en', { timeZone: c.timeZone });

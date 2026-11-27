@@ -358,13 +358,17 @@ export async function doctor(network = false, json = false): Promise<number> {
     cfg = loadConfig();
     add({ ok: true, label: 'Config loads', detail: existsSync(configFilePath()) ? configFilePath() : `defaults (no ${configFilePath()})` });
     for (const key of await configUnknownKeys()) {
+      const shown = showKeyName(key);
+      const named = shown === UNUSUAL_KEY_NAME ? shown : `"${shown}"`;
       if (looksLikeSecretKey(key)) {
         // The name is never shown. A secret in config.json stops the start, so this one is a blocking problem.
         add({ ok: false, blocking: true, label: 'Secret in config.json', detail: 'a key whose name looks like a secret (name not shown); `stephen serve` and `stephen listen` refuse to start', fix: `Remove it from ${configFilePath()}. Secrets belong in the macOS Keychain (ElevenLabs can also read apiKeyFile).` });
+      } else if (/^(desktop|accounts)\./.test(key)) {
+        // These sections refuse a typo (it could empty a block list): desktop stops the start, accounts turns its tools off.
+        const desktop = key.startsWith('desktop.');
+        add({ ok: false, blocking: desktop, label: 'Unknown config key', detail: `${named} is not a Stephen setting, so ${desktop ? 'Stephen will not start' : 'the account tools are off'}.`, fix: `Fix the spelling or remove it in ${configFilePath()}.` });
       } else {
         // Info only: Stephen ignores the key, so it is not a problem with the setup.
-        const shown = showKeyName(key);
-        const named = shown === UNUSUAL_KEY_NAME ? shown : `"${shown}"`;
         add({ ok: true, info: true, label: 'Unknown config key', detail: `${named} is ignored, not a Stephen setting. Remove it or fix the spelling in ${configFilePath()}.` });
       }
     }

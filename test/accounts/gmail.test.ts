@@ -190,7 +190,8 @@ describe('Gmail config', () => {
     expect(parseAccountsConfig({ gmail: { accounts: ['personal_purpose_school', 'personal_purpose_jobs'] } }).gmail.accounts).toEqual(['personal_purpose_school', 'personal_purpose_jobs']);
     expect(() => parseAccountsConfig({ gmail: { clientId: 'x y' } })).toThrow(/client id/);
     const keys: string[] = [];
-    expect(parseAccountsConfig({ gmail: { refreshToken: REFRESH } }, keys).gmail).not.toHaveProperty('refreshToken');
+    expect(() => parseAccountsConfig({ gmail: { refreshToken: REFRESH } }, keys)).toThrow(/looks like a secret \(not shown\)/);
+    expect(() => parseAccountsConfig({ gmail: { refreshToken: REFRESH } })).not.toThrow(/refreshToken|REFRESH/);
     expect(keys).toEqual(['accounts.gmail.refreshToken']);
   });
 
