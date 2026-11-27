@@ -26,7 +26,11 @@ export function dashLines(diff) {
   // Headers come only between "diff --git" and the first "@@": inside a hunk, an added "++ x" line reads "+++ x".
   let inHunk = false;
   for (const l of diff.split('\n')) {
-    if (l.startsWith('diff --git ')) inHunk = false;
+    if (l.startsWith('diff --git ')) {
+      // A pure rename has no "+++" line and no hunk: forget the last file so nothing is counted against it.
+      inHunk = false;
+      file = null;
+    }
     else if (!inHunk && l.startsWith('+++ ')) file = l === '+++ /dev/null' ? null : l.slice(6);
     else if (l.startsWith('@@')) {
       inHunk = true;
@@ -98,7 +102,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   // from before this check. So rules 1 and 2 apply to PRs into qa only; rule 3 applies to both.
   const intoQa = process.env.BASE_REF !== 'main';
   const log = intoQa ? run('log', '--format=%H%x09%an <%ae>%x09%cn <%ce>', head, '--not', base, ...(hasMain ? ['refs/remotes/origin/main'] : [])) : '';
-  const dashes = intoQa ? dashLines(run('diff', '-U0', '--no-renames', base, head)) : [];
+  // --find-renames: a moved file adds only its edited lines, not its whole old text.
+  const dashes = intoQa ? dashLines(run('diff', '-U0', '--find-renames', base, head)) : [];
   const problems = prProblems({ title: process.env.TITLE ?? '', dashes, commits: badCommits(log), deps: newDeps(pkg(base), pkg(head)) });
   if (problems.length) {
     console.log(problems.join('\n'));
