@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { newServeInstance, pidAlive, readServeLock, serveLockPath } from '../../src/server/instance.js';
-import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, CLAUDE_START_FAILED, checkClaudeFlags, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
-import { WarmClaude, probeWarmProtocol, userMessageLine, type WarmClaudeOptions } from '../../src/voice/warm-claude.js';
+import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, CLAUDE_NOT_FOUND, CLAUDE_START_FAILED, MCP_CONFIG_FAILED, PERSONA_FAILED, checkClaudeFlags, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
+import { CLAUDE_REFUSED, CLAUDE_STOPPED, WarmClaude, probeWarmProtocol, userMessageLine, type WarmClaudeOptions } from '../../src/voice/warm-claude.js';
 import { fakeClaudePath, isAlive, readFakeLog, waitFor } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-warm-'));
@@ -192,7 +192,7 @@ describe('WarmClaude against the fake stream-json claude', () => {
   it.each([
     ['MCP failed', { FAKE_CLAUDE_MCP: 'failed' }, /MCP status: failed/, 'event'],
     ['MCP never connects', { FAKE_CLAUDE_MCP: 'pending' }, /didn't connect in time/, 'deadline'],
-    ['initialize refused', { FAKE_CLAUDE_MODE: 'init-error' }, /refused the request \(initialize refused\)/, 'event'],
+    ['initialize refused', { FAKE_CLAUDE_MODE: 'init-error' }, CLAUDE_REFUSED, 'event'],
     ['initialize never answered', { FAKE_CLAUDE_MODE: 'no-init' }, /didn't answer initialize/, 'init-timeout'],
   ] as const)('%s: not ready, fails closed (process group killed, persona deleted)', async (_what, env, why, wait) => {
     let skew = 0;
@@ -224,16 +224,90 @@ describe('WarmClaude against the fake stream-json claude', () => {
     await p.kill();
   });
 
-  it('an exit mid-turn is an error (with the reason)', async () => {
-    const t = setup({ FAKE_CLAUDE_MODE: 'exit-mid-turn' });
-    const p = new WarmClaude(t.o, undefined);
-    const exits: number[] = [];
-    p.onExit(() => exits.push(1));
-    await p.ready();
-    expect(await p.turn('hi')).toMatchObject({ kind: 'error', message: expect.stringMatching(/stopped before it answered \(Error: exited mid-turn\)/) });
-    expect(p.exited).toBe(true);
-    expect(exits).toEqual([1]);
-    await p.kill();
+  it('an exit mid-turn is an error with a fixed line; the stderr text goes to the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup({ FAKE_CLAUDE_MODE: 'exit-mid-turn' });
+      const p = new WarmClaude(t.o, undefined);
+      const exits: number[] = [];
+      p.onExit(() => exits.push(1));
+      await p.ready();
+      const out = await p.turn('hi');
+      expect(out).toEqual({ kind: 'error', message: CLAUDE_STOPPED, sessionId: null });
+      expect(JSON.stringify(out)).not.toContain('exited mid-turn');
+      expect(spy.mock.calls.flat().join('\n')).toContain('exited mid-turn');
+      expect(p.exited).toBe(true);
+      expect(exits).toEqual([1]);
+      // A turn after the exit gets the same fixed line, not the stderr text.
+      expect(await p.turn('again')).toEqual({ kind: 'error', message: CLAUDE_STOPPED, sessionId: null });
+      await p.kill();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('an exit mid-turn on a plan limit says the plan limit line (with the reset time), not "say it again"', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup({ FAKE_CLAUDE_MODE: 'exit-mid-turn', FAKE_CLAUDE_STDERR: 'Usage limit reached · limit resets 3pm' });
+      const p = new WarmClaude(t.o, undefined);
+      await p.ready();
+      expect(await p.turn('hi')).toEqual({ kind: 'error', message: "You've reached your Claude plan limit. It resets at 3pm.", failure: 'claude_usage_limit', sessionId: null });
+      await p.kill();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a refused control request: a fixed line, Claude Code\'s error text in the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup({ FAKE_CLAUDE_MODE: 'init-error' });
+      const p = new WarmClaude(t.o, undefined);
+      const err = await p.ready().then(() => null, (e: Error) => e.message);
+      expect(err).toBe(CLAUDE_REFUSED);
+      expect(spy.mock.calls.flat().join('\n')).toContain('initialize refused');
+      const turn = await p.turn('hi');
+      expect(JSON.stringify(turn)).not.toContain('initialize refused');
+      await p.kill();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('an MCP config that cannot be written: a fixed line, the error text (with its path) in the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup();
+      t.o.serveInstance = async () => {
+        throw new Error('EACCES: permission denied, open /Users/someone/secret/mcp.json');
+      };
+      const p = new WarmClaude(t.o, undefined);
+      const err = await p.ready().then(() => null, (e: Error) => e.message);
+      expect(err).toBe(MCP_CONFIG_FAILED);
+      expect(spy.mock.calls.flat().join('\n')).toContain('/Users/someone/secret/mcp.json');
+      expect(p.exited).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a persona file that cannot be written: a fixed line, the error text (with its path) in the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup();
+      const blocker = join(t.dir, 'blocker');
+      mkdirSync(join(blocker, 'persona.txt'), { recursive: true }); // a folder where the file should go
+      t.o.personaFile = join(blocker, 'persona.txt');
+      const p = new WarmClaude(t.o, undefined);
+      const err = await p.ready().then(() => null, (e: Error) => e.message);
+      expect(err).toBe(PERSONA_FAILED);
+      expect(err).not.toContain(blocker);
+      expect(spy.mock.calls.flat().join('\n')).toContain(blocker);
+      expect(t.turns()).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('a line that is not JSON is an error and the process is killed', async () => {
@@ -287,7 +361,7 @@ describe('WarmClaude against the fake stream-json claude', () => {
       const t = setup({}, { claudePath: join(tmp, 'no-such-claude') });
       const p = new WarmClaude(t.o, undefined);
       const err = await p.ready().then(() => null, (e: Error) => e.message);
-      expect(err).toMatch(/stopped \(Claude Code was not found/);
+      expect(err).toBe(CLAUDE_NOT_FOUND);
       expect(err).not.toContain('no-such-claude');
       expect(p.exited).toBe(true);
       expect(spy.mock.calls.flat().join('\n')).toContain('no-such-claude');
@@ -318,7 +392,7 @@ describe('WarmClaude against the fake stream-json claude', () => {
     expect(await probeWarmProtocol(ok.o)).toBeNull();
     expect(isAlive(ok.procs().claude)).toBe(false);
     const bad = setup({ FAKE_CLAUDE_MODE: 'init-error' });
-    expect(await probeWarmProtocol(bad.o)).toMatch(/initialize refused/);
+    expect(await probeWarmProtocol(bad.o)).toBe(CLAUDE_REFUSED); // the CLI's own words go to the log only (R7)
   });
 });
 
