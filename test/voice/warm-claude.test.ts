@@ -224,6 +224,18 @@ describe('WarmClaude against the fake stream-json claude', () => {
     await p.kill();
   });
 
+  it('error turns carry their own cost: cumulative 0.02 is 0.01 per turn, so no money is skipped (review-B M2)', async () => {
+    // The fake runs one mode for the whole process, so this pins two error turns, not an ok and error mix.
+    const t = setup({ FAKE_CLAUDE_MODE: 'error' });
+    const p = new WarmClaude(t.o, undefined);
+    await p.ready();
+    const a = await p.turn('one');
+    const b = await p.turn('two');
+    expect(a.kind === 'error' && a.costUsd).toBeCloseTo(0.01);
+    expect(b.kind === 'error' && b.costUsd).toBeCloseTo(0.01);
+    await p.kill();
+  });
+
   it('an exit mid-turn is an error with a fixed line; the stderr text goes to the log only (R7)', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {

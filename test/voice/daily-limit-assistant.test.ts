@@ -86,6 +86,26 @@ describe('daily limit in the assistant', () => {
     expect(limit!.warnNow).not.toHaveBeenCalled();
   });
 
+  it('a failed run that cost money is counted too (review-B M2); a failure with no cost adds nothing', async () => {
+    const failed = make({ out: { kind: 'error', message: 'I ran out of steps before finishing.', sessionId: null, costUsd: 0.3 } });
+    const r = await failed.assistant.command('do a lot', { source: 'voice-ptt' });
+    expect(failed.limit!.add).toHaveBeenCalledWith(r.id, 0.3);
+    expect(r.costUsd).toBe(0.3); // the latency line gets it too
+    const free = make({ out: { kind: 'error', message: 'x', sessionId: null } });
+    const r2 = await free.assistant.command('hi', { source: 'voice-ptt' });
+    expect(free.limit!.add).toHaveBeenCalledWith(r2.id, undefined);
+    expect(r2.costUsd).toBeUndefined();
+  });
+
+  it('end to end with the real DailyLimit: failing runs alone reach the limit and the next run is refused', async () => {
+    const lim = new DailyLimit({ limit: () => ({ enabled: true, usd: 0.5 }), records: () => [] });
+    const { assistant, runs } = make({ limit: lim, out: { kind: 'error', message: 'I ran out of steps before finishing.', sessionId: null, costUsd: 0.3 } });
+    await assistant.command('one');
+    await assistant.command('two'); // 0.60 spent by two failed runs
+    expect((await assistant.command('three')).reply).toBe(LIMIT_REACHED);
+    expect(runs).toEqual(['one', 'two']);
+  });
+
   it('end to end with the real DailyLimit: warn, then refuse, timers still free', async () => {
     const lim = new DailyLimit({ limit: () => ({ enabled: true, usd: 0.5 }), records: () => [] });
     const { assistant, runs } = make({ limit: lim, timers: { route: async (t) => (t === 'set a timer' ? { reply: 'Timer set.', changed: false } : null) } });
