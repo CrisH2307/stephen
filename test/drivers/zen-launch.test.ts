@@ -259,7 +259,9 @@ describe('zen-launch', () => {
     const h = launchHarness({ running: [true], runResult: { code: 1, stderr: `${raw}\n` } });
     const r = await runZenLaunch({ quitRunning: true }, h.deps);
     expect(r).toMatchObject({ exitCode: 2, status: 'quit-failed', detail: raw });
-    expect(r.message).toMatch(/^This Mac did not let Stephen ask Zen to quit\..*Automation\.$/);
+    expect(r.message).toMatch(/^This Mac did not let Stephen ask Zen to quit\..*Privacy & Security, Automation/);
+    // review of #443: the switch is under whichever app started Stephen (the Zen for Stephen app or Terminal)
+    expect(r.message).toMatch(/Zen for Stephen.*Terminal|Terminal.*Zen for Stephen/);
     expect(formatZenLaunch(r)).not.toContain('-1743');
     expect(h.launches).toBe(0);
   });

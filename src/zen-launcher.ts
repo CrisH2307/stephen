@@ -218,7 +218,8 @@ export function quitFailedMessage(why: string): string {
   const notAllowed = /-1743|not authori[sz]ed/i.test(why);
   return notAllowed
     ? 'This Mac did not let Stephen ask Zen to quit. Quit Zen yourself (⌘Q), then try again. ' +
-        'To allow it next time, turn on Zen for Stephen in System Settings, Privacy & Security, Automation.'
+        'To allow it next time, open System Settings, Privacy & Security, Automation, and turn on Zen under the app ' +
+        'you started Stephen from (Zen for Stephen, or Terminal).'
     : 'Could not ask Zen to quit. Quit Zen yourself (⌘Q), then try again. Stephen never force-quits Zen.';
 }
 
