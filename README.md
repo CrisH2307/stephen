@@ -2,7 +2,6 @@
 
 <p align="center">
   <img src="docs/guide/images/hero.svg" alt="Stephen's Ask box under the Mac menu bar. You say: Hey Stephen, open YouTube. Stephen answers. A card asks Deny or Allow before Stephen clicks Send." width="860">
-  <br><sub>Illustration with made-up sample text, not a real screenshot.</sub>
 </p>
 
 **Stephen is a voice helper for your Mac.** You say "Hey Stephen, open YouTube", or hold F5 and talk, and it does
