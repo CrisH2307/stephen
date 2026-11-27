@@ -36,6 +36,12 @@ vi.mock('../../src/server/index.js', async (importOriginal) => ({
   serveStdio: async () => {},
 }));
 
+// doctor here is only read for its config lines. Its helper checks run the real Swift toolchain (xcrun and a swiftc
+// typecheck, up to 60 s each) and its voice checks read the real Keychain. When the toolchain is busy one doctor call
+// took 169 s and the test timed out (tl9 qa suite, 905c476). Stub both: this file does not test them.
+vi.mock('../../src/helper/doctor.js', () => ({ helperDoctorChecks: async () => [] }));
+vi.mock('../../src/voice/tts/doctor.js', () => ({ voiceOutputChecks: async () => [] }));
+
 let env: NodeJS.ProcessEnv;
 
 /** Write config.json for this test and return the env that points loadConfig and doctor at it. */
@@ -91,6 +97,11 @@ describe('doctor output', () => {
     const dText = (await runDoctor(dirty, false)).out;
     expect(summary(dText)).toBe(summary(cText));
     expect(dText).toContain('"voice.fooBar" is ignored');
+  });
+
+  it('doctor here never runs the Swift toolchain or reads the Keychain (they made this file time out)', async () => {
+    const labels = (JSON.parse((await runDoctor({}, true)).out) as { checks: { label: string }[] }).checks.map((c) => c.label);
+    expect(labels.filter((l) => /Stephen Helper|Xcode|macOS SDK|ElevenLabs|Kokoro|Voice output/.test(l))).toEqual([]);
   });
 
   it('an unknown key line never prints its value', async () => {
