@@ -1,4 +1,4 @@
-/** `stephen update`: order, dirty tree refused, non-fast-forward refused, helper message. Nothing real runs. */
+/** `stephen update`: order, dirty tree refused, non-fast-forward refused, rerun after a failure, helper message. Nothing real runs. */
 import { describe, expect, it } from 'vitest';
 import { runUpdate, type RunResult } from '../../src/update.js';
 
@@ -75,11 +75,32 @@ describe('stephen update', () => {
     expect(h.text()).toContain('Not possible to fast-forward');
   });
 
-  it('already up to date: stops after the pull with exit 0', async () => {
-    const h = harness({ 'git rev-parse --short HEAD': [ok('aaa1111'), ok('aaa1111')] });
+  it('already up to date: still runs install, build and helper, exit 0, no way back lines', async () => {
+    const h = harness({ 'git rev-parse --short HEAD': [ok('aaa1111'), ok('aaa1111')] }, ['0.1.1']);
     expect(await runUpdate(h.deps)).toBe(0);
-    expect(h.calls).not.toContain('npm install');
-    expect(h.text()).toContain('Already up to date');
+    expect(h.calls.slice(-3)).toEqual(['npm install', 'npm run build', 'node install-helper']);
+    expect(h.text()).toContain('Already up to date: Stephen 0.1.1 (aaa1111). Every step is done.');
+    expect(h.text()).not.toContain('Updated:');
+    expect(h.text()).not.toContain('Going back');
+  });
+
+  it('a failed update finishes when run again with no new commit', async () => {
+    // Run 1: the pull moves aaa1111 to bbb2222, then npm install fails.
+    const first = harness({ 'npm install': fail('ENOTFOUND registry.npmjs.org') });
+    expect(await runUpdate(first.deps)).toBe(1);
+    expect(first.calls).not.toContain('npm run build');
+    // Run 2: the network is back. The pull changes nothing (HEAD stays bbb2222), yet the failed steps run.
+    const again = harness({ 'git rev-parse --short HEAD': [ok('bbb2222'), ok('bbb2222')] }, ['0.1.1']);
+    expect(await runUpdate(again.deps)).toBe(0);
+    expect(again.calls.slice(-3)).toEqual(['npm install', 'npm run build', 'node install-helper']);
+    expect(again.text()).toContain('Already up to date: Stephen 0.1.1 (bbb2222). Every step is done.');
+  });
+
+  it('a failed second rev-parse after the pull does not print an empty commit', async () => {
+    const h = harness({ 'git rev-parse --short HEAD': [ok('aaa1111'), fail('fatal: bad HEAD')] }, ['0.1.1']);
+    expect(await runUpdate(h.deps)).toBe(0);
+    expect(h.text()).not.toContain('()');
+    expect(h.text()).toContain('(aaa1111)');
   });
 
   it('stops at the first failing step and names the commit to go back to', async () => {
