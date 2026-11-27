@@ -62,6 +62,8 @@ const SECRET = [
   /\bsk-[A-Za-z0-9_-]{20,}/,
   /\bgh[pousr]_[A-Za-z0-9]{30,}/,
   /\bAKIA[0-9A-Z]{16}\b/,
+  /\b[sr]k_live_[A-Za-z0-9]{16,}/,
+  /\bAIza[0-9A-Za-z_-]{35}\b/,
   /\bxox[baprs]-[A-Za-z0-9-]{10,}/,
 ];
 
@@ -73,7 +75,8 @@ export function secretHits(diff) {
   let inHunk = false; // a "+++ b/" line is a file header only before the first @@ of a file
   for (const l of diff.split('\n')) {
     if (l.startsWith('diff --git ')) inHunk = false;
-    const f = inHunk ? null : /^\+\+\+ b\/(.+)$/.exec(l);
+    // git adds a tab after a path with a space; a path git still quotes keeps its quotes off here
+    const f = inHunk ? null : /^\+\+\+ "?b\/(.+?)"?\t?$/.exec(l);
     if (f) {
       file = f[1];
       if (/(^|\/)\.env(\.|$)/.test(file) && !/\.example$/.test(file)) hits.push(`${file} (env file)`);
@@ -93,7 +96,7 @@ export function secretHits(diff) {
 
 /** Vitest's "Tests  4566 passed | 6 skipped | 3 todo (4575)" line as numbers. Pure. */
 export function testTotals(out) {
-  const row = out.replace(/\x1b\[[0-9;]*m/g, '').split('\n').find((l) => /^\s*Tests\s/.test(l)) ?? '';
+  const row = out.replace(/\x1b\[[0-9;]*m/g, '').split('\n').findLast((l) => /^\s*Tests\s/.test(l)) ?? '';
   const n = (w) => Number(new RegExp(`(\\d+) ${w}`).exec(row)?.[1] ?? 0);
   return { found: row !== '', passed: n('passed'), failed: n('failed'), skipped: n('skipped') };
 }
@@ -111,7 +114,7 @@ export function sheet(run) {
   const tests = run('npx', ['vitest', 'run']);
   const t = testTotals(tests.out);
   const files = run('git', ['diff', '--name-only', 'origin/main..origin/qa']).out.split('\n').filter(Boolean).length;
-  const secrets = secretHits(run('git', ['diff', '-U0', '--no-renames', 'origin/main..origin/qa']).out);
+  const secrets = secretHits(run('git', ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-renames', 'origin/main..origin/qa']).out);
   const ok = head === qa && build && typecheck && tests.code === 0 && t.found && t.failed === 0 && !secrets.length;
   const lines = [
     `Release number sheet (checklist steps 4 and 9)`,
