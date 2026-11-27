@@ -461,10 +461,12 @@ export class WarmClaude implements WarmProcess {
     const out = outcomeFromResult(res);
     const model = this.timing?.times;
     this.timing = null;
+    // The cost is cumulative per process: the delta is this command's spend, for an error too (review-B M2), so no money is skipped.
+    const delta = cost !== null ? Math.max(0, cost - this.prevCostUsd) : null;
     const perCommand: ClaudeOutcome =
       out.kind === 'ok'
-        ? { ...out, apiMs: api !== null ? Math.max(0, api - this.prevApiMs) : null, costUsd: cost !== null ? Math.max(0, cost - this.prevCostUsd) : null, ...(model ? { model } : {}) }
-        : out;
+        ? { ...out, apiMs: api !== null ? Math.max(0, api - this.prevApiMs) : null, costUsd: delta, ...(model ? { model } : {}) }
+        : out.kind === 'error' && delta !== null ? { ...out, costUsd: delta } : out;
     if (api !== null) this.prevApiMs = api;
     if (cost !== null) this.prevCostUsd = cost;
     this.current?.(perCommand);
