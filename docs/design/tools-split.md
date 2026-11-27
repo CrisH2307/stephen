@@ -9,7 +9,7 @@ Describes `qa` at commit `8414219`.
 
 ## Context
 
-`src/server/tools.ts` is 1215 lines (58 KB). One function, `registerTools(mcp, hub)`, registers 23 browser tools
+`src/server/tools.ts` is 1215 lines (58 KB, `git show 8414219:src/server/tools.ts | wc -l`). One function, `registerTools(mcp, hub)`, registers 23 browser tools
 (24 with `evaluate`), then calls `registerDesktopTools`, `registerAccountTools` and `registerAnnounceTool`.
 
 Agents read the whole file to change one tool. That costs context, and agents copy the shape of what they read.
@@ -24,8 +24,8 @@ Who imports it:
 |---|---|
 | `src/server/index.ts` | `registerTools` |
 | `src/eval/dry-server.ts` | `registerTools` |
-| `test/server/review2.test.ts` | `closePrompt`, `quantizeScroll` |
-| `test/memory/boundary.test.ts` | scans its imports: expects `src/voice/announce.ts` |
+| the review #2 hardening unit tests (tab close prompt, scroll steps) | `closePrompt`, `quantizeScroll` |
+| `test/memory/boundary.test.ts` | scans its imports: expects `src/voice/announce.ts` (line 58), and expects `src/server/util.ts` to be reached through `tools.ts` (line 66) |
 | `test/telemetry/latency.test.ts` | reads its source for tool names (a fixed file list) |
 | `test/injection/web-text.test.ts` | names the file in two `describe` titles only |
 
@@ -84,9 +84,15 @@ Zero risk now, but every agent keeps paying for the full file, and research item
    file under `src/server/tools/` too, and assert the count it finds from `tools.ts` and that folder is at least 24 (23 tools plus `evaluate`, read from source).
 3. **Existing tests that must stay green unchanged** (they already pin the risky behavior):
    `test/server/server.test.ts` (names, annotations, gate checks, upload folders, recheck after Allow),
-   `test/replay/boundary.test.ts` (private clips never uploaded, links), `test/server/review2.test.ts`,
-   `test/server/hardening.test.ts`, `test/server/locks.test.ts`, `test/injection/web-text.test.ts`,
-   `test/e2e/mcp.int.test.ts`, `test/eval/dry-server.test.ts`.
+   `test/replay/boundary.test.ts` (private clips never uploaded, links), the review #2 hardening unit tests
+   (tab close prompt puts page text last, scroll snaps to fixed steps), `test/server/hardening.test.ts`,
+   `test/server/locks.test.ts`, `test/injection/web-text.test.ts`, `test/e2e/mcp.int.test.ts`,
+   `test/eval/dry-server.test.ts`, and `test/memory/boundary.test.ts` (both checks on `tools.ts`: it imports
+   `src/voice/announce.ts`, and `src/server/util.ts` is reached through it).
+4. **Pinned importer lists only grow.** Each move PR updates every test that lists importers or files (the import
+   boundary test, the latency name scan, and the new boundary test from research item 4, which lands in its own
+   PR). It adds the new file where `tools.ts` was named, so the check still covers the moved code. It never removes
+   a rule, widens an allowed list, or drops a file from a scan.
 
 ## Order of moves (one PR each)
 
@@ -94,31 +100,45 @@ Zero risk now, but every agent keeps paying for the full file, and research item
 |---|---|---|
 | 0 | Pins above. Tests only. | Sonnet code review |
 | 1 | Reorder registration so each group is together (see Open question). Updates the pinned order only. | Sonnet, Cris agrees |
-| 2 | Add `tools/shared.ts`; `tools.ts` imports from it. | Sonnet |
-| 3 | Move `read.ts`. | Sonnet |
-| 4 | Move `tabs.ts`; `review2.test.ts` imports `closePrompt` from it. | Sonnet |
-| 5 | Move `session.ts`. | Sonnet |
-| 6 | Move `act.ts`; `review2.test.ts` imports `quantizeScroll` from it. | Sonnet |
-| 7 | Move `upload.ts`. | Opus, independent |
-| 8 | Move `evaluate.ts`. Update `docs/design/CODEBASE.md` sizes and the two `describe` titles. | Sonnet |
+| 2 | Add `tools/shared.ts` and move `read.ts` (the first user of `shared.ts`, so it is not dead code). | Sonnet |
+| 3 | Move `tabs.ts`; the unit test for the tab close prompt imports `closePrompt` from it. | Sonnet |
+| 4 | Move `session.ts`. | Sonnet |
+| 5 | Move `act.ts`; the unit test for scroll steps imports `quantizeScroll` from it. | Sonnet |
+| 6 | Move `upload.ts`. | Opus, independent |
+| 7 | Move `evaluate.ts`. Update `docs/design/CODEBASE.md` sizes and the two `describe` titles. | Sonnet |
 
 Each move PR:
 
-- Touches only `tools.ts`, the one new file, and the test import it names.
+- Touches only `tools.ts`, the new file, the test import it names, and the pinned lists in pin 4.
 - Shows as moved lines: `git diff --color-moved=dimmed-zebra --color-moved-ws=allow-indentation-change origin/qa`.
   The only new lines are imports, the `registerXTools(t)` call, and the function header.
 - Passes `npm run build && npm run typecheck && npx vitest run`, with the listing snapshot unchanged.
 - Small commits as Cris, PR to `qa`. Coding by Opus (Cris, 2026-11-25), code review by `code-review` and
   `ponytail:ponytail-review`.
 
-PRs 3 to 8 touch the same `tools.ts`, so they go one at a time, never in parallel.
+PRs 2 to 7 touch the same `tools.ts`, so they go one at a time, never in parallel.
 
 ## Open question: tool order
 
-Today `wait_for` sits after `scroll`, and `recent_actions` after `handle_dialog`. Grouping them with their seam
-changes the order of `tools/list`, which the model sees. The risk is small, but it is a visible change, so it gets
-its own PR 1 with nothing else in it. If Cris says no, skip PR 1: `wait_for` then lives at the end of `act.ts` and
-`recent_actions` in its own call after `upload.ts`, and the order stays as today.
+Today the tail of the list is: `scroll`, `wait_for`, `upload_file`, `handle_dialog`, `recent_actions`, `evaluate`.
+So `wait_for` is not with the read tools, `handle_dialog` comes after `upload_file`, and `recent_actions` is not with
+the session tools. The target files above need the order session, tabs, read (with `wait_for`), act (ending with
+`handle_dialog`), upload, evaluate. That changes the order of `tools/list`, which the model sees. The risk is small,
+but it is a visible change, so it gets its own PR 1 with nothing else in it: it moves `wait_for` up after
+`screenshot`, `handle_dialog` up before `upload_file`, and `recent_actions` up after `browser_connect`.
+
+If Cris says no, skip PR 1 and keep today's order exactly. Then `tools.ts` calls, in this order:
+
+1. `registerSessionTools` (`session.ts`): `browser_status`, `browser_connect`.
+2. `registerTabTools` (`tabs.ts`).
+3. `registerReadTools` (`read.ts`): `snapshot`, `find`, `read_text`, `screenshot`.
+4. `registerActTools` (`act.ts`): `click` to `scroll`, then `wait_for` at the end.
+5. `registerUploadTool` (`upload.ts`): `upload_file`.
+6. `registerDialogTool` (a second export of `act.ts`): `handle_dialog`.
+7. `registerRecentActionsTool` (a second export of `session.ts`): `recent_actions`.
+8. `registerEvaluateTool` (`evaluate.ts`).
+
+The listing snapshot from PR 0 proves the order did not change.
 
 ## Risks
 
