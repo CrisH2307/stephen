@@ -1,0 +1,38 @@
+name: pr-rules
+
+# AGENTS.md rules a PR breaks by accident: no em or en dash added, every commit is Cris's, a new dependency needs
+# "[DEV REVIEW]" (scripts/pr-rules.mjs). Its own workflow, like safety-paths, so a title edit reruns only this.
+# The title and shas reach the script through env: only. No secrets, read-only token, no pull_request_target.
+
+on:
+  pull_request:
+    branches: [qa, main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-rules-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-rules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history and branches: the PR's own commits are head minus base minus main.
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: No dashes, Cris's commits, tagged new dependencies
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: node scripts/pr-rules.mjs
