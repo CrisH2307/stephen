@@ -7,6 +7,8 @@
  * A new name on a list fails the test. Adding it is a [DEV REVIEW] change: show why the new file is owner-only.
  * The folder-level rules (nothing Claude reaches loads src/memory, src/timers, src/jobs) are in
  * test/memory/boundary.test.ts.
+ * Limits: the scan reads imports and text. A new file that writes the store files directly by path (fs calls on
+ * memory.json, timers.json or a job state file) is not caught here.
  */
 import { readFileSync } from 'node:fs';
 import { relative, sep } from 'node:path';
@@ -40,6 +42,11 @@ const WRITE_STORES: Record<string, string[]> = {
   'src/timers/store.ts': ['src/app/data-export.ts', 'src/voice/index.ts'],
   'src/jobs/manager.ts': ['src/voice/index.ts'],
   'src/jobs/state.ts': ['src/cli.ts (dynamic)', 'src/voice/index.ts', 'src/voice/job-rows.ts'],
+  // Writes job state when a job finishes.
+  'src/jobs/finish.ts': ['src/voice/index.ts'],
+  // The owner-only CLIs, loaded on demand by `stephen memory` and `stephen jobs`.
+  'src/memory/cli.ts': ['src/cli.ts (dynamic)'],
+  'src/jobs/cli.ts': ['src/cli.ts (dynamic)'],
 };
 
 const WRITE_BUILDERS: { name: string; re: RegExp; own: string; files: string[] }[] = [
@@ -48,7 +55,15 @@ const WRITE_BUILDERS: { name: string; re: RegExp; own: string; files: string[] }
   { name: 'new TimerStore', re: /\bnew TimerStore\(/, own: 'src/timers/', files: ['src/voice/index.ts'] },
   { name: 'new JobManager', re: /\bnew JobManager\(/, own: 'src/jobs/', files: ['src/voice/index.ts'] },
   { name: 'writeJobState', re: /\bwriteJobState\(/, own: 'src/jobs/', files: [] },
+  { name: 'new FinishWatcher', re: /\bnew FinishWatcher\(/, own: 'src/jobs/', files: ['src/voice/index.ts'] },
+  // The routers write through the stores; `own` is the defining file, so its folder neighbours still count.
+  { name: 'new TimerRouter', re: /\bnew TimerRouter\(/, own: 'src/timers/router.ts', files: ['src/voice/index.ts'] },
+  { name: 'new JobRouter', re: /\bnew JobRouter\(/, own: 'src/jobs/router.ts', files: ['src/voice/index.ts'] },
+  { name: 'new MemoryRouter', re: /\bnew MemoryRouter\(/, own: 'src/voice/memory-router.ts', files: ['src/voice/index.ts'] },
 ];
+
+/** 'approved' not right after === or !==. */
+const APPROVED_VALUE = /(?<![!=]==\s?)'approved'/;
 
 // Rule B: who outside src/safety/ may build a confirmer, settle an answer or make an allowed gate result.
 const DECIDERS: { name: string; re: RegExp; files: string[] }[] = [
@@ -59,6 +74,8 @@ const DECIDERS: { name: string; re: RegExp; files: string[] }[] = [
   { name: 'implements Confirmer or ISafetyGate', re: /\bimplements\s+(?:Confirmer|ISafetyGate)\b/, files: [] },
   // The window's Allow or Deny click (confirm.answer on app.sock).
   { name: 'settle an answer', re: /\.settle\([^)]*'approved'/, files: ['src/app/server.ts'] },
+  // 'approved' made as a value, not compared (a type, an object-literal confirmer's answer, an audit row).
+  { name: "'approved' as a value", re: APPROVED_VALUE, files: ['src/app/protocol.ts', 'src/app/server.ts', 'src/jobs/manager.ts', 'src/jobs/router.ts', 'src/types.ts'] },
   // Dismissing a page dialog is always the safe direction (handle_dialog with accept false).
   { name: 'allowed: true', re: /\ballowed:\s*true\b/, files: ['src/server/tools.ts'] },
 ];
@@ -100,9 +117,14 @@ describe('rule B: only src/safety/ decides Allow or Deny', () => {
       ...SRC,
       { file: 'src/page/yes.ts', src: "class Yes implements Confirmer { async confirm() { return 'approved'; } }" },
       { file: 'src/page/skip.ts', src: 'const g = { allowed: true, message: "" };' },
+      { file: 'src/page/lit.ts', src: "const c = { kind: 'x', confirm: async () => 'approved' as const };" },
+      { file: 'src/page/check.ts', src: "if (answer !== 'approved') return;" },
     ];
+    const approved = users(APPROVED_VALUE, files, 'src/safety/');
+    expect(approved).toContain('src/page/lit.ts');
+    expect(approved).not.toContain('src/page/check.ts');
     expect(users(DECIDERS[2]!.re, files, 'src/safety/')).toEqual(['src/page/yes.ts']);
-    expect(users(DECIDERS[4]!.re, files, 'src/safety/')).toContain('src/page/skip.ts');
+    expect(users(DECIDERS.find((d) => d.name === 'allowed: true')!.re, files, 'src/safety/')).toContain('src/page/skip.ts');
     // Code inside src/safety/ is the decider and is not on the list.
     expect(users(DECIDERS[0]!.re, SRC, 'none/')).toContain('src/safety/index.ts');
   });
