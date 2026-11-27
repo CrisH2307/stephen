@@ -24,7 +24,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { groupAlive, sleep } from '../lib/process.js';
-import { claudeFailure, type ClaudeFailure } from '../lib/claude-failure.js';
+import { claudeFailure, plainFailureLine, type ClaudeFailure } from '../lib/claude-failure.js';
 import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
 import type { Trust } from './assistant.js';
 import {
@@ -293,7 +293,8 @@ export class WarmClaude implements WarmProcess {
   private stopped(): { message: string; failure?: ClaudeFailure } {
     const last = this.stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? '';
     const failure = claudeFailure(this.stderr);
-    const message = last === CLAUDE_NOT_FOUND || last === CLAUDE_START_FAILED ? last : CLAUDE_STOPPED;
+    // A plan limit keeps its own plain line (with the reset time): FAILURE_LINES has none, and "say it again" would only hit the limit again.
+    const message = last === CLAUDE_NOT_FOUND || last === CLAUDE_START_FAILED ? last : failure === 'claude_usage_limit' ? plainFailureLine(this.stderr)! : CLAUDE_STOPPED;
     return failure === 'claude_other' ? { message } : { message, failure };
   }
 
