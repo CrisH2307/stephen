@@ -49,6 +49,7 @@ Format: one `## <version> (YYYY-MM-DD)` section per release, newest first, with 
 - The audit log never writes the same line twice after a write that stopped halfway.
 - Running `stephen update` again after a failed step now finishes the update.
 - The Chrome and Zen self tests no longer fail now and then.
+- A Claude run that fails (out of steps or over its budget) now counts toward the daily cost limit, so failed runs can no longer pass the limit unseen.
 
 ### Security
 - After Stephen reads something private, a wake word reply is shown instead of spoken, and announce says nothing.
