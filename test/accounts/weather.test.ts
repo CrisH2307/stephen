@@ -75,7 +75,7 @@ describe('config', () => {
     expect(() => parseAccountsConfig({ weather: { longitude: -181 } })).toThrow(/longitude/);
     expect(() => parseAccountsConfig({ weather: { label: '' } })).toThrow(/label/);
     const keys: string[] = [];
-    expect(parseAccountsConfig({ weather: { url: 'https://evil.example' } }, keys).weather).not.toHaveProperty('url');
+    expect(() => parseAccountsConfig({ weather: { url: 'https://evil.example' } }, keys)).toThrow(/unknown key: "accounts\.weather\.url"/);
     expect(keys).toEqual(['accounts.weather.url']);
   });
 });

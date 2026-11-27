@@ -158,7 +158,7 @@ describe('Notion: ids, done rule, filter, formatting', () => {
     expect(parseAccountsConfig({ notion: { todoDatabase: DB } }).notion).toEqual({ enabled: true, todoDatabase: DB_DASHED });
     expect(() => parseAccountsConfig({ notion: { todoDatabase: 'https://www.notion.so/x' } })).toThrow(/32 hex/);
     const keys: string[] = [];
-    expect(parseAccountsConfig({ notion: { token: 'x' } }, keys).notion).not.toHaveProperty('token');
+    expect(() => parseAccountsConfig({ notion: { token: 'x' } }, keys)).toThrow(/looks like a secret \(not shown\)/);
     expect(keys).toEqual(['accounts.notion.token']);
   });
 });

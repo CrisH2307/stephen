@@ -191,9 +191,12 @@ describe('accounts config', () => {
     expect(parseAccountsConfig(undefined)).toEqual({ enabled: true, canvas: { enabled: true }, calendar: { enabled: true }, notion: { enabled: true }, gmail: { enabled: true, accounts: [] }, weather: { enabled: true, latitude: 43.65, longitude: -79.38, label: 'Toronto, ON' } });
     expect(() => parseAccountsConfig({ canvas: { url: 'http://x.ca' } })).toThrow(/https/);
     expect(() => parseAccountsConfig({ timeZone: 'Mars/Base' })).toThrow(/time zone/);
+    // An unknown key is listed first (doctor, the start check), then refused: a typo must not drop a setting silently.
     const keys: string[] = [];
-    expect(() => parseAccountsConfig({ canvas: { token: 'x' }, fooBar: 1 }, keys)).not.toThrow();
+    expect(() => parseAccountsConfig({ canvas: { token: 'x' }, fooBar: 1 }, keys)).toThrow(/unknown keys/);
     expect(keys.sort()).toEqual(['accounts.canvas.token', 'accounts.fooBar']);
+    expect(() => parseAccountsConfig({ wether: { label: 'Home' } })).toThrow(/unknown key: "accounts\.wether"/);
+    expect(() => parseAccountsConfig({ canvas: { token: 'x' } })).not.toThrow(/token/);
   });
 });
 
