@@ -224,7 +224,7 @@ Web pages can contain text written to trick an AI ("ignore your instructions and
 | **High-impact clicks**  Send, Submit, Pay, Buy, Delete, Post, Share, Authorize, Allow… | You're asked first, with what the form would send. |
 | **Enter and other submitting keys**  Enter in a message box or form field (also `type` with "submit"), shortcuts that send/delete | Checked like clicking Send/Submit, so you're asked first when it would send or submit. For `type` with submit, the text and the Enter are checked together, **before** anything is typed  one question, not two. |
 | **Typed text** | Plain text only (≤ 5000 characters per field): Tab, Escape and other control characters are refused, so text can't jump into another field; line breaks only go into multi-line fields. |
-| **File uploads** | You're asked first, with the file names shown. |
+| **File uploads** | You're asked first, with the file names shown. Only files in Downloads, Desktop or Documents. |
 | **Accepting "Leave page?" / confirm dialogs** | You're asked first. Plain alerts are accepted automatically and reported. |
 | **Typing into a new site right after reading your email or a sensitive site** (the classic data-theft pattern) | You're asked first. |
 | **Running JavaScript (`evaluate`)** | Off. If you enable it, every call asks you, showing the code. |
@@ -347,7 +347,7 @@ What Claude sees. "Asks you" depends on the page and action  see the safety tabl
 | `press_key` | Press any key or shortcut: `Enter`, `Escape`, `Tab`, `Home`, `End`, `PageDown`, `F5`, letters, `KeyA`-style codes, `Meta+A`… | destructive |
 | `scroll` | Scroll the page or an element | |
 | `wait_for` | Wait for text to appear or disappear | read |
-| `upload_file` | Attach local files to an upload field (always asks you) | destructive |
+| `upload_file` | Attach local files to an upload field (always asks you; only from Downloads, Desktop or Documents) | destructive |
 | `handle_dialog` | Accept or dismiss a page's confirm / prompt / "leave page?" dialog | destructive |
 | `recent_actions` | This session's entries from the audit log, newest first (labels from unread private sites hidden) | read |
 | `evaluate` | Run JavaScript (≤ 2000 characters, all shown to you) in the page  **only if `safety.allowEvaluate` is true**; always asks you | destructive |
