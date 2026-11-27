@@ -4,6 +4,7 @@
  * never names the folder itself (test/replay/boundary.test.ts).
  */
 import { realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { isInside } from './fs.js';
 
@@ -56,4 +57,18 @@ export function neverReadPaths(stephenHome: string, stephenRepo: string): string
 /** True when `path` (after symlinks, in any letter case) lies in one of neverReadPaths, `~` being `userHome`. */
 export function isNeverReadFile(path: string, stephenHome: string, stephenRepo: string, userHome: string): boolean {
   return neverReadPaths(stephenHome, stephenRepo).some((d) => insideFolded(path, d.startsWith('~/') ? join(userHome, d.slice(2)) : d));
+}
+
+/** The only folders upload_file sends from: what a person saves to attach (after M1, safety review 0.1.1). */
+export function uploadFolders(userHome: string, tempDirs = [tmpdir(), '/tmp']): string[] {
+  return [join(userHome, 'Downloads'), join(userHome, 'Desktop'), join(userHome, 'Documents'), ...tempDirs];
+}
+
+/**
+ * True when `path`, after following every link, lies in one of uploadFolders. Real paths only, no spelling check: a
+ * link in Downloads to `~/.gnupg` must answer no.
+ */
+export function isUploadAllowedFile(path: string, userHome: string, tempDirs?: string[]): boolean {
+  const fold = (p: string) => realThroughParent(p).normalize('NFC').toLowerCase();
+  return uploadFolders(userHome, tempDirs).some((d) => isInside(fold(path), fold(d)));
 }
