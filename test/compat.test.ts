@@ -31,6 +31,12 @@ import { parseLatencyRecord } from '../src/telemetry/latency.js';
 import { TimerStore } from '../src/timers/store.js';
 import { Conversation } from '../src/voice/conversation.js';
 
+// doctor here is only read for its config lines. Its helper checks run the real Swift toolchain (up to 60 s per step)
+// and its voice checks read the real Keychain; a busy toolchain made the same doctor call time out in
+// test/cli/unknown-config-keys.test.ts (169 s). Stub both: this file does not test them.
+vi.mock('../src/helper/doctor.js', () => ({ helperDoctorChecks: async () => [] }));
+vi.mock('../src/voice/tts/doctor.js', () => ({ voiceOutputChecks: async () => [] }));
+
 const FIX = resolve(__dirname, 'fixtures/v0.1');
 /** 2026-11-25 14:30 UTC, the time the fixtures were written, in every time zone. */
 const T0 = Date.UTC(2026, 10, 25, 14, 30);
