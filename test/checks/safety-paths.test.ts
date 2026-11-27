@@ -23,15 +23,30 @@ describe('safety paths check', () => {
   });
 
   it('no safety file: passes without the tag', () => {
-    expect(safetyProblem('docs: x', ['docs/README.md', 'src/jobs/cli.ts'])).toBeNull();
+    expect(safetyProblem('docs: x', ['docs/README.md', 'src/voice/claude.ts'])).toBeNull();
   });
 
   it('folders match by prefix, files only exactly', () => {
-    expect(safetyFiles(['src/safety/text.ts', 'src/safetyish.ts', 'src/memory/store.ts', 'src/memory/store.ts.bak', '.github/workflows/new.yml'])).toEqual([
+    expect(safetyFiles(['src/safety/text.ts', 'src/safetyish.ts', 'src/lib/fs.ts', 'src/lib/fs.ts.bak', '.github/workflows/new.yml'])).toEqual([
       'src/safety/text.ts',
-      'src/memory/store.ts',
+      'src/lib/fs.ts',
       '.github/workflows/new.yml',
     ]);
+  });
+
+  it.each([
+    'src/memory/cli.ts',
+    'src/memory/config.ts',
+    'src/timers/notify.ts',
+    'src/jobs/cli.ts',
+    'src/jobs/config.ts',
+    'src/jobs/finish.ts',
+    'src/lib/owner-only.ts',
+    'helper/AskBox.swift',
+    'helper/Components/ChatThread.swift',
+    'package.json',
+  ])('%s is a safety path (whole memory, timer and job folders; Allow and Deny views; the owner-only check)', (f) => {
+    expect(safetyFiles([f])).toEqual([f]);
   });
 
   it('the script is the one list: AGENT-LOOP.md points to it and names no path of its own', () => {
@@ -42,7 +57,7 @@ describe('safety paths check', () => {
   });
 
   it('the incident ladder list stays inside the script list', () => {
-    expect(LADDER_PATHS.filter((p) => !(SAFETY_PATHS as string[]).includes(p))).toEqual([]);
+    expect(LADDER_PATHS.filter((p) => safetyFiles([p]).length === 0)).toEqual([]);
   });
 
   it('every listed path exists, so a rename cannot drop a file from the check', () => {
