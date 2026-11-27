@@ -13,7 +13,7 @@ import { expandPath } from '../config.js';
 import { ZEN_ATTACH_ONLY_LABEL, isZenAttachOnly } from '../drivers/zen.js';
 import { HubError, errorMessage } from '../errors.js';
 import { timed } from '../lib/step-timer.js';
-import { isNeverReadFile, isOwnerOnlyFile } from '../lib/owner-only.js';
+import { isNeverReadFile, isOwnerOnlyFile, isUploadAllowedFile } from '../lib/owner-only.js';
 import { REPO_ROOT } from '../lib/repo.js';
 import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
@@ -983,10 +983,11 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
     },
   );
 
+  const UPLOAD_FOLDERS_LINE = 'I can only upload files from Downloads, Desktop or Documents.';
   tool(
     'upload_file',
     'Upload files',
-    'Attaches local files to a file input (the ref of an <input type=file> or the button that opens the picker). Always asks the user to approve, showing the file names. Paths must be absolute or start with ~.',
+    'Attaches local files to a file input (the ref of an <input type=file> or the button that opens the picker). Always asks the user to approve, showing the file names. Only files in Downloads, Desktop or Documents. Paths must be absolute or start with ~.',
     {
       target: refArg,
       paths: z.array(z.string().min(1)).min(1).max(20).describe('Absolute file paths (or ~/…).'),
@@ -1004,6 +1005,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
         if (isOwnerOnlyFile(abs, cfg.home)) throw new HubError('DENIED', `${basename(abs)} is one of Stephen's private files and is never uploaded.`);
         // Nor anything a job's shell may never read: Stephen's home, keys, the repo .env (M1).
         if (isNeverReadFile(abs, cfg.home, REPO_ROOT, homedir())) throw new HubError('DENIED', `${basename(abs)} is in a private folder and is never uploaded.`);
+        // And only from the folders a person saves files to attach: mail, browser profiles, keys, history stay home.
+        if (!isUploadAllowedFile(abs, homedir())) throw new HubError('DENIED', `${basename(abs)} is not in an upload folder. ${UPLOAD_FOLDERS_LINE}`);
         const st = await stat(abs).catch(() => null);
         if (!st?.isFile()) throw new HubError('INVALID_ARG', `File not found: ${abs}`);
         files.push(abs);
@@ -1028,6 +1031,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
             if (late) throw new HubError('DENIED', `${basename(late)} is one of Stephen's private files and is never uploaded.`);
             const secret = files.find((f) => isNeverReadFile(f, cfg.home, REPO_ROOT, homedir()));
             if (secret) throw new HubError('DENIED', `${basename(secret)} is in a private folder and is never uploaded.`);
+            const outside = files.find((f) => !isUploadAllowedFile(f, homedir()));
+            if (outside) throw new HubError('DENIED', `${basename(outside)} is not in an upload folder. ${UPLOAD_FOLDERS_LINE}`);
             return engine.uploadFile(page, target, files);
           },
           done: `Attached ${files.map((f) => quote(basename(f), 60)).join(', ')} to ${target}`,
