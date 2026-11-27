@@ -93,6 +93,7 @@ describe('release number sheet (--sheet, checklist steps 4 and 9)', () => {
     expect(text).toBe(
       [
         'Release number sheet (checklist steps 4 and 9)',
+        'Fetch origin main and qa: pass',
         `Commit: ${SHA} (same as origin/qa)`,
         'Build: pass',
         'Typecheck: pass',
@@ -111,6 +112,23 @@ describe('release number sheet (--sheet, checklist steps 4 and 9)', () => {
     const other = sheet(fake({ 'git rev-parse HEAD': { code: 0, out: 'b'.repeat(40) } }));
     expect(other.ok).toBe(false);
     expect(other.text).toContain('NOT origin/qa');
+  });
+
+  it('is not ready when the fetch fails', () => {
+    const r = sheet(fake({ 'git fetch origin main qa': { code: 128, out: 'fatal: unable to access' } }));
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('Fetch origin main and qa: FAIL');
+  });
+
+  it('is not ready when either git diff fails, and never says the scan is clean', () => {
+    const bad = { code: 128, out: "fatal: ambiguous argument 'origin/main..origin/qa': unknown revision\n" };
+    const scan = sheet(fake({ 'git -c core.quotePath=false diff -U0 --no-renames origin/main..origin/qa': bad }));
+    expect(scan.ok).toBe(false);
+    expect(scan.text).toContain('Secrets scan: FAIL (git diff did not run)');
+    expect(scan.text).not.toContain('Secrets scan: clean');
+    const names = sheet(fake({ 'git diff --name-only origin/main..origin/qa': bad }));
+    expect(names.ok).toBe(false);
+    expect(names.text).toContain('Files changed: FAIL (git diff did not run)');
   });
 
   it('names the file and line of a secret shape, never the secret, and flags .env files', () => {
