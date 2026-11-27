@@ -23,10 +23,15 @@ export function dashLines(diff) {
   const hits = [];
   let file = null;
   let line = 0;
+  // Headers come only between "diff --git" and the first "@@": inside a hunk, an added "++ x" line reads "+++ x".
+  let inHunk = false;
   for (const l of diff.split('\n')) {
-    if (l.startsWith('+++ ')) file = l === '+++ /dev/null' ? null : l.slice(6);
-    else if (l.startsWith('@@')) line = Number(/\+(\d+)/.exec(l)?.[1] ?? 0);
-    else if (l.startsWith('+')) {
+    if (l.startsWith('diff --git ')) inHunk = false;
+    else if (!inHunk && l.startsWith('+++ ')) file = l === '+++ /dev/null' ? null : l.slice(6);
+    else if (l.startsWith('@@')) {
+      inHunk = true;
+      line = Number(/\+(\d+)/.exec(l)?.[1] ?? 0);
+    } else if (inHunk && l.startsWith('+')) {
       if (file && !isDashData(file) && DASHES.test(l)) hits.push(`${file}:${line}`);
       line++;
     }

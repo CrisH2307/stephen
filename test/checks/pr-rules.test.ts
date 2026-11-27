@@ -42,6 +42,23 @@ describe('pr rules check', () => {
     expect(DASH_DATA).toContain('test/fixtures/');
   });
 
+  it('rule 1: an added line that starts with "++" is a line, not a file header, so later dashes still count', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -0,0 +1,2 @@',
+      '+++ x',
+      `+y ${EM} z`,
+      'diff --git a/src/b.ts b/src/b.ts',
+      '--- a/src/b.ts',
+      '+++ b/src/b.ts',
+      '@@ -0,0 +1 @@',
+      `+w ${EN}`,
+    ].join('\n');
+    expect(dashLines(diff)).toEqual(['src/a.ts:2', 'src/b.ts:1']);
+  });
+
   it('rule 2: Cris authors; committer is Cris or the GitHub merge button; anything else is named by short sha', () => {
     const log = [
       `${'a'.repeat(40)}\t${CRIS}\t${CRIS}`,
