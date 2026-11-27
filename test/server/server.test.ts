@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { HubError } from '../../src/errors.js';
+import { REPO_ROOT } from '../../src/lib/repo.js';
 import { normalizeUrl } from '../../src/server/index.js';
 import type { ActionRequest } from '../../src/types.js';
 import { FakePage, allow, deny, setup, textOf } from './fakes.js';
@@ -447,6 +448,37 @@ describe('actions', () => {
     expect(h.engine.uploadFile).toHaveBeenCalledWith(expect.anything(), 'z1:e8', [f]);
     expect(textOf(res)).toContain('Attached "report.pdf" to z1:e8 in z1.');
     expect(textOf(res)).toContain('element: button "Attach"');
+  });
+
+  // M1 (safety review 0.1.1): the folders a job's shell may never read are never uploaded either.
+  it('upload_file refuses every folder the job sandbox never reads, before looking for the file', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    const memory = join(h.cfg.home, 'memory.json');
+    mkdirSync(h.cfg.home, { recursive: true });
+    writeFileSync(memory, '{}');
+    for (const p of [memory, '~/.ssh/id_ed25519', '~/.aws/credentials', '~/.config/gh/hosts.yml', '~/Library/Keychains/login.keychain-db', join(REPO_ROOT, '.env'), '~/.SSH/id_ed25519']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/private folder and is never uploaded/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('upload_file follows a symlink into a never-read folder', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    mkdirSync(h.cfg.home, { recursive: true });
+    mkdirSync(h.tmp, { recursive: true });
+    writeFileSync(join(h.cfg.home, 'memory.json'), '{}');
+    const link = join(h.tmp, 'notes.json');
+    symlinkSync(join(h.cfg.home, 'memory.json'), link);
+    expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [link], intent: 'attach' }))).toMatch(/never uploaded/);
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('upload_file refuses a relative path, as its description says', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    for (const p of ['notes.txt', './notes.txt', '../x.pdf']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/absolute|start with ~/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
 });
 

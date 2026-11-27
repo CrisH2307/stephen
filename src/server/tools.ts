@@ -3,7 +3,7 @@ import { registerDesktopTools } from '../desktop/index.js';
 import { registerAccountTools } from '../accounts/index.js';
 import { registerAnnounceTool } from '../voice/announce.js';
 import { homedir } from 'node:os';
-import { basename } from 'node:path';
+import { basename, isAbsolute } from 'node:path';
 import type { McpServer, ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ShapeOutput, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
@@ -13,7 +13,8 @@ import { expandPath } from '../config.js';
 import { ZEN_ATTACH_ONLY_LABEL, isZenAttachOnly } from '../drivers/zen.js';
 import { HubError, errorMessage } from '../errors.js';
 import { timed } from '../lib/step-timer.js';
-import { isOwnerOnlyFile } from '../lib/owner-only.js';
+import { isNeverReadFile, isOwnerOnlyFile } from '../lib/owner-only.js';
+import { REPO_ROOT } from '../lib/repo.js';
 import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
 import { EVALUATE_MAX_CHARS } from '../safety/policy.js';
@@ -995,10 +996,14 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
     async ({ target, paths, intent }) => {
       const files: string[] = [];
       for (const p of paths) {
-        const abs = expandPath(p, homedir());
+        const t = p.trim();
+        if (!isAbsolute(t) && t !== '~' && !t.startsWith('~/')) throw new HubError('INVALID_ARG', `${p} is not a full path. Paths must be absolute or start with ~.`);
+        const abs = expandPath(t, homedir());
         // Stephen's own private recordings never go to a web page (issue #48). Asked before `stat`, in any letter
         // case, so the answer never tells the model whether a clip exists (#169).
         if (isOwnerOnlyFile(abs, cfg.home)) throw new HubError('DENIED', `${basename(abs)} is one of Stephen's private files and is never uploaded.`);
+        // Nor anything a job's shell may never read: Stephen's home, keys, the repo .env (M1).
+        if (isNeverReadFile(abs, cfg.home, REPO_ROOT, homedir())) throw new HubError('DENIED', `${basename(abs)} is in a private folder and is never uploaded.`);
         const st = await stat(abs).catch(() => null);
         if (!st?.isFile()) throw new HubError('INVALID_ARG', `File not found: ${abs}`);
         files.push(abs);
@@ -1021,6 +1026,8 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
           run: () => {
             const late = files.find((f) => isOwnerOnlyFile(f, cfg.home));
             if (late) throw new HubError('DENIED', `${basename(late)} is one of Stephen's private files and is never uploaded.`);
+            const secret = files.find((f) => isNeverReadFile(f, cfg.home, REPO_ROOT, homedir()));
+            if (secret) throw new HubError('DENIED', `${basename(secret)} is in a private folder and is never uploaded.`);
             return engine.uploadFile(page, target, files);
           },
           done: `Attached ${files.map((f) => quote(basename(f), 60)).join(', ')} to ${target}`,
