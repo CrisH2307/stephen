@@ -23,12 +23,12 @@ export function chromiumPath(): Promise<string> {
 }
 
 /**
- * Flags needed to run this Chromium in the sandbox-less CI container. The Mac's own Chrome needs none locally, but on
- * the macOS CI runner a visible window loses clicks under load (#195), so CI runs it headless.
+ * Flags for the test browser: headless everywhere (on Linux the sandbox-less CI flags include it). A visible window
+ * on a Mac takes real clicks: under load on the CI runner (#195), and on the owner's Mac a stray click from the
+ * person using it, which the selftest's full-page overlay check reports as "the click landed on the overlay".
  */
 export function chromiumArgs(): string[] {
-  if (process.platform !== 'darwin') return [...chromium.args];
-  return process.env.CI ? ['--headless'] : [];
+  return process.platform === 'darwin' ? ['--headless'] : [...chromium.args];
 }
 
 export async function launchTestBrowser(protocol: TestProtocol): Promise<Browser> {
