@@ -11,10 +11,12 @@ import { helperDoctorChecks, type HelperDoctorDeps } from '../../src/helper/doct
 import {
   HELPER_FRAMEWORKS,
   HELPER_SOURCES,
+  type HelperInstallPlan,
   type InstallHelperDeps,
   codesignArgs,
   fallbackSdks,
   findSwiftCompiler,
+  helperFailure,
   helperSourceDir,
   installHelper,
   planHelperInstall,
@@ -320,6 +322,29 @@ describe('install-helper skip unchanged', () => {
     const badSign = (cmd: string, args: string[]) => (cmd === '/usr/bin/codesign' ? fail('no') : happy(cmd, args));
     expect(await installHelper(p, {}, deps(fakeRun(badSign).run).deps)).toBe(1);
     expect(existsSync(stampOf(p))).toBe(false);
+  });
+});
+
+describe('helperFailure reads install-helper\'s real lines (setup shows a fixed line per word)', () => {
+  const words = async (p: HelperInstallPlan, respond: Responder, over: Partial<InstallHelperDeps> = {}) => {
+    const d = deps(fakeRun(respond).run, over);
+    expect(await installHelper(p, {}, d.deps)).toBe(1);
+    return helperFailure(d.out.join('\n'));
+  };
+
+  it('names each failure from its own log', async () => {
+    const noMacros: Responder = (cmd, args) => (cmd.endsWith('swiftc') && args[0] === '-O' ? fail(NO_MACROS) : happy(cmd, args));
+    expect(await words(plan(), noMacros, { fallbackSdks: () => [] })).toBe('sdk');
+    expect(await words(plan(), () => fail('xcrun: error: invalid active developer path'))).toBe('tools');
+    expect(await words(plan(), happy, { platform: 'linux' })).toBe('not_macos');
+    expect(await words(planHelperInstall({ appPath: join(dir, 'A.app'), stephenHome: join(dir, 'x'.repeat(120)), version: '1' }), happy)).toBe('home_too_long');
+    const theirs = plan();
+    mkdirSync(join(theirs.appPath, 'Contents'), { recursive: true });
+    writeFileSync(join(theirs.appPath, 'Contents', 'Info.plist'), '<plist><string>com.other</string></plist>');
+    expect(await words(theirs, happy)).toBe('not_ours');
+    rmSync(theirs.appPath, { recursive: true, force: true });
+    expect(await words(plan(), (cmd, args) => (cmd === '/usr/bin/codesign' ? fail('no') : happy(cmd, args)))).toBe('codesign');
+    expect(await words(plan(), (cmd, args) => (cmd.endsWith('swiftc') && args[0] === '-O' ? fail('error: boom') : happy(cmd, args)))).toBe('other');
   });
 });
 
