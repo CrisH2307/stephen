@@ -107,25 +107,31 @@ export function testTotals(out) {
  */
 export function sheet(run) {
   const step = (cmd, args) => run(cmd, args).code === 0;
+  const fetched = step('git', ['fetch', 'origin', 'main', 'qa']); // so origin/qa and origin/main are not stale
   const head = run('git', ['rev-parse', 'HEAD']).out.trim();
   const qa = run('git', ['rev-parse', 'origin/qa']).out.trim();
   const build = step('npm', ['run', 'build']);
   const typecheck = step('npm', ['run', 'typecheck']);
   const tests = run('npx', ['vitest', 'run']);
   const t = testTotals(tests.out);
-  const files = run('git', ['diff', '--name-only', 'origin/main..origin/qa']).out.split('\n').filter(Boolean).length;
-  const secrets = secretHits(run('git', ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-renames', 'origin/main..origin/qa']).out);
-  const ok = head === qa && build && typecheck && tests.code === 0 && t.found && t.failed === 0 && !secrets.length;
+  // A failed git diff prints its error into out, which would read as "no files, no secrets": it must fail instead.
+  const names = run('git', ['diff', '--name-only', 'origin/main..origin/qa']);
+  const diff = run('git', ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-renames', 'origin/main..origin/qa']);
+  const diffed = names.code === 0 && diff.code === 0;
+  const files = names.out.split('\n').filter(Boolean).length;
+  const secrets = secretHits(diff.out);
+  const ok = fetched && diffed && head === qa && build && typecheck && tests.code === 0 && t.found && t.failed === 0 && !secrets.length;
   const lines = [
     `Release number sheet (checklist steps 4 and 9)`,
+    `Fetch origin main and qa: ${fetched ? 'pass' : 'FAIL'}`,
     `Commit: ${head}${head === qa ? ' (same as origin/qa)' : ` (NOT origin/qa ${qa})`}`,
     `Build: ${build ? 'pass' : 'FAIL'}`,
     `Typecheck: ${typecheck ? 'pass' : 'FAIL'}`,
     t.found
       ? `Tests: ${t.passed} passed, ${t.failed} failed, ${t.skipped} skipped${tests.code === 0 ? '' : ' (suite exit not 0)'}`
       : 'Tests: FAIL (no totals line)',
-    `Files changed origin/main..origin/qa: ${files}`,
-    secrets.length ? `Secrets scan: FAIL, check ${secrets.join(', ')}` : 'Secrets scan: clean',
+    names.code === 0 ? `Files changed origin/main..origin/qa: ${files}` : 'Files changed: FAIL (git diff did not run)',
+    diff.code !== 0 ? 'Secrets scan: FAIL (git diff did not run)' : secrets.length ? `Secrets scan: FAIL, check ${secrets.join(', ')}` : 'Secrets scan: clean',
     `Result: ${ok ? 'ready for the Mac steps' : 'NOT ready'}`,
   ];
   return { ok, text: lines.join('\n') };
