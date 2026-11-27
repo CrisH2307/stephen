@@ -1,4 +1,5 @@
-# Dependabot version updates (decision D10, 2026-11-25): weekly, grouped, PRs to qa only, never main.
+# Dependabot version updates (decision D10, 2026-11-25; monthly and no major bumps, Cris 2026-11-27): grouped, PRs to
+# qa only, never main. Major versions need a planned PR by a lane.
 # A lane reviews each PR like any other: CI green, read the changelog, no new permission. Actions stay pinned to a
 # commit hash; Dependabot updates the hash and the version comment together.
 version: 2
@@ -7,11 +8,13 @@ updates:
     directory: /
     target-branch: qa
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
+      interval: monthly
+    open-pull-requests-limit: 1
     commit-message:
       prefix: "deps"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
@@ -19,8 +22,7 @@ updates:
     directory: /
     target-branch: qa
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 2
     commit-message:
       prefix: "ci"
