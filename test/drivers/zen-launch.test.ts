@@ -297,8 +297,23 @@ describe('zen-launch', () => {
     const r = await runZenLaunch({}, weird.deps);
     expect(r).toMatchObject({ exitCode: 1, status: 'error', message: ZEN_LAUNCH_FAILED, detail: 'EACCES boom' });
     expect(formatZenLaunch(r)).toBe(`✗ ${ZEN_LAUNCH_FAILED}`);
-    // a HubError keeps its own message (written for people) and has no detail
-    expect((await runZenLaunch({}, broken.deps)).detail).toBeUndefined();
+    // review of #443: only NEEDS_USER keeps its own message; every other HubError is plain, raw words in detail
+    expect(await runZenLaunch({}, broken.deps)).toMatchObject({ message: ZEN_LAUNCH_FAILED, detail: 'Zen was not found at /x' });
+    expect((await runZenLaunch({}, needs.deps)).detail).toBeUndefined();
+  });
+
+  it.each([
+    ['NOT_CONNECTED', 'Launched Zen (pid 9) but could not open a WebDriver BiDi session at ws://127.0.0.1:4545/session (boom). Retry browser_connect.'],
+    ['NOT_CONNECTED', 'Zen exited during startup (code 1). Zen said: /Users/someone/Library/Application Support/zen/Profiles/abc.default is locked'],
+    ['TIMEOUT', 'Zen did not open its remote-control port within 30 s — see /Users/someone/.stephen/state/zen.log'],
+    ['INTERNAL', 'EACCES: permission denied, open \'/Users/someone/.stephen/state/zen.json\''],
+  ])('review of #443: a %s error never shows paths, ports or "Zen said:" in the normal output', async (code, raw) => {
+    tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
+    const r = await runZenLaunch({}, launchHarness({ launchError: new HubError(code as never, raw) }).deps);
+    expect(r).toMatchObject({ exitCode: 1, status: 'error', message: ZEN_LAUNCH_FAILED, detail: raw });
+    const shown = formatZenLaunch(r);
+    expect(shown).toBe(`✗ ${ZEN_LAUNCH_FAILED}`);
+    expect(shown).not.toMatch(/\/Users\/|ws:\/\/|Zen said:|pid \d|[\u2013\u2014]/);
   });
 
   it('notes when the config would not use this Zen (agent mode) or may launch it (launch: auto)', async () => {

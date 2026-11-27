@@ -203,9 +203,10 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
     };
   } catch (e) {
     const needsUser = isHubError(e) && e.code === 'NEEDS_USER';
-    // HubError messages are written for people; anything else is raw (an errno, a stack line) and stays in detail.
-    if (isHubError(e)) return fail(needsUser ? 2 : 1, needsUser ? 'needs-user' : 'error', e.message);
-    return fail(1, 'error', ZEN_LAUNCH_FAILED, errText(e));
+    // Only NEEDS_USER messages are written for the person (what to do). Every other error can carry paths, ports or
+    // Zen's own log words, so it gets the plain line and its raw text stays in detail (--json only).
+    if (needsUser) return fail(2, 'needs-user', e.message);
+    return fail(1, 'error', ZEN_LAUNCH_FAILED, isHubError(e) ? e.message : errText(e));
   }
 }
 
