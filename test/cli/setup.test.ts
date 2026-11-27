@@ -1,5 +1,6 @@
 /** `stephen setup`: step order, stop at the first red line, skip done steps, never start a real process. */
 import { describe, expect, it } from 'vitest';
+import { CLT_SDKS_DIR, CODESIGN_FAILED, HOME_TOO_LONG, NOT_MACOS, NOT_OURS, SDK_FIX, SOURCES_MISSING, XCODE_TOOLS_FIX } from '../../src/helper/install.js';
 import { FIRST_COMMAND, runSetup, setupStatus, type RunResult, type SetupDeps } from '../../src/setup.js';
 
 const OK: RunResult = { code: 0, stdout: '', stderr: '' };
@@ -78,11 +79,40 @@ describe('stephen setup', () => {
     expect(h.text()).not.toContain('Microphone');
   });
 
-  it('a failing helper build says to install the command line tools', async () => {
-    const h = harness({ results: { 'stephen install-helper': { code: 1, stdout: '', stderr: 'swiftc not found' } } });
+  const helperFails = (stdout: string) => harness({ results: { 'stephen install-helper': { code: 1, stdout, stderr: '' } } });
+
+  it('a failing helper build on the #248 SDK says what to install, never the compiler text or xcode-select', async () => {
+    const stdout = [
+      'Compiling Stephen Helper with /usr/bin/swiftc (this takes a minute)…',
+      "✗ swiftc failed (exit code 1):\nerror: external macro implementation type 'SwiftUIMacros.EntryMacro' could not be found for macro 'Entry()'; plugin for module 'SwiftUIMacros' not found",
+      '',
+      'Command: swiftc -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk ...',
+      `The default SDK has no SwiftUIMacros plugin, and there is no other SDK in ${CLT_SDKS_DIR}. ${SDK_FIX}`,
+    ].join('\n');
+    const h = helperFails(stdout);
     expect(await runSetup(h.deps)).toBe(1);
-    expect(h.text()).toContain('xcode-select --install');
+    const t = h.text();
+    expect(t).toContain(SDK_FIX);
+    expect(t).toContain('The helper did not build.');
+    for (const raw of ['xcode-select --install', 'Compiling', 'swiftc failed', 'SwiftUIMacros.EntryMacro', 'Command:']) expect(t).not.toContain(raw);
     expect(h.calls).not.toContain('stephen doctor --json');
+  });
+
+  it.each([
+    ['tools', `Swift compiler: not found\n${XCODE_TOOLS_FIX}`, 'xcode-select --install'],
+    ['not_macos', `${NOT_MACOS}: it builds a Swift menu-bar app.`, 'only builds on macOS'],
+    ['sources_missing', `${SOURCES_MISSING} from /x (a.swift). Reinstall Stephen.`, 'Get Stephen again with git clone'],
+    ['home_too_long', `Stephen's home folder path is ${HOME_TOO_LONG} (/x, 120 bytes; max 103).`, 'Set STEPHEN_HOME to a shorter folder'],
+    ['not_ours', `/Applications/Stephen Helper.app ${NOT_OURS}. Move it away.`, 'that Stephen did not make is in the way'],
+    ['codesign', `${CODESIGN_FAILED}: errSecInternal /Users/x/secret`, 'could not be signed'],
+    ['other', '✗ swiftc failed (exit code 1):\nerror: something new', 'Run `stephen install-helper` and read the error'],
+    ['empty output', '', 'Run `stephen install-helper` and read the error'],
+  ])('a failing helper build (%s) shows its own fixed line and no tool output', async (_name, stdout, line) => {
+    const h = helperFails(stdout);
+    expect(await runSetup(h.deps)).toBe(1);
+    const t = h.text();
+    expect(t).toContain(line);
+    for (const raw of ['something new', 'errSecInternal', '/Users/x', 'Compiling']) expect(t).not.toContain(raw);
   });
 
   it('second run: registered, launcher present and helper unchanged are skipped', async () => {
