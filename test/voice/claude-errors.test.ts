@@ -7,6 +7,7 @@ import { INCIDENT_CODES, incidentDir, readIncidents } from '../../src/telemetry/
 import { LatencyMonitor } from '../../src/telemetry/latency.js';
 import { Assistant, FAILURE_LINES, LOCAL_STILL_WORKS, type CommandReport } from '../../src/voice/assistant.js';
 import { CLAUDE_FAILURES, claudeFailure, CLAUDE_NOT_FOUND, parseClaudeOutput, type ClaudeOutcome } from '../../src/voice/claude.js';
+import { plainFailureLine } from '../../src/lib/claude-failure.js';
 import { RecordingChimes, RecordingSpeaker } from './helpers.js';
 
 const result = (subtype: string, text: string) => JSON.stringify({ type: 'result', subtype, is_error: true, result: text, session_id: null });
@@ -52,6 +53,19 @@ describe('R5: plain reasons when Claude fails', () => {
     if (line) expect(r.reply).toBe(`${line} ${LOCAL_STILL_WORKS}`);
     if (code === 'claude_usage_limit') expect(r.reply).toBe(`You've reached your Claude plan limit. It resets at 3pm. ${LOCAL_STILL_WORKS}`);
     if (code === 'claude_other') expect(r.reply).not.toContain(LOCAL_STILL_WORKS);
+  });
+
+  // Claude Code 2.1.332 wording (release step 4c): new limit and sign-in lines, read from the installed CLI.
+  it.each([
+    ['claude_usage_limit', "You've hit your monthly spend limit. See Usage in Settings"],
+    ['claude_usage_limit', "You're out of usage credits. See Usage in Settings"],
+    ['claude_usage_limit', 'Your organization is out of usage credits.'],
+    ['claude_usage_limit', 'API Error: Usage credits ran out before the response was finished.'],
+    ['claude_usage_limit', "You've hit your session limit"],
+    ['claude_signed_out', 'Failed to authenticate: OAuth session expired and could not be refreshed'],
+  ] as const)('2.1.332 wording: %s from "%s"', (code, text) => {
+    expect(claudeFailure(text)).toBe(code);
+    expect(plainFailureLine(text)).toBe(code === 'claude_usage_limit' ? "You've reached your Claude plan limit." : FAILURE_LINES.claude_signed_out);
   });
 
   it('the subtype decides first: limit wording in a max-turns or budget result (a page can steer it) is ignored', () => {
