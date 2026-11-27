@@ -89,11 +89,39 @@ describe('stephen update', () => {
     const first = harness({ 'npm install': fail('ENOTFOUND registry.npmjs.org') });
     expect(await runUpdate(first.deps)).toBe(1);
     expect(first.calls).not.toContain('npm run build');
+    expect(first.text()).toContain('run `stephen update` again');
     // Run 2: the network is back. The pull changes nothing (HEAD stays bbb2222), yet the failed steps run.
     const again = harness({ 'git rev-parse --short HEAD': [ok('bbb2222'), ok('bbb2222')] }, ['0.1.1']);
     expect(await runUpdate(again.deps)).toBe(0);
     expect(again.calls.slice(-3)).toEqual(['npm install', 'npm run build', 'node install-helper']);
     expect(again.text()).toContain('Already up to date: Stephen 0.1.1 (bbb2222). Every step is done.');
+  });
+
+  it('a rerun also finishes an update that stopped at the build or the helper', async () => {
+    for (const step of ['npm run build', 'node install-helper']) {
+      const first = harness({ [step]: fail('boom') });
+      expect(await runUpdate(first.deps)).toBe(1);
+      const again = harness({ 'git rev-parse --short HEAD': [ok('bbb2222'), ok('bbb2222')] }, ['0.1.1']);
+      expect(await runUpdate(again.deps)).toBe(0);
+      expect(again.calls.slice(-3)).toEqual(['npm install', 'npm run build', 'node install-helper']);
+    }
+  });
+
+  it('up to date and the helper did not change: permissions are kept, no Input Monitoring lines', async () => {
+    const h = harness({
+      'git rev-parse --short HEAD': [ok('aaa1111'), ok('aaa1111')],
+      'node install-helper': ok('Nothing changed, so the build was skipped.'),
+    });
+    expect(await runUpdate(h.deps)).toBe(0);
+    expect(h.text()).toContain('permissions are kept');
+    expect(h.text()).not.toContain('Input Monitoring');
+  });
+
+  it('up to date and a step fails: stops with that step line', async () => {
+    const h = harness({ 'git rev-parse --short HEAD': [ok('aaa1111'), ok('aaa1111')], 'npm run build': fail('TS2322') });
+    expect(await runUpdate(h.deps)).toBe(1);
+    expect(h.text()).toContain('The build failed.');
+    expect(h.calls.some((c) => c.startsWith('node'))).toBe(false);
   });
 
   it('a failed second rev-parse after the pull does not print an empty commit', async () => {
