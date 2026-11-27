@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: a plain .mjs script, no types
-import { plain, releaseNotes } from '../../scripts/release-notes.mjs';
+import { plain, releaseNotes, secretHits, sheet, testTotals } from '../../scripts/release-notes.mjs';
 
 const ROOT = resolve(__dirname, '../..');
 const SAMPLE = `# Changelog
@@ -73,5 +73,95 @@ describe('release notes (F14)', () => {
     const none = spawnSync(process.execPath, [join(ROOT, 'scripts/release-notes.mjs')], { encoding: 'utf8' });
     expect(none.status).toBe(2);
     expect(none.stderr).toContain('Usage:');
+  });
+});
+
+describe('release number sheet (--sheet, checklist steps 4 and 9)', () => {
+  const SHA = 'a'.repeat(40);
+  const fake = (over: Record<string, { code: number; out: string }> = {}) => (cmd: string, args: string[]) => {
+    const key = `${cmd} ${args.join(' ')}`;
+    if (over[key]) return over[key];
+    if (key.startsWith('git rev-parse')) return { code: 0, out: `${SHA}\n` };
+    if (key === 'npx vitest run') return { code: 0, out: '\x1b[2m Tests \x1b[22m 4566 passed | 6 skipped | 3 todo (4575)\n' };
+    if (key.includes('--name-only')) return { code: 0, out: 'a.ts\nb.ts\n' };
+    return { code: 0, out: '' };
+  };
+
+  it('prints one stable block when all is green', () => {
+    const { ok, text } = sheet(fake());
+    expect(ok).toBe(true);
+    expect(text).toBe(
+      [
+        'Release number sheet (checklist steps 4 and 9)',
+        `Commit: ${SHA} (same as origin/qa)`,
+        'Build: pass',
+        'Typecheck: pass',
+        'Tests: 4566 passed, 0 failed, 6 skipped',
+        'Files changed origin/main..origin/qa: 2',
+        'Secrets scan: clean',
+        'Result: ready for the Mac steps',
+      ].join('\n'),
+    );
+  });
+
+  it('is not ready on a failed test, a failed build, a missing totals line or a commit that is not qa', () => {
+    expect(sheet(fake({ 'npx vitest run': { code: 1, out: ' Tests  2 failed | 10 passed (12)\n' } })).ok).toBe(false);
+    expect(sheet(fake({ 'npm run build': { code: 1, out: '' } })).text).toContain('Build: FAIL');
+    expect(sheet(fake({ 'npx vitest run': { code: 1, out: 'crash' } })).text).toContain('Tests: FAIL (no totals line)');
+    const other = sheet(fake({ 'git rev-parse HEAD': { code: 0, out: 'b'.repeat(40) } }));
+    expect(other.ok).toBe(false);
+    expect(other.text).toContain('NOT origin/qa');
+  });
+
+  it('names the file and line of a secret shape, never the secret, and flags .env files', () => {
+    const key = `sk-${'x'.repeat(24)}`;
+    const diff = [
+      'diff --git a/a.ts b/a.ts',
+      '+++ b/a.ts',
+      '@@ -0,0 +1,3 @@',
+      '+ok',
+      '++++ b/fake-header.ts',
+      `+const k = '${key}';`,
+      'diff --git a/.env b/.env',
+      '+++ b/.env',
+      '@@ -0,0 +1 @@',
+      '+X=1',
+      'diff --git a/.env.example b/.env.example',
+      '+++ b/.env.example',
+    ].join('\n');
+    expect(secretHits(diff)).toEqual(['a.ts:3', '.env (env file)']);
+    const text = sheet(fake({ 'git -c core.quotePath=false diff -U0 --no-renames origin/main..origin/qa': { code: 0, out: diff } })).text;
+    expect(text).toContain('Secrets scan: FAIL, check a.ts:3, .env (env file)');
+    expect(text).not.toContain(key);
+  });
+
+  it('keeps hits under the right file for a path with a space or a non-ASCII letter', () => {
+    const key = `sk-${'y'.repeat(24)}`;
+    const diff = [
+      'diff --git a/my notes.md b/my notes.md',
+      '+++ b/my notes.md\t',
+      '@@ -0,0 +1 @@',
+      `+${key}`,
+      'diff --git a/caf\u00e9.md b/caf\u00e9.md',
+      '+++ b/caf\u00e9.md',
+      '@@ -0,0 +1,2 @@',
+      '+ok',
+      `+${key}`,
+    ].join('\n');
+    expect(secretHits(diff)).toEqual(['my notes.md:1', 'caf\u00e9.md:2']);
+  });
+
+  it('finds Stripe live keys and Google API keys', () => {
+    const one = (text: string) => secretHits(`+++ b/k.ts\n@@ -0,0 +1 @@\n+${text}`);
+    expect(one(`sk_live_${'a'.repeat(24)}`)).toEqual(['k.ts:1']);
+    expect(one(`rk_live_${'b'.repeat(24)}`)).toEqual(['k.ts:1']);
+    expect(one(`AIza${'c'.repeat(35)}`)).toEqual(['k.ts:1']);
+    expect(one('sk_test_short and AIza too short')).toEqual([]);
+  });
+
+  it('reads vitest totals with or without colors, from the last Tests line', () => {
+    expect(testTotals('      Tests  1 failed | 9 passed | 2 skipped (12)')).toEqual({ found: true, passed: 9, failed: 1, skipped: 2 });
+    expect(testTotals('Tests for the parser: 3 passed earlier\n      Tests  4 passed (4)').passed).toBe(4);
+    expect(testTotals('nothing').found).toBe(false);
   });
 });

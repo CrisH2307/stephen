@@ -1,8 +1,10 @@
 // F14: the release notes for one version, as plain text for friends, from CHANGELOG.md.
 //   node scripts/release-notes.mjs <version> [path/to/CHANGELOG.md]
+//   node scripts/release-notes.mjs --sheet   (release checklist steps 4 and 9 as one block, see below)
 // The changelog format (see CHANGELOG.md): "## <version> (<date>)", then "### Added", "### Changed" or "### Fixed",
 // then "- " bullets. The output drops Markdown (links keep their words, no backticks or bold), so it reads the same
 // in an update window, a DMG note or a chat message. The appcast part waits for F6 and F7.
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
@@ -54,7 +56,91 @@ export function releaseNotes(changelog, version) {
   return out.length > 1 ? out.join('\n') : null;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+// Secret shapes for step 9. A hit prints only file and line, never the text.
+const SECRET = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\bsk-[A-Za-z0-9_-]{20,}/,
+  /\bgh[pousr]_[A-Za-z0-9]{30,}/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\b[sr]k_live_[A-Za-z0-9]{16,}/,
+  /\bAIza[0-9A-Za-z_-]{35}\b/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}/,
+];
+
+/** Step 9: added lines of a `git diff -U0` that look like a secret, and any .env file. Pure. */
+export function secretHits(diff) {
+  const hits = [];
+  let file = null;
+  let line = 0;
+  let inHunk = false; // a "+++ b/" line is a file header only before the first @@ of a file
+  for (const l of diff.split('\n')) {
+    if (l.startsWith('diff --git ')) inHunk = false;
+    // git adds a tab after a path with a space; a path git still quotes keeps its quotes off here
+    const f = inHunk ? null : /^\+\+\+ "?b\/(.+?)"?\t?$/.exec(l);
+    if (f) {
+      file = f[1];
+      if (/(^|\/)\.env(\.|$)/.test(file) && !/\.example$/.test(file)) hits.push(`${file} (env file)`);
+      continue;
+    }
+    const h = /^@@ -\S+ \+(\d+)/.exec(l);
+    if (h) {
+      line = Number(h[1]);
+      inHunk = true;
+    } else if (inHunk && l.startsWith('+')) {
+      if (SECRET.some((re) => re.test(l))) hits.push(`${file}:${line}`);
+      line++;
+    }
+  }
+  return hits;
+}
+
+/** Vitest's "Tests  4566 passed | 6 skipped | 3 todo (4575)" line as numbers. Pure. */
+export function testTotals(out) {
+  const row = out.replace(/\x1b\[[0-9;]*m/g, '').split('\n').findLast((l) => /^\s*Tests\s/.test(l)) ?? '';
+  const n = (w) => Number(new RegExp(`(\\d+) ${w}`).exec(row)?.[1] ?? 0);
+  return { found: row !== '', passed: n('passed'), failed: n('failed'), skipped: n('skipped') };
+}
+
+/**
+ * Release checklist steps 4 and 9 as one plain block. `run(cmd, args)` returns { code, out }; the real one runs
+ * the command with no shell. It writes no files of its own (the build writes dist/) and never pushes. Mac steps stay manual.
+ */
+export function sheet(run) {
+  const step = (cmd, args) => run(cmd, args).code === 0;
+  const head = run('git', ['rev-parse', 'HEAD']).out.trim();
+  const qa = run('git', ['rev-parse', 'origin/qa']).out.trim();
+  const build = step('npm', ['run', 'build']);
+  const typecheck = step('npm', ['run', 'typecheck']);
+  const tests = run('npx', ['vitest', 'run']);
+  const t = testTotals(tests.out);
+  const files = run('git', ['diff', '--name-only', 'origin/main..origin/qa']).out.split('\n').filter(Boolean).length;
+  const secrets = secretHits(run('git', ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-renames', 'origin/main..origin/qa']).out);
+  const ok = head === qa && build && typecheck && tests.code === 0 && t.found && t.failed === 0 && !secrets.length;
+  const lines = [
+    `Release number sheet (checklist steps 4 and 9)`,
+    `Commit: ${head}${head === qa ? ' (same as origin/qa)' : ` (NOT origin/qa ${qa})`}`,
+    `Build: ${build ? 'pass' : 'FAIL'}`,
+    `Typecheck: ${typecheck ? 'pass' : 'FAIL'}`,
+    t.found
+      ? `Tests: ${t.passed} passed, ${t.failed} failed, ${t.skipped} skipped${tests.code === 0 ? '' : ' (suite exit not 0)'}`
+      : 'Tests: FAIL (no totals line)',
+    `Files changed origin/main..origin/qa: ${files}`,
+    secrets.length ? `Secrets scan: FAIL, check ${secrets.join(', ')}` : 'Secrets scan: clean',
+    `Result: ${ok ? 'ready for the Mac steps' : 'NOT ready'}`,
+  ];
+  return { ok, text: lines.join('\n') };
+}
+
+const realRun = (cmd, args) => {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  return { code: r.status ?? 1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+};
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href && process.argv[2] === '--sheet') {
+  const { ok, text } = sheet(realRun);
+  console.log(text);
+  process.exit(ok ? 0 : 1);
+} else if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const [version, file = 'CHANGELOG.md'] = process.argv.slice(2);
   if (!version) {
     console.error('Usage: node scripts/release-notes.mjs <version> [CHANGELOG.md]');
