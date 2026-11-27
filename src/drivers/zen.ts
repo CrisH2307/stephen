@@ -164,7 +164,7 @@ export interface ZenReadiness {
 }
 
 export const ZEN_RUNNING_MESSAGE =
-  'Quit Zen (⌘Q) and retry — Zen must be relaunched with remote control enabled; Stephen never force-quits it.';
+  'Quit Zen (⌘Q) and retry. Zen must be relaunched with remote control enabled; Stephen never force-quits it.';
 
 const USER_JS_BEGIN = '// >>> stephen';
 const USER_JS_END = '// <<< stephen';
@@ -544,7 +544,7 @@ export class ZenDriver extends DriverBase {
       throw new HubError(
         'NEEDS_USER',
         `Could not find your Zen profile (no usable profiles.ini in ${this.#cfg.zen.zenAppSupportDir}). ` +
-          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.stephen/config.json — or use mode "agent".`,
+          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.stephen/config.json. Or use mode "agent".`,
       );
     }
     if (!(await isDir(dir))) {
