@@ -55,9 +55,9 @@ describe('Claude Code version range', () => {
     expect(w.detail).toContain(TESTED_CLAUDE_MAX);
   });
   it('R10b-5: a newer CLI is a note, not a problem; older and unknown still are', () => {
-    const checks = ['2.1.320 (Claude Code)', '2.1.200', 'banana'].map((v) => claudeVersionCheck(v));
+    const checks = ['2.1.333 (Claude Code)', '2.1.200', 'banana'].map((v) => claudeVersionCheck(v));
     expect(checks.filter((c) => !c.ok)).toHaveLength(2); // what doctor counts as `problems`
-    expect(checks[0]).toMatchObject({ ok: true, detail: expect.stringContaining('2.1.320 is newer than Stephen was tested') });
+    expect(checks[0]).toMatchObject({ ok: true, detail: expect.stringContaining('2.1.333 is newer than Stephen was tested') });
     expect(checks[1]!.ok).toBe(false);
     expect(checks[2]!.ok).toBe(false);
   });
