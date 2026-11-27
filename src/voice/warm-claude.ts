@@ -33,6 +33,8 @@ import {
   buildWarmArgs,
   CLAUDE_NOT_FOUND,
   CLAUDE_START_FAILED,
+  MCP_CONFIG_FAILED,
+  PERSONA_FAILED,
   logStartRaw,
   claudeSpawnOptions,
   killGroup,
@@ -55,10 +57,13 @@ export const WARM_MCP_POLL_MS = 200;
 /** A stdout line longer than this is a protocol error (a real result line is a few KB). */
 const MAX_LINE = 4 * 1024 * 1024;
 const MAX_STDERR = 64 * 1024;
-/** R7: fixed lines for a warm process that stopped or could not be set up. The raw reason goes to the log only. */
+/** R7: the fixed line for a warm process that stopped. The raw reason goes to the log only. */
 export const CLAUDE_STOPPED = 'Claude Code stopped before it answered. Say it again.';
-export const MCP_CONFIG_FAILED = "I couldn't set up Stephen's tools for Claude Code. Run stephen doctor to see what is wrong.";
-export const PERSONA_FAILED = "I couldn't write Stephen's instructions for Claude Code. Run stephen doctor to see what is wrong.";
+/** R7: a control request Claude Code refused. Its error text goes to the log only. */
+export const CLAUDE_REFUSED = "Claude Code refused a request from Stephen. Run stephen doctor to see what is wrong.";
+// Claude Code's MCP status words Stephen knows; anything else is shown as "unknown" (the field is CLI text).
+const MCP_STATUS_WORDS = new Set(['connected', 'pending', 'failed', 'missing', 'disabled', 'needs-auth']);
+const statusWord = (s: string): string => (MCP_STATUS_WORDS.has(s) ? s : 'unknown');
 
 export interface WarmClaudeOptions extends ClaudeSettings {
   /** The voice workdir (an empty private folder). */
@@ -332,7 +337,7 @@ export class WarmClaude implements WarmProcess {
       // Each poll gets at least 250 ms to answer, so one sent just before the deadline doesn't time out on its own.
       const status = await this.mcpStatus(Math.max(250, deadline - this.now()));
       if (status === 'connected') return;
-      if (status !== 'pending') throw new Error(`Stephen's tools didn't start (MCP status: ${status}).`);
+      if (status !== 'pending') throw new Error(`Stephen's tools didn't start (MCP status: ${statusWord(status)}).`);
       if (this.now() >= deadline) throw new Error("Stephen's tools didn't connect in time.");
       await sleep(this.o.mcpPollMs ?? WARM_MCP_POLL_MS, { unref: true });
     }
@@ -356,7 +361,7 @@ export class WarmClaude implements WarmProcess {
       const gone = this.serveProblem();
       if (gone) throw new Error(`Stephen's tools stopped since the last command (${gone}), so I ended the conversation. Say it again.`);
       const status = await this.mcpStatus(this.o.readyTimeoutMs ?? WARM_READY_TIMEOUT_MS);
-      if (status !== 'connected') throw new Error(`Stephen's tools are not connected (MCP status: ${status}).`);
+      if (status !== 'connected') throw new Error(`Stephen's tools are not connected (MCP status: ${statusWord(status)}).`);
     } catch (e) {
       if (this.killing) return { kind: 'cancelled' };
       const failure = this.done ? this.stopped().failure : undefined;
@@ -407,7 +412,10 @@ export class WarmClaude implements WarmProcess {
       if (!p) return;
       this.pending.delete(r.request_id as string);
       if (r.subtype === 'success') p.resolve(r.response && typeof r.response === 'object' ? (r.response as Record<string, unknown>) : {});
-      else p.reject(new Error(`Claude Code refused the request (${typeof r.error === 'string' ? r.error.slice(0, 200) : 'error'}).`));
+      else {
+        logStartRaw(this.o.claudePath, `refused: ${typeof r.error === 'string' ? r.error.slice(0, 200) : 'error'}`);
+        p.reject(new Error(CLAUDE_REFUSED));
+      }
     } else if (msg.type === 'control_request') {
       // Stephen registers no callbacks (no permission prompt tool, no hooks): deny anything Claude Code asks.
       this.write({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: 'Stephen does not answer control requests' } });
