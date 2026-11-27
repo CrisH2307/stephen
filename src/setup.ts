@@ -6,7 +6,7 @@
  * Every program runs through `deps` so the tests never start a real install.
  */
 
-import { HELPER_UNCHANGED } from './helper/install.js';
+import { HELPER_UNCHANGED, SDK_FIX, helperFailure, type HelperFailure } from './helper/install.js';
 import { firstLine } from './lib/process.js';
 
 export interface RunResult {
@@ -42,6 +42,18 @@ interface Doctor {
 }
 
 const AGAIN = 'then run `stephen setup` again.';
+
+/** A fixed line for each reason the helper did not build. Never install-helper's own output (compiler text, paths). */
+const HELPER_FIX: Record<HelperFailure, string> = {
+  sdk: `Your Mac's SDK cannot build the helper. ${SDK_FIX} Then run \`stephen setup\` again.`,
+  tools: `Install Apple's command line tools with \`xcode-select --install\`, ${AGAIN}`,
+  not_macos: 'The helper only builds on macOS.',
+  sources_missing: `The helper sources are missing. Get Stephen again with git clone, ${AGAIN}`,
+  home_too_long: `Stephen's home folder path is too long. Set STEPHEN_HOME to a shorter folder, ${AGAIN}`,
+  not_ours: `A "Stephen Helper" app that Stephen did not make is in the way. Move it away, ${AGAIN}`,
+  codesign: `The helper could not be signed. Run \`stephen install-helper\` and read the error, ${AGAIN}`,
+  other: `The helper did not build. Run \`stephen install-helper\` and read the error, ${AGAIN}`,
+};
 
 /** The three Mac permissions, with the exact place in System Settings. Shown at the end of a good setup. */
 export const PERMISSION_LINES = [
@@ -119,7 +131,7 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
   head('Build the Stephen Helper app');
   const h = await deps.runStephen(['install-helper']);
   if (h.code !== 0) {
-    return stop(`Install Apple's command line tools with \`xcode-select --install\`, ${AGAIN}`, firstLine(h.stderr || h.stdout));
+    return stop(HELPER_FIX[helperFailure(`${h.stdout}\n${h.stderr}`)], 'The helper did not build.');
   }
   if (h.stdout.includes(HELPER_UNCHANGED)) skip();
   else ok('built');
