@@ -8,18 +8,29 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 /** Folders end with "/", the rest are single files. */
+/** The one list (docs/AGENT-LOOP.md "Always Claude-only" points here). The incident ladder list must stay inside it. */
 export const SAFETY_PATHS = [
   'src/safety/',
+  // Allow and Deny: the confirm dialog, and the ask box and chat thread (their Allow delay, Esc as Deny).
   'helper/AppConfirm.swift',
-  'src/memory/store.ts',
-  'src/memory/proposals.ts',
-  'src/timers/store.ts',
-  'src/jobs/manager.ts',
-  'src/jobs/runner.ts',
-  'src/jobs/spec.ts',
-  'src/jobs/state.ts',
+  'helper/AskBox.swift',
+  'helper/Components/ChatThread.swift',
+  'helper/AppProtocol.swift',
+  // Memory, timer and job writes: the whole folders, plus the atomic private write they share.
+  'src/memory/',
+  'src/timers/',
+  'src/jobs/',
+  'src/lib/fs.ts',
+  'src/lib/owner-only.ts',
+  // The replay recorder and its owner-only switch.
+  'src/replay/recorder.ts',
+  'src/app/replay-switch.ts',
   'src/app/protocol.ts',
   'src/app/server.ts',
+  // Dependencies, CI and the release gate.
+  'package.json',
+  'package-lock.json',
+  'docs/RELEASE-CHECKLIST.md',
   '.github/workflows/',
   'scripts/safety-paths.mjs',
 ];
