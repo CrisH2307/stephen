@@ -1004,7 +1004,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
         // case, so the answer never tells the model whether a clip exists (#169).
         if (isOwnerOnlyFile(abs, cfg.home)) throw new HubError('DENIED', `${basename(abs)} is one of Stephen's private files and is never uploaded.`);
         // Nor anything a job's shell may never read: Stephen's home, keys, the repo .env (M1).
-        if (isNeverReadFile(abs, cfg.home, REPO_ROOT, homedir())) throw new HubError('DENIED', `${basename(abs)} is in a private folder and is never uploaded.`);
+        if (isNeverReadFile(abs, cfg.home, REPO_ROOT, homedir())) throw new HubError('DENIED', `${basename(abs)} is private (a key, password or private folder) and is never uploaded.`);
         // And only from the folders a person saves files to attach: mail, browser profiles, keys, history stay home.
         if (!isUploadAllowedFile(abs, homedir())) throw new HubError('DENIED', `${basename(abs)} is not in an upload folder. ${UPLOAD_FOLDERS_LINE}`);
         const st = await stat(abs).catch(() => null);
@@ -1030,7 +1030,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
             const late = files.find((f) => isOwnerOnlyFile(f, cfg.home));
             if (late) throw new HubError('DENIED', `${basename(late)} is one of Stephen's private files and is never uploaded.`);
             const secret = files.find((f) => isNeverReadFile(f, cfg.home, REPO_ROOT, homedir()));
-            if (secret) throw new HubError('DENIED', `${basename(secret)} is in a private folder and is never uploaded.`);
+            if (secret) throw new HubError('DENIED', `${basename(secret)} is private (a key, password or private folder) and is never uploaded.`);
             const outside = files.find((f) => !isUploadAllowedFile(f, homedir()));
             if (outside) throw new HubError('DENIED', `${basename(outside)} is not in an upload folder. ${UPLOAD_FOLDERS_LINE}`);
             return engine.uploadFile(page, target, files);
