@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { newServeInstance, pidAlive, readServeLock, serveLockPath } from '../../src/server/instance.js';
-import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, CLAUDE_NOT_FOUND, CLAUDE_START_FAILED, checkClaudeFlags, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
-import { CLAUDE_STOPPED, MCP_CONFIG_FAILED, PERSONA_FAILED, WarmClaude, probeWarmProtocol, userMessageLine, type WarmClaudeOptions } from '../../src/voice/warm-claude.js';
+import { ALLOWED_TOOLS, DISALLOWED_TOOLS, LOCKDOWN_ARGS, NO_SESSION_PERSISTENCE, buildClaudeArgs, buildWarmArgs, CLAUDE_NOT_FOUND, CLAUDE_START_FAILED, MCP_CONFIG_FAILED, PERSONA_FAILED, checkClaudeFlags, mcpConfig, writeMcpConfig, type ClaudeSettings, type ServeInstance } from '../../src/voice/claude.js';
+import { CLAUDE_REFUSED, CLAUDE_STOPPED, WarmClaude, probeWarmProtocol, userMessageLine, type WarmClaudeOptions } from '../../src/voice/warm-claude.js';
 import { fakeClaudePath, isAlive, readFakeLog, waitFor } from './helpers.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'stephen-warm-'));
@@ -192,7 +192,7 @@ describe('WarmClaude against the fake stream-json claude', () => {
   it.each([
     ['MCP failed', { FAKE_CLAUDE_MCP: 'failed' }, /MCP status: failed/, 'event'],
     ['MCP never connects', { FAKE_CLAUDE_MCP: 'pending' }, /didn't connect in time/, 'deadline'],
-    ['initialize refused', { FAKE_CLAUDE_MODE: 'init-error' }, /refused the request \(initialize refused\)/, 'event'],
+    ['initialize refused', { FAKE_CLAUDE_MODE: 'init-error' }, CLAUDE_REFUSED, 'event'],
     ['initialize never answered', { FAKE_CLAUDE_MODE: 'no-init' }, /didn't answer initialize/, 'init-timeout'],
   ] as const)('%s: not ready, fails closed (process group killed, persona deleted)', async (_what, env, why, wait) => {
     let skew = 0;
@@ -240,6 +240,22 @@ describe('WarmClaude against the fake stream-json claude', () => {
       expect(exits).toEqual([1]);
       // A turn after the exit gets the same fixed line, not the stderr text.
       expect(await p.turn('again')).toEqual({ kind: 'error', message: CLAUDE_STOPPED, sessionId: null });
+      await p.kill();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a refused control request: a fixed line, Claude Code\'s error text in the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup({ FAKE_CLAUDE_MODE: 'init-error' });
+      const p = new WarmClaude(t.o, undefined);
+      const err = await p.ready().then(() => null, (e: Error) => e.message);
+      expect(err).toBe(CLAUDE_REFUSED);
+      expect(spy.mock.calls.flat().join('\n')).toContain('initialize refused');
+      const turn = await p.turn('hi');
+      expect(JSON.stringify(turn)).not.toContain('initialize refused');
       await p.kill();
     } finally {
       spy.mockRestore();
@@ -363,7 +379,7 @@ describe('WarmClaude against the fake stream-json claude', () => {
     expect(await probeWarmProtocol(ok.o)).toBeNull();
     expect(isAlive(ok.procs().claude)).toBe(false);
     const bad = setup({ FAKE_CLAUDE_MODE: 'init-error' });
-    expect(await probeWarmProtocol(bad.o)).toMatch(/initialize refused/);
+    expect(await probeWarmProtocol(bad.o)).toBe(CLAUDE_REFUSED); // the CLI's own words go to the log only (R7)
   });
 });
 

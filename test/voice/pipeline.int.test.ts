@@ -262,7 +262,7 @@ describe.skipIf(!models.ok)('voice pipeline (real models, fake claude)', () => {
     const h = harness('warm-fallback', { FAKE_CLAUDE_MODE: 'init-error' }, { warm: true });
     engines.spotter.restart();
     expect(await runListen(['--wav', join(FIXTURES, 'wake-onebreath.amy.wav')], h.env)).toBe(0);
-    expect(h.out.some((l) => l.startsWith("ERR Note: Claude Code's stream mode didn't answer (Claude Code refused the request (initialize refused).)"))).toBe(true);
+    expect(h.out.some((l) => l.startsWith("ERR Note: Claude Code's stream mode didn't answer (Claude Code refused a request from Stephen."))).toBe(true);
     expect(fakeWarmProcesses(h.log)).toHaveLength(1); // only the check
     const oneShot = readFakeLog(h.log).filter((r) => !r.argv.includes('--input-format'));
     expect(oneShot.map((r) => r.argv[1])).toEqual(['open youtube']);
