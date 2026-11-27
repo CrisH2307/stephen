@@ -24,6 +24,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { groupAlive, sleep } from '../lib/process.js';
+import { claudeFailure, type ClaudeFailure } from '../lib/claude-failure.js';
 import { pidAlive, readServeLock, removeServeLock } from '../server/instance.js';
 import type { Trust } from './assistant.js';
 import {
@@ -54,6 +55,10 @@ export const WARM_MCP_POLL_MS = 200;
 /** A stdout line longer than this is a protocol error (a real result line is a few KB). */
 const MAX_LINE = 4 * 1024 * 1024;
 const MAX_STDERR = 64 * 1024;
+/** R7: fixed lines for a warm process that stopped or could not be set up. The raw reason goes to the log only. */
+export const CLAUDE_STOPPED = 'Claude Code stopped before it answered. Say it again.';
+export const MCP_CONFIG_FAILED = "I couldn't set up Stephen's tools for Claude Code. Run stephen doctor to see what is wrong.";
+export const PERSONA_FAILED = "I couldn't write Stephen's instructions for Claude Code. Run stephen doctor to see what is wrong.";
 
 export interface WarmClaudeOptions extends ClaudeSettings {
   /** The voice workdir (an empty private folder). */
@@ -235,7 +240,8 @@ export class WarmClaude implements WarmProcess {
         this.inst = await this.o.serveInstance(this.trust, this.assumePrivateRead);
       } catch (e) {
         this.onClosed();
-        throw new Error(`Could not write the MCP config (${(e as Error).message}).`);
+        logStartRaw(this.o.claudePath, (e as Error).message);
+        throw new Error(MCP_CONFIG_FAILED);
       }
     }
     if (this.o.personaFile) {
@@ -243,7 +249,8 @@ export class WarmClaude implements WarmProcess {
         await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory, this.o.talk?.()));
       } catch (e) {
         this.onClosed();
-        throw new Error(`Could not write the persona file (${(e as Error).message}).`);
+        logStartRaw(this.o.claudePath, (e as Error).message);
+        throw new Error(PERSONA_FAILED);
       }
     }
     if (this.killing) {
@@ -274,9 +281,15 @@ export class WarmClaude implements WarmProcess {
     child.once('close', () => this.onClosed());
   }
 
-  /** The last stderr line (or a generic reason) for error messages. */
-  private why(): string {
-    return (this.stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? 'it exited').slice(0, 300);
+  /**
+   * R7: the fixed line for "Claude Code stopped". The stderr text can carry page text or paths, so it is never shown or
+   * spoken: it only picks a code word (failure), like the one-shot path. Our own start lines pass through as they are.
+   */
+  private stopped(): { message: string; failure?: ClaudeFailure } {
+    const last = this.stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? '';
+    const failure = claudeFailure(this.stderr);
+    const message = last === CLAUDE_NOT_FOUND || last === CLAUDE_START_FAILED ? last : CLAUDE_STOPPED;
+    return failure === 'claude_other' ? { message } : { message, failure };
   }
 
   private write(msg: unknown): void {
@@ -284,7 +297,7 @@ export class WarmClaude implements WarmProcess {
   }
 
   private request(subtype: string, timeoutMs: number): Promise<Record<string, unknown>> {
-    if (this.done) return Promise.reject(new Error(`Claude Code stopped (${this.why()}).`));
+    if (this.done) return Promise.reject(new Error(this.stopped().message));
     const id = `stephen-${++this.seq}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -346,10 +359,11 @@ export class WarmClaude implements WarmProcess {
       if (status !== 'connected') throw new Error(`Stephen's tools are not connected (MCP status: ${status}).`);
     } catch (e) {
       if (this.killing) return { kind: 'cancelled' };
-      return { kind: 'error', message: (e as Error).message, sessionId: null };
+      const failure = this.done ? this.stopped().failure : undefined;
+      return { kind: 'error', message: (e as Error).message, sessionId: null, ...(failure ? { failure } : {}) };
     }
     if (this.killing) return { kind: 'cancelled' };
-    if (this.done) return { kind: 'error', message: `Claude Code stopped before it answered (${this.why()}).`, sessionId: null };
+    if (this.done) return { kind: 'error', ...this.stopped(), sessionId: null };
     return new Promise<ClaudeOutcome>((resolve) => {
       this.current = (o) => {
         this.current = null;
@@ -459,10 +473,13 @@ export class WarmClaude implements WarmProcess {
   private onClosed(): void {
     if (this.done) return;
     this.done = true;
-    const err = new Error(`Claude Code stopped (${this.why()}).`);
+    const why = this.stopped();
+    const last = this.stderr.trim().split('\n').filter(Boolean).slice(-1)[0];
+    if (last && !this.killing && last !== why.message) logStartRaw(this.o.claudePath, `stopped: ${last.slice(0, 300)}`);
+    const err = new Error(why.message);
     for (const p of this.pending.values()) p.reject(err);
     this.pending.clear();
-    this.current?.(this.killing ? { kind: 'cancelled' } : { kind: 'error', message: `Claude Code stopped before it answered (${this.why()}).`, sessionId: null });
+    this.current?.(this.killing ? { kind: 'cancelled' } : { kind: 'error', ...why, sessionId: null });
     if (this.o.personaFile) removePersonaFile(this.o.personaFile);
     this.markClosed();
     for (const fn of this.exitFns.splice(0)) {
