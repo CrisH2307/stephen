@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { HubError } from '../../src/errors.js';
+import { isUploadAllowedFile } from '../../src/lib/owner-only.js';
 import { REPO_ROOT } from '../../src/lib/repo.js';
 import { normalizeUrl } from '../../src/server/index.js';
 import type { ActionRequest } from '../../src/types.js';
@@ -439,7 +441,7 @@ describe('actions', () => {
 
   it('upload_file checks files exist and passes absolute paths to the gate', async () => {
     const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
-    const missing = await h.call('upload_file', { target: 'z1:e8', paths: ['/nope/x.pdf'], intent: 'attach' });
+    const missing = await h.call('upload_file', { target: 'z1:e8', paths: [join(h.tmp, 'nope.pdf')], intent: 'attach' });
     expect(textOf(missing)).toContain('File not found');
     const f = join(h.tmp, 'report.pdf');
     writeFileSync(f, 'pdf');
@@ -479,6 +481,47 @@ describe('actions', () => {
       expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/absolute|start with ~/);
     }
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+  // Uploads come only from Downloads, Desktop, Documents and the temp folder (follow-up to M1).
+  it('upload_file refuses a file outside the upload folders, before looking for it', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    for (const p of ['~/Library/Mail/V10/x.emlx', '~/Library/Application Support/Google/Chrome/Default/Cookies', '~/.gnupg/secring.gpg', '~/.netrc', '~/.zsh_history', '/etc/hosts']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/only upload files from Downloads, Desktop or Documents/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('upload_file checks again after Allow: a file swapped for a link outside the upload folders is refused', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    mkdirSync(h.tmp, { recursive: true });
+    const f = join(h.tmp, 'report.pdf');
+    writeFileSync(f, 'pdf');
+    h.gate.decide = () => {
+      rmSync(f);
+      symlinkSync('/etc/hosts', f);
+      return allow();
+    };
+    expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [f], intent: 'attach' }))).toMatch(/only upload files from Downloads, Desktop or Documents/);
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('isUploadAllowedFile: Downloads, Desktop and Documents yes; links and .. out of them no', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-up-')));
+    try {
+      for (const d of ['Downloads', 'Desktop', 'Documents', '.gnupg', 'Library/Mail']) mkdirSync(join(home, d), { recursive: true });
+      for (const d of ['Downloads', 'Desktop', 'Documents']) {
+        writeFileSync(join(home, d, 'a.pdf'), 'x');
+        expect(isUploadAllowedFile(join(home, d, 'a.pdf'), home, [])).toBe(true);
+      }
+      writeFileSync(join(home, '.gnupg', 'key'), 'k');
+      symlinkSync(join(home, '.gnupg', 'key'), join(home, 'Downloads', 'key.pdf'));
+      expect(isUploadAllowedFile(join(home, 'Downloads', 'key.pdf'), home, [])).toBe(false);
+      expect(isUploadAllowedFile(join(home, 'Downloads', '..', '.netrc'), home, [])).toBe(false);
+      expect(isUploadAllowedFile(join(home, 'Library', 'Mail', 'x.emlx'), home, [])).toBe(false);
+      expect(isUploadAllowedFile(join(home, 'DOWNLOADS', 'a.pdf'), home, [])).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 
