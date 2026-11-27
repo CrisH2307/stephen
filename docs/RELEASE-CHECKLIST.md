@@ -45,6 +45,12 @@ nothing about who merges.
    filed and the owner says in the release PR that it does not block.
 9. **No secrets:** `git diff origin/main..origin/qa` has no key, token or `.env` content (search before the PR).
 
+**One command for steps 4 and 9:** `node scripts/release-notes.mjs --sheet`, run alone at the release commit. It runs the
+build, the typecheck and the full suite, counts the files in `origin/main..origin/qa`, and scans that diff for key
+shapes and `.env` files (a hit names only the file and line). It prints one block for the release PR and ends with
+"ready for the Mac steps" or "NOT ready". It does not change what each step means, and the rerun rule in step 4 still
+applies. A clean scan is a first pass, not proof: still read the diff for anything secret it cannot know.
+
 ## The release PR
 
 - Title `[release] qa → main, batch <date>`. Base `main`, head `qa`. It is the only PR whose base is `main`.
