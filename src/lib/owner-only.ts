@@ -54,9 +54,25 @@ export function neverReadPaths(stephenHome: string, stephenRepo: string): string
   return [stephenHome, '~/.ssh', '~/.aws', '~/.config', '~/Library/Keychains', join(stephenRepo, '.env')];
 }
 
-/** True when `path` (after symlinks, in any letter case) lies in one of neverReadPaths, `~` being `userHome`. */
+/** File names that hold keys or passwords, wherever they sit (security review 0.1.1, M1). id_* without .pub only. */
+const SECRET_NAME = /^(\.env(\..*)?|.*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa|dsa)|credentials(\..*)?|\.npmrc|\.netrc|\.pgpass)$/;
+/** Folders that hold keys or tokens, as a path segment anywhere (a project's .git, a copied .ssh). */
+const SECRET_DIR = /(^|\/)(\.git|\.ssh|\.gnupg|\.aws|\.claude|\.config\/gh)(\/|$)/;
+
+/** True when `p`, as given or after following links, has a secret name or lies in a secret folder. Case folded (APFS). */
+function hasSecretShape(p: string): boolean {
+  return [resolve(p), realThroughParent(p)].some((q) => {
+    const f = q.normalize('NFC').toLowerCase();
+    return SECRET_NAME.test(basename(f)) || SECRET_DIR.test(dirname(f));
+  });
+}
+
+/**
+ * True when `path` (after symlinks, in any letter case) lies in one of neverReadPaths, `~` being `userHome`, or has a
+ * secret name or folder (hasSecretShape). The name check is for upload_file only: the job sandbox gets folders.
+ */
 export function isNeverReadFile(path: string, stephenHome: string, stephenRepo: string, userHome: string): boolean {
-  return neverReadPaths(stephenHome, stephenRepo).some((d) => insideFolded(path, d.startsWith('~/') ? join(userHome, d.slice(2)) : d));
+  return hasSecretShape(path) || neverReadPaths(stephenHome, stephenRepo).some((d) => insideFolded(path, d.startsWith('~/') ? join(userHome, d.slice(2)) : d));
 }
 
 /** The only folders upload_file sends from: what a person saves to attach (after M1, safety review 0.1.1). */

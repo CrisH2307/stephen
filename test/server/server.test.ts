@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { HubError } from '../../src/errors.js';
 import { isUploadAllowedFile } from '../../src/lib/owner-only.js';
@@ -459,7 +459,7 @@ describe('actions', () => {
     mkdirSync(h.cfg.home, { recursive: true });
     writeFileSync(memory, '{}');
     for (const p of [memory, '~/.ssh/id_ed25519', '~/.aws/credentials', '~/.config/gh/hosts.yml', '~/Library/Keychains/login.keychain-db', join(REPO_ROOT, '.env'), '~/.SSH/id_ed25519']) {
-      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/private folder and is never uploaded/);
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/is private \(a key, password or private folder\) and is never uploaded/);
     }
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
@@ -475,6 +475,36 @@ describe('actions', () => {
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
 
+  // Security review 0.1.1 M1: a key or password file is never uploaded from any upload folder, by name or folder.
+  it('upload_file refuses secret file names and secret folders inside the upload folders', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    const secrets = ['.env', '.ENV.local', 'server.pem', 'tls.key', 'cert.p12', 'id_rsa', 'id_ed25519', 'credentials', 'credentials.json', '.npmrc', '.netrc', '.pgpass', 'proj/.git/config', 'backup/.ssh/notes.txt', 'x/.gnupg/a', 'x/.aws/a', 'x/.claude/a.json', 'x/.config/gh/hosts.yml'];
+    for (const s of secrets) {
+      const p = join(h.tmp, s);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, 'secret');
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' })), s).toMatch(/never uploaded/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+    // Siblings that only look close stay allowed: a public key, a report, a folder named git.
+    for (const ok of ['id_rsa.pub', 'report.pdf', 'git/notes.txt', 'keys.txt']) {
+      const p = join(h.tmp, ok);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, 'x');
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' })), ok).toContain('Attached');
+    }
+  });
+
+  it('upload_file follows a link in an upload folder to a secret file elsewhere', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    mkdirSync(join(h.tmp, 'proj'), { recursive: true });
+    writeFileSync(join(h.tmp, 'proj', '.env'), 'KEY=x');
+    const link = join(h.tmp, 'invoice.pdf');
+    symlinkSync(join(h.tmp, 'proj', '.env'), link);
+    expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [link], intent: 'attach' }))).toMatch(/never uploaded/);
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
   it('upload_file refuses a relative path, as its description says', async () => {
     const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
     for (const p of ['notes.txt', './notes.txt', '../x.pdf']) {
@@ -485,8 +515,12 @@ describe('actions', () => {
   // Uploads come only from Downloads, Desktop, Documents and the temp folder (follow-up to M1).
   it('upload_file refuses a file outside the upload folders, before looking for it', async () => {
     const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
-    for (const p of ['~/Library/Mail/V10/x.emlx', '~/Library/Application Support/Google/Chrome/Default/Cookies', '~/.gnupg/secring.gpg', '~/.netrc', '~/.zsh_history', '/etc/hosts']) {
+    for (const p of ['~/Library/Mail/V10/x.emlx', '~/Library/Application Support/Google/Chrome/Default/Cookies', '~/.zsh_history', '/etc/hosts']) {
       expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/only upload files from Downloads, Desktop or Documents/);
+    }
+    // Key and password files are refused earlier, by their secret name or folder (security review 0.1.1 M1).
+    for (const p of ['~/.gnupg/secring.gpg', '~/.netrc']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/is private \(a key, password or private folder\) and is never uploaded/);
     }
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
