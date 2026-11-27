@@ -38,6 +38,8 @@ Format: one `## <version> (YYYY-MM-DD)` section per release, newest first, with 
 - Proxy settings from your shell are no longer passed to Claude. If you need a proxy to reach Claude, tell Cris before you update.
 - Spoken and typed messages look the same, with no "From: F5" line.
 - When the helper does not build, `stephen setup` says why in one plain sentence.
+- When Claude Code stops in the middle of an answer, Stephen says one plain line and keeps the raw error text in the log only. A plan limit says the plan limit line.
+- Stephen is tested with Claude Code up to 2.1.332 and knows its new wording for an expired sign-in and for running out of usage credits.
 - 0.1.0 has no `stephen update`, so update to 0.1.1 by hand once: `git pull`, `npm install`, `npm run build`, then `node dist/cli.js install-helper`, turn Stephen Helper on again under Input Monitoring, and restart Stephen. After that, `stephen update` does it.
 
 ### Fixed
