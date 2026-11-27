@@ -11,22 +11,17 @@ import { pathToFileURL } from 'node:url';
 /** The one list (docs/AGENT-LOOP.md "Always Claude-only" points here). The incident ladder list must stay inside it. */
 export const SAFETY_PATHS = [
   'src/safety/',
+  // Allow and Deny: the confirm dialog, and the ask box and chat thread (their Allow delay, Esc as Deny).
   'helper/AppConfirm.swift',
+  'helper/AskBox.swift',
+  'helper/Components/ChatThread.swift',
   'helper/AppProtocol.swift',
-  // Memory, timer and job writes: the before-Claude grammars, the routers, the stores, and the atomic write they share.
-  'src/memory/intent.ts',
-  'src/memory/store.ts',
-  'src/memory/proposals.ts',
-  'src/timers/intent.ts',
-  'src/timers/router.ts',
-  'src/timers/store.ts',
-  'src/jobs/intent.ts',
-  'src/jobs/router.ts',
-  'src/jobs/manager.ts',
-  'src/jobs/runner.ts',
-  'src/jobs/spec.ts',
-  'src/jobs/state.ts',
+  // Memory, timer and job writes: the whole folders, plus the atomic private write they share.
+  'src/memory/',
+  'src/timers/',
+  'src/jobs/',
   'src/lib/fs.ts',
+  'src/lib/owner-only.ts',
   // The replay recorder and its owner-only switch.
   'src/replay/recorder.ts',
   'src/app/replay-switch.ts',
