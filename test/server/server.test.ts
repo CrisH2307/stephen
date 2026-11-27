@@ -515,8 +515,12 @@ describe('actions', () => {
   // Uploads come only from Downloads, Desktop, Documents and the temp folder (follow-up to M1).
   it('upload_file refuses a file outside the upload folders, before looking for it', async () => {
     const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
-    for (const p of ['~/Library/Mail/V10/x.emlx', '~/Library/Application Support/Google/Chrome/Default/Cookies', '~/.gnupg/secring.gpg', '~/.netrc', '~/.zsh_history', '/etc/hosts']) {
+    for (const p of ['~/Library/Mail/V10/x.emlx', '~/Library/Application Support/Google/Chrome/Default/Cookies', '~/.zsh_history', '/etc/hosts']) {
       expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/only upload files from Downloads, Desktop or Documents/);
+    }
+    // Key and password files are refused earlier, by their secret name or folder (security review 0.1.1 M1).
+    for (const p of ['~/.gnupg/secring.gpg', '~/.netrc']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/is private \(a key, password or private folder\) and is never uploaded/);
     }
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
