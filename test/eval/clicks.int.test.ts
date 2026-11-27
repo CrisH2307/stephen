@@ -2,11 +2,22 @@
  * The click-reliability eval (src/eval/clicks.ts) through the real tool pipeline, and the P1 fixes it measures:
  * settle before clicking, re-find once on STALE_REF for clicks the gate allows without asking, verify after.
  */
-import { describe, expect, it } from 'vitest';
-import { CLICK_CASES, formatClickReport, formatStepTimings, runClickEval, type ClickCase } from '../../src/eval/clicks.js';
+import type { Browser } from 'puppeteer-core';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CLICK_CASES, formatClickReport, formatStepTimings, launchClickBrowser, runClickEval, type ClickCase } from '../../src/eval/clicks.js';
 import { chromiumArgs, chromiumPath } from '../helpers/chromium.js';
 
-const run = async (cases: readonly ClickCase[], runs = 1) => runClickEval({ runs, cases, executablePath: await chromiumPath(), args: chromiumArgs() });
+// One Chrome for the whole file, not a cold start per test (#475: one of four starts hung 30 s on the macOS runner).
+// dumpio: Chrome's own output goes to the log, so a start that hangs again shows what Chrome was doing.
+let browser: Browser;
+beforeAll(async () => {
+  browser = await launchClickBrowser(await chromiumPath(), chromiumArgs(), { dumpio: true });
+});
+afterAll(async () => {
+  await browser?.close();
+});
+
+const run = (cases: readonly ClickCase[], runs = 1) => runClickEval({ runs, cases, browser });
 
 describe('stephen eval-clicks', () => {
   it('every case passes (settle, re-find, focus) and the log folds refs', async () => {

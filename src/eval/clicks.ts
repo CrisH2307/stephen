@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import puppeteer, { type Browser, type Page } from 'puppeteer-core';
+import puppeteer, { type Browser, type LaunchOptions, type Page } from 'puppeteer-core';
 import { loadConfig } from '../config.js';
 import { formatStepTable, onStep, timed } from '../lib/step-timer.js';
 import { BrowserManager } from '../drivers/index.js';
@@ -325,7 +325,20 @@ export interface ClickEvalOptions {
   executablePath?: string;
   /** Extra browser flags (tests on Linux pass @sparticuz/chromium's). */
   args?: string[];
+  /** A browser from launchClickBrowser to reuse (the tests share one per file). It is left open. */
+  browser?: Browser;
   log?: (line: string) => void;
+}
+
+/** The eval's Chrome: headless, and like the owner's browsers, sound needs a user gesture. */
+export function launchClickBrowser(executablePath: string | undefined, args: string[] = [], extra: LaunchOptions = {}): Promise<Browser> {
+  return puppeteer.launch({
+    executablePath,
+    headless: true,
+    args: ['--autoplay-policy=user-gesture-required', ...args],
+    defaultViewport: { width: 1280, height: 900 },
+    ...extra,
+  });
 }
 
 /** Serves CLICK_PAGES on 127.0.0.1 (plus /slow.js?ms=N, delayed). */
@@ -430,13 +443,7 @@ export async function runClickEval(opts: ClickEvalOptions): Promise<CaseReport[]
   const { origin, server } = await startPages();
   let browser: Browser | null = null;
   try {
-    browser = await puppeteer.launch({
-      executablePath,
-      headless: true,
-      // Like the owner's browsers: sound needs a user gesture.
-      args: ['--autoplay-policy=user-gesture-required', ...(opts.args ?? [])],
-      defaultViewport: { width: 1280, height: 900 },
-    });
+    browser = opts.browser ?? (await launchClickBrowser(executablePath, opts.args));
     const reports: CaseReport[] = [];
     for (const k of opts.cases) {
       const rep: CaseReport = { id: k.id, what: k.what, passed: 0, runs: opts.runs, failures: [], steps: {} };
@@ -461,7 +468,7 @@ export async function runClickEval(opts: ClickEvalOptions): Promise<CaseReport[]
     return reports;
   } finally {
     onStep(null);
-    await browser?.close().catch(() => undefined);
+    if (!opts.browser) await browser?.close().catch(() => undefined);
     server.close();
     await rm(home, { recursive: true, force: true }).catch(() => undefined);
   }
