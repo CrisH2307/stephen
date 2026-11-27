@@ -103,13 +103,19 @@ export function testTotals(out) {
 
 /**
  * Release checklist steps 4 and 9 as one plain block. `run(cmd, args)` returns { code, out }; the real one runs
- * the command with no shell. It writes no files of its own (the build writes dist/) and never pushes. Mac steps stay manual.
+ * the command with no shell. It fetches origin main and qa first (remote refs only). A git error is a FAIL, never a
+ * clean scan. It writes no files of its own except git's remote refs (the build writes dist/) and never pushes.
+ * Mac steps stay manual.
  */
 export function sheet(run) {
   const step = (cmd, args) => run(cmd, args).code === 0;
   const fetched = step('git', ['fetch', 'origin', 'main', 'qa']); // so origin/qa and origin/main are not stale
-  const head = run('git', ['rev-parse', 'HEAD']).out.trim();
-  const qa = run('git', ['rev-parse', 'origin/qa']).out.trim();
+  // Two failed rev-parse calls print the same fatal line, so equal text alone is not "same as origin/qa".
+  const headR = run('git', ['rev-parse', 'HEAD']);
+  const qaR = run('git', ['rev-parse', 'origin/qa']);
+  const revs = headR.code === 0 && qaR.code === 0;
+  const head = headR.out.trim();
+  const qa = qaR.out.trim();
   const build = step('npm', ['run', 'build']);
   const typecheck = step('npm', ['run', 'typecheck']);
   const tests = run('npx', ['vitest', 'run']);
@@ -119,19 +125,19 @@ export function sheet(run) {
   const diff = run('git', ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-renames', 'origin/main..origin/qa']);
   const diffed = names.code === 0 && diff.code === 0;
   const files = names.out.split('\n').filter(Boolean).length;
-  const secrets = secretHits(diff.out);
-  const ok = fetched && diffed && head === qa && build && typecheck && tests.code === 0 && t.found && t.failed === 0 && !secrets.length;
+  const secrets = diff.code === 0 ? secretHits(diff.out) : [];
+  const ok = fetched && revs && diffed && head === qa && build && typecheck && tests.code === 0 && t.found && t.failed === 0 && !secrets.length;
   const lines = [
     `Release number sheet (checklist steps 4 and 9)`,
-    `Fetch origin main and qa: ${fetched ? 'pass' : 'FAIL'}`,
-    `Commit: ${head}${head === qa ? ' (same as origin/qa)' : ` (NOT origin/qa ${qa})`}`,
+    ...(fetched ? [] : ['Fetch origin: FAIL (main and qa may be old)']),
+    revs ? `Commit: ${head}${head === qa ? ' (same as origin/qa)' : ` (NOT origin/qa ${qa})`}` : 'Commit: FAIL (git rev-parse failed)',
     `Build: ${build ? 'pass' : 'FAIL'}`,
     `Typecheck: ${typecheck ? 'pass' : 'FAIL'}`,
     t.found
       ? `Tests: ${t.passed} passed, ${t.failed} failed, ${t.skipped} skipped${tests.code === 0 ? '' : ' (suite exit not 0)'}`
       : 'Tests: FAIL (no totals line)',
-    names.code === 0 ? `Files changed origin/main..origin/qa: ${files}` : 'Files changed: FAIL (git diff did not run)',
-    diff.code !== 0 ? 'Secrets scan: FAIL (git diff did not run)' : secrets.length ? `Secrets scan: FAIL, check ${secrets.join(', ')}` : 'Secrets scan: clean',
+    `Files changed origin/main..origin/qa: ${names.code === 0 ? files : 'FAIL (git diff failed)'}`,
+    diff.code !== 0 ? 'Secrets scan: FAIL (git diff failed)' : secrets.length ? `Secrets scan: FAIL, check ${secrets.join(', ')}` : 'Secrets scan: clean',
     `Result: ${ok ? 'ready for the Mac steps' : 'NOT ready'}`,
   ];
   return { ok, text: lines.join('\n') };
