@@ -119,7 +119,7 @@ describe('release number sheet (--sheet, checklist steps 4 and 9)', () => {
     expect(r.text).toContain('Fetch origin: FAIL');
     const calls: string[] = [];
     const f = fake();
-    sheet((cmd, args) => (calls.push(`${cmd} ${args.join(' ')}`), f(cmd, args)));
+    sheet((cmd: string, args: string[]) => (calls.push(`${cmd} ${args.join(' ')}`), f(cmd, args)));
     expect(calls[0]).toBe('git fetch origin main qa');
   });
 
