@@ -56,8 +56,12 @@ describe('safety paths check', () => {
     expect(section.match(/`(src|helper|\.github|docs)\/[^`]*`/g) ?? []).toEqual([]);
   });
 
-  it('the incident ladder list stays inside the script list', () => {
-    expect(LADDER_PATHS.filter((p) => safetyFiles([p]).length === 0)).toEqual([]);
+  it('the incident ladder list is the same list as the script', () => {
+    expect([...LADDER_PATHS]).toEqual(SAFETY_PATHS);
+  });
+
+  it.each(['src/app/data-export.ts', 'src/app/data-cli.ts'])('%s is a safety path (import writes memory, timers, config)', (f) => {
+    expect(safetyFiles([f])).toEqual([f]);
   });
 
   it('every listed path exists, so a rename cannot drop a file from the check', () => {

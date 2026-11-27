@@ -21,21 +21,32 @@ export const CLAUDE_RUNS_PER_DAY = 6;
 export const QA_REF = 'origin/qa';
 
 /**
- * The [DEV REVIEW] paths from AGENTS.md, as exact files. A path ending in "/" covers every file under it. The write
- * paths of memory, timers and jobs, the app.sock protocol and fs.ts (the atomic writes they all use) are listed by name.
+ * An exact copy of SAFETY_PATHS in scripts/safety-paths.mjs, the one list (src cannot import scripts/, rootDir is src).
+ * test/checks/safety-paths.test.ts fails if the two differ. A path ending in "/" covers every file under it.
  */
 export const SAFETY_PATHS: readonly string[] = [
   'src/safety/',
   'helper/AppConfirm.swift',
+  'helper/AskBox.swift',
+  'helper/Components/ChatThread.swift',
   'helper/AppProtocol.swift',
+  'src/memory/',
+  'src/timers/',
+  'src/jobs/',
+  'src/lib/fs.ts',
+  'src/lib/owner-only.ts',
+  'src/replay/recorder.ts',
+  'src/app/replay-switch.ts',
   'src/app/protocol.ts',
   'src/app/server.ts',
-  'src/memory/store.ts',
-  'src/memory/proposals.ts',
-  'src/timers/store.ts',
-  'src/jobs/state.ts',
-  'src/jobs/manager.ts',
-  'src/lib/fs.ts',
+  'src/app/data-export.ts',
+  'src/app/data-cli.ts',
+  'package.json',
+  'package-lock.json',
+  'docs/RELEASE-CHECKLIST.md',
+  '.github/workflows/',
+  'scripts/safety-paths.mjs',
+  'scripts/pr-rules.mjs',
 ];
 
 /** Case-insensitive: macOS folders are, and checkFindings accepts any case under src/. */
