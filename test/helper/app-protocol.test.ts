@@ -10,7 +10,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { helperSourceDir } from '../../src/helper/install.js';
+import { HELPER_SOURCES, helperSourceDir } from '../../src/helper/install.js';
 import { EDIT_REQUEST_MAX } from '../../src/jobs/spec.js';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'app-protocol-v1.jsonl');
@@ -24,7 +24,6 @@ const RESPONSES: Record<string, string[]> = {
   'history.list': ['history', 'error'],
   'history.clear': ['ok', 'error'],
   'memory.list': ['memory', 'error'],
-  'memory.add': ['memory', 'error'],
   'memory.update': ['memory', 'error'],
   'memory.forget': ['memory', 'error'],
   'memory.clear': ['memory', 'error'],
@@ -152,7 +151,7 @@ describe('app.sock protocol v1 fixture', () => {
   it('fields match the table: caps, shapes of history entries, memory items, chat.done, settings', () => {
     for (const { msg } of requests) {
       if (msg.type === 'hello') expect(msg.version).toBe('1');
-      if (msg.type === 'chat.send' || msg.type === 'memory.add' || msg.type === 'memory.update') {
+      if (msg.type === 'chat.send' || msg.type === 'memory.update') {
         expect(typeof msg.text).toBe('string');
         expect((msg.text as string).length).toBeLessThanOrEqual(2000);
       }
@@ -360,12 +359,121 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(box).toContain('", almost full"');
   });
 
-  it('R10a-2 (#94): Try again re-sends only a typed bubble; spoken and phone bubbles show where they came from', () => {
+  // R7: loading, error and empty in words. A failed read never reads as "Nothing saved yet", and never shows raw "error".
+  it('Memory shows loading, error with Try again, and empty only after a good read', () => {
+    const mem = read('MemoryPage.swift');
+    expect(client).toContain('@Published private(set) var graphListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshMemoryPage()'), client.indexOf('refreshSuggestions()', client.indexOf('func refreshMemoryPage()')));
+    expect(refresh).toContain('self.assign(\\.graphListOk, true)');
+    expect(refresh).toContain('self.assign(\\.graphListOk, false)');
+    expect(refresh).not.toContain('msg.message');
+    // memory.list failing is not a raw notice either; a failed change still says why.
+    expect(client).toContain('self.assign(\\.memoryNotice, isChange ? plainFailure(msg.message, MEMORY_CHANGE_FAILED) : nil)');
+    expect(mem).toContain('if model.graphNodes.isEmpty && model.graphListOk == nil {');
+    expect(mem).toMatch(/graphListOk == false \{[\s\S]*MEMORY_LIST_FAILED[\s\S]*QuietButton\("Try again"[^\n]*model\.refreshMemoryPage\(\)/);
+    expect(mem).toContain('let MEMORY_LIST_FAILED = "Couldn\'t load your memory right now."');
+    // Both empty lines (graph and list) go through memoryEmptyLine; no other "Nothing saved yet".
+    expect(mem.match(/memoryEmptyLine\(total: model\.graphNodes\.count, listOk: model\.graphListOk/g)).toHaveLength(2);
+    expect(mem.match(/"Nothing saved yet/g)).toHaveLength(2);
+    const fn = mem.match(/func memoryEmptyLine\([\s\S]*?\n\}/)?.[0] ?? '';
+    expect(fn).toContain('if total > 0 { return "Nothing matches." }');
+    expect(fn).toContain('guard listOk == true else { return nil }');
+  });
+
+  // R7: loading, error and empty in words. A failed list never reads as "Nothing yet", and never shows raw "error".
+  it('Conversations shows loading, error with Refresh, and empty only after a good list', () => {
+    const conv = read('ConversationsPage.swift');
+    expect(client).toContain('@Published private(set) var historyListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshHistory()'), client.indexOf('func loadOlderHistory('));
+    expect(refresh).toContain('self.assign(\\.historyListOk, true)');
+    expect(refresh).toContain('self.assign(\\.historyListOk, false)');
+    expect(refresh).not.toContain('msg.message ?? "error"');
+    // Clearing the history is a good empty list, not a failed one.
+    const clear = client.slice(client.indexOf('func clearHistory()'), client.indexOf('var historyDays'));
+    expect(clear).toContain('self.historyListOk = true');
+    // Loading only before the first answer with no rows; error with Refresh (ADR-007: no "Try again" on this page, it
+    // could read as re-running a command); empty only after a good list.
+    expect(conv).toContain('if model.history.isEmpty && model.historyListOk == nil {');
+    expect(conv).toMatch(/historyListOk == false \{[\s\S]*CONVERSATIONS_LIST_FAILED[\s\S]*QuietButton\("Refresh"[^\n]*model\.refreshHistory\(\)/);
+    expect(conv).toMatch(/if model\.historyListOk == true \{\s*Text\(verbatim: CONVERSATIONS_EMPTY\)/);
+    expect(conv).toContain('let CONVERSATIONS_LIST_FAILED = "Couldn\'t load your conversations right now."');
+    expect(conv).not.toMatch(/if model\.history\.isEmpty \{\s*Text\(verbatim: CONVERSATIONS_EMPTY\)/);
+  });
+
+  // R7 follow-up: every other failed Conversations action says what failed in a plain sentence, never a raw "error".
+  // The listener's own sentence ("This conversation changed. Open it again.") is kept; the rows stay.
+  describe('Conversations failures in plain words', () => {
+    const fnBody = (name: string) => client.match(new RegExp(`func ${name}\\([\\s\\S]*?\\n  \\}`))?.[0] ?? '';
+    const conv = read('ConversationsPage.swift');
+    it.each([
+      ['editMessage', 'CONVERSATIONS_EDIT_FAILED', "Couldn't send your edit right now."],
+      ['loadOlderHistory', 'CONVERSATIONS_OLDER_FAILED', "Couldn't load older conversations right now."],
+      ['clearHistory', 'CONVERSATIONS_CLEAR_FAILED', "Couldn't clear your history right now."],
+      ['deleteVersion', 'CONVERSATIONS_DELETE_FAILED', "Couldn't delete that version right now."],
+      ['refreshAudit', 'RECENT_ACTIONS_FAILED', "Couldn't load recent actions right now."],
+    ])('%s says %s, never raw "error"', (fn, name, text) => {
+      const body = fnBody(fn);
+      expect(body).toContain(`plainFailure(msg.message, ${name})`);
+      expect(body).not.toContain('?? "error"');
+      expect(body).not.toMatch(/Notice\s*=\s*msg\.message|Notice, msg\.message\)/);
+      expect(conv).toContain(`let ${name} = "${text}"`);
+    });
+    it('the rows stay when load older or clear fails', () => {
+      for (const fn of ['loadOlderHistory', 'clearHistory']) {
+        const failed = fnBody(fn).split('} else {')[1] ?? '';
+        expect(failed).toContain('plainFailure(');
+        expect(failed).not.toMatch(/self\.history\s*=|historyListOk/);
+      }
+    });
+    it('a failed edit says it in the chat bubble and the notice; busy keeps its own line', () => {
+      const body = fnBody('editMessage');
+      expect(body).toContain('if msg.message == "busy" {');
+      expect(body).toMatch(/let m = plainFailure\(msg\.message, CONVERSATIONS_EDIT_FAILED\)\s*self\.addBubble\(\.problem, m, detail: ""\)\s*self\.historyNotice = m/);
+    });
+    it('a failed Home chat send says CHAT_SEND_FAILED, never raw "error"; busy keeps its own line', () => {
+      const body = fnBody('sendChat');
+      expect(body).toContain('if msg.message == "busy" {');
+      expect(body).toContain('self.addBubble(.problem, plainFailure(msg.message, CHAT_SEND_FAILED), detail: "")');
+      expect(body).not.toContain('?? "error"');
+      expect(body).not.toMatch(/addBubble\(\.problem, (m|msg\.message)\b/);
+      expect(client).toContain(`let CHAT_SEND_FAILED = "Couldn't send that right now."`);
+    });
+    // R7: the other pages too. No raw "error" fallback is left anywhere in AppClient.swift.
+    it('AppClient.swift has no raw "error" fallback left', () => {
+      expect(read('AppClient.swift')).not.toMatch(/\?\?\s*"error"/);
+    });
+    it.each([
+      ['memoryRequest', 'MEMORY_CHANGE_FAILED', "Couldn't change your memory right now."],
+      ['keepProposal', 'MEMORY_KEEP_FAILED', "Couldn't keep that memory right now."],
+      ['takeSuggestions', 'MEMORY_SUGGESTIONS_FAILED', "Couldn't update your memory suggestions right now."],
+      ['refreshSettings', 'SETTINGS_LOAD_FAILED', "Couldn't load your settings right now."],
+      ['saveTalk', 'SETTINGS_SAVE_FAILED', "Couldn't save your settings right now."],
+      ['saveModel', 'SETTINGS_SAVE_FAILED', "Couldn't save your settings right now."],
+      ['saveReplay', 'SETTINGS_SAVE_FAILED', "Couldn't save your settings right now."],
+      ['deleteRecordings', 'RECORDINGS_DELETE_FAILED', "Couldn't delete your recordings right now."],
+      ['refreshAccounts', 'ACCOUNTS_FAILED', "Couldn't check your accounts right now."],
+      ['stopJob', 'JOBS_STOP_FAILED', "Couldn't stop that job right now."],
+      ['editJob', 'JOBS_EDIT_FAILED', "Couldn't start the edited job right now."],
+    ])('%s says %s, never raw "error"', (fn, name, text) => {
+      const body = fnBody(fn);
+      expect(body).toContain(`plainFailure(msg.message, ${name})`);
+      expect(body).not.toMatch(/msg\.message \?\?/);
+      expect(client).toContain(`let ${name} = "${text}"`);
+    });
+    it('plainFailure keeps only a sentence, else the fallback', () => {
+      const fn = client.match(/func plainFailure\([\s\S]*?\n\}/)?.[0] ?? '';
+      expect(fn).toContain('m.first?.isUppercase == true, m.hasSuffix(".") else { return fallback }');
+    });
+  });
+
+  it('R10a-2 (#94): Try again re-sends only a typed bubble, by its source field, never its text or detail', () => {
     const chat = read('Components/ChatThread.swift');
-    // The one guard: the last said bubble, and only when it has no source label. No fallback to an older typed one.
+    // The one guard: the last said bubble, and only when its source is .typed. No fallback to an older typed one.
     expect(chat).toContain(
-      'guard let last = thread.last(where: { $0.kind == .said }), last.detail.isEmpty else { return nil }',
+      'guard let last = thread.last(where: { $0.kind == .said }), last.source == .typed else { return nil }',
     );
+    const retry = chat.match(/func retryableText\([^)]*\) -> String\? \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(retry).not.toContain('detail');
     // retry() reaches sendChat only through that guard; it is the file's only sendChat.
     expect(chat).toContain('if let typed = retryableText(model.thread) { model.sendChat(typed) }');
     expect(chat.match(/sendChat\(/g)).toHaveLength(1);
@@ -373,22 +481,35 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(chat).toContain('retry: canRetry ? { retry() } : nil');
     expect(chat).toContain('let canRetry = retryableText(thread) != nil');
     expect(chat).toContain('if isLast, let retry = retry { QuietButton("Try again", action: retry) }');
-    // Typed bubbles get an empty label; heard ones always a non-empty one, even for an unknown or missing source.
-    expect(client).toContain('addBubble(.said, text, detail: "")');
-    expect(client).toContain('addBubble(.said, text, detail: heardLabel(msg.source))');
-    const label = client.match(/func heardLabel\(_ source: String\?\) -> String \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    expect(label).toContain('default: return "Not typed here"');
-    const returns = [...label.matchAll(/return ([^\n]*)/g)].map((m) => m[1]);
-    expect(returns.length).toBeGreaterThanOrEqual(5);
-    for (const r of returns) expect(r, r).toMatch(/^"[^"]+"$/);
-    for (const s of ['voice-ptt', 'voice-wake', 'phone', 'cli']) expect(label).toContain(`case "${s}":`);
-    // UI v4 step b (#142, [DEV REVIEW]): the source line in #142's words.
-    for (const [s, w] of [['voice-ptt', 'From: F5'], ['voice-wake', 'From: Hey Stephen'], ['phone', 'From: Phone']]) {
-      expect(label).toContain(`case "${s}": return "${w}"`);
+  });
+
+  it('R10a-2 siblings: spoken, wake word, phone, cli and unknown bubbles are never typed; typed and edited ones are', () => {
+    // Every .said bubble names its source. Typed paths (sendChat, editMessage) are .typed; nothing else is.
+    const said = [...client.matchAll(/addBubble\(\.said, [^\n]*/g)].map((m) => m[0]);
+    expect(said).toHaveLength(3);
+    expect(said.filter((l) => l.endsWith('source: .typed)'))).toHaveLength(2);
+    expect(said).toContain('addBubble(.said, text, detail: "", source: heardSource(msg.source))');
+    // Heard sources map to their own case; unknown or missing maps to .other. No path returns .typed.
+    const map = client.match(/func heardSource\(_ source: String\?\) -> ChatBubble\.Source \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    for (const [s, c] of [['voice-ptt', 'spoken'], ['voice-wake', 'wakeWord'], ['phone', 'phone'], ['cli', 'cli']]) {
+      expect(map).toContain(`case "${s}": return .${c}`);
     }
-    // Shown under the bubble (verbatim) and read by VoiceOver.
-    expect(chat).toContain('if !bubble.detail.isEmpty {\n          Text(verbatim: bubble.detail)');
-    expect(chat).toContain('"You, \\(bubble.detail): \\(bubble.text)"');
+    expect(map).toContain('default: return .other');
+    expect(map).not.toContain('.typed');
+    // The source is optional: Stephen's bubbles (reply, problem, info) are nil, which is never .typed.
+    expect(client).toContain('var source: Source? = nil');
+    expect(client).toContain('case typed, spoken, wakeWord, phone, cli');
+  });
+
+  it('owner 2026-11-26: no source label under a said bubble ("From: F5" is gone), typed or spoken', () => {
+    const chat = read('Components/ChatThread.swift');
+    const said = chat.match(/case \.said:([\s\S]*?)case \.reply:/)?.[1] ?? '';
+    expect(said).toContain('Text(verbatim: bubble.text)');
+    expect(said).not.toContain('bubble.detail');
+    expect(said).not.toContain('bubble.source');
+    expect(said).toContain('.accessibilityLabel("You: \\(bubble.text)")');
+    expect(client).not.toContain('heardLabel');
+    expect(client).not.toContain('From: F5');
   });
 
   it('R10a-5: Esc with a waiting question denies the first one (Ask box panel, Ask box view, main window Home)', () => {
@@ -486,10 +607,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(settings).toContain('Text(verbatim: g.title).sectionLabelStyle(t)');
     expect(settings).not.toContain('Text(verbatim: "Settings")');
     expect(settings).not.toMatch(/"Settings"\)\.font\(TypeScale\.pageTitle\)/);
-    for (const label of ['Length', 'Tone', 'Model', 'Effort']) {
-      expect(settings).toMatch(new RegExp(`Segmented\\("${label}",[^\\n]*caption: true\\)`));
+    // #189: the choices are system Pickers with the label above them (Caption), segmented for 2 to 3, menu for more.
+    for (const label of ['Length', 'Tone']) {
+      expect(settings).toMatch(new RegExp(`Caption\\("${label}"\\)[\\s\\S]*?Picker\\("${label}", selection: bind[^\\n]*\\n[\\s\\S]*?\\.pickerStyle\\(\\.segmented\\)`));
     }
-    expect(read('Components/Controls.swift')).toMatch(/if caption \{\s*Text\(verbatim: label\)/);
+    for (const label of ['Model', 'Effort']) {
+      expect(settings).toMatch(new RegExp(`Caption\\("${label}"\\)[\\s\\S]*?Picker\\("${label}", selection:[\\s\\S]*?\\.pickerStyle\\(\\.menu\\)`));
+    }
+    expect(settings).not.toContain('Segmented(');
+    expect(settings).toContain('private struct Caption: View');
     const app = read('AppWindow.swift');
     expect(app).toContain('NSMenuItem(title: "Settings…", action: #selector(settingsClicked(_:)), keyEquivalent: ",")');
     expect(app).toContain('@objc func settingsClicked(_ sender: Any?) { show(page: .settings) }');
@@ -589,6 +715,8 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(page).toContain('Text(verbatim: "Things Stephen remembers about you. It only saves what you tell it or keep.")');
     // Keep and Skip happen only on a click; Tell Stephen only proposes. The page never calls memory.add.
     expect(page).not.toContain('addMemory');
+    // No Swift file can build a memory.add request (the listener no longer has it either): fewer memory write paths.
+    for (const f of HELPER_SOURCES) expect(read(f)).not.toContain('"memory.add"');
     expect(page).toContain('model.proposeMemory(text)');
     expect(page).toMatch(/PrimaryButton\("Keep"\) \{ model\.keepProposal\(/);
     expect(page).toContain('model.skipProposal(');
@@ -645,7 +773,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(all).not.toContain('‹ Personal');
     expect(all).not.toContain('Back to Personal');
     const main = read('MainWindow.swift');
-    expect(main).toContain('case home, conversations, jobs, memory, settings\n');
+    expect(main).toContain('case home, conversations, activity, jobs, memory, settings\n');
     const page = read('MemoryPage.swift');
     expect(page).not.toContain('nav.');
     expect(page).toContain('.onExitCommand { editing = false; editingProposal = nil }');
@@ -673,6 +801,21 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     // Facts line: "Started 2:10 PM · 3 min · $0.12 spent".
     expect(jobs).toContain('parts.append("Started " + ');
     expect(jobs).toContain('return parts.joined(separator: " · ")');
+  });
+
+  // R7d: loading, error and empty in words. A failed list never reads as "No jobs yet", and never shows raw "error".
+  it('Jobs page shows loading, error with Try again, and empty only after a good list', () => {
+    const jobs = read('JobsPage.swift');
+    expect(client).toContain('@Published private(set) var jobsListOk: Bool? = nil');
+    const refresh = client.slice(client.indexOf('func refreshJobs()'), client.indexOf('func refreshPersonal()'));
+    expect(refresh).toContain('self.assign(\\.jobsListOk, true)');
+    expect(refresh).toContain('self.assign(\\.jobsListOk, false)');
+    expect(refresh).not.toContain('msg.message ?? "error"');
+    expect(jobs).toContain('switch model.jobsListOk');
+    expect(jobs).toMatch(/case nil:[\s\S]*JOBS_LOADING[\s\S]*case false\?:[\s\S]*JOBS_LIST_FAILED[\s\S]*QuietButton\("Try again"[\s\S]*model\.refreshJobs\(\)[\s\S]*case true\?:[\s\S]*JOBS_EMPTY/);
+    expect(jobs).toContain('let JOBS_LIST_FAILED = "Couldn\'t load your jobs right now."');
+    // Activity lists jobs too: a failed list is said there as well, never silent.
+    expect(read('ActivityPage.swift')).toContain('model.jobsListOk == false ? JOBS_LIST_FAILED : nil');
   });
 
   // ADR-010 Edit request ([DEV REVIEW]): off while queued or running (with the line), the editor only sends the text,
@@ -769,6 +912,23 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(conv).toContain('Refused: ');
     expect(conv).toContain('Clear all conversations?');
     expect(conv).toContain('Text(verbatim: entry.said)');
+  });
+
+  it('T6 step 4: Activity reads only, shows every string verbatim, and never uses args, intent or error text', () => {
+    const act = read('ActivityPage.swift');
+    expect(read('MainWindow.swift')).toContain('case .activity: ActivityPage(model: model, nav: nav)');
+    expect(act.match(/\bText\((?!verbatim:)[^)]*\)/g) ?? []).toEqual([]);
+    expect(act).toContain('Text(verbatim: row.text)');
+    // Only reads and refreshes, plus the versions read a Conversations row makes when it opens.
+    const calls = [...new Set(act.match(/model\.\w+(?=\()/g) ?? [])].sort();
+    expect(calls).toEqual(['model.loadVersions', 'model.refreshAudit', 'model.refreshHistory', 'model.refreshJobs']);
+    expect(act).not.toMatch(/AppRequest|\.send\(|chatSend|stopJob/);
+    // Never shown: args (not decoded at all), the model's intent, error text. URLs only through activityHost.
+    expect(read('AppProtocol.swift')).not.toMatch(/struct AuditEntry[\s\S]*?\bargs\b[\s\S]*?\n\}/);
+    expect(act).not.toMatch(/\.(intent|error|args)\b/);
+    expect(act.match(/\.url(Before|After)\b(?!\.isEmpty)/g)?.length).toBe(act.match(/activityHost\([^)]*\.url(Before|After)\)/g)?.length);
+    expect(read('AppProtocol.swift')).toContain('case ts, tool, outcome, kind, intent, element, urlBefore, urlAfter, verdict, error, confirmation, cmd, tab }');
+    expect(read('AppClient.swift')).toContain('static let auditLimit = 200');
   });
 
   it('ADR-007 recents: history strings in Conversations are Text(verbatim:); no send or retry; v2 adds only Open in chat', () => {
@@ -908,7 +1068,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
 
   it('main window (UI v4 shell): two sidebar groups, shortcuts, remembered collapse, Start/Stop at the bottom left, Home', () => {
     const main = read('MainWindow.swift');
-    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .jobs]');
+    expect(main).toContain('static let talk: [Page] = [.home, .conversations, .activity, .jobs]');
     expect(main).toContain('static let control: [Page] = [.memory, .settings]');
     expect(main).toContain('SidebarSection("Talk", collapsed: collapsed) { rows(Page.talk) }');
     expect(main).toContain('SidebarSection("Control", collapsed: collapsed) { rows(Page.control) }');
@@ -1010,13 +1170,15 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const settings = read('SettingsPage.swift');
     const pane = settings.match(/private struct PrivacySettingsPane: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     // Order: the read-only table, the switch, then the rules accordion.
-    const order = ['PermissionsSection(model: model)', 'FormRow(Self.label)', 'RulesSourceSection(model: model)'].map((x) => pane.indexOf(x));
+    const order = ['PermissionsSection(model: model)', 'Toggle(Self.label, isOn:', 'RulesSourceSection(model: model)'].map((x) => pane.indexOf(x));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     // The switch's words and behaviour are unchanged.
     expect(pane).toContain('private static let label = "Save my F5 commands to measure mistakes"');
     expect(pane).toContain('Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))');
-    expect(pane).toContain('.toggleStyle(StephenSwitch()).disabled(model.connection != .online)');
+    // #189: the switch shows its label (no labelsHidden), on the theme's accent.
+    expect(pane).toContain('.tint(t.accent).disabled(model.connection != .online)');
+    expect(pane).not.toContain('FormRow(Self.label)');
     expect(pane).toContain('Note("Saves the audio and the words of commands you start with F5 (or the Ask box mic) on this Mac for 30 days. Never sent anywhere. The wake word never records.")');
     expect(pane).toContain('if model.connection != .online { Note("Start Stephen to change this.") }');
     expect(pane).toContain('.alert("Delete the saved recordings too?", isPresented: $askDelete)');
@@ -1085,6 +1247,35 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(recent).not.toMatch(/sendChat|model\.\w+\(/);
   });
 
+  it('T6 step 1: Stop next to Working, a Stop menu item while working, and an honest stopped line', () => {
+    const chat = read('Components/ChatThread.swift');
+    // Ask box and Home share the thread: one Stop button, it sends chat.stop only (jobs keep running).
+    expect(chat).toContain('QuietButton("Stop", symbol: "stop.fill") { model.stopChat() }.accessibilityLabel("Stop Stephen")');
+    const main = read('main.swift');
+    expect(main).toContain('stopItem.isHidden = !working()');
+    expect(main).toContain('working: { appModel?.canStop ?? false }, stopWork: { appModel?.stopChat() },');
+    // A stopped command is a grey info line; once a tool ran, it says the step may already have happened.
+    const client = read('AppClient.swift');
+    expect(client).toContain('addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])');
+    const line = client.match(/func stoppedLine\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(line).toContain('tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."');
+  });
+
+  it('T6 step 2: Stop leaves jobs alone, then offers Stop them too under the stopped line; Stop also while speaking', () => {
+    const client = read('AppClient.swift');
+    // The cancelled path marks its line and reads jobs.list; Stop them too sends jobs.stop per running job.
+    expect(client).toMatch(/stoppedLine\(tools:[^\n]*\n\s*stoppedBubble = chat\.last\?\.id\n\s*refreshJobs\(\)/);
+    expect(client).toContain('for j in jobs where j.isRunning { stopJob(j.id) }');
+    expect(client).toContain('n == 1 ? "1 job is still running." : "\\(n) jobs are still running."');
+    expect(client).toContain('var canStop: Bool { return isWorking || state == "speaking" }');
+    const chat = read('Components/ChatThread.swift');
+    expect(chat).toContain('if thread.last?.id == model.stoppedBubble && running > 0 {');
+    expect(chat).toContain('QuietButton("Stop them too", destructive: true) { model.stopRunningJobs() }');
+    expect(chat).toContain('} else if model.canStop {');
+    expect(read('main.swift')).toContain('working: { appModel?.canStop ?? false }');
+    expect(read('AskBox.swift')).toContain('case .chat where model.canStop: model.stopChat()');
+  });
+
   it('Ask box strip (S9, R7): the state word with its dot; the chat title only in the ⋯ menu, verbatim', () => {
     const box = read('AskBox.swift');
     const strip = box.match(/private var topStrip: some View \{([\s\S]*?)\n  \}/)?.[1] ?? '';
@@ -1115,6 +1306,102 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(box).toContain('ChatLinks(permissions: actions.openPermissions)');
     expect(box).toContain('openPermissions: { [weak self] in selectSettingsPane(.privacy); self?.openWindow(.settings) }');
     expect(read('SettingsPage.swift')).toContain('func selectSettingsPane(_ item: SettingsItem) { UserDefaults.standard.set(item.rawValue, forKey: "settingsPane") }');
+  });
+
+  // R7 leftovers: Start, Report and the helper's own start failure say a fixed plain line. The raw reason (errno,
+  // exception text) and any home path go to helper.log only. Settings > Privacy shows the plain sentence once.
+  it('R7: Start, Report and the helper start failure never show raw errors or paths', () => {
+    const control = read('StephenControl.swift');
+    // What `done` shows: no exception text, errno or path. The `log(...)` lines (helper.log) may keep them.
+    expect(control).not.toMatch(/done\("[^"\n]*\\\((error\.localizedDescription|String\(cString: strerror|launchInfoPath|logPath|home)/);
+    for (const [name, text] of [
+      ['LAUNCH_INFO_MISSING', "Stephen Helper doesn't know how to start Stephen. Run `stephen install-helper` once in Terminal."],
+      ['LISTEN_START_FAILED', "Couldn't start Stephen right now. Try again in a moment."],
+      ['REPORT_RUN_FAILED', "Couldn't make the problem report right now."],
+    ]) {
+      expect(control).toContain(`let ${name} = "${text}"`);
+      expect(control).toContain(`done(${name})`);
+    }
+    const main = read('main.swift');
+    expect(main).not.toContain('setProblem("error:');
+    expect(main).toContain('statusMenu?.setProblem(HELPER_START_FAILED)');
+    expect(main).toMatch(/let HELPER_START_FAILED = "[^"\\]*"/); // a fixed line: no interpolation, no path
+    const settings = read('SettingsPage.swift');
+    expect(settings).not.toContain('"Could not delete them: \\(');
+    expect(settings).not.toContain('"Could not change it: \\(');
+  });
+
+  // R7: a failed menu or doctor request (phone link, Zen, speed, doctor) says what failed in a plain sentence.
+  it('StephenControl has no raw "error" fallback; each menu and doctor failure has its own plain line', () => {
+    const control = read('StephenControl.swift');
+    expect(control).not.toContain('?? "error"');
+    for (const [fn, name, text] of [
+      ['phoneText', 'PHONE_LINK_FAILED', "Couldn't change the phone link right now."],
+      ['zenProblem', 'ZEN_OPEN_FAILED', "Couldn't open Zen for Stephen right now."],
+      ['latencyText', 'SPEED_FAILED', "Couldn't load the speed report right now."],
+      ['doctorText', 'DOCTOR_FAILED', "Couldn't run the doctor checks right now."],
+    ]) {
+      expect(control.match(new RegExp(`func ${fn}\\([\\s\\S]*?\\n\\}`))?.[0] ?? '').toContain(`plainFailure(msg.message, ${name})`);
+      expect(control).toContain(`let ${name} = "${text}"`);
+    }
+  });
+
+  it('F9a: the setup sheet shows only fixed lines by code word, never runs the install command, and the status parser keeps an allow-list', () => {
+    const sheet = read('OnboardingSheet.swift');
+    const control = read('StephenControl.swift');
+    expect(sheet).not.toMatch(/Process\(|\.run\(\)|NSAppleScript|launchPath/); // the sheet runs nothing
+    expect(sheet).toContain('let CLAUDE_CODE_PAGE = "https://claude.com/claude-code"'); // the link only, as stephen setup and the guide
+    expect(sheet).not.toMatch(/npm install|curl |install\.sh|brew install/);
+    for (const w of ['missing', 'signed_out', 'ok', 'checking', 'no_launch_info']) expect(sheet).toContain(`case "${w}": return "`);
+    expect(sheet).toContain('Text(verbatim: claudeSetupLine(claude))');
+    expect(control).toContain('p.arguments = [info.cli, "setup", "--status"]');
+    expect(control).toContain('p.standardError = FileHandle.nullDevice');
+    expect(control).toContain('let SETUP_CLAUDE_WORDS: Set<String> = ["missing", "signed_out", "ok"]');
+    expect(read('MainWindow.swift')).toContain('@AppStorage("onboarded") private var onboarded = false');
+  });
+
+  it('F9b: the models step streams code-word progress only and shows fixed lines', () => {
+    const sheet = read('OnboardingSheet.swift');
+    const control = read('StephenControl.swift');
+    expect(control).toContain('p.arguments = [info.cli, "voice-setup", "--json-progress"]');
+    expect(control).toContain('let MODEL_EVENTS: Set<String> = ["downloading", "extracting", "installed", "done", "failed"]');
+    expect(control.match(/p\.standardError = FileHandle\.nullDevice/g)?.length).toBeGreaterThanOrEqual(2);
+    for (const e of ['downloading', 'extracting', 'installed']) expect(sheet).toContain(`case "${e}": return "`);
+    expect(sheet).toContain('default: return "The download stopped. Check the internet, then press Retry.');
+    expect(sheet).toContain('Text(verbatim: modelSetupLine(models, progress))');
+    expect(sheet).toContain('PrimaryButton(progress?.event == "failed" ? "Retry" : "Download")');
+    expect(sheet).toContain('.frame(width: 560, height: 560'); // fits the 860 x 640 minimum window (scrolls inside)
+  });
+
+  it('F9c: permissions are read from macOS, Run setup again reopens the sheet, one download per helper, its own line per failure', () => {
+    const sheet = read('OnboardingSheet.swift');
+    const control = read('StephenControl.swift');
+    for (const k of ['Privacy_Microphone', 'Privacy_ListenEvent', 'Privacy_Accessibility']) expect(sheet).toContain(k);
+    expect(sheet).toContain('AVCaptureDevice.authorizationStatus(for: .audio) == .authorized');
+    expect(sheet).toContain('case "input": return CGPreflightListenEventAccess()');
+    for (const r of ['keywords', 'busy', 'config']) expect(sheet).toContain(`case "${r}": return "`);
+    expect(control).toContain('let MODEL_FAIL_REASONS: Set<String> = ["download", "keywords", "busy", "config"]');
+    expect(control).toContain('if setupWatchers.count > 1 {');
+    expect(read('SettingsPage.swift')).toContain('QuietButton("Run setup again") { UserDefaults.standard.set(false, forKey: "onboarded") }');
+    expect(read('MainWindow.swift')).toContain('.onChange(of: onboarded) { if !$0 { showSetup = true } }');
+    expect(read('Info.plist')).toContain('NSMicrophoneUsageDescription'); // requestAccess needs it, or the app quits
+    expect(sheet).toContain('Microphone: press Ask now (macOS adds apps to that list only when they ask).'); // no + for the mic list
+  });
+
+  it('#189: Settings uses the Mac controls: every switch shows its label on the theme accent, no StephenSwitch', () => {
+    const settings = read('SettingsPage.swift');
+    const appearance = read('AppearanceSettings.swift');
+    expect(settings).toContain('Toggle("Speak replies out loud", isOn: bind(\\.speak)).tint(t.accent)');
+    expect(settings).toContain('Toggle("Explain steps as you go", isOn: bind(\\.explain)).tint(t.accent)');
+    expect(settings).toContain('Toggle("Start Stephen at login", isOn: on).tint(t.accent)'); // F5
+    expect(appearance).toContain('.tint(t.accent)');
+    expect(appearance).toContain('Text(verbatim: "Follow the Mac")');
+    expect(appearance).toContain('Text(verbatim: "Light by day, Dark at night. The window and the Ask box change together.")');
+    for (const src of [settings, appearance]) expect(src).not.toContain('labelsHidden().toggleStyle');
+    expect(settings).not.toContain('FormRow("Speak replies out loud")');
+    expect(read('Components/Controls.swift')).not.toContain('StephenSwitch');
+    // Segmented stays for the memory page (Show memory as); Settings no longer uses it.
+    expect(read('MemoryPage.swift')).toContain('Segmented("Show memory as"');
   });
 
   it('Settings > Model and effort sends model.set (alias or name, and an effort level)', () => {
@@ -1197,6 +1484,11 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     const chat = read('Components/ChatThread.swift');
     expect(chat).toContain('Text(verbatim: "Needs your OK").safetyLabelStyle(t)');
     expect(chat).toContain('Text(verbatim: problemLabel(bubble.steps)).safetyLabelStyle(t)');
+    // #185: the eyebrow role is 12 pt regular ink-2, and the safety labels never use it.
+    const theme = read('Theme.swift');
+    expect(theme).toContain('static let eyebrow = Font.system(size: 12)');
+    expect(theme).toContain('return self.font(TypeScale.eyebrow).foregroundColor(t.ink2)');
+    expect(chat).not.toMatch(/"Needs your OK"\)\.eyebrowStyle|problemLabel\(bubble\.steps\)\)\.eyebrowStyle/);
     // UI v4 step b (#139, [DEV REVIEW]): the question card has a 1.5 pt warn outline all round, solid fill, no glass.
     const card = chat.match(/struct ConfirmMessage: View \{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(card).toContain('.overlay(RoundedRectangle(cornerRadius: Corner.list).stroke(t.warn, lineWidth: 1.5))');
@@ -1291,6 +1583,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
     expect(read('HomeView.swift')).toContain('if entry.outcome == "memory" { return ("Memory", .idle) }');
     const conv = read('ConversationsPage.swift');
     expect(conv).toContain('Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")');
+    expect(conv).toContain('let CONVERSATIONS_EMPTY = "Nothing yet. Ask Stephen something and it shows here."');
     // Chips: All, Refused, Failed, drawn with Memory's Tag.
     expect(conv).toMatch(/let CONVERSATION_FILTERS = \[\s*MemoryFilter\(id: "all", title: "All"\), MemoryFilter\(id: "refused", title: "Refused"\), MemoryFilter\(id: "failed", title: "Failed"\),\s*\]/);
     expect(conv).toContain('ForEach(CONVERSATION_FILTERS) { f in Tag(f.title, selected: filter == f.id) { filter = f.id }.fixedSize() }');
@@ -1366,7 +1659,7 @@ describe('Stephen window Swift sources (compiled only on the Mac)', () => {
   });
 
   it('glass (UI v4 section 8): sidebar, toolbar and palette only; tints and alphas are the checked ones; solid fallbacks', () => {
-    const script = join(helperSourceDir(), '..', 'docs', 'research', 'ui-v4-mock', 'glass-contrast.mjs');
+    const script = join(helperSourceDir(), '..', 'scripts', 'glass-contrast.mjs');
     execFileSync(process.execPath, [script], { stdio: 'pipe' });  // throws if any text pair is under 4.5:1
     const src = readFileSync(script, 'utf8');
     const theme = read('Theme.swift');

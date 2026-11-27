@@ -112,6 +112,16 @@ func conversationFacts(_ entry: HistoryEntry, lines: [DoneLine], source: String,
   return parts.joined(separator: " · ")
 }
 
+/** R7: the Conversations page states, in plain words. */
+let CONVERSATIONS_LOADING = "Loading your conversations..."
+let CONVERSATIONS_LIST_FAILED = "Couldn't load your conversations right now."
+let CONVERSATIONS_EMPTY = "Nothing yet. Ask Stephen something and it shows here."
+let CONVERSATIONS_EDIT_FAILED = "Couldn't send your edit right now."
+let CONVERSATIONS_OLDER_FAILED = "Couldn't load older conversations right now."
+let CONVERSATIONS_CLEAR_FAILED = "Couldn't clear your history right now."
+let CONVERSATIONS_DELETE_FAILED = "Couldn't delete that version right now."
+let RECENT_ACTIONS_FAILED = "Couldn't load recent actions right now."
+
 struct ConversationsPage: View {
   @Environment(\.stephenTheme) var t
   @ObservedObject var model: AppModel
@@ -137,9 +147,23 @@ struct ConversationsPage: View {
           Text(verbatim: "What you asked, what Stephen did, and what it refused. The list is saved on this Mac.")
             .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
           if let n = model.historyNotice ?? model.auditNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
+          // R7: loading, error and empty in words. Empty only after a list that worked. Rows from the last good list
+          // stay visible when a later refresh fails.
+          if model.history.isEmpty && model.historyListOk == nil {
+            HStack(spacing: Space.s) {
+              ProgressView().controlSize(.small)
+              Text(verbatim: CONVERSATIONS_LOADING).font(TypeScale.body).foregroundColor(t.ink2)
+            }
+          } else if model.historyListOk == false {
+            VStack(alignment: .leading, spacing: Space.s) {
+              Text(verbatim: CONVERSATIONS_LIST_FAILED).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
+              QuietButton("Refresh", symbol: "arrow.clockwise") { model.refreshHistory() }
+            }
+          }
           if model.history.isEmpty {
-            Text(verbatim: "Nothing yet. What you ask Stephen, and what it does, is listed here.")
-              .font(TypeScale.body).foregroundColor(t.ink2)
+            if model.historyListOk == true {
+              Text(verbatim: CONVERSATIONS_EMPTY).font(TypeScale.body).foregroundColor(t.ink2)
+            }
           } else {
             VStack(alignment: .leading, spacing: Space.m) {
               searchField

@@ -43,6 +43,7 @@ import {
 } from './util.js';
 import { DriverBase, watchLaunch } from './common.js';
 import { ensurePrivateDir, isExecutable } from '../lib/fs.js';
+import { otherUserCount, sharedMacReason } from '../lib/other-users.js';
 import { isPidAlive } from '../lib/process.js';
 
 export interface ZenDriverDeps {
@@ -55,6 +56,8 @@ export interface ZenDriverDeps {
   resolveRealProfile: (cfg: ResolvedConfig) => Promise<string | null>;
   /** Does something answer at this ws:// endpoint? (TCP only — never opens a BiDi session.) */
   probeEndpoint: (wsUrl: string) => Promise<boolean>;
+  /** Other user accounts on this Mac, or null when unknown (B5: a shared Mac never gets Zen's open port). */
+  otherUserCount: () => Promise<number | null>;
   /** How long to wait for the "WebDriver BiDi listening" line (first launch after an update is slow). */
   listenTimeoutMs: number;
   /** This server's pid, recorded as the owner of the BiDi session. */
@@ -75,6 +78,7 @@ const DEFAULT_DEPS: ZenDriverDeps = {
   isPidAlive,
   resolveRealProfile: resolveZenRealProfile,
   probeEndpoint: (wsUrl) => probeWsEndpoint(wsUrl),
+  otherUserCount: () => otherUserCount(),
   listenTimeoutMs: 60_000,
   ownerPid: process.pid,
   connectTimeoutMs: 20_000,
@@ -160,7 +164,7 @@ export interface ZenReadiness {
 }
 
 export const ZEN_RUNNING_MESSAGE =
-  'Quit Zen (⌘Q) and retry — Zen must be relaunched with remote control enabled; Stephen never force-quits it.';
+  'Quit Zen (⌘Q) and retry. Zen must be relaunched with remote control enabled; Stephen never force-quits it.';
 
 const USER_JS_BEGIN = '// >>> stephen';
 const USER_JS_END = '// <<< stephen';
@@ -540,7 +544,7 @@ export class ZenDriver extends DriverBase {
       throw new HubError(
         'NEEDS_USER',
         `Could not find your Zen profile (no usable profiles.ini in ${this.#cfg.zen.zenAppSupportDir}). ` +
-          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.stephen/config.json — or use mode "agent".`,
+          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.stephen/config.json. Or use mode "agent".`,
       );
     }
     if (!(await isDir(dir))) {
@@ -590,6 +594,13 @@ export class ZenDriver extends DriverBase {
         'NOT_CONNECTED',
         `Zen was not found at ${exe}. Install Zen (zen-browser.app), or set "zen.executablePath" in ~/.stephen/config.json to the binary inside Zen.app/Contents/MacOS/.`,
       );
+    }
+    // B5 (until ADR-009): the port Zen opens has no password, so on a Mac with other accounts (or when that cannot be
+    // checked) Stephen never starts it. Every Zen Stephen starts goes through here (zen-launch and launch "auto").
+    const others = await this.#deps.otherUserCount();
+    if (others !== 0) {
+      this.detail = 'Not started: this Mac has other user accounts.';
+      throw new HubError('NEEDS_USER', sharedMacReason(others));
     }
     await ensurePrivateDir(this.#cfg.stateDir, this.#cfg.home);
     const logPath = this.#logPath(mode);
@@ -648,9 +659,11 @@ export class ZenDriver extends DriverBase {
         const tail = lastLines(text, 5);
         this.detail = `Zen exited before enabling remote control (${exited}).`;
         if (mode === 'real' || /already running|is already open|profile.*(locked|in use)/i.test(text)) {
-          throw new HubError(
-            'NEEDS_USER',
-            `Zen exited without enabling remote control (${exited}) — another Zen is probably using profile ${profileDir}. ${ZEN_RUNNING_MESSAGE}${tail ? ` Zen said: ${tail}` : ''}`,
+          // Review of #443: the person and the model get the plain line. Zen's own log words, the exit reason and the
+          // profile path stay in `detail` (zen-launch --json shows it; no formatter or model-facing text reads it).
+          throw Object.assign(
+            new HubError('NEEDS_USER', `Zen closed before Stephen could connect: another Zen is probably using your Zen profile. ${ZEN_RUNNING_MESSAGE}`),
+            { detail: `Zen exited without enabling remote control (${exited}), profile ${profileDir}.${tail ? ` Zen said: ${tail}` : ''}` },
           );
         }
         throw new HubError(

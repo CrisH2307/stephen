@@ -9,7 +9,8 @@
 // $FAKE_CLAUDE_PIDS as {claude, child}.
 // Every user message is appended to $FAKE_CLAUDE_TURNS (default "$FAKE_CLAUDE_LOG.turns") as {pid, n, prompt, line, personaExists, at}.
 //   FAKE_CLAUDE_MODE  ok (default) | error (every turn: error_max_turns) | garbage (a non-JSON line instead of a result)
-//                     | exit-mid-turn (exit 3 once a message arrives) | hang (system/init, then never answer) | hang-stubborn
+//                     | exit-mid-turn (exit 3 once a message arrives; its stderr line is $FAKE_CLAUDE_STDERR, default
+//                     "Error: exited mid-turn") | hang (system/init, then never answer) | hang-stubborn
 //                     (hang + ignore SIGTERM) | no-init (never answer initialize) | init-error (refuse initialize)
 //   FAKE_CLAUDE_MCP   connected (default) | failed | pending (forever) | slow (pending for 2 polls) | drop (failed
 //                     from the 2nd message on)
@@ -148,7 +149,7 @@ export async function runStream({ argv, at, mode, logTools }) {
       appendFileSync(turns, JSON.stringify({ pid: process.pid, n: messages, prompt, line, personaExists: personaPath ? existsSync(personaPath) : null, at: Date.now() }) + '\n');
     }
     if (mode === 'exit-mid-turn') {
-      process.stderr.write('Error: exited mid-turn\n');
+      process.stderr.write(`${env.FAKE_CLAUDE_STDERR ?? 'Error: exited mid-turn'}\n`);
       process.exit(3);
     }
     // Like Claude Code: system/init (with the session id) first, and the transcript is on disk from then on.

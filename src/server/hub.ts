@@ -5,6 +5,7 @@ import { HubError, errorMessage, isHubError } from '../errors.js';
 import { timed } from '../lib/step-timer.js';
 import { parseRef } from '../refs.js';
 import { buildConfirmer } from '../safety/confirm.js';
+import { hostOf } from '../safety/domains.js';
 import { redactValue, wrapUntrusted, type ElicitFn, type SafetyDeps } from '../safety/index.js';
 import type {
   ActionKind,
@@ -108,6 +109,8 @@ export const CLOSE_TIMEOUT_MS = 10_000;
 export interface ReadTicket {
   url: string;
   frames: string[];
+  /** The reading tool, for the private-read audit line. */
+  tool: string;
 }
 
 /**
@@ -211,7 +214,7 @@ export class Hub {
     if (!this.safetyInst) {
       const elicit = this.makeElicit();
       this.elicitSupported = elicit !== undefined;
-      const sdeps: SafetyDeps = elicit ? { elicit } : {};
+      const sdeps: SafetyDeps = { ...(elicit ? { elicit } : {}), ...(this.deps.trust ? { trust: this.deps.trust } : {}) };
       this.safetyInst = this.deps.safetyFactory(this.cfg, sdeps);
     }
     return this.safetyInst;
@@ -263,11 +266,15 @@ export class Hub {
    * that is a read of the page, so it must arm the cross-site taint exactly like snapshot does (review #2
    * verification N4: press_key Tab on an unread Gmail returned a row label holding a 2FA code).
    */
-  noteShown(...urls: Array<string | null | undefined>): void {
+  noteShown(tool: string, ...urls: Array<string | null | undefined>): void {
+    let audited = false; // one audit line per call
     for (const u of urls) {
       if (!u || !/^https?:/i.test(u)) continue;
       try {
-        this.safety().gate.noteRead(u);
+        const gate = this.safety().gate;
+        const t = !audited && gate.isPrivate(u) ? tool : undefined;
+        if (t) audited = true;
+        gate.noteRead(u, t);
       } catch (e) {
         log('noteRead failed:', errorMessage(e));
       }
@@ -275,7 +282,7 @@ export class Hub {
   }
 
   dialogNotice(tab: TabId, d: PendingDialog, prefix?: string): string {
-    this.noteShown(d.url);
+    this.noteShown('dialog', d.url);
     const head = prefix
       ? `${prefix} — then a ${d.type} dialog opened on ${tab}.`
       : `A ${d.type} dialog is open on ${tab}.`;
@@ -293,7 +300,7 @@ export class Hub {
 
   alertNotes(tab: TabId): string {
     const alerts = this.dialogs.drainAlerts(tab);
-    this.noteShown(...alerts.map((a) => a.url));
+    this.noteShown('alert', ...alerts.map((a) => a.url));
     return alerts
       .map((a) => `\nThe page showed an alert (auto-accepted):\n${wrapUntrusted(tab, a.url, a.message)}`)
       .join('');
@@ -437,12 +444,14 @@ export class Hub {
       if (f === url || !/^https?:/i.test(f)) continue;
       const d = this.safety().gate.evaluate({ ...req, pageUrl: f });
       if (d.verdict === 'deny') {
+        // The frame's host and the policy reason name a page-chosen site: they go inside the untrusted block (T3).
         throw new NoticeError(
-          `Blocked by Stephen's safety policy — did not ${tool} ${tab}: it contains a frame from a blocked site (${hostOf(f)}). ${d.reason}`,
+          `Blocked by Stephen's safety policy — did not ${tool} ${tab}: it contains a frame from a blocked site. Ask the user to do this themselves.\n` +
+            wrapUntrusted(tab, f, `Frame site: ${hostOf(f)}\nPolicy reason: ${d.reason}`),
         );
       }
     }
-    return { url, frames };
+    return { url, frames, tool };
   }
 
   /**
@@ -453,8 +462,12 @@ export class Hub {
   async noteReads(tab: TabId, page: Page, ticket: ReadTicket, readUrl?: string): Promise<void> {
     const after = await this.frameUrls(tab, page);
     const gate = this.safety().gate;
+    let audited = false; // one audit line per read, however many private frames it had
     for (const u of new Set([ticket.url, ...(readUrl ? [readUrl] : []), ...ticket.frames, ...after])) {
-      if (u) gate.noteRead(u);
+      if (!u) continue;
+      const tool = !audited && gate.isPrivate(u) ? ticket.tool : undefined;
+      if (tool) audited = true;
+      gate.noteRead(u, tool);
     }
   }
 
@@ -578,13 +591,16 @@ export class Hub {
       outcome: 'denied',
       error: `landed on a blocked site; ${left ? 'tab sent to about:blank' : 'could not leave it'}`,
     });
-    const where = /^https?:/i.test(landed) ? `a blocked site (${host})` : `a browser-internal or non-web page (${landed.split(':')[0]}:)`;
+    const web = /^https?:/i.test(landed);
+    const where = web ? 'a blocked site' : `a browser-internal or non-web page (${landed.split(':')[0]}:)`;
     throw new NoticeError(
       `Blocked by Stephen's safety policy: the action ended on ${where}, which is off-limits. ` +
         (left
           ? `Stephen sent ${tab} to about:blank; nothing from that page is shown. `
           : `Stephen could not leave that page; every action on ${tab} will be refused — close it with tab_close. `) +
-        'Do not try to reach it another way; ask the user to do this themselves.',
+        'Do not try to reach it another way; ask the user to do this themselves.' +
+        // The landed host was chosen by the page (a redirect or script): it goes inside the untrusted block (T3).
+        (web ? `\n${wrapUntrusted(tab, landed, `Blocked site: ${host}`)}` : ''),
     );
   }
 
@@ -696,7 +712,7 @@ export class Hub {
     const detail = r.value ? ` ${r.value}` : '';
     const facts = [...(spec.facts ?? [])];
     if (spec.element) {
-      this.noteShown(urlBefore, spec.element.frameUrl);
+      this.noteShown(spec.tool, urlBefore, spec.element.frameUrl);
       facts.unshift(`${spec.kind === 'press' ? 'focused element' : 'element'}: ${elementLabel(spec.element)}`);
     }
     return okResult(await this.outcomeText(tab, page, `${spec.done}${spec.doneNamesTab ? '' : ` in ${tab}`}${detail}`, urlBefore, spec.includeSnapshot, facts));
@@ -740,14 +756,6 @@ function originOf(url: string): string {
   try {
     const u = new URL(url);
     return u.origin !== 'null' ? u.origin : `${u.protocol}…`;
-  } catch {
-    return '';
-  }
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
   } catch {
     return '';
   }

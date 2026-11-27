@@ -189,7 +189,10 @@ describe('Gmail config', () => {
     expect(() => parseAccountsConfig({ gmail: { accounts: ['a'.repeat(33)] } })).toThrow();
     expect(parseAccountsConfig({ gmail: { accounts: ['personal_purpose_school', 'personal_purpose_jobs'] } }).gmail.accounts).toEqual(['personal_purpose_school', 'personal_purpose_jobs']);
     expect(() => parseAccountsConfig({ gmail: { clientId: 'x y' } })).toThrow(/client id/);
-    expect(() => parseAccountsConfig({ gmail: { refreshToken: REFRESH } })).toThrow();
+    const keys: string[] = [];
+    expect(() => parseAccountsConfig({ gmail: { refreshToken: REFRESH } }, keys)).toThrow(/looks like a secret \(not shown\)/);
+    expect(() => parseAccountsConfig({ gmail: { refreshToken: REFRESH } })).not.toThrow(/refreshToken|REFRESH/);
+    expect(keys).toEqual(['accounts.gmail.refreshToken']);
   });
 
   it('the refresh token is read from the Keychain only (argv only), never .env', async () => {
@@ -379,6 +382,7 @@ describe('gmail_read over MCP', () => {
     const got = seen.slice(before).filter((s) => s.path.startsWith('/gmail/'));
     expect(got.map((s) => `${s.path}?${s.url.searchParams}`)).toEqual([`/gmail/v1/users/me/messages/${M1.id}?format=full`]);
     expect(h.gate.dataReads).toEqual(['gmail', 'gmail']);
+    expect(h.gate.dataTools).toEqual(['gmail_search', 'gmail_read']);
   });
 
   it('an HTML-only message with an injection: text only, links reduced to the host', async () => {
@@ -431,6 +435,7 @@ describe('serve --trust wake: email is who and when only (review 7, R7-2)', () =
     // Nothing of what the mail says: no subject words, no snippet, no ids, no "call gmail_read".
     expect(text).not.toMatch(/SOFE|midterm|Thursday|UA1350|Your code|verification|482913|18f2a0c4d5e6f701|18f29b7e1a2b3c40|gmail_read/);
     expect(h.gate.dataReads).toEqual(['gmail']);
+    expect(h.gate.dataTools).toEqual(['gmail_search']);
   });
 
   it('R7-2: gmail_read is refused with the F5 notice: no request, no taint, audited', async () => {

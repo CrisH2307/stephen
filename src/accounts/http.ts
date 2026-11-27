@@ -24,7 +24,7 @@ export class AccountHttpError extends Error {
 export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
 
 export interface ApiClientOptions {
-  /** e.g. "https://learn.ontariotechu.ca" — only scheme + host (+ port) are kept. */
+  /** e.g. "https://example.com" — only scheme + host (+ port) are kept. */
   origin: string;
   /** Sent as `Authorization: Bearer <token>`. */
   token?: string;

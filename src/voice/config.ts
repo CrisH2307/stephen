@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { TTS_CONFIG_SHAPE } from './tts/config.js';
 import { ConfigError } from '../lib/errors.js';
 import { LENGTHS, TONES } from './talk.js';
+import { unknownKeyPaths } from '../config.js';
 
 /** Offline speech-to-text models the listener can use (see models.ts for the pinned archives). */
 export const ASR_MODELS = [
@@ -57,7 +58,7 @@ const claudeModel = z.string().trim().regex(CLAUDE_MODEL_RE, 'claudeModel must b
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORTS)[number];
 
-/** The voice default: the fastest model (see docs/VOICE.md "Model" for the speed/quality trade-off). */
+/** The voice default model (see docs/VOICE.md "Model" for the speed/quality trade-off). */
 export const DEFAULT_VOICE_CLAUDE_MODEL = 'sonnet';
 
 /** null/absent → the voice default; "default" → no --model flag (Claude Code's own default). */
@@ -76,7 +77,7 @@ const aboutValue = z
 
 /** voice.aboutMe — facts the user chose to tell Stephen (see aboutMeLines in claude.ts). */
 export const AboutMeSchema = z
-  .strictObject({
+  .object({
     name: aboutValue.optional(),
     home: aboutValue.optional(),
     school: aboutValue.optional(),
@@ -87,7 +88,7 @@ export const AboutMeSchema = z
 export type AboutMe = z.output<typeof AboutMeSchema>;
 
 const VoiceConfigSchema = z
-  .strictObject({
+  .object({
     /** Phrases that start a command (any of them). Default: DEFAULT_WAKE_PHRASES. */
     wakePhrases: z.array(phrase('each of wakePhrases', 1)).min(1).max(8).optional(),
     /** Old single-phrase form of `wakePhrases` (still accepted). */
@@ -109,8 +110,8 @@ const VoiceConfigSchema = z
     /** Path or command name of the Claude Code CLI. */
     claudePath: z.string().trim().min(1).max(1000).default('claude'),
     /**
-     * Model for the headless session (`claude --model`). Default "haiku": the fastest model, plenty for one-shot
-     * voice commands. Use "sonnet" (or a full model name) for better judgement on harder requests, or "default"
+     * Model for the headless session (`claude --model`). Default "sonnet" (DEFAULT_VOICE_CLAUDE_MODEL). Use "haiku" for
+     * faster one-shot replies, a full model name, or "default"
      * for Claude Code's own default (no --model flag). See docs/VOICE.md "Model".
      */
     claudeModel: claudeModel.nullish(),
@@ -191,7 +192,12 @@ const VoiceConfigSchema = z
      * `replay.set`, src/app/replay-switch.ts) or config.json by hand. No tool writes this key. The listener re-reads it
      * on every F5 press, so turning it off stops saving at once.
      */
-    replay: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+    replay: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+    /**
+     * Daily cost limit (docs/NFR-STEPHEN.md section 6): the most model cost in USD per local day. On by default.
+     * At 80% Stephen warns once a day; at 100% it starts no new model run until midnight. Routers stay free.
+     */
+    dailyLimit: z.object({ enabled: z.boolean().default(true), usd: z.number().min(0.01).max(1000).default(1) }).default({ enabled: true, usd: 1 }),
     /** Voice output: `tts` (auto|elevenlabs|kokoro|say), `elevenlabs` {voiceId, modelId, apiKeyFile, timeoutSec}, `kokoro` {speaker, speed}. */
     ...TTS_CONFIG_SHAPE,
   })
@@ -232,7 +238,6 @@ export class VoiceConfigError extends ConfigError {
 function describe(err: z.ZodError): string {
   return err.issues
     .map((i) => {
-      if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"voice.${k}"`).join(', ')}`;
       const key = i.path.map(String).join('.');
       return `"voice${key ? `.${key}` : ''}": ${i.message}`;
     })
@@ -240,7 +245,7 @@ function describe(err: z.ZodError): string {
 }
 
 /** Validate the raw `voice` section of config.json (null values mean "use the default"). Throws VoiceConfigError. */
-export function parseVoiceConfig(raw: unknown): VoiceConfig {
+export function parseVoiceConfig(raw: unknown, unknownKeys?: string[]): VoiceConfig {
   const obj: Record<string, unknown> = {};
   if (raw !== null && raw !== undefined) {
     if (typeof raw !== 'object' || Array.isArray(raw)) throw new VoiceConfigError('"voice" must be an object');
@@ -248,6 +253,7 @@ export function parseVoiceConfig(raw: unknown): VoiceConfig {
   }
   const r = VoiceConfigSchema.safeParse(obj);
   if (!r.success) throw new VoiceConfigError(`Invalid voice config: ${describe(r.error)}`);
+  unknownKeys?.push(...unknownKeyPaths(obj, r.data, 'voice'));
   const wakePhrases = [...new Set(r.data.wakePhrases ?? (r.data.wakePhrase ? [r.data.wakePhrase] : DEFAULT_WAKE_PHRASES))];
   return {
     ...r.data,

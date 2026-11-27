@@ -31,7 +31,7 @@ Threat model as in reviews 6 to 10a (`docs/SYSTEM-DESIGN-STEPHEN.md` section 5).
   `parseLatencyRecord`.
 
 Tests at the tip: `test/memory`, `test/app`, `test/helper`, `test/jobs`, `test/voice/claude.test.ts`,
-`claude-contract.test.ts`, `review4.test.ts`: 37 files, 688 passed, 2 skipped. Router tests
+`claude-contract.test.ts`, `claude-env-and-flag-probe.test.ts`: 37 files, 688 passed, 2 skipped. Router tests
 (`memory-flow`, `review5`, `app/listener`, `phone/routers`) and `eval/run.int`: 118 passed.
 
 ## Findings

@@ -7,16 +7,20 @@ struct PrimaryButton: View {
   @Environment(\.stephenTheme) var t
   let title: String
   var symbol: String? = nil
+  var minWidth: CGFloat = 0
   let action: () -> Void
-  init(_ title: String, symbol: String? = nil, action: @escaping () -> Void) { self.title = title; self.symbol = symbol; self.action = action }
+  init(_ title: String, symbol: String? = nil, minWidth: CGFloat = 0, action: @escaping () -> Void) {
+    self.title = title; self.symbol = symbol; self.minWidth = minWidth; self.action = action
+  }
   var body: some View {
     Button(action: action) {
       HStack(spacing: 6) {
         if let s = symbol { Image(systemName: s).font(.system(size: 14)) }
-        Text(verbatim: title).font(TypeScale.body.weight(.medium))
+        Text(verbatim: title).font(TypeScale.body.weight(t.paper ? .semibold : .medium))
       }
+      .frame(minWidth: minWidth)
       .foregroundColor(t.primaryText).padding(.horizontal, Space.l).padding(.vertical, 8)
-      .background(RoundedRectangle(cornerRadius: Corner.button).fill(t.primary))
+      .modifier(ButtonFace(fill: t.primary))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain).accessibilityLabel(title)
@@ -29,21 +33,39 @@ struct QuietButton: View {
   let title: String
   var symbol: String? = nil
   var destructive: Bool = false
+  var minWidth: CGFloat = 0
   let action: () -> Void
-  init(_ title: String, symbol: String? = nil, destructive: Bool = false, action: @escaping () -> Void) {
-    self.title = title; self.symbol = symbol; self.destructive = destructive; self.action = action
+  init(_ title: String, symbol: String? = nil, destructive: Bool = false, minWidth: CGFloat = 0, action: @escaping () -> Void) {
+    self.title = title; self.symbol = symbol; self.destructive = destructive; self.minWidth = minWidth; self.action = action
   }
   var body: some View {
     Button(action: action) {
       HStack(spacing: 6) {
         if let s = symbol { Image(systemName: s).font(.system(size: 14)) }
-        Text(verbatim: title).font(TypeScale.body)
+        Text(verbatim: title).font(TypeScale.body.weight(t.paper ? .semibold : .regular))
       }
+      .frame(minWidth: minWidth)
       .foregroundColor(destructive ? t.bad : t.ink).padding(.horizontal, Space.l).padding(.vertical, 8)
-      .background(RoundedRectangle(cornerRadius: Corner.button).stroke(t.lineStrong, lineWidth: 1))
+      .modifier(ButtonFace(fill: nil))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain).accessibilityLabel(title)
+  }
+}
+
+/// A button's shape. Paper: a pill with an ink edge and a 3 pt hard shadow, the same for filled and outlined buttons,
+/// so Allow and Deny differ only in fill. Other themes: a filled or outlined rounded rectangle, as before.
+private struct ButtonFace: ViewModifier {
+  @Environment(\.stephenTheme) var t
+  let fill: Color?
+  func body(content: Content) -> some View {
+    if t.paper {
+      content.paperBox(t, fill: fill ?? t.surface, shape: Capsule(), pop: 3)
+    } else if let fill {
+      content.background(RoundedRectangle(cornerRadius: Corner.button).fill(fill))
+    } else {
+      content.background(RoundedRectangle(cornerRadius: Corner.button).stroke(t.lineStrong, lineWidth: 1))
+    }
   }
 }
 
@@ -59,7 +81,7 @@ struct Tag: View {
       .padding(.horizontal, Space.m).padding(.vertical, 5)
       .background(Capsule().fill(selected ? t.surface2 : Color.clear))
       // Only a chip you can click gets the strong outline; a plain label keeps the calm one.
-      .overlay(Capsule().stroke(selected ? t.accent : (action == nil ? t.line : t.lineStrong), lineWidth: 1))
+      .overlay(Capsule().strokeBorder(selected ? t.accent : (action == nil ? t.line : t.lineStrong), lineWidth: 1).drawingGroup())  // drawingGroup: a plain pill stroke draws stray bits at its sides on recent macOS
     if let action = action {
       Button(action: action) { label }.buttonStyle(.plain)
         .accessibilityLabel(title).accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -69,7 +91,7 @@ struct Tag: View {
   }
 }
 
-/// Segmented control (Length, Tone). Track is surface-2, the chosen segment is surface with a strong outline (3:1 on
+/// Segmented control (Show memory as). Settings uses the system Picker now (#189). Track is surface-2, the chosen segment is surface with a strong outline (3:1 on
 /// the track, #146). `caption: true` writes the label above it (#147); VoiceOver reads the label either way.
 struct Segmented<Value: Hashable>: View {
   @Environment(\.stephenTheme) var t
@@ -153,32 +175,21 @@ struct AskField: View {
       }
     }
     .padding(.horizontal, large ? Space.l : Space.m).padding(.vertical, large ? Space.l : 10)
-    .background(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).fill(t.surface))
-    .overlay(RoundedRectangle(cornerRadius: large ? Corner.askBox : Corner.list).stroke(t.lineStrong, lineWidth: 1))
+    .modifier(FieldFace(radius: large ? Corner.askBox : Corner.list))
   }
 }
 
-/// On / off switch: "on" is the accent track (3:1 or more on its ground and on the off track), "off" is surface-2 with
-/// a strong outline, so on and off differ by colour and not only by knob position (#146). Use with
-/// `.toggleStyle(StephenSwitch())`. ponytail: not used yet; the call sites (SettingsPage, AppearanceSettings) are a
-/// follow-up for the dev lane.
-struct StephenSwitch: ToggleStyle {
+/// The ask input's box: Paper gives it the ink edge (no shadow); other themes the strong 1 pt outline.
+private struct FieldFace: ViewModifier {
   @Environment(\.stephenTheme) var t
-  func makeBody(configuration: Configuration) -> some View {
-    let on = configuration.isOn
-    return Button { configuration.isOn.toggle() } label: {
-      ZStack(alignment: on ? .trailing : .leading) {
-        Capsule().fill(on ? t.accent : t.surface2)
-          .overlay(Capsule().stroke(on ? t.accent : t.lineStrong, lineWidth: 1))
-        Circle().fill(t.surface).overlay(Circle().stroke(on ? Color.clear : t.lineStrong, lineWidth: 1))
-          .padding(2)
-      }
-      .frame(width: 34, height: 20)
-      .stephenAnimation(value: on)
+  let radius: CGFloat
+  func body(content: Content) -> some View {
+    if t.paper {
+      content.paperBox(t, fill: t.surface, radius: radius, pop: 0)
+    } else {
+      content.background(RoundedRectangle(cornerRadius: radius).fill(t.surface))
+        .overlay(RoundedRectangle(cornerRadius: radius).stroke(t.lineStrong, lineWidth: 1))
     }
-    .buttonStyle(.plain)
-    // VoiceOver reads it as the system switch: its label, on or off.
-    .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
   }
 }
 

@@ -239,7 +239,7 @@ non-literal `import(` or `createRequire` in Claude-reachable files.
 
 **Test.** A fixture file with the three shapes is reported by the scanner.
 
-## Fix status (2026-11-02, lead; each fix has a test in test/accounts/review6.test.ts)
+## Fix status (2026-11-02, lead; each fix has a test in test/accounts/hostile-input-and-tokens.test.ts)
 
 | ID | Status | What changed |
 |----|--------|--------------|

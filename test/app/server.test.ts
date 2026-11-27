@@ -177,13 +177,16 @@ type FixtureLine = { from: 'app' | 'node'; kind: 'request' | 'response' | 'push'
 describe('protocol fixture (test/fixtures/app-protocol-v1.jsonl) against the real server', () => {
   it('answers every request in the fixture with the response type the fixture expects', async () => {
     const home = mkdtempSync(join(tmp, 'fixture-'));
-    // memory.json as in the fixture: m7 saved by push-to-talk.
+    // memory.json as in the fixture: m7 saved by push-to-talk, m8 by a typed "remember".
     writeFileSync(
       join(home, 'memory.json'),
       JSON.stringify({
         version: 1,
-        nextId: 8,
-        items: [{ id: 'm7', text: 'my prof for sofe 3980 is dr patel', source: 'voice-ptt', createdAt: '2026-11-01T09:12:05.000Z', updatedAt: '2026-11-01T09:12:05.000Z' }],
+        nextId: 9,
+        items: [
+          { id: 'm7', text: 'my prof for sofe 3980 is dr patel', source: 'voice-ptt', createdAt: '2026-11-01T09:12:05.000Z', updatedAt: '2026-11-01T09:12:05.000Z' },
+          { id: 'm8', text: 'I take the 7:40 GO train on weekdays', source: 'app', createdAt: '2026-11-01T15:00:00.000Z', updatedAt: '2026-11-01T15:00:00.000Z' },
+        ],
       }),
       { mode: 0o600 },
     );
@@ -307,7 +310,7 @@ async function harnessOptions(home: string): Promise<AppServerOptions> {
 describe('framing and caps', () => {
   it('a line over 256 KiB gets an error and the connection keeps working', async () => {
     const h = await harness();
-    h.client.send(JSON.stringify({ id: 'big', type: 'memory.add', text: 'x'.repeat(APP_MAX_LINE_BYTES) }));
+    h.client.send(JSON.stringify({ id: 'big', type: 'memory.update', memId: 'm1', text: 'x'.repeat(APP_MAX_LINE_BYTES) }));
     const e = await h.client.waitFor((m) => m.type === 'error');
     expect(e.message).toMatch(/line too long/);
     expect(e.id).toBeUndefined();
@@ -394,24 +397,34 @@ describe('chat', () => {
 describe('memory, history, settings, audit, window', () => {
   it('every successful memory change ends the conversation; reads, duplicates and refusals do not', async () => {
     const h = await harness();
-    const add = await h.client.request({ id: 'm1', type: 'memory.add', text: 'I take the 7:40 GO train on weekdays' });
-    expect(add).toMatchObject({ type: 'memory', items: [{ id: 'm1', text: 'I take the 7:40 GO train on weekdays', source: 'app' }] });
-    expect(h.calls.ends).toBe(1);
-    await h.client.request({ id: 'm2', type: 'memory.add', text: 'i take the 7:40 go train on weekdays' }); // duplicate
-    expect(await h.client.request({ id: 'm3', type: 'memory.add', text: 'my bank pin is 4821' })).toEqual({ id: 'm3', type: 'error', message: MEMORY_MESSAGES.secret });
+    await h.memory.add('I take the 7:40 GO train on weekdays', 'cli');
     await h.client.request({ id: 'm4', type: 'memory.list' });
+    expect(h.calls.ends).toBe(0);
+    const upd = await h.client.request({ id: 'm5', type: 'memory.update', memId: 'm1', text: 'I take the 7:50 GO train' });
+    expect(upd).toMatchObject({ type: 'memory', items: [{ id: 'm1', text: 'I take the 7:50 GO train' }] });
     expect(h.calls.ends).toBe(1);
-    await h.client.request({ id: 'm5', type: 'memory.update', memId: 'm1', text: 'I take the 7:50 GO train' });
+    expect(await h.client.request({ id: 'm3', type: 'memory.update', memId: 'm1', text: 'my bank pin is 4821' })).toEqual({ id: 'm3', type: 'error', message: MEMORY_MESSAGES.secret });
     expect(await h.client.request({ id: 'm6', type: 'memory.forget', memId: 'm99' })).toEqual({ id: 'm6', type: 'error', message: MEMORY_GONE_MESSAGE });
+    expect(h.calls.ends).toBe(1);
     await h.client.request({ id: 'm7', type: 'memory.forget', memId: 'm1' });
     await h.client.request({ id: 'm8', type: 'memory.clear' });
-    expect(h.calls.ends).toBe(4);
+    expect(h.calls.ends).toBe(3);
+  });
+
+  it('memory.add gets the normal unknown-type answer: ignored, nothing saved, the connection keeps working', async () => {
+    const h = await harness();
+    h.client.send({ id: 'add', type: 'memory.add', text: 'my gym is goodlife' });
+    expect(await h.client.request({ id: 'l', type: 'memory.list' })).toEqual({ id: 'l', type: 'memory', items: [] });
+    expect(h.client.messages.some((m) => m.id === 'add')).toBe(false);
+    expect(await h.memory.list()).toEqual([]);
+    expect(h.calls.ends).toBe(0);
   });
 
   it('a memory change while a command runs ends the conversation again once it is done', async () => {
     const h = await harness();
+    await h.memory.add('my gym is goodlife', 'cli');
     await h.client.request({ id: 'c', type: 'chat.send', text: 'open youtube' });
-    await h.client.request({ id: 'm', type: 'memory.add', text: 'my gym is goodlife' });
+    await h.client.request({ id: 'm', type: 'memory.forget', memId: 'm1' });
     expect(h.calls.ends).toBe(1);
     h.queue.finish(h.server);
     expect(h.calls.ends).toBe(2);
@@ -422,7 +435,7 @@ describe('memory, history, settings, audit, window', () => {
   it('memory off: memory requests explain it', async () => {
     const h = await harness({ memory: null });
     expect(await h.client.request({ id: 'm', type: 'memory.list' })).toEqual({ id: 'm', type: 'error', message: MEMORY_OFF_MESSAGE });
-    expect(await h.client.request({ id: 'n', type: 'memory.add', text: 'x' })).toEqual({ id: 'n', type: 'error', message: MEMORY_OFF_MESSAGE });
+    expect(await h.client.request({ id: 'n', type: 'memory.clear' })).toEqual({ id: 'n', type: 'error', message: MEMORY_OFF_MESSAGE });
   });
 
   it('an unreadable memory.json is reported, not thrown', async () => {
@@ -627,6 +640,27 @@ describe('memory, history, settings, audit, window', () => {
     expect(asked).toBe(7);
     const none = await harness({ audit: null });
     expect(await none.client.request({ id: 'a', type: 'audit.recent' })).toEqual({ id: 'a', type: 'audit', entries: [] });
+  });
+
+  it('T6 step 3: audit.recent drops the label, intent, error and args of private-site entries (built-in lists by default)', async () => {
+    const secret = { element: 'row "your code is 771204"', intent: 'open the code', error: 'page said 771204', args: { text: '[6 chars] "771204"' } };
+    const entries = [
+      { ts: '2026-11-01T14:03:20.000Z', tool: 'click', kind: 'click', urlBefore: 'https://mail.google.com/mail/u/0/', outcome: 'error', ...secret },
+      { ts: '2026-11-01T14:03:21.000Z', tool: 'click', kind: 'click', urlAfter: 'https://outlook.live.com/mail/', outcome: 'ok', ...secret },
+      { ts: '2026-11-01T14:03:22.000Z', tool: 'click', kind: 'click', urlBefore: 'https://intranet.example.org/', outcome: 'ok', ...secret },
+      { ts: '2026-11-01T14:03:23.000Z', tool: 'click', kind: 'click', urlBefore: 'https://www.youtube.com/', outcome: 'ok', ...secret },
+    ] as AuditEntry[];
+    const h = await harness({ audit: { recent: async () => entries } });
+    const a = (await h.client.request({ id: 'a', type: 'audit.recent' })) as unknown as { entries: AuditEntry[] };
+    expect(a.entries[0]).toEqual({ ts: '2026-11-01T14:03:20.000Z', tool: 'click', kind: 'click', urlBefore: 'https://mail.google.com', outcome: 'error' }); // URL cut to the origin
+    expect(JSON.stringify(a.entries.slice(0, 2))).not.toContain('771204');
+    expect(a.entries[2]).toEqual(entries[2]); // not built in: kept, unless the owner lists it
+    expect(a.entries[3]).toEqual(entries[3]);
+    const own = await harness({ audit: { recent: async () => entries }, isPrivateUrl: (u) => u.includes('intranet.example.org') });
+    const b = (await own.client.request({ id: 'b', type: 'audit.recent' })) as unknown as { entries: AuditEntry[] };
+    expect(b.entries[2]).not.toHaveProperty('element');
+    expect(b.entries[3]).toEqual(entries[3]);
+    expect(entries[0]?.element).toBe(secret.element); // the log's own entries are not changed
   });
 
   it('phone.on / phone.off / zen.open / doctor.run answer from the control; errors and a missing control say why', async () => {

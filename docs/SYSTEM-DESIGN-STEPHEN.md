@@ -67,6 +67,9 @@ The hard parts are not speech or the LLM call. They are:
   └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+One exception by design: the voice `announce` tool (`serve --voice` only) skips `gate.check`. It touches no page,
+sends nothing off the Mac and says nothing once private data was read (#306).
+
 Two processes on purpose: **`listen`** holds the owner's trust (memory, history, the window); **`serve`** is what
 the model talks to and holds nothing it could misuse. A test proves `serve` never even loads the memory, app or
 history modules (§6). One link goes the other way: `serve`'s gate connects to the listener's app.sock to show its
@@ -563,8 +566,8 @@ origins should also refuse imperative text ("always ...", "send ...") before it 
 | Actor | Can | Stopped by |
 |---|---|---|
 | Web page / email / Canvas post | Put text in front of the model | Data framing; no memory tool; taint egress gate; human dialogs; eval injection cases |
-| The model itself (confused or injected) | Call any Stephen tool | Gate on every action; no shell or file tools (`--tools ""`, strict MCP config); no tool takes a URL for account data |
-| Bystander / video saying "Hey Stephen" | Speak commands | Wake-word trust is lower: dialogs for memory changes, counts instead of contents for memory and timers, email as who and when only (`serve --trust wake`, no `gmail_read`); a wake-word command never continues an F5 conversation (§4.2, §4.12). Canvas, Calendar, Notion and weather are still read in full (owner's choice) |
+| The model itself (confused or injected) | Call any Stephen tool | Gate on every action (announce aside, #306); no shell or file tools (`--tools ""`, strict MCP config); no tool takes a URL for account data |
+| Bystander / video saying "Hey Stephen" | Speak commands | Wake-word trust is lower: dialogs for memory changes, counts instead of contents for memory and timers, email as who and when only (`serve --trust wake`, no `gmail_read`); a wake-word command never continues an F5 conversation (§4.2, §4.12). Canvas, Calendar, Notion and weather are still read in full (owner's choice). Once a wake-word conversation read private data (or its state can't be read), the reply is shown, not spoken: Stephen says only "I put the answer on screen." |
 | Other macOS users | Read files | 0700 dirs / 0600 files, `O_NOFOLLOW`, socket peer checks |
 | A job's task text, or a page a research job reads | Steer a background job | Only built-in file tools confined to the job folder (`--restricted`), Bash only inside the OS sandbox with no network, no MCP, init tool list checked at run time, scratch environment, rules files outside the folder, budgets and a wall-clock kill; output cleaned and framed as `<untrusted_job_output>` (§4.13) |
 | The model starting work behind the owner's back | Start a job | No job tool; job phrases are routed before Claude; every start needs the native dialog, whatever the source (§4.13) |

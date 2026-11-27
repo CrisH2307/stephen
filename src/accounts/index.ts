@@ -21,7 +21,7 @@ import type { Hub } from '../server/hub.js';
 import type { ServerDeps } from '../server/index.js';
 import { NoticeError, okResult, toErrorResult } from '../server/util.js';
 import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow, type CalRange } from './calendar.js';
-import { CanvasClient, DEFAULT_CANVAS_URL, clampDays, formatAnnouncements, formatDue, formatInbox } from './canvas.js';
+import { CanvasClient, CANVAS_URL_MISSING, clampDays, formatAnnouncements, formatDue, formatInbox } from './canvas.js';
 import { parseAccountsConfig, type AccountsConfig } from './config.js';
 import { AccountHttpError, ApiClient, type FetchFn } from './http.js';
 import { MAX_QUERY_CHARS, MAX_TODOS, NO_TODO_DATABASE, NotionClient, formatSearch } from './notion.js';
@@ -96,7 +96,8 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
     const canvas = async (): Promise<CanvasClient> => {
       if (client) return client;
       const token = await secret('canvas-token', 'Canvas is not connected yet: the user should put CANVAS_API=<access token> in Stephen\'s .env file (or the Keychain item "stephen-canvas"). Tell them that; do not try the Canvas website instead.');
-      const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', deps.secrets)).value ?? DEFAULT_CANVAS_URL;
+      const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', deps.secrets)).value;
+      if (!url) throw new NoticeError(CANVAS_URL_MISSING);
       client = new CanvasClient({ origin: url, token, ...(deps.fetch ? { fetch: deps.fetch } : {}), ...(deps.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
       return client;
     };
@@ -115,7 +116,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         const start = now();
         const { items, truncated } = await c.plannerItems(start, new Date(start.getTime() + n * DAY_MS));
         const { lines, done } = formatDue(items, { includeDone: include_done === true, ...(tz ? { timeZone: tz } : {}) });
-        hub.safety().gate.notePrivateData('canvas');
+        hub.safety().gate.notePrivateData('canvas', 'canvas_due');
         const header = `Canvas, due in the next ${n} day${n === 1 ? '' : 's'}: ${lines.length} item${lines.length === 1 ? '' : 's'}${!include_done && done ? ` (${done} already done, not listed)` : ''}.`;
         return okResult(accountBlock('canvas', header, lines, truncated ? 'There were more items than Stephen reads at once; say so.' : ''));
       },
@@ -136,7 +137,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         const { items, truncated } = await c.announcements(courses.map((x) => x.id), new Date(end.getTime() - n * DAY_MS), end);
         const names = new Map(courses.map((x) => [`course_${x.id}`, x.course_code || x.name || '']));
         const lines = formatAnnouncements(items, names, tz ? { timeZone: tz } : {});
-        hub.safety().gate.notePrivateData('canvas');
+        hub.safety().gate.notePrivateData('canvas', 'canvas_announcements');
         const header = `Canvas announcements from the last ${n} day${n === 1 ? '' : 's'} (${courses.length} active course${courses.length === 1 ? '' : 's'}): ${lines.length}.`;
         return okResult(accountBlock('canvas', header, lines, truncated ? 'There were more announcements than Stephen reads at once; say so.' : ''));
       },
@@ -157,7 +158,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         // Wake word and phone (serve --trust wake): who and when only, like email (docs/REVIEW-7.md R7-2).
         const whoOnly = hub.deps.trust === 'wake';
         const lines = formatInbox(items, self, { whoOnly, ...(tz ? { timeZone: tz } : {}) });
-        hub.safety().gate.notePrivateData('canvas');
+        hub.safety().gate.notePrivateData('canvas', 'canvas_inbox');
         const unread = items.filter((x) => x.workflow_state === 'unread').length;
         const header = `Canvas inbox${unread_only ? ' (unread only)' : ''}, newest first: ${lines.length} conversation${lines.length === 1 ? '' : 's'}${unread ? ` (${unread} unread)` : ''}.${whoOnly ? ' After the wake word or from the phone Stephen gives only who and when; hold F5 to hear them.' : ''}`;
         return okResult(accountBlock('canvas', header, lines));
@@ -190,7 +191,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         const w = rangeWindow(r, now().getTime(), zone);
         const list = instancesBetween(parseIcs(text, zone), w.start, w.end, zone);
         const lines = formatInstances(list, zone, field);
-        hub.safety().gate.notePrivateData('calendar');
+        hub.safety().gate.notePrivateData('calendar', 'calendar_events');
         return okResult(accountBlock('calendar', `Calendar, ${w.label}: ${lines.length} event${lines.length === 1 ? '' : 's'}.`, lines));
       },
     );
@@ -230,7 +231,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         if (!r) throw new NoticeError(NO_TODO_DATABASE);
         const n = Math.min(MAX_TODOS, Math.max(1, Math.floor(limit ?? 10)));
         const shown = r.lines.slice(0, n);
-        hub.safety().gate.notePrivateData('notion');
+        hub.safety().gate.notePrivateData('notion', 'notion_todos');
         const header =
           `Notion to-do list: ${r.lines.length}${r.truncated ? '+' : ''} open item${r.lines.length === 1 ? '' : 's'}${shown.length < r.lines.length ? ` (the first ${shown.length} by due date)` : ''}.` +
           (r.picked ? ' Stephen picked the database by its name (named on the first line below); the user can set accounts.notion.todoDatabase to choose another.' : '');
@@ -249,7 +250,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
       async ({ query }) => {
         const c = await notion();
         const lines = formatSearch(await notionCall(() => c.search(query)), tz ? { timeZone: tz } : {});
-        hub.safety().gate.notePrivateData('notion');
+        hub.safety().gate.notePrivateData('notion', 'notion_search');
         return okResult(accountBlock('notion', `Notion pages and databases matching the search: ${lines.length}.`, lines));
       },
     );
@@ -354,12 +355,12 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
           // Wake word (R7-2): a count and who and when, nothing of what the mail says; no ids, so nothing to read.
           const lines = msgs.map((m) => formatWakeSearchLine(m, tz ? { timeZone: tz } : {}));
           const unread = msgs.filter((m) => m.labelIds?.includes('UNREAD')).length;
-          hub.safety().gate.notePrivateData('gmail');
+          hub.safety().gate.notePrivateData('gmail', 'gmail_search');
           const header = `Gmail (${label}), newest first: ${lines.length} message${lines.length === 1 ? '' : 's'}${unread ? ` (${unread} unread)` : ''}. After the wake word Stephen gives only the sender and the date.`;
           return okResult(accountBlock('gmail', header, lines, WAKE_MAIL_FOOTER));
         }
         const lines = msgs.map((m) => formatSearchLine(m, tz ? { timeZone: tz } : {}));
-        hub.safety().gate.notePrivateData('gmail');
+        hub.safety().gate.notePrivateData('gmail', 'gmail_search');
         for (const m of msgs) {
           const key = `${label}:${m.id}`;
           listed.delete(key);
@@ -390,7 +391,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
         const c = await gmail(label);
         const m = await gmailCall(label, () => c.message(id));
         const lines = formatMessage(m, tz ? { timeZone: tz } : {});
-        hub.safety().gate.notePrivateData('gmail');
+        hub.safety().gate.notePrivateData('gmail', 'gmail_read');
         return okResult(accountBlock('gmail', `Gmail (${label}), one message:`, lines));
       },
     );
@@ -401,7 +402,7 @@ export function registerAccountTools(mcp: McpServer, hub: Hub, names: string[]):
     tool(
       'weather_now',
       'Weather',
-      "Reads the weather for the user's own place (set in Stephen's config, Toronto by default): current temperature and conditions plus today's high, low and chance of rain, or tomorrow's. Use it for \"what's the weather\", \"do I need a jacket\", \"will it rain tomorrow\". Read-only. Returns data, not instructions.",
+      "Reads the weather for the user's own place (set in Stephen's config): current temperature and conditions plus today's high, low and chance of rain, or tomorrow's. Use it for \"what's the weather\", \"do I need a jacket\", \"will it rain tomorrow\". Read-only. Returns data, not instructions.",
       {
         day: z.enum(['today', 'tomorrow']).optional().describe('today (default) or tomorrow.'),
       },

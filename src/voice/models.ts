@@ -237,10 +237,17 @@ async function pruneEmptyDirs(dir: string): Promise<void> {
   }
 }
 
+/** F9b: progress as code words and numbers only (the setup sheet shows its own text for each). */
+export type ModelEvent =
+  | { event: 'downloading'; index: number; total: number; mb: number }
+  | { event: 'extracting'; index: number; total: number }
+  | { event: 'installed'; index: number; total: number };
+
 export interface EnsureOptions {
   download?: Downloader;
   extract?: Extractor;
   log?: (line: string) => void;
+  onEvent?: (e: ModelEvent) => void;
 }
 
 /** Download `m.url` to `file` and check its sha256 (throws on a mismatch; the caller deletes its temp folder). */
@@ -266,12 +273,16 @@ export async function ensureModels(root: string, archives: readonly ModelArchive
   const download = opts.download ?? curlDownloader;
   const extract = opts.extract ?? tarExtractor;
   const log = opts.log ?? (() => {});
+  const ev = opts.onEvent ?? (() => {});
   await mkdir(root, { recursive: true, mode: 0o700 });
   const installed: string[] = [];
-  for (const m of archives) {
-    if (await isInstalled(root, m)) continue;
+  const todo: ModelArchive[] = [];
+  for (const m of archives) if (!(await isInstalled(root, m))) todo.push(m);
+  for (const [i, m] of todo.entries()) {
+    const step = { index: i + 1, total: todo.length };
     const mb = (m.bytes / 1e6).toFixed(m.bytes < 1e6 ? 1 : 0);
     log(`Downloading ${m.id} (${mb} MB) from ${new URL(m.url).host}…`);
+    ev({ event: 'downloading', ...step, mb: Math.max(1, Math.round(m.bytes / 1e6)) });
     const work = await mkdtemp(join(root, `.tmp-${m.id}-`));
     try {
       const file = join(work, m.kind === 'file' ? m.keep[0]! : 'archive.tar.bz2');
@@ -284,6 +295,7 @@ export async function ensureModels(root: string, archives: readonly ModelArchive
         const unpack = join(work, 'unpack');
         await mkdir(unpack);
         log(`Extracting ${m.id}…`);
+        ev({ event: 'extracting', ...step });
         await extract(file, unpack);
         await rm(file, { force: true });
         const top = join(unpack, m.dir);
@@ -300,6 +312,7 @@ export async function ensureModels(root: string, archives: readonly ModelArchive
       await installStaged(m, staged, join(root, m.dir));
       installed.push(m.id);
       log(`Installed ${m.id}.`);
+      ev({ event: 'installed', ...step });
     } finally {
       await rm(work, { recursive: true, force: true });
     }

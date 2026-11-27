@@ -165,7 +165,9 @@ async function runServe(label: string): Promise<{ texts: string[]; files: string
         accounts: { secrets, allowLoopbackHttp: true, notionOrigin: base, gmailOrigin: base, googleTokenOrigin: base, now: () => new Date('2026-11-02T12:00:00Z') },
       },
     });
+    // announce first: once private data is read it says nothing (src/voice/announce.ts), and the TTS key must be used.
     const calls: [string, Record<string, unknown>][] = [
+      ['announce', { text: 'Playing Say So by Doja Cat' }],
       ['canvas_due', { days: 3 }],
       ['canvas_announcements', {}],
       ['calendar_events', { range: 'today' }],
@@ -173,7 +175,6 @@ async function runServe(label: string): Promise<{ texts: string[]; files: string
       ['notion_search', { query: 'lab' }],
       ['gmail_search', {}],
       ['gmail_read', { id: MSG_ID }],
-      ['announce', { text: 'Playing Say So by Doja Cat' }],
     ];
     for (const [name, args] of calls) {
       const r = (await h.call(name, args)) as CallToolResult;

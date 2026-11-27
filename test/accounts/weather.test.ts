@@ -69,12 +69,14 @@ describe('pure parts', () => {
 
 describe('config', () => {
   it('defaults to Toronto and is validated', () => {
-    expect(parseAccountsConfig(undefined).weather).toEqual({ enabled: true, latitude: 43.6532, longitude: -79.3832, label: 'Toronto, ON' });
-    expect(parseAccountsConfig({ weather: { latitude: 10 } }).weather).toMatchObject({ latitude: 10, longitude: -79.3832 });
+    expect(parseAccountsConfig(undefined).weather).toEqual({ enabled: true, latitude: 43.65, longitude: -79.38, label: 'Toronto, ON' });
+    expect(parseAccountsConfig({ weather: { latitude: 10 } }).weather).toMatchObject({ latitude: 10, longitude: -79.38 });
     expect(() => parseAccountsConfig({ weather: { latitude: 91 } })).toThrow(/latitude/);
     expect(() => parseAccountsConfig({ weather: { longitude: -181 } })).toThrow(/longitude/);
     expect(() => parseAccountsConfig({ weather: { label: '' } })).toThrow(/label/);
-    expect(() => parseAccountsConfig({ weather: { url: 'https://evil.example' } })).toThrow();
+    const keys: string[] = [];
+    expect(() => parseAccountsConfig({ weather: { url: 'https://evil.example' } }, keys)).toThrow(/unknown key: "accounts\.weather\.url"/);
+    expect(keys).toEqual(['accounts.weather.url']);
   });
 });
 
@@ -95,7 +97,7 @@ describe('weather_now over MCP', () => {
     expect(text).not.toMatch(/43\.65|79\.38|IGNORE ALL/);
     expect(h.gate.dataReads).toEqual([]);
     expect(seen[0]).toContain('/v1/forecast?');
-    expect(seen[0]).toContain('latitude=43.6532');
+    expect(seen[0]).toContain('latitude=43.65');
     expect(seen[0]).toContain('timezone=America%2FToronto');
   });
 
@@ -143,7 +145,7 @@ describe('stephen accounts weather', () => {
   it('shows the default place', async () => {
     const r = await run(['weather'], { accounts: {} });
     expect(r.code).toBe(0);
-    expect(r.out).toContain('Toronto, ON (43.6532, -79.3832)');
+    expect(r.out).toContain('Toronto, ON (43.65, -79.38)');
   });
 
   it('set writes accounts.weather and keeps the rest of config.json', async () => {

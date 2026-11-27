@@ -593,6 +593,11 @@ func makePrivateDir(_ path: String, mode: mode_t = 0o700) throws {
       throw HelperFailure("mkdir \(prefix): \(errnoText())")
     }
   }
+  // lstat, not stat: a link in place of the folder must never get its target's permissions changed (#392 review).
+  var st = stat()
+  guard lstat(path, &st) == 0 else { throw HelperFailure("lstat \(path): \(errnoText())") }
+  guard (st.st_mode & S_IFMT) == S_IFDIR else { throw HelperFailure("\(path) is a link or not a folder; not using it") }
+  guard st.st_uid == getuid() else { throw HelperFailure("\(path) belongs to another user; not using it") }
   if chmod(path, mode) != 0 { throw HelperFailure("chmod \(path): \(errnoText())") }
 }
 
@@ -607,6 +612,15 @@ final class SocketClient {
   }
 }
 
+/** Equal strings, in time that does not depend on where they differ. */
+func sameSecret(_ a: String, _ b: String) -> Bool {
+  let x = Array(a.utf8), y = Array(b.utf8)
+  guard x.count == y.count else { return false }
+  var d: UInt8 = 0
+  for i in 0..<x.count { d |= x[i] ^ y[i] }
+  return d == 0
+}
+
 /**
  * One-client-at-a-time newline-JSON server on a Unix domain socket. A new connection replaces the current one
  * (the old socket is shut down). All writes go through one serial queue, so lines never interleave and the
@@ -615,11 +629,11 @@ final class SocketClient {
 final class SocketServer {
   let path: String
   var log: (String) -> Void = { _ in }
-  /** Called on the accept thread; its line is written to a new client before anything else. */
+  /** Called once a client has authenticated (on its own thread); its line is written to it before anything else. */
   var helloLine: () -> String = { "" }
   /** Called on the client's reader thread, in order. */
   var onCommand: (HelperCommandIn) -> Void = { _ in }
-  /** A client became current (accept thread, after its hello was queued). */
+  /** A client became current (after its hello was queued). */
   var onConnect: () -> Void = {}
   /** The current client went away without being replaced (reader thread). */
   var onDisconnect: () -> Void = {}
@@ -630,6 +644,20 @@ final class SocketServer {
   private let stopped = Locked(false)
   private var nextId = 1
   private let writeQueue = DispatchQueue(label: "dev.stephen.helper.write")
+  /**
+   * F15 / C6: a fresh secret per launch. A client must send `{"type":"auth","nonce":"…"}` as its first line, or it is
+   * dropped before it sees hello or replaces the current client. The nonce is in `<run>/helper.nonce` (0600, this
+   * user only). It does not stop a process of the same user (out of scope, product plan Q10); the uid check below
+   * stops other users.
+   */
+  let nonce: String = {
+    var g = SystemRandomNumberGenerator()
+    return (0..<4).map { _ in let v = g.next() as UInt64; return String(repeating: "0", count: 16 - String(v, radix: 16).count) + String(v, radix: 16) }.joined()
+  }()
+  var noncePath: String {
+    guard let slash = path.lastIndex(of: "/") else { return "helper.nonce" }
+    return String(path[path.startIndex..<slash]) + "/helper.nonce"
+  }
 
   init(path: String) { self.path = path }
 
@@ -657,6 +685,8 @@ final class SocketServer {
       unlink(path)  // stale socket from a helper that did not exit cleanly
     }
 
+    try writeNonceFile()
+
     let fd = socket(AF_UNIX, SOCK_STREAM_VALUE, 0)
     guard fd >= 0 else { throw HelperFailure("socket(): \(errnoText())") }
     let oldMask = umask(0o177)  // the socket file is created 0600
@@ -680,6 +710,23 @@ final class SocketServer {
     DispatchQueue.global().async { [self] in acceptLoop() }
   }
 
+  /** `{"nonce":"…"}` into a fresh 0600 temp file (O_EXCL, O_NOFOLLOW), then renamed over helper.nonce. */
+  private func writeNonceFile() throws {
+    let tmp = noncePath + ".\(getpid()).tmp"
+    unlink(tmp)
+    let fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+    guard fd >= 0 else { throw HelperFailure("open \(tmp): \(errnoText())") }
+    let bytes = Array("{\"nonce\":\"\(nonce)\"}\n".utf8)
+    let n = bytes.withUnsafeBytes { raw in Glue.write(fd, raw.baseAddress!, bytes.count) }
+    fchmod(fd, 0o600)
+    fsync(fd)
+    close(fd)
+    guard n == bytes.count, rename(tmp, noncePath) == 0 else {
+      unlink(tmp)
+      throw HelperFailure("could not write \(noncePath): \(errnoText())")
+    }
+  }
+
   /** Close everything and remove the socket file (only if it is still ours). */
   func stop() {
     if stopped.with({ s -> Bool in let was = s; s = true; return was }) { return }
@@ -688,6 +735,7 @@ final class SocketServer {
     }
     if listenFd >= 0 { close(listenFd) }
     if let ino = socketInode, inodeOf(path) == ino { unlink(path) }
+    unlink(noncePath)
   }
 
   /** Send one line to the current client (dropped if none). */
@@ -750,9 +798,46 @@ final class SocketServer {
     // A client that stops reading must not block the helper forever.
     var tv = timeval(tv_sec: 2, tv_usec: 0)
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-
-    let c = SocketClient(fd: fd, id: nextId)
+    let id = nextId
     nextId += 1
+    // The auth line is read off the accept thread, so a silent client cannot hold up the next one.
+    DispatchQueue.global().async { [self] in
+      guard let rest = readAuth(fd) else {
+        log("client \(id): rejected (no valid auth line within 2 s)")
+        close(fd)
+        return
+      }
+      adopt(SocketClient(fd: fd, id: id), rest: rest)
+    }
+  }
+
+  /**
+   * Read the first line (at most 200 bytes, 2 s) and check it is `{"type":"auth","nonce":"<ours>"}`. Returns the bytes
+   * after that line (to hand to the reader), or nil to drop the client.
+   */
+  private func readAuth(_ fd: Int32) -> [UInt8]? {
+    var tv = timeval(tv_sec: 2, tv_usec: 0)
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    var got: [UInt8] = []
+    var buf = [UInt8](repeating: 0, count: 256)
+    while got.firstIndex(of: 10) == nil {
+      if got.count > 200 { return nil }
+      let n = buf.withUnsafeMutableBytes { raw in Glue.read(fd, raw.baseAddress!, raw.count) }
+      if n < 0 && errno == EINTR { continue }
+      if n <= 0 { return nil }
+      got += buf[0..<n]
+    }
+    var off = timeval(tv_sec: 0, tv_usec: 0)  // back to blocking reads for the reader loop
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &off, socklen_t(MemoryLayout<timeval>.size))
+    let nl = got.firstIndex(of: 10)!
+    guard nl <= 200, case let .object(obj)? = parseJSON(String(decoding: got[0..<nl], as: UTF8.self)),
+      obj["type"] == JSONValue.string("auth"),
+      case let .string(sent)? = obj["nonce"], sameSecret(sent, nonce)
+    else { return nil }
+    return Array(got[(nl + 1)...])
+  }
+
+  private func adopt(_ c: SocketClient, rest: [UInt8]) {
     let hello = helloLine()
     let old = current.with { cur -> SocketClient? in
       let old = cur
@@ -762,12 +847,13 @@ final class SocketServer {
       return old
     }
     if let o = old { log("client \(o.id) replaced by client \(c.id)") } else { log("client \(c.id) connected") }
-    DispatchQueue.global().async { [self] in readLoop(c) }
+    DispatchQueue.global().async { [self] in readLoop(c, rest: rest) }
     onConnect()
   }
 
-  private func readLoop(_ c: SocketClient) {
+  private func readLoop(_ c: SocketClient, rest: [UInt8]) {
     var framer = LineFramer(maxBytes: MAX_LINE_BYTES)
+    for line in framer.push(rest[...]) { onCommand(parseCommand(line)) }
     var buf = [UInt8](repeating: 0, count: 4096)
     while true {
       let n = buf.withUnsafeMutableBytes { raw in Glue.read(c.fd, raw.baseAddress!, raw.count) }

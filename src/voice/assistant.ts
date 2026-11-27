@@ -3,7 +3,9 @@
  * `--text` and the Stephen app's typed chat (src/app/server.ts): call command(text, {source, raw}).
  */
 import { newConversationId, newHistoryId } from '../history/store.js';
-import type { ClaudeOutcome, ModelTimes } from './claude.js';
+import { FAILURE_LINES } from '../lib/claude-failure.js';
+import { claudeFailure, type ClaudeFailure, type ClaudeOutcome, type ModelTimes } from './claude.js';
+import { LIMIT_REACHED, LIMIT_WARNING, type DailyLimit } from './daily-limit.js';
 import type { CommandSource, MemoryRouter } from './memory-router.js';
 import { stripForSpeech, type Chimes, type SpeakHandle, type Speaker } from './speech.js';
 
@@ -115,10 +117,20 @@ export interface EditedMessage {
   source: CommandSource;
 }
 
+/**
+ * Said instead of the reply after the wake word once the conversation read private data (Cris, #274, 2026-11-24):
+ * a bystander or a video can say the wake word, so the reply is shown, not spoken. Holds no reply text.
+ */
+export const ON_SCREEN_MESSAGE = 'I put the answer on screen.';
+
 /** A resume whose conversation is gone: the owner's message is not sent anywhere; this is the reply. */
 export const RESUME_GONE_MESSAGE = 'That conversation is no longer saved.';
 /** A resumed message a local router answered (timer, memory, job): the earlier chat was not used. */
 export const RESUME_NOT_USED_MESSAGE = 'The earlier chat was not used for this.';
+
+export { FAILURE_LINES };
+/** Said once per listener run, after the first recognized failure: the local routers do not need Claude. */
+export const LOCAL_STILL_WORKS = 'Timers and memory still work.';
 
 /** What happened to one command (onDone, and the return value of command()). */
 export interface CommandReport {
@@ -144,12 +156,16 @@ export interface CommandReport {
   replyMs: number;
   /** The model run's own times, when the runner measured them (warm process). Numbers only. */
   model?: ModelTimes;
+  /** Model run cost in USD (Claude Code's number), when it said. */
+  costUsd?: number;
   /** The spoken reply was cut short: ms from the cancel until the speech process ended (a number, for the latency log). */
   silenceMs?: number;
   /** Conversation id (ADR-007): the same for every command of one conversation, a new one when a conversation starts. */
   conv?: string;
   /** Edit and resend (ADR-010): the message this command is a new version of (ResumeRequest.edit). */
   editOf?: EditedMessage;
+  /** R5: why the model run failed, a code word only (the incident file gets it, never the text). */
+  failure?: ClaudeFailure;
 }
 
 export interface AssistantOptions {
@@ -176,6 +192,11 @@ export interface AssistantOptions {
    * (src/jobs/router.ts). Claude has no job tool: a start always goes through the router's native dialog.
    */
   jobs?: LocalRouter | null;
+  /**
+   * Daily cost limit (src/voice/daily-limit.ts). Checked only right before a model run, after the local routers, so
+   * memory, timers and jobs always work. Absent: no limit.
+   */
+  limit?: Pick<DailyLimit, 'allowed' | 'add' | 'warnNow'> | null;
   /** Called once per command with its report (history). A throwing hook is logged, never fails the command. */
   onDone?: (r: CommandReport) => void;
   /** Called when a command starts, before the memory router (the Stephen app shows voice commands live). Same rules. */
@@ -186,6 +207,8 @@ export class Assistant {
   private phaseValue: Phase = 'idle';
   private speech: SpeakHandle | null = null;
   private cancelled = false;
+  /** LOCAL_STILL_WORKS was said in this run (R5: once). */
+  private localNoteSaid = false;
   /** When a cancel hit a reply being spoken (assistant clock), and how long the speech took to end after it. */
   private silenceFrom: number | null = null;
   private silenceMs: number | undefined;
@@ -313,6 +336,18 @@ export class Assistant {
         prefix = route.reply;
         prompt = route.rest;
       }
+      // Daily cost limit: at 100% no new model run starts. The routers above already had their turn. Fail open.
+      let allowed = true;
+      try {
+        allowed = this.o.limit?.allowed() ?? true;
+      } catch (e) {
+        this.o.status(`Note: could not check the daily limit (${(e as Error).message}).`);
+      }
+      if (!allowed) {
+        const reply = [prefix, LIMIT_REACHED].filter(Boolean).join(' ');
+        await this.deliver(reply, false, opts.speak, t0);
+        return report({ result: 'error', outcome: 'error', reply, ranClaude: false, followUp: false, turns: 0 });
+      }
       let followUp = false;
       try {
         followUp = opts.resume ? false : (this.o.runner.followUp?.(trust) ?? false);
@@ -339,25 +374,48 @@ export class Assistant {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
       replyAt = now();
-      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}) };
+      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}), ...(out.kind !== 'cancelled' && typeof out.costUsd === 'number' ? { costUsd: out.costUsd } : {}) };
+      try {
+        this.o.limit?.add(id, claude.costUsd); // also a run cancelled after it finished: its cost was spent
+      } catch (e) {
+        this.o.status(`Note: could not count the cost (${(e as Error).message}).`);
+      }
       if (out.kind === 'cancelled' || this.cancelled) {
         this.o.status('Cancelled.');
         this.o.chimes.play('done');
         return report({ result: 'cancelled', outcome: 'cancelled', reply: '', ...claude });
       }
-      const raw = out.kind === 'ok' ? out.text : out.message;
-      const spoken = [prefix, stripForSpeech(raw) || (out.kind === 'ok' ? 'Done.' : 'Something went wrong.')].filter(Boolean).join(' ');
-      await this.deliver(spoken, out.kind === 'ok', opts.speak, t0);
+      // R5: a failed run gets a code word by fixed markers (set from the raw CLI text in claude.ts, else from the message); a recognized one gets its plain line, and the first one
+      // in this run also says the local commands still work. claude_other keeps the run's own message.
+      const failure = out.kind === 'error' ? (out.failure ?? claudeFailure(out.message)) : undefined;
+      let raw = out.kind === 'ok' ? out.text : (failure && FAILURE_LINES[failure]) || out.message;
+      if (failure && failure !== 'claude_other' && !this.localNoteSaid) {
+        this.localNoteSaid = true;
+        raw = `${raw} ${LOCAL_STILL_WORKS}`;
+      }
+      let warn = false;
+      try {
+        warn = this.o.limit?.warnNow() ?? false;
+      } catch (e) {
+        this.o.status(`Note: could not check the daily limit (${(e as Error).message}).`);
+      }
+      const spoken = [prefix, stripForSpeech(raw) || (out.kind === 'ok' ? 'Done.' : 'Something went wrong.'), warn ? LIMIT_WARNING : ''].filter(Boolean).join(' ');
+      // Wake word + private data read in this conversation (or unknown: fail closed): show, never speak, the reply.
+      const onScreen = trust === 'wake' && out.privateRead !== false;
+      await this.deliver(spoken, out.kind === 'ok', opts.speak, t0, onScreen);
       if (out.kind === 'ok' && !this.cancelled) this.o.runner.commandEnded?.();
       const result: CommandResult = out.kind === 'ok' ? 'ok' : 'error';
-      return report({ result, outcome: result, reply: spoken, ...claude });
+      return report({ result, outcome: result, reply: spoken, ...claude, ...(failure ? { failure } : {}) });
     } finally {
       this.phaseNow = 'idle';
     }
   }
 
-  /** Show the reply, speak it (unless sound is playing or speaking is off), chime, and print the time taken. */
-  private async deliver(spoken: string, ok: boolean, speakOverride: boolean | undefined, t0: number): Promise<void> {
+  /**
+   * Show the reply, speak it (unless sound is playing or speaking is off), chime, and print the time taken.
+   * `onScreen`: the reply is shown only, and ON_SCREEN_MESSAGE is spoken in its place.
+   */
+  private async deliver(spoken: string, ok: boolean, speakOverride: boolean | undefined, t0: number, onScreen = false): Promise<void> {
     const now = this.o.now ?? Date.now;
     this.o.status(ok ? `Stephen: ${spoken}` : `Problem: ${spoken}`);
     // A per-command override can only switch speaking off (typed chat); the global setting always applies.
@@ -374,9 +432,10 @@ export class Assistant {
         this.o.status('Sound is playing — reply shown here instead of spoken.');
       }
     }
+    if (speak && onScreen) this.o.status('Private data was read, so the reply is shown here instead of spoken.');
     if (speak && !this.cancelled) {
       this.phaseNow = 'speaking';
-      this.speech = this.o.speaker.speak(spoken);
+      this.speech = this.o.speaker.speak(onScreen ? ON_SCREEN_MESSAGE : spoken);
       await this.speech.done;
       if (this.silenceFrom !== null) this.silenceMs = Math.max(0, now() - this.silenceFrom);
       this.speech = null;

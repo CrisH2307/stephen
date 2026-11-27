@@ -6,12 +6,14 @@
 import { configFilePath, loadConfig } from '../config.js';
 import { updateConfigSection } from '../config-write.js';
 import { calendarFeed, formatInstances, instancesBetween, ownerZone, parseIcs, rangeWindow } from '../accounts/calendar.js';
-import { CanvasClient, DEFAULT_CANVAS_URL, formatDue } from '../accounts/canvas.js';
+import { CANVAS_URL_MISSING, CanvasClient, formatDue } from '../accounts/canvas.js';
 import { ApiClient } from '../accounts/http.js';
 import { NO_TODO_DATABASE, NotionClient } from '../accounts/notion.js';
 import { field } from '../accounts/result.js';
 import { parseAccountsConfig } from '../accounts/config.js';
-import { WEATHER_ORIGIN, fetchWeather, formatWeather } from '../accounts/weather.js';
+import { WEATHER_ORIGIN, fetchWeather, formatWeather, type WeatherPlace } from '../accounts/weather.js';
+import { GEOCODE_CREDIT, GEOCODE_ORIGIN, cityQuery, lookupPlaces, roundCoord } from '../accounts/geocode.js';
+import { createInterface } from 'node:readline/promises';
 import { checkSecretValue, lookupGmailToken, lookupSecret, SECRET_SPECS, type SecretDeps, type SecretName } from '../accounts/secrets.js';
 import { keychainAccount } from '../lib/keychain.js';
 import { keychainStore } from './keychain-write.js';
@@ -23,8 +25,9 @@ stephen accounts set <name>   Store one in the Keychain (hidden prompt, or piped
 stephen accounts test canvas  Read your Canvas once: your name and what's due in the next 7 days
 stephen accounts test calendar  Read your Google Calendar feed once: events in the next 7 days
 stephen accounts test notion  Read your Notion to-do database once: how many open to-dos
-stephen accounts weather      Show the place the weather tool uses (default Toronto, ON)
-stephen accounts weather set <latitude> <longitude> [label…]  Save your place in config.json (e.g. set 43.9 -78.9 Oshawa, ON)
+stephen accounts weather      Show the place the weather tool uses (a built-in default until you set yours)
+stephen accounts weather set <city>  Look up your city (the name goes to Open-Meteo once) and pick it from a list
+stephen accounts weather set <latitude> <longitude> [label…]  Save your place without any lookup (e.g. set 40.7 -74.0 New York, NY)
 stephen accounts test weather  Read the weather once for that place
 stephen connect gmail <label>  Sign in to a Gmail account once (read-only; label like "personal"; needs accounts.gmail.clientId)
 stephen disconnect gmail <label>  Forget that Gmail account (Keychain item and config entry)`;
@@ -38,6 +41,10 @@ export interface AccountsCliEnv {
   allowLoopbackHttp?: boolean;
   /** Tests only: a fake Open-Meteo origin (needs allowLoopbackHttp). */
   weatherOrigin?: string;
+  /** Tests only: a fake Open-Meteo geocoding origin (needs allowLoopbackHttp). */
+  geocodeOrigin?: string;
+  /** Asks one question and returns the answer (default: the terminal, only when stdin and stdout are a TTY). */
+  ask?: (question: string) => Promise<string>;
   /** Tests only: the config.json to read and write (default: Stephen's). */
   configPath?: string;
   /** Reads a secret (default: hidden prompt on a TTY, else all of stdin). */
@@ -59,10 +66,72 @@ export const section = (accounts: Record<string, unknown>, name: string): Record
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 };
 
-/** Set `accounts.weather` in config.json. */
-function saveWeatherPlace(file: string, place: { latitude: number; longitude: number; label: string }): void {
-  updateAccountsConfig(file, (accounts) => ({ ...accounts, weather: { ...section(accounts, 'weather'), ...place } }));
+/** Set `accounts.weather` in config.json, coordinates rounded to about 1 km. */
+function saveWeatherPlace(file: string, place: WeatherPlace): void {
+  const rounded = { ...place, latitude: roundCoord(place.latitude), longitude: roundCoord(place.longitude) };
+  updateAccountsConfig(file, (accounts) => ({ ...accounts, weather: { ...section(accounts, 'weather'), ...rounded } }));
 }
+
+async function terminalAsk(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(question);
+  } finally {
+    rl.close();
+  }
+}
+
+const askOf = (e: AccountsCliEnv) => e.ask ?? (process.stdin.isTTY && process.stdout.isTTY ? terminalAsk : null);
+
+/**
+ * Look up a city and let the owner pick a match by number. Returns the place, or null when nothing was picked
+ * (Enter, 0, no match). Throws AccountHttpError on a network problem. Only the typed name is sent; it is not stored.
+ */
+async function pickCity(raw: string, e: AccountsCliEnv, ask: (q: string) => Promise<string>, out: (l: string) => void): Promise<WeatherPlace | null> {
+  const query = cityQuery(raw);
+  if (!query) {
+    out('That name is too short to look up. Type at least 2 letters.');
+    return null;
+  }
+  const api = new ApiClient({ origin: e.allowLoopbackHttp && e.geocodeOrigin ? e.geocodeOrigin : GEOCODE_ORIGIN, ...(e.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
+  const places = await lookupPlaces(api, query);
+  if (!places.length) {
+    out(`No place called "${query}" was found. Check the spelling, or add the country: "Paris, France".`);
+    return null;
+  }
+  out(GEOCODE_CREDIT);
+  places.forEach((p, i) => out(`  ${i + 1}. ${p.label}`));
+  const answer = (await ask(`Which one? Type its number (Enter or 0 keeps the current place): `)).trim();
+  const n = Number(answer);
+  if (!answer || !Number.isInteger(n) || n < 1 || n > places.length) return null;
+  return places[n - 1]!;
+}
+
+/**
+ * The optional weather question of `stephen setup` (only on a terminal). Never throws and never blocks setup:
+ * a problem is one line, and the place stays as it was.
+ */
+export async function askWeatherCity(e: AccountsCliEnv = {}): Promise<void> {
+  const out = e.out ?? ((l: string) => console.log(l));
+  const ask = askOf(e);
+  if (!ask) return;
+  try {
+    const current = field(parseAccountsConfig(e.accounts !== undefined ? e.accounts : loadConfig().accounts).weather.label, 60);
+    const city = (await ask(`Which city should Stephen use for the weather? (press Enter to keep ${current}): `)).trim();
+    if (!city) return;
+    const place = await pickCity(city, e, ask, out);
+    if (!place) {
+      out(`    kept ${current}`);
+      return;
+    }
+    saveWeatherPlace(e.configPath ?? configFilePath(), place);
+    out(`    ok: weather place is ${place.label}`);
+  } catch (x) {
+    out(`    note: the weather place was not changed (${(x as Error).message}). Later: stephen accounts weather set <your city>`);
+  }
+}
+
+const isNum = (s: string) => s.trim() !== '' && Number.isFinite(Number(s));
 
 export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Promise<number> {
   const out = e.out ?? ((l: string) => console.log(l));
@@ -122,7 +191,11 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
       err(`No Canvas token found. Put CANVAS_API=<token> in Stephen's .env (chmod 600) or the Keychain item "stephen-canvas".${token.notes.length ? ` (${token.notes.join('; ')})` : ''}`);
       return 1;
     }
-    const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', e.secrets)).value ?? DEFAULT_CANVAS_URL;
+    const url = cfg.canvas.url ?? (await lookupSecret('canvas-url', e.secrets)).value;
+    if (!url) {
+      err(CANVAS_URL_MISSING);
+      return 1;
+    }
     try {
       const c = new CanvasClient({ origin: url, token: token.value, ...(e.allowLoopbackHttp ? { allowLoopbackHttp: true } : {}) });
       const name = await c.whoAmI();
@@ -172,22 +245,49 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
     try {
       const w = parseAccountsConfig(e.accounts !== undefined ? e.accounts : loadConfig().accounts).weather;
       out(`Weather place: ${w.label} (${w.latitude}, ${w.longitude})${w.enabled ? '' : ' — the weather tool is turned off in config.json'}.`);
-      out('Change it with: stephen accounts weather set <latitude> <longitude> [label]');
+      out('Change it with: stephen accounts weather set <your city>   (or, with no lookup: set <latitude> <longitude> [label])');
       return 0;
     } catch (x) {
       err((x as Error).message);
       return 2;
     }
   }
+  if (argv[0] === 'weather' && argv[1] === 'set' && argv.length >= 3 && !isNum(argv[2]!)) {
+    const ask = askOf(e);
+    if (!ask) {
+      err('Run this in Terminal so you can pick your city from the list, or give the coordinates: stephen accounts weather set <latitude> <longitude> [label]');
+      return 2;
+    }
+    let place: WeatherPlace | null;
+    try {
+      place = await pickCity(argv.slice(2).join(' '), e, ask, out);
+    } catch (x) {
+      err(`Place lookup failed: ${(x as Error).message}`);
+      return 1;
+    }
+    if (!place) {
+      out('Nothing changed.');
+      return 0;
+    }
+    const file = e.configPath ?? configFilePath();
+    try {
+      saveWeatherPlace(file, place);
+    } catch (x) {
+      err(`Could not update ${file}: ${(x as Error).message}`);
+      return 1;
+    }
+    out(`Saved: ${place.label} (${place.latitude}, ${place.longitude}) in ${file}. Restart Stephen to use it.`);
+    return 0;
+  }
   if (argv[0] === 'weather' && argv[1] === 'set') {
     const latitude = Number(argv[2]);
     const longitude = Number(argv[3]);
     const label = argv.slice(4).join(' ').trim();
     if (argv.length < 4 || argv[2] === '' || argv[3] === '' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      err('Usage: stephen accounts weather set <latitude> <longitude> [label…]   e.g. weather set 43.6532 -79.3832 Toronto, ON');
+      err('Usage: stephen accounts weather set <latitude> <longitude> [label…]   e.g. weather set 40.7128 -74.0060 New York, NY');
       return 2;
     }
-    const place = { latitude, longitude, label: label || `${latitude}, ${longitude}` };
+    const place = { latitude: roundCoord(latitude), longitude: roundCoord(longitude), label: label || `${roundCoord(latitude)}, ${roundCoord(longitude)}` };
     try {
       parseAccountsConfig({ weather: place }); // range and length checks, same as at startup
     } catch (x) {
@@ -201,7 +301,7 @@ export async function runAccountsCli(argv: string[], e: AccountsCliEnv = {}): Pr
       err(`Could not update ${file}: ${(x as Error).message}`);
       return 1;
     }
-    out(`Saved: ${place.label} (${latitude}, ${longitude}) in ${file}. Restart Stephen to use it.`);
+    out(`Saved: ${place.label} (${place.latitude}, ${place.longitude}) in ${file}. Restart Stephen to use it.`);
     return 0;
   }
   if (argv[0] === 'test' && argv[1] === 'notion' && argv.length === 2) {

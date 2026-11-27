@@ -25,7 +25,7 @@ enum AppConnectionState: Equatable {
 
 struct ChatBubble: Identifiable, Equatable {
   enum Kind: Equatable {
-    /** What the user typed (empty detail) or said (detail names where it came from, see heardLabel). Right side. */
+    /** What the user typed or said (source says which). Right side. */
     case said
     /** Stephen's reply (left side). */
     case reply
@@ -41,18 +41,26 @@ struct ChatBubble: Identifiable, Equatable {
   let detail: String
   /** What Stephen did for this reply, oldest first. */
   var steps: [ChatStep] = []
+  /** Where a .said bubble came from; nil for Stephen's bubbles. Not shown (owner, 2026-11-26). Try again reads this,
+   never the text or detail (R10a-2). */
+  var source: Source? = nil
+
+  enum Source: Equatable {
+    case typed, spoken, wakeWord, phone, cli
+    /** A heard command with an unknown or missing source: never treated as typed. */
+    case other
+  }
 }
 
-/// Where a spoken (not typed) command came from, shown under its bubble in #142's words ("From: F5"). Never empty,
-/// even for an unknown or missing source: an empty label would make the bubble look typed, and Try again re-sends only
-/// typed bubbles (R10a-2).
-func heardLabel(_ source: String?) -> String {
+/// Where a heard (not typed) command came from. Never .typed, even for an unknown or missing source: Try again
+/// re-sends only typed bubbles (R10a-2).
+func heardSource(_ source: String?) -> ChatBubble.Source {
   switch source {
-  case "voice-ptt": return "From: F5"
-  case "voice-wake": return "From: Hey Stephen"
-  case "phone": return "From: Phone"
-  case "cli": return "From: Command line"
-  default: return "Not typed here"
+  case "voice-ptt": return .spoken
+  case "voice-wake": return .wakeWord
+  case "phone": return .phone
+  case "cli": return .cli
+  default: return .other
   }
 }
 
@@ -61,6 +69,39 @@ struct ChatStep: Decodable, Equatable {
   let text: String
   /** ok, refused or failed. */
   let status: String
+}
+
+/// T6: the line after Stop. A tool that already ran (a click, typed text) can't be taken back, so say so.
+func stoppedLine(tools: [String], steps: [ChatStep]) -> String {
+  return tools.isEmpty && steps.isEmpty ? "Stopped." : "Stopped. The last browser step may already have happened."
+}
+
+/// T6 step 2: Stop leaves jobs alone. Under the stopped line, say how many still run.
+func jobsStillRunning(_ n: Int) -> String {
+  return n == 1 ? "1 job is still running." : "\(n) jobs are still running."
+}
+
+/// R7: what the Home chat says when a send fails and the listener gave no plain sentence.
+let CHAT_SEND_FAILED = "Couldn't send that right now."
+/// R7: the same for the Memory, Settings, Accounts and Jobs pages.
+let MEMORY_CHANGE_FAILED = "Couldn't change your memory right now."
+let MEMORY_KEEP_FAILED = "Couldn't keep that memory right now."
+let MEMORY_SUGGESTIONS_FAILED = "Couldn't update your memory suggestions right now."
+let SETTINGS_LOAD_FAILED = "Couldn't load your settings right now."
+let SETTINGS_SAVE_FAILED = "Couldn't save your settings right now."
+let RECORDINGS_DELETE_FAILED = "Couldn't delete your recordings right now."
+let ACCOUNTS_FAILED = "Couldn't check your accounts right now."
+let JOBS_STOP_FAILED = "Couldn't stop that job right now."
+let JOBS_EDIT_FAILED = "Couldn't start the edited job right now."
+
+/**
+ * R7: a failed action in plain words, never a raw "error". The listener's own sentence is kept because it says what to
+ * do ("This conversation changed. Open it again."); a bare word, a code or an exception text gets `fallback` instead.
+ * ponytail: "a sentence" means a capital first and a period last; a list of known messages if that ever misfires.
+ */
+func plainFailure(_ message: String?, _ fallback: String) -> String {
+  guard let m = message?.trimmingCharacters(in: .whitespacesAndNewlines), m.first?.isUppercase == true, m.hasSuffix(".") else { return fallback }
+  return m
 }
 
 struct HistoryDay: Identifiable {
@@ -98,6 +139,9 @@ final class AppModel: ObservableObject {
   private var editsInFlight: Set<String> = []
   @Published private(set) var historyMayHaveMore = false
   @Published private(set) var historyNotice: String? = nil
+  /** R7: nil until the first history.list answer, then whether the last one worked. Conversations shows loading, empty
+   *  and error from it, so a failed list never reads as "Nothing yet". */
+  @Published private(set) var historyListOk: Bool? = nil
 
   @Published private(set) var settingsText = ""
   @Published private(set) var configPath: String? = nil
@@ -129,6 +173,11 @@ final class AppModel: ObservableObject {
 
   @Published private(set) var jobs: [JobRow] = []
   @Published private(set) var jobsNotice: String? = nil
+  /** R7d: nil until the first jobs.list answer, then whether the last one worked. The Jobs page shows loading, empty
+   *  and error from it, so a failed list never reads as "No jobs yet". */
+  @Published private(set) var jobsListOk: Bool? = nil
+  /// T6 step 2: the id of the last "Stopped." line. Under it the thread offers "Stop them too" while jobs run.
+  @Published private(set) var stoppedBubble: Int? = nil
   /** ADR-010: "Job started: <id>" after an Edit request starts; the dialog never named the id (it is fixed at the start). */
   @Published private(set) var jobStarted: String? = nil
 
@@ -140,6 +189,9 @@ final class AppModel: ObservableObject {
   /** Memory page (section 7a): the graph, proposals waiting for Keep/Skip, the memory bar, and why one is missing. */
   @Published private(set) var graphNodes: [GraphNode] = []
   @Published private(set) var graphLinks: [GraphLink] = []
+  /** R7: nil until the first memory.graph answer, then whether the last one worked. The Memory page shows loading,
+   *  empty and error from it, so a failed read never reads as "Nothing saved yet". */
+  @Published private(set) var graphListOk: Bool? = nil
   @Published private(set) var suggestions: [MemoryProposal] = []
   @Published private(set) var memoryUsage: UsageBar? = nil
   @Published private(set) var memoryPageNotice: String? = nil
@@ -173,7 +225,8 @@ final class AppModel: ObservableObject {
   private let timeFormatter = DateFormatter()
 
   static let historyPageSize = 50
-  static let auditLimit = 100
+  /// APP_AUDIT_LIMIT_MAX in src/app/protocol.ts: Activity shows the last 24 h, and says so when this many came back.
+  static let auditLimit = 200
 
   init(socketPath: String, log: @escaping (String) -> Void) {
     self.socketPath = socketPath
@@ -221,6 +274,8 @@ final class AppModel: ObservableObject {
   }
 
   var isWorking: Bool { return state == "working" || !awaitingReplies.isEmpty }
+  /// T6: Stop is offered while Stephen works or speaks (chat.stop also cuts a spoken reply short).
+  var canStop: Bool { return isWorking || state == "speaking" }
 
   private func connect() {
     if connection == .connecting { return }
@@ -342,10 +397,10 @@ final class AppModel: ObservableObject {
     case "resume":
       resumeArmed = msg.armed ?? false
     case "heard":
-      // Typed commands are already in the chat; only voice commands are added here. The label is never empty: an
-      // empty detail marks a typed bubble, the only kind Try again may re-send (R10a-2).
+      // Typed commands are already in the chat; only voice commands are added here, never as .typed: Try again
+      // re-sends only typed bubbles (R10a-2).
       if let text = msg.text, msg.source != "app" {
-        addBubble(.said, text, detail: heardLabel(msg.source))
+        addBubble(.said, text, detail: "", source: heardSource(msg.source))
       }
     case "chat.done":
       chatDone(msg)
@@ -368,17 +423,16 @@ final class AppModel: ObservableObject {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, connection == .online else { return false }
     let text = trimmed.count > APP_CHAT_MAX_CHARS ? String(trimmed.prefix(APP_CHAT_MAX_CHARS)) : trimmed
-    addBubble(.said, text, detail: "")
+    addBubble(.said, text, detail: "", source: .typed)
     request(AppRequest.chatSend(newId(), text: text)) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "chat.accepted", let entryId = msg.entryId {
         self.awaitingReplies.insert(entryId)
       } else if msg.type == "error" {
-        let m = msg.message ?? "error"
-        if m == "busy" {
+        if msg.message == "busy" {
           self.addBubble(.info, "Stephen is busy with another command. Try again when it's done.", detail: "")
         } else {
-          self.addBubble(.problem, m, detail: "")
+          self.addBubble(.problem, plainFailure(msg.message, CHAT_SEND_FAILED), detail: "")
         }
       }
     }
@@ -424,17 +478,17 @@ final class AppModel: ObservableObject {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, connection == .online, !isWorking, !conv.isEmpty else { return false }
     let text = trimmed.count > APP_CHAT_MAX_CHARS ? String(trimmed.prefix(APP_CHAT_MAX_CHARS)) : trimmed
-    addBubble(.said, text, detail: "")
+    addBubble(.said, text, detail: "", source: .typed)
     request(AppRequest.chatEdit(newId(), oldId: old.id, oldHash: textHash(old.said), conv: conv, text: text)) { [weak self] msg in
       guard let self = self else { return }
       if msg.type == "chat.accepted", let entryId = msg.entryId {
         self.awaitingReplies.insert(entryId)
         self.editsInFlight.insert(entryId)
       } else if msg.type == "error" {
-        let m = msg.message ?? "error"
-        if m == "busy" {
+        if msg.message == "busy" {
           self.addBubble(.info, "Stephen is busy with another command. Try again when it's done.", detail: "")
         } else {
+          let m = plainFailure(msg.message, CONVERSATIONS_EDIT_FAILED)
           self.addBubble(.problem, m, detail: "")
           self.historyNotice = m
         }
@@ -459,7 +513,7 @@ final class AppModel: ObservableObject {
         self.versions = [:]
         self.refreshHistory()
       } else {
-        self.historyNotice = msg.message ?? "error"
+        self.historyNotice = plainFailure(msg.message, CONVERSATIONS_DELETE_FAILED)
       }
     }
   }
@@ -484,7 +538,13 @@ final class AppModel: ObservableObject {
     }
     let outcome = msg.outcome ?? "ok"
     var reply = msg.reply ?? ""
-    if reply.isEmpty && outcome == "cancelled" { reply = "Stopped." }
+    // T6: a stopped command is one grey line, in words. A step that already ran can't be taken back.
+    if reply.isEmpty && outcome == "cancelled" {
+      addBubble(.info, stoppedLine(tools: msg.tools ?? [], steps: msg.steps ?? []), detail: "", steps: msg.steps ?? [])
+      stoppedBubble = chat.last?.id
+      refreshJobs()
+      return
+    }
     if reply.isEmpty { reply = "(no reply)" }
     let steps = msg.steps ?? []
     var detailParts: [String] = []
@@ -495,8 +555,8 @@ final class AppModel: ObservableObject {
     addBubble(outcome == "error" ? .problem : .reply, reply, detail: detailParts.joined(separator: " · "), steps: steps)
   }
 
-  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = []) {
-    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps))
+  private func addBubble(_ kind: ChatBubble.Kind, _ text: String, detail: String, steps: [ChatStep] = [], source: ChatBubble.Source? = nil) {
+    chat.append(ChatBubble(id: nextBubble, kind: kind, text: text, detail: detail, steps: steps, source: source))
     nextBubble += 1
     if chat.count > APP_MAX_BUBBLES { chat.removeFirst(chat.count - APP_MAX_BUBBLES) }
   }
@@ -518,7 +578,8 @@ final class AppModel: ObservableObject {
         self.assign(\.memory, msg.items ?? [])
         self.assign(\.memoryNotice, isChange ? "Saved. Stephen starts a fresh conversation with the next command." : nil)
       } else {
-        self.assign(\.memoryNotice, msg.message ?? "error")
+        // A failed list is said by the Memory page states (graphListOk), never as a raw "error". A failed change says why.
+        self.assign(\.memoryNotice, isChange ? plainFailure(msg.message, MEMORY_CHANGE_FAILED) : nil)
       }
     }
   }
@@ -540,8 +601,9 @@ final class AppModel: ObservableObject {
         self.assign(\.graphNodes, msg.nodes ?? [])
         self.assign(\.graphLinks, msg.links ?? [])
         self.assign(\.memoryPageNotice, nil)
+        self.assign(\.graphListOk, true)
       } else {
-        self.assign(\.memoryPageNotice, msg.message ?? "Couldn't read memory.")
+        self.assign(\.graphListOk, false)
       }
     }
     refreshSuggestions()
@@ -572,7 +634,7 @@ final class AppModel: ObservableObject {
         self.memory = msg.items ?? []
         self.memoryPageNotice = nil
       } else {
-        self.memoryPageNotice = msg.message ?? "error"
+        self.memoryPageNotice = plainFailure(msg.message, MEMORY_KEEP_FAILED)
       }
       self.refreshMemoryPage()
     }
@@ -589,7 +651,7 @@ final class AppModel: ObservableObject {
     if msg.type == "suggestions" {
       assign(\.suggestions, msg.suggestions ?? [])
     } else {
-      assign(\.memoryPageNotice, msg.message ?? "error")
+      assign(\.memoryPageNotice, plainFailure(msg.message, MEMORY_SUGGESTIONS_FAILED))
     }
   }
 
@@ -615,8 +677,9 @@ final class AppModel: ObservableObject {
         self.assign(\.history, entries)
         self.assign(\.historyMayHaveMore, entries.count >= AppModel.historyPageSize)
         self.assign(\.historyNotice, nil)
+        self.assign(\.historyListOk, true)
       } else {
-        self.assign(\.historyNotice, msg.message ?? "error")
+        self.assign(\.historyListOk, false)
       }
     }
   }
@@ -631,7 +694,8 @@ final class AppModel: ObservableObject {
         self.history.append(contentsOf: entries.filter { !known.contains($0.id) })
         self.historyMayHaveMore = entries.count >= AppModel.historyPageSize
       } else {
-        self.historyNotice = msg.message ?? "error"
+        // The rows already shown stay; only the notice says the older page failed.
+        self.historyNotice = plainFailure(msg.message, CONVERSATIONS_OLDER_FAILED)
       }
     }
   }
@@ -642,9 +706,11 @@ final class AppModel: ObservableObject {
       if msg.type == "ok" {
         self.history = []
         self.historyMayHaveMore = false
+        self.historyListOk = true
         self.historyNotice = "History cleared."
       } else {
-        self.historyNotice = msg.message ?? "error"
+        // Nothing was cleared, so the rows stay.
+        self.historyNotice = plainFailure(msg.message, CONVERSATIONS_CLEAR_FAILED)
       }
     }
   }
@@ -683,7 +749,7 @@ final class AppModel: ObservableObject {
         self.assign(\.configPath, msg.configPath)
         self.assign(\.settingsNotice, nil)
       } else {
-        self.assign(\.settingsNotice, msg.message ?? "error")
+        self.assign(\.settingsNotice, plainFailure(msg.message, SETTINGS_LOAD_FAILED))
       }
     }
   }
@@ -698,7 +764,7 @@ final class AppModel: ObservableObject {
         self.configJSON = msg.config
         done(nil)
       } else {
-        done(msg.message ?? "error")
+        done(plainFailure(msg.message, SETTINGS_SAVE_FAILED))
       }
     }
   }
@@ -712,7 +778,7 @@ final class AppModel: ObservableObject {
         self.configJSON = msg.config
         done(nil)
       } else {
-        done(msg.message ?? "error")
+        done(plainFailure(msg.message, SETTINGS_SAVE_FAILED))
       }
     }
   }
@@ -725,14 +791,14 @@ final class AppModel: ObservableObject {
         self.configJSON = msg.config
         done(nil)
       } else {
-        done(msg.message ?? "error")
+        done(plainFailure(msg.message, SETTINGS_SAVE_FAILED))
       }
     }
   }
 
   /** The switch's "Delete": every saved recording (`stephen replay delete --all`). */
   func deleteRecordings(done: @escaping (String?) -> Void) {
-    request(AppRequest.replayDelete(newId())) { msg in done(msg.type == "ok" ? nil : (msg.message ?? "error")) }
+    request(AppRequest.replayDelete(newId())) { msg in done(msg.type == "ok" ? nil : plainFailure(msg.message, RECORDINGS_DELETE_FAILED)) }
   }
 
   func refreshAudit() {
@@ -742,7 +808,7 @@ final class AppModel: ObservableObject {
         self.assign(\.audit, msg.auditEntries ?? [])
         self.assign(\.auditNotice, nil)
       } else {
-        self.assign(\.auditNotice, msg.message ?? "error")
+        self.assign(\.auditNotice, plainFailure(msg.message, RECENT_ACTIONS_FAILED))
       }
     }
   }
@@ -754,7 +820,7 @@ final class AppModel: ObservableObject {
         self.assign(\.accounts, msg.accounts ?? [])
         self.assign(\.accountsNotice, msg.note)
       } else {
-        self.assign(\.accountsNotice, msg.message ?? "error")
+        self.assign(\.accountsNotice, plainFailure(msg.message, ACCOUNTS_FAILED))
       }
     }
   }
@@ -765,8 +831,9 @@ final class AppModel: ObservableObject {
       if msg.type == "jobs" {
         self.assign(\.jobs, msg.jobs ?? [])
         self.assign(\.jobsNotice, nil)
+        self.assign(\.jobsListOk, true)
       } else {
-        self.assign(\.jobsNotice, msg.message ?? "error")
+        self.assign(\.jobsListOk, false)
       }
     }
   }
@@ -798,10 +865,15 @@ final class AppModel: ObservableObject {
         if let i = self.jobs.firstIndex(where: { $0.id == row.id }) { self.jobs[i] = row }
         self.jobsNotice = nil
       } else {
-        self.jobsNotice = msg.message ?? "error"
+        self.jobsNotice = plainFailure(msg.message, JOBS_STOP_FAILED)
       }
       self.refreshJobs()
     }
+  }
+
+  /** T6 step 2: "Stop them too", the owner's own click. Each running job gets its own jobs.stop. */
+  func stopRunningJobs() {
+    for j in jobs where j.isRunning { stopJob(j.id) }
   }
 
   /**
@@ -813,7 +885,7 @@ final class AppModel: ObservableObject {
     request(AppRequest.jobsEdit(newId(), jobId: jobId, text: text), timeout: APP_CONTROL_TIMEOUT_SECONDS) { [weak self] msg in
       guard let self = self else { return }
       // The real id (with its -v<N>) is known only now that the job started; the dialog never named it.
-      if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \(row.id)" } else { self.jobsNotice = msg.message ?? "error"; self.jobStarted = nil }
+      if msg.type == "job", let row = msg.job { self.jobsNotice = nil; self.jobStarted = "Job started: \(row.id)" } else { self.jobsNotice = plainFailure(msg.message, JOBS_EDIT_FAILED); self.jobStarted = nil }
       self.refreshJobs()
     }
   }

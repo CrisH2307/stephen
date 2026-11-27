@@ -4,7 +4,7 @@
  * email bodies, Notion text) is cleaned: HTML stripped, control/bidi characters removed, delimiters escaped,
  * links reduced to their host, one-time codes masked, and the whole block capped.
  */
-import { stripUnsafe } from '../safety/text.js';
+import { escapeUntrustedTags, stripUnsafe } from '../safety/text.js';
 import type { PrivateDataSource } from '../safety/egress.js';
 
 export const MAX_RESULT_CHARS = 6000;
@@ -108,7 +108,7 @@ export function field(raw: unknown, max = MAX_FIELD_CHARS): string {
   if (raw === null || raw === undefined) return '';
   // Cut before any regex runs: only ~max characters survive anyway (review 6, R6-2).
   const s = maskCodes(reduceLinks(stripUnsafe(htmlToText(String(raw).slice(0, max * 8)).normalize('NFKC')))).replace(/\s+/g, ' ').trim();
-  const escaped = s.replace(/<(\/?)untrusted_/gi, '‹$1untrusted_');
+  const escaped = escapeUntrustedTags(s);
   return escaped.length > max ? `${escaped.slice(0, max - 1)}…` : escaped;
 }
 

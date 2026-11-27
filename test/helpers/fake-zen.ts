@@ -10,6 +10,9 @@
  * pure BiDi (`session.status`) and falls back to BiDi-over-CDP on that socket, so the session is real
  * WebDriver BiDi as far as Stephen is concerned (Chromium allows several sessions, unlike Gecko).
  * It prints the listening line on stderr exactly like Gecko, and exits when Chromium exits.
+ *
+ * The fake zen always runs Chrome headless: a visible test window takes real clicks (#410, #456). A caller's own
+ * --headless=... (the Linux CI flags carry one) is kept as is.
  */
 import { chmod, copyFile, link, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -37,6 +40,7 @@ for (let i = 0; i < args.length; i++) {
   else extras.push(a);
 }
 if (!profile) { console.error('fake zen: --profile is required'); process.exit(2); }
+if (!extras.some((a) => a.startsWith('--headless'))) extras.push('--headless');
 
 const chrome = spawn(${JSON.stringify(chromium)}, [
   '--user-data-dir=' + profile, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',

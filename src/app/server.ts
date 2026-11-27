@@ -32,7 +32,7 @@ import { memoryGraph } from './memory-graph.js';
 import type { ModelChanges } from './model.js';
 import { truncate } from '../safety/text.js';
 import type { AuditEntry } from '../types.js';
-import type { ChatStep } from './steps.js';
+import { BUILTIN_PRIVATE, hidePrivateFields, type ChatStep } from './steps.js';
 import type { CommandReport, ResumeRequest } from '../voice/assistant.js';
 import { cleanTypedCommand } from '../voice/transcript.js';
 import {
@@ -106,6 +106,8 @@ export interface AppServerOptions {
   history: (Pick<HistoryStore, 'list' | 'clear'> & Partial<Pick<HistoryStore, 'all' | 'deleteVersion'>>) | null;
   /** null = no audit log configured. */
   audit: { recent(limit: number): Promise<AuditEntry[]> } | null;
+  /** True for a private site (mail, private apps, sensitive, the owner's sensitiveDomains). Default: the built-in lists. */
+  isPrivateUrl?: (url: string) => boolean;
   settings: () => AppSettings;
   /** settings.set (How Stephen talks): validated changes in, the saved settings out. Absent = read-only. */
   setTalk?: (changes: Partial<TalkState>) => void;
@@ -654,8 +656,6 @@ export class AppServer {
         } catch {
           return { id, type: 'error', message: MEMORY_MESSAGES.unreadable };
         }
-      case 'memory.add':
-        return mem ? this.memory(id, () => mem.add(req.text, 'app')) : { id, type: 'error', message: MEMORY_OFF_MESSAGE };
       case 'memory.update':
         return mem ? this.memory(id, () => mem.update(req.memId, req.text)) : { id, type: 'error', message: MEMORY_OFF_MESSAGE };
       case 'memory.forget':
@@ -715,7 +715,8 @@ export class AppServer {
         } catch {
           return { id, type: 'error', message: 'could not read the audit log' };
         }
-        return fitList(entries, (e) => ({ id, type: 'audit', entries: e }));
+        const priv = this.o.isPrivateUrl ?? BUILTIN_PRIVATE;
+        return fitList(entries.map((e) => hidePrivateFields(e, priv)), (e) => ({ id, type: 'audit', entries: e }));
       }
       case 'accounts.status':
         if (!this.o.accounts) return { id, type: 'error', message: 'accounts status is not available' };

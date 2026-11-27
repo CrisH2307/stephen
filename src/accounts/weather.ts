@@ -5,9 +5,10 @@
  */
 import { AccountHttpError, type ApiClient } from './http.js';
 import { field } from './result.js';
+import { roundCoord } from './geocode.js';
 
 export const WEATHER_ORIGIN = 'https://api.open-meteo.com';
-export const DEFAULT_WEATHER = { latitude: 43.6532, longitude: -79.3832, label: 'Toronto, ON' } as const;
+export const DEFAULT_WEATHER = { latitude: 43.65, longitude: -79.38, label: 'Toronto, ON' } as const;
 
 export type WeatherDay = 'today' | 'tomorrow';
 
@@ -73,7 +74,7 @@ export function parseWeather(data: unknown, day: WeatherDay): Weather {
 
 const deg = (n: number) => `${Math.round(n)}°C`;
 
-/** The header and lines of the data block (the label is the owner's own config text, cleaned anyway). No coordinates. */
+/** The header and lines of the data block. The label is the owner's text or a geocoder name the owner picked (cleaned there), cleaned again here. No coordinates. */
 export function formatWeather(w: Weather, place: Pick<WeatherPlace, 'label'>, day: WeatherDay): { header: string; lines: string[] } {
   const label = field(place.label, 60) || 'your location';
   const rain = w.rain === null ? '' : `, ${Math.round(w.rain)}% chance of rain`;
@@ -86,11 +87,11 @@ export function formatWeather(w: Weather, place: Pick<WeatherPlace, 'label'>, da
   };
 }
 
-/** One call to Open-Meteo for the configured place. */
+/** One call to Open-Meteo for the configured place. Only the coordinates rounded to about 1 km are sent. */
 export async function fetchWeather(api: ApiClient, place: WeatherPlace, day: WeatherDay, timeZone: string | undefined): Promise<Weather> {
   const q = new URLSearchParams({
-    latitude: String(place.latitude),
-    longitude: String(place.longitude),
+    latitude: String(roundCoord(place.latitude)),
+    longitude: String(roundCoord(place.longitude)),
     current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m',
     daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code',
     timezone: timeZone ?? 'auto',

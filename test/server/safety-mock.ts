@@ -5,7 +5,15 @@
  */
 export function wrapUntrusted(source: string, url: string, text: string): string {
   const safe = text.replaceAll('</untrusted_web_content', '&lt;/untrusted_web_content');
-  return `<untrusted_web_content source="${source}" origin="${url}">${safe}</untrusted_web_content>`;
+  // Like the real one: only the origin of the URL goes in the attribute, never its path or hash.
+  let origin = 'unknown';
+  try {
+    const u = new URL(url);
+    origin = u.origin !== 'null' ? u.origin : u.protocol === 'about:' ? u.href.split(/[?#]/)[0] ?? u.protocol : u.protocol;
+  } catch {
+    /* unknown */
+  }
+  return `<untrusted_web_content source="${source}" origin="${origin}">${safe}</untrusted_web_content>`;
 }
 
 export function redactValue(value: string, secret: boolean): string {

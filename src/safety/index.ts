@@ -3,6 +3,7 @@ import type { ConfirmPrompt, Confirmer, IAuditLog, ISafetyGate, ResolvedConfig }
 import { AuditLog } from './audit.js';
 import { buildConfirmer, redactValue as redact } from './confirm.js';
 import { SafetyGate } from './gate.js';
+import { escapeUntrustedTags } from './text.js';
 import type { LandingVerdict } from './policy.js';
 
 export type ElicitFn = (prompt: ConfirmPrompt) => Promise<'accept' | 'decline' | 'cancel'>;
@@ -16,6 +17,8 @@ export interface SafetyDeps {
   platform?: NodeJS.Platform;
   /** Clock for rate limiting (tests). */
   now?: () => number;
+  /** `serve --trust wake`: written on the private-read audit lines (absent = trusted). */
+  trust?: 'wake';
   /**
    * `serve --command-file`: the listener's command id, asked by the audit log for each entry it writes (`cmd`).
    * A label only. It goes to the audit log and nowhere else: the gate is built without it.
@@ -27,7 +30,7 @@ export function createSafety(cfg: ResolvedConfig, deps?: SafetyDeps): { gate: IS
   const audit = new AuditLog({ path: cfg.auditLogPath, ...(deps?.commandId ? { commandId: deps.commandId } : {}) });
   const confirmer =
     deps?.confirmer ?? buildConfirmer(cfg.safety, { elicit: deps?.elicit, platform: deps?.platform, home: cfg.home });
-  const gate = new SafetyGate({ safety: cfg.safety, confirmer, audit, now: deps?.now });
+  const gate = new SafetyGate({ safety: cfg.safety, confirmer, audit, now: deps?.now, ...(deps?.trust ? { trust: deps.trust } : {}) });
   return { gate, audit };
 }
 
@@ -36,9 +39,6 @@ export type { LandingVerdict };
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-
-// '<' + optional whitespace/zero-width + optional '/' + … + 'untrusted_web_content', any case.
-const DELIMITER_RE = /<([\s\u200b-\u200d\u2060\ufeff]*\/?[\s\u200b-\u200d\u2060\ufeff]*untrusted_web_content)/gi;
 
 /**
  * Wrap page-derived text so the model treats it as data:
@@ -53,7 +53,7 @@ export function wrapUntrusted(source: string, url: string, text: string): string
   } catch {
     /* unknown */
   }
-  const safe = text.replace(DELIMITER_RE, '&lt;$1');
+  const safe = escapeUntrustedTags(text);
   return `<untrusted_web_content source="${escapeAttr(source)}" origin="${escapeAttr(origin)}">\n${safe}\n</untrusted_web_content>`;
 }
 

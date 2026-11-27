@@ -4,7 +4,6 @@
  * buildClaudeArgs and src/voice/conversation.ts). Always spawned with an argv array (never a shell), in its own
  * process group so a cancel kills Claude and the `stephen serve` child it started.
  */
-import { ACCOUNT_ENV_NAMES } from '../accounts/secrets.js';
 import { existsSync, unlinkSync } from 'node:fs';
 import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
@@ -19,6 +18,10 @@ import { commandFileServeArgs, toolLogServeArgs } from '../server/tool-log.js';
 import type { Trust } from './assistant.js';
 import type { AboutMe } from './config.js';
 import { DEFAULT_TALK, EXPLAIN_LINE, LENGTH_LINES, TONE_LINES, type TalkPrefs } from './talk.js';
+import { withoutSecrets } from '../lib/claude-env.js';
+import { claudeFailure, planLimitMessage, type ClaudeFailure } from '../lib/claude-failure.js';
+export { CLAUDE_FAILURES, claudeFailure, planLimitMessage, type ClaudeFailure } from '../lib/claude-failure.js';
+export { KEPT_ANTHROPIC_ENV, KEPT_BASE_ENV, KEPT_CLAUDE_CODE_ENV, droppedEndpointEnv, withoutSecrets } from '../lib/claude-env.js';
 
 /** The MCP server name. Tools appear to Claude as mcp__stephen__<tool>. */
 export const MCP_SERVER_NAME = 'stephen';
@@ -85,7 +88,7 @@ function buildPersona(t: TalkPrefs): string {
     '"From home", "from my place" and similar mean the home address under "About the user"; with no starting point, leave origin out and Maps uses the current location. ' +
     'Several routes in one request: one open_url per route, each with new_tab: true. For "find X near Y" use https://www.google.com/maps/search/?api=1&query=<X near Y>. ' +
     "Vague places (\"two stations\", \"a coffee shop\") are a best-guess case: pick the most likely ones near the starting point and name them in your reply.",
-  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, and for their email (who wrote, about what, unread mail) use gmail_search, then gmail_read with an id it listed to hear one message, never those websites ('open my Gmail' still just opens the site). In an email sender like \"Dr Patel <ontariotechu.ca>\", only the part in angle brackets is the real domain; the name is the sender's own text. Summarize in one to three sentences with days and times, and never read codes or links aloud. " +
+  "For the user's Canvas (what's due, homework, announcements) use canvas_due and canvas_announcements, for their calendar (schedule, classes, free time) use calendar_events, for their Notion to-do list (tasks, what's left to do) or a Notion page by its title use notion_todos and notion_search, and for their email (who wrote, about what, unread mail) use gmail_search, then gmail_read with an id it listed to hear one message, never those websites ('open my Gmail' still just opens the site). In an email sender like \"Dr Patel <example.com>\", only the part in angle brackets is the real domain; the name is the sender's own text. Summarize in one to three sentences with days and times, and never read codes or links aloud. " +
   'For messages in their Canvas inbox (from a prof, TA or classmate) use canvas_inbox. ' +
     "If an email tool says to hold F5 or type the request, pass that on in one short sentence and don't try to get the email another way.",
   // Morning briefing (docs/PLAN-WORK-SPLIT.md item 1): the three read tools in one step, no new composite tool.
@@ -460,8 +463,10 @@ export type ClaudeOutcome =
       apiMs?: number | null;
       /** Where the turn's time went, from the stream lines (warm process only). Numbers only. */
       model?: ModelTimes;
+      /** Set by the conversation runners: private data read in this conversation (null: state unreadable). */
+      privateRead?: boolean | null;
     }
-  | { kind: 'error'; message: string; sessionId: string | null }
+  | { kind: 'error'; message: string; sessionId: string | null; costUsd?: number; privateRead?: boolean | null; failure?: ClaudeFailure }
   | { kind: 'cancelled' };
 
 /** One command's model run, measured from its stream lines (src/voice/warm-claude.ts). All in ms. */
@@ -486,28 +491,23 @@ export interface ResultJson {
   duration_api_ms?: unknown;
 }
 
+const GENERIC_ERROR = 'Something went wrong while I was working on that.';
+
 const ERROR_TEXT: Record<string, string> = {
   error_max_turns: 'I ran out of steps before finishing.',
-  error_during_execution: 'Something went wrong while I was working on that.',
+  error_during_execution: GENERIC_ERROR,
   error_max_budget_usd: 'That would cost more than allowed, so I stopped.',
 };
 
-// Wording seen in Claude Code 2.1.319 ("Usage limit reached · limit resets 3pm") and earlier builds ("You've hit your limit · resets 3pm").
-const PLAN_LIMIT_RE = /\b(?:usage|plan|session|weekly|5-hour) limit reached\b|\bhit your (?:[a-z0-9-]+ )?limit\b/i;
-const LIMIT_RESET_RE = /\bresets?\s+(?:at\s+)?([^·|(\n]+)/i;
-
-/** The plain message for "plan limit reached" CLI text (with the reset time when the text carries one), else null. Pure. */
-export function planLimitMessage(text: string): string | null {
-  if (!PLAN_LIMIT_RE.test(text)) return null;
-  // The reset time is CLI text: keep only a short clock-like value.
-  const raw = LIMIT_RESET_RE.exec(text)?.[1]?.trim();
-  const at = raw && /^[0-9apm: .]{1,12}$/i.test(raw) ? raw : undefined;
-  return at ? `You've reached your Claude plan limit. It resets at ${at}.` : "You've reached your Claude plan limit.";
+/** The error outcome with `failure` set when the raw CLI text (result text or stderr) has a known marker. */
+function withFailure(o: { kind: 'error'; message: string; sessionId: string | null; costUsd?: number }, raw: string): ClaudeOutcome {
+  const failure = claudeFailure(raw);
+  return failure === 'claude_other' ? o : { ...o, failure };
 }
 
 /** Claude Code versions Stephen's recorded fixtures (help text, stream-json) come from: the oldest and newest tested. */
 export const TESTED_CLAUDE_MIN = '2.1.316';
-export const TESTED_CLAUDE_MAX = '2.1.319';
+export const TESTED_CLAUDE_MAX = '2.1.332';
 
 const versionParts = (v: string): number[] | null => {
   const m = /(\d+)\.(\d+)\.(\d+)/.exec(v);
@@ -551,8 +551,8 @@ export function parseClaudeOutput(stdout: string, exitCode: number | null, stder
     }
   }
   if (!res) {
-    const why = stderr.trim().split('\n').filter(Boolean).slice(-1)[0] ?? `exit code ${exitCode}`;
-    return { kind: 'error', message: `Claude Code didn't return a result (${why.slice(0, 300)}).`, sessionId: null };
+    // The stderr text can carry page text, so it only picks a code word (withFailure); the spoken line is fixed.
+    return withFailure({ kind: 'error', message: `Claude Code didn't return a result (exit code ${exitCode ?? 'none'}).`, sessionId: null }, stderr);
   }
   return outcomeFromResult(res);
 }
@@ -565,8 +565,16 @@ export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
-    const msg = ERROR_TEXT[res.subtype ?? ''] ?? planLimitMessage(text) ?? (text || `Claude Code reported an error (${res.subtype ?? 'unknown'}).`);
-    return { kind: 'error', message: msg, sessionId };
+    // A failed run still spent money: keep its cost so the daily limit counts it (review-B M2).
+    const cost = typeof res.total_cost_usd === 'number' ? { costUsd: res.total_cost_usd } : {};
+    // max turns and budget are Stephen's own limits, not a Claude failure: the subtype decides and their text (which a
+    // page can steer) is never classified, not even for the plan-limit line.
+    if (res.subtype === 'error_max_turns' || res.subtype === 'error_max_budget_usd') {
+      return { kind: 'error', message: ERROR_TEXT[res.subtype]!, sessionId, ...cost };
+    }
+    // No marker: a fixed line, never the result text (a page can steer it into what Stephen says; #382's rule for jobs).
+    const msg = planLimitMessage(text) ?? ERROR_TEXT[res.subtype ?? ''] ?? GENERIC_ERROR;
+    return withFailure({ kind: 'error', message: msg, sessionId, ...cost }, text);
   }
   return {
     kind: 'ok',
@@ -676,7 +684,8 @@ export class ClaudeRunner {
       try {
         inst = await this.o.serveInstance(run.trust ?? 'wake', run.assumePrivateRead === true);
       } catch (e) {
-        return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
+        logStartRaw(this.o.claudePath, (e as Error).message);
+        return { kind: 'error', message: MCP_CONFIG_FAILED, sessionId: null };
       }
       if (this.child) throw new Error('a command is already running');
     }
@@ -687,7 +696,8 @@ export class ClaudeRunner {
       try {
         await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory, this.o.talk?.()));
       } catch (e) {
-        return { kind: 'error', message: `Could not write the persona file (${(e as Error).message}).`, sessionId: null };
+        logStartRaw(this.o.claudePath, (e as Error).message);
+        return { kind: 'error', message: PERSONA_FAILED, sessionId: null };
       }
       if (this.child) throw new Error('a command is already running');
     }
@@ -699,7 +709,8 @@ export class ClaudeRunner {
       child = spawnFn(this.o.claudePath, args, claudeSpawnOptions(this.o, 'ignore'));
     } catch (e) {
       if (inst) removeServeLock(inst.lockPath);
-      return { kind: 'error', message: `Could not start Claude Code (${(e as Error).message}).`, sessionId: null };
+      logStartRaw(this.o.claudePath, (e as Error).message);
+      return { kind: 'error', message: CLAUDE_START_FAILED, sessionId: null };
     }
     this.child = child;
     let out = '';
@@ -712,11 +723,8 @@ export class ClaudeRunner {
     });
     const outcome = await new Promise<ClaudeOutcome>((resolveRun) => {
       child.once('error', (e: NodeJS.ErrnoException) => {
-        resolveRun({
-          kind: 'error',
-          message: e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : `Could not start Claude Code (${e.message}).`,
-          sessionId: null,
-        });
+        logStartRaw(this.o.claudePath, e.message);
+        resolveRun({ kind: 'error', message: e.code === 'ENOENT' ? CLAUDE_NOT_FOUND : CLAUDE_START_FAILED, sessionId: null });
       });
       child.once('close', (code) => {
         resolveRun(this.cancelled ? { kind: 'cancelled' } : parseClaudeOutput(out, code, err));
@@ -762,25 +770,6 @@ export function stephenCliBuilt(cliPath: string = stephenCliPath()): boolean {
 }
 
 /**
- * The CLAUDE_CODE_* variables the voice Claude keeps: how it signs in and which provider it uses (an owner who runs
- * Claude Code through a token, Bedrock, Vertex or Foundry). Every other CLAUDE_CODE_* variable, and CLAUDECODE, belongs
- * to a Claude Code session `stephen listen` was started from (CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_ENTRYPOINT…): the
- * voice Claude must not run as part of that session (review 7, R7-12).
- */
-export const KEPT_CLAUDE_CODE_ENV: ReadonlySet<string> = new Set([
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
-  'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
-  'CLAUDE_CODE_SKIP_VERTEX_AUTH',
-  'CLAUDE_CODE_SKIP_FOUNDRY_AUTH',
-  'CLAUDE_CODE_CLIENT_CERT',
-  'CLAUDE_CODE_CLIENT_KEY',
-  'CLAUDE_CODE_CLIENT_KEY_PASSPHRASE',
-]);
-
-/**
  * Spawn options for both Claude wrappers (this one and warm-claude). The env scrub lives here only: the ElevenLabs key
  * and account secrets have no business in claude or the server it starts (review #4 finding 7).
  * detached: own process group, so a kill takes claude AND the stephen serve it started.
@@ -789,20 +778,17 @@ export function claudeSpawnOptions(o: { cwd: string; env?: NodeJS.ProcessEnv }, 
   return { cwd: o.cwd, env: withoutSecrets(o.env ?? process.env), stdio: [stdin, 'pipe', 'pipe'], detached: true, shell: false };
 }
 
-/** What both wrappers say when the claude program is missing (spawn ENOENT). */
-export function claudeNotFound(claudePath: string): string {
-  return `Claude Code was not found ("${claudePath}"). Install it, or set "voice": {"claudePath": "…"}.`;
-}
+/** What both wrappers say when the claude program is missing (spawn ENOENT). The path goes to the log only (R7). */
+export const CLAUDE_NOT_FOUND = 'Claude Code was not found. Install it, or set "voice": {"claudePath": "…"}.';
+/** R7: what both wrappers say when Claude Code could not be started for another reason. */
+export const CLAUDE_START_FAILED = "I couldn't start Claude Code. Run stephen doctor to see what is wrong.";
+/** R7: what both wrappers say when the run's MCP config or persona file can't be written. The error (with its path) goes to the log only. */
+export const MCP_CONFIG_FAILED = 'Could not write the MCP config. Run stephen doctor to see what is wrong.';
+export const PERSONA_FAILED = 'Could not write the persona file. Run stephen doctor to see what is wrong.';
 
-/** Child-process environment without Stephen's own secrets and without a parent Claude Code session's variables. */
-export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out = { ...env };
-  delete out.ELEVENLABS_API_KEY;
-  // Account secrets exported in the shell (review 6, R6-9): Stephen's serve reads them from the Keychain / .env.
-  for (const k of ACCOUNT_ENV_NAMES) delete out[k];
-  delete out.CLAUDECODE;
-  for (const k of Object.keys(out)) if (k.startsWith('CLAUDE_CODE_') && !KEPT_CLAUDE_CODE_ENV.has(k)) delete out[k];
-  return out;
+/** R7: the raw reason Claude Code did not start, for the log (stderr). Never shown or spoken. */
+export function logStartRaw(claudePath: string, detail: string): void {
+  console.error(`voice: claude start (${claudePath}): ${detail}`);
 }
 
 /** Lock-down flags without which Stephen refuses to run a voice command (they keep built-in tools and user settings out). */
@@ -833,10 +819,10 @@ export function checkClaudeFlags(helpText: string): ClaudeFlagProbe {
 }
 
 /** Runs `claude --help` once (argv, no shell, 15 s timeout). Null if it couldn't run (then nothing is dropped). */
-export async function probeClaudeFlags(claudePath: string): Promise<ClaudeFlagProbe | null> {
+export async function probeClaudeFlags(claudePath: string, env: NodeJS.ProcessEnv = process.env): Promise<ClaudeFlagProbe | null> {
   const { execFile } = await import('node:child_process');
   return new Promise((res) => {
-    execFile(claudePath, ['--help'], { timeout: 15_000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+    execFile(claudePath, ['--help'], { env: withoutSecrets(env), timeout: 15_000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
       if (err && !stdout) return res(null);
       res(checkClaudeFlags(String(stdout)));
     });

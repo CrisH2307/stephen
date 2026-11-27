@@ -38,7 +38,7 @@ import {
   wantsWeb,
   type JobSpec,
 } from './spec.js';
-import { isFinal, jobVersions, jobsDir, listJobStates, listJobStatesAsync, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
+import { isFinal, jobVersions, jobsDir, listJobStates, listJobStatesAsync, logRaw, metaDirOf, readJobState, supervisorRuns, writeJobState, type JobState, type ReconcileOptions } from './state.js';
 
 export type GitFn = (args: readonly string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -77,6 +77,8 @@ export interface JobManagerOptions {
   cliPath?: string;
   stephenRepo?: string;
   now?: () => number;
+  /** True once today's daily cost limit is used (voice DailyLimit.allowed). A new job is refused; a running one is not stopped. */
+  dailyLimitUsed?: () => boolean;
   /** Starts the supervisor (tests). */
   spawn?: SpawnFn;
   git?: GitFn;
@@ -107,6 +109,8 @@ export interface JobPlan {
   edit?: { of: string; version: number; base: string; copyFrom?: string; files?: number; bytes?: number; fromBranch?: string };
 }
 
+/** A new job at 100% of today's cost limit. Running jobs are not stopped. */
+export const JOB_LIMIT_USED = "Today's limit is used. The job did not start.";
 /** ADR-010: Edit request is off while a job is queued or running (threat E9). */
 export const EDIT_STOP_FIRST = 'Stop the job first to change its request.';
 /** ADR-010 copy caps for an edited job's folder (threat E10). */
@@ -114,6 +118,12 @@ export const COPY_MAX_BYTES = 500 * 1024 * 1024;
 export const COPY_MAX_FILES = 10_000;
 export const COPY_TOO_BIG = 'The old job folder is too big to copy. Start a new job instead.';
 export const COPY_GONE = "The old job folder isn't there any more (or isn't a plain folder in your jobs folder). Start a new job instead.";
+/** R7: a job start that fails on disk or in git says one plain sentence. The raw detail goes to the log only. */
+export const JOB_FOLDER_FAILED = "I couldn't make the job folder. The job did not start.";
+export const JOB_WORKTREE_FAILED = "I couldn't make a git worktree for the job. The job did not start.";
+export const JOB_COPY_FAILED = "I couldn't copy the old job folder. The job did not start.";
+export const JOB_FILES_FAILED = "I couldn't write the job's files. The job did not start.";
+export const JOB_RUNNER_FAILED = "I couldn't start the job runner. The job did not start.";
 
 /**
  * Walk the old job folder `src` without following any symlink: regular files and folders only (symlinks, sockets and
@@ -282,8 +292,9 @@ export class JobManager {
     return `${w.y}-${String(w.mo + 1).padStart(2, '0')}-${String(w.d).padStart(2, '0')}`;
   }
 
-  /** Why another job can't start now ('' = it can): the running cap and the daily cap (rule 5). */
+  /** Why another job can't start now ('' = it can): today's cost limit, the running cap and the daily cap (rule 5). */
   capError(): string {
+    if (this.o.dailyLimitUsed?.()) return JOB_LIMIT_USED;
     const all = this.list();
     const running = all.filter((j) => !isFinal(j.status)).length;
     if (running >= this.o.config.maxRunning) return `${running} jobs are already running, the most at once. Stop one or wait for it to finish.`;
@@ -519,7 +530,8 @@ export class JobManager {
       mkdirSync(metaDir, { mode: 0o700 }); // fresh too
       if (lstatSync(metaDir).isSymbolicLink()) throw new Error(`${metaDir} is a symlink`);
     } catch (e) {
-      return { refused: `I couldn't make the job folder (${(e as Error).message}).` };
+      logRaw('job folder', (e as Error).message);
+      return { refused: JOB_FOLDER_FAILED };
     }
     if (plan.repo) {
       // ADR-010: an edited code job's new branch is cut from the old job's branch; the old worktree is never used.
@@ -529,7 +541,8 @@ export class JobManager {
         // [DEV REVIEW] Nothing half-made stays behind: the claimed job folder and meta folder go, as for a failed copy.
         rmSync(folder, { recursive: true, force: true });
         rmSync(metaDir, { recursive: true, force: true });
-        return { refused: `I couldn't make a git worktree of ${plan.repo.name} (${r.stderr.trim().split('\n').at(-1)?.slice(0, 160) ?? 'git failed'}).` };
+        logRaw(`git worktree of ${plan.repo.name}`, r.stderr.trim().split('\n').at(-1)?.slice(0, 160) || 'git failed');
+        return { refused: JOB_WORKTREE_FAILED };
       }
     } else if (plan.edit) {
       // ADR-010 [DEV REVIEW]: a copy of the old job's folder (shown in the dialog), checked against the caps again as it
@@ -540,7 +553,8 @@ export class JobManager {
         const from = plan.edit.copyFrom ?? '';
         copied = oldFolderOk(from, dirname(folder)) ? copyJobFolder(from, folder) : { error: COPY_GONE };
       } catch (e) {
-        copied = { error: `I couldn't copy the old job folder (${(e as Error).message}).` };
+        logRaw('copy old job folder', (e as Error).message);
+        copied = { error: JOB_COPY_FAILED };
       }
       if ('error' in copied) {
         rmSync(folder, { recursive: true, force: true });
@@ -580,6 +594,8 @@ export class JobManager {
       web: plan.web,
       sessionId: randomUUID(),
       ...(plan.repo ? { repo: plan.repo } : {}),
+      // R9 L2: the folder or branch was copied from an earlier job; the prompt says so.
+      ...(plan.edit ? { earlier: true } : {}),
     };
     const f = jobFiles(metaDir);
     const now = this.now();
@@ -620,7 +636,8 @@ export class JobManager {
       writePrivateJsonFileSync(f.spec, sup);
       writeJobState(home, state);
     } catch (e) {
-      return { refused: `I couldn't write the job's files (${(e as Error).message}).` };
+      logRaw('job files', (e as Error).message);
+      return { refused: JOB_FILES_FAILED };
     }
     void this.o.audit
       ?.append({
@@ -641,10 +658,10 @@ export class JobManager {
         detached: true,
         shell: false,
       });
-      child.on('error', (e) => this.failQueued(plan.id, `Could not start the job runner (${e.message}).`));
+      child.on('error', (e) => this.runnerFailed(plan.id, e.message));
       child.unref();
     } catch (e) {
-      this.failQueued(plan.id, `Could not start the job runner (${(e as Error).message}).`);
+      this.runnerFailed(plan.id, (e as Error).message);
       return readJobState(home, plan.id) ?? state;
     }
     return state;
@@ -655,6 +672,12 @@ export class JobManager {
     void this.o.audit
       ?.append({ tool: 'job_start', outcome: 'denied', confirmation: outcome, args: { id: plan.id, task: plan.task, web: plan.web, source } })
       .catch(() => undefined);
+  }
+
+  /** R7: the job's error is one plain sentence; the raw spawn error goes to the log only. */
+  private runnerFailed(id: string, detail: string): void {
+    logRaw('job runner', detail);
+    this.failQueued(id, JOB_RUNNER_FAILED);
   }
 
   private failQueued(id: string, error: string): void {

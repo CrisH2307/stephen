@@ -3,19 +3,26 @@ import { execFile, execFileSync, type ExecFileException } from 'node:child_proce
 
 /**
  * Run a program with execFile (no shell). Never rejects. `code` is the exit code, 0 on success,
- * null when the program failed without one (could not start, killed by the timeout).
+ * null when the program failed without one (could not start, killed by the timeout). `env`: the child's whole
+ * environment (default: this process's).
  */
 export function execNoThrow(
   file: string,
   args: string[],
   timeoutMs: number,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ code: number | null; stdout: string; stderr: string; error: ExecFileException | null }> {
   return new Promise((resolve) => {
-    execFile(file, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+    execFile(file, args, { timeout: timeoutMs, ...(env ? { env } : {}) }, (err, stdout, stderr) => {
       const code = err ? (typeof err.code === 'number' ? err.code : null) : 0;
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), error: err });
     });
   });
+}
+
+/** The first non-blank line of a program's output, trimmed ('' when there is none). */
+export function firstLine(s: string): string {
+  return s.trim().split('\n')[0] ?? '';
 }
 
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but isn't ours. */
@@ -106,6 +113,14 @@ export const PS_START_SLACK_MS = 2000;
 export function startedWithinJob(startedAt: number, jobStart: number, platform: NodeJS.Platform = process.platform): boolean {
   const slack = platform === 'linux' ? PS_START_SLACK_MS : 0;
   return startedAt >= Math.floor(jobStart / 1000) * 1000 - slack;
+}
+
+/** Resolve after `ms`. `unref`: the timer does not keep the process alive (warm-claude's polling loops). */
+export function sleep(ms: number, opts: { unref?: boolean } = {}): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (opts.unref) timer.unref();
+  });
 }
 
 /** Is any process of group `pid` still there? */

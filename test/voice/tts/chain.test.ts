@@ -253,6 +253,23 @@ describe('provider choice', () => {
     expect(t.lastProvider).toBe('say');
   });
 
+  it('a failed warm-up rejects (the caller logs it); speaking still works through the fallback', async () => {
+    const t = createTts(cfg({ tts: 'kokoro' }), {
+      home: home(true),
+      findKey: async () => ({ found: null, notes: [] }),
+      kokoroEngine: async () => {
+        throw new Error('engine missing');
+      },
+      play: afplayPlayer(afplay.path),
+      sayCommand: say.path,
+      log: (l) => logs.push(l),
+      tmpRoot: audioTmp,
+    });
+    await expect(t.warm()).rejects.toThrow('the local voice could not start: engine missing');
+    await t.speak('Hi.').done;
+    expect(t.lastProvider).toBe('say');
+  });
+
   it('everything failing → done still resolves, reason logged', async () => {
     const t = createTts(cfg({ tts: 'say' }), { home: home(false), findKey: async () => ({ found: null, notes: [] }), sayCommand: join(tmp, 'no-say'), log: (l) => logs.push(l) });
     await t.speak('Hi.').done;
@@ -289,7 +306,9 @@ describe('config', () => {
   it('rejects bad values with the key named, and ignores unrelated voice keys', () => {
     expect(() => parseTtsConfig({ tts: 'polly' })).toThrow(/"voice\.tts"/);
     expect(() => parseTtsConfig({ elevenlabs: { voiceId: '../../etc' } })).toThrow(/voice\.elevenlabs\.voiceId/);
-    expect(() => parseTtsConfig({ elevenlabs: { apiKey: 'sk_x' } })).toThrow(/unknown key "voice\.elevenlabs\.apiKey"/);
+    const unknown: string[] = [];
+    expect(() => parseTtsConfig({ elevenlabs: { apiKey: 'sk_x' } }, unknown)).not.toThrow();
+    expect(unknown).toEqual(['voice.elevenlabs.apiKey']);
     expect(() => parseTtsConfig({ kokoro: { speaker: 11 } })).toThrow(/voice\.kokoro\.speaker/);
     expect(parseTtsConfig({ wakePhrase: 'x', tts: 'say' }).tts).toBe('say');
     expect(() => parseVoiceConfig({ tts: 'polly' })).toThrow(/voice\.tts/);

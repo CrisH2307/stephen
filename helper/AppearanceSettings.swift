@@ -1,5 +1,6 @@
 // Stephen Helper: Settings > Appearance (UI-PLAN v3.1 section 8). The theme is stored in UserDefaults under the key
-// "theme" (light, dark, navy, rose, sun, or "mac" for Follow the Mac), as the temporary reading of it was. ThemeStore
+// "theme" (light, dark, navy, rose, sun, paper, or "mac" for Follow the Mac), as the temporary reading of it was. Nothing
+// saved (a new install) means Paper, the default since #350; a saved choice is kept. ThemeStore
 // is the one place that reads and writes it; the main window and the Ask box both observe it, so a change shows at once.
 
 import SwiftUI
@@ -16,10 +17,10 @@ final class ThemeStore: ObservableObject {
   init() {
     let raw = UserDefaults.standard.string(forKey: ThemeStore.key) ?? ""
     if raw == "mac" {
-      let last = ThemeName(rawValue: UserDefaults.standard.string(forKey: ThemeStore.lastKey) ?? "") ?? .light
+      let last = ThemeName(rawValue: UserDefaults.standard.string(forKey: ThemeStore.lastKey) ?? "") ?? .paper
       choice = ThemeChoice(name: last, followMac: true)
     } else {
-      choice = ThemeChoice(name: ThemeName(rawValue: raw) ?? .light, followMac: false)
+      choice = ThemeChoice(name: ThemeName(rawValue: raw) ?? .paper, followMac: false)
     }
   }
 
@@ -58,10 +59,14 @@ struct AppearanceSettings: View {
           }
         }
         .padding(.vertical, Space.xs)
-        FormRow("Follow the Mac", detail: "Light by day, Dark at night. The window and the Ask box change together.") {
-          Toggle("Follow the Mac", isOn: Binding(get: { store.choice.followMac }, set: { store.setFollowMac($0) }))
-            .labelsHidden().toggleStyle(StephenSwitch())
+        Toggle(isOn: Binding(get: { store.choice.followMac }, set: { store.setFollowMac($0) })) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: "Follow the Mac").font(TypeScale.body).foregroundColor(t.ink)
+            Text(verbatim: "Light by day, Dark at night. The window and the Ask box change together.")
+              .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
+          }
         }
+        .tint(t.accent)
       } header: {
         Text(verbatim: "Theme")
       }

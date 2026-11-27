@@ -262,7 +262,12 @@ describe('Stephen end-to-end over stdio (Chrome agent mode, real Chromium)', () 
   it('review #2 #12: a navigation that redirects to a blocked site is undone; back to it is undone too', async () => {
     const r = await call('navigate', { tab, url: `${url}redirect`, intent: 'follow the link' });
     expect(r.isError).toBe(true);
-    expect(text(r)).toContain(`blocked site (${BLOCKED_HOST}`);
+    // T3: our fixed wording outside the untrusted block, the page-chosen host only inside it.
+    const [outside, inside = ''] = text(r).split('<untrusted_web_content');
+    expect(outside).toContain('the action ended on a blocked site,');
+    expect(outside).toContain(`Stephen sent ${tab} to about:blank`);
+    expect(outside).not.toContain(BLOCKED_HOST);
+    expect(inside).toContain(`Blocked site: ${BLOCKED_HOST}`);
     expect(text(r)).not.toContain('SECRET VAULT');
     const list = text(await call('tabs_list', { browser: 'chrome' }));
     expect(list).not.toContain('SECRET VAULT');

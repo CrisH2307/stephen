@@ -1,6 +1,18 @@
-## What and why
+## For Cris (plain words, short sentences)
+
+1. What it does:
+2. Why (the problem, or the plan task and its id):
+3. What changes for a person using Stephen (or "nothing visible"):
+4. How it was checked (tests, reviews):
+5. What Cris needs to do or check (or "nothing"):
+
+<!-- Screenshots here when a picture helps (UI PRs always). Never show private data. -->
+
+## Technical details
 
 <!-- One or two plain sentences. Link the issue: "Fixes #123" or "Part of #123". -->
+
+Closes #
 
 ## Sibling cases (fixes only)
 

@@ -1,0 +1,1 @@
+{"v":1,"id":"h_0000000000000001","ts":"2026-11-25T14:30:00.000Z","trigger":"ptt","route":"model","tier":null,"outcome":"ok","followUp":false,"turns":1,"stages":{"speechEnd":2000,"replyReady":4000},"modelMs":1500,"toolMs":0,"costUsd":0.0123}

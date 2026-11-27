@@ -7,6 +7,9 @@
  *
  * Transport: a Unix domain socket created by the HELPER at `<stephen home>/run/helper.sock` (dir 0700,
  * socket 0600). `stephen listen` connects as a client (one client at a time; a new client replaces the old).
+ * F15: the client's first line must be `{"type":"auth","nonce":"<64 hex>"}` with the nonce the helper wrote to
+ * `<home>/run/helper.nonce` (0600) at launch; any other first line, or none within 2 s, and the helper closes the
+ * connection before its hello (and before it can replace the current client).
  * Messages are newline-delimited JSON objects, UTF-8, one per line, ≤ 4 KiB each. Unknown types are ignored
  * by both sides. The helper is started with `open -a "<path>/Stephen Helper.app" --args --home <home>`
  * so macOS attributes permissions to the helper app itself (not to Terminal).

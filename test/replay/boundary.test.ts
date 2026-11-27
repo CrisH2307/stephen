@@ -122,8 +122,10 @@ describe('the model cannot turn it on (must-have 2)', () => {
       .sort();
     // src/voice/grammar/classify.ts only has a comment about a future test set.
     // src/app/*: the owner's Settings switch (app.sock replay.set / replay.delete, PR 2). src/app is itself out of
-    // Claude's reach (test/memory/boundary.test.ts).
-    expect(files).toEqual(['src/app/protocol.ts', 'src/app/replay-switch.ts', 'src/app/server.ts', 'src/app/settings.ts', 'src/cli.ts', 'src/lib/owner-only.ts', 'src/replay/recorder.ts', 'src/telemetry/latency.ts', 'src/voice/config.ts', 'src/voice/grammar/classify.ts', 'src/voice/index.ts', 'src/voice/listener.ts']);
+    // Claude's reach (test/memory/boundary.test.ts). src/app/data-cli.ts (`stephen data`, B6) only names the folder
+    // and the delete command; it reads sizes, never the switch. src/telemetry/incident-ladder.ts only names the replay
+    // files as safety paths (a copy of scripts/safety-paths.mjs); it never reads or writes the switch.
+    expect(files).toEqual(['src/app/data-cli.ts', 'src/app/protocol.ts', 'src/app/replay-switch.ts', 'src/app/server.ts', 'src/app/settings.ts', 'src/cli.ts', 'src/lib/owner-only.ts', 'src/replay/recorder.ts', 'src/telemetry/incident-ladder.ts', 'src/telemetry/latency.ts', 'src/voice/config.ts', 'src/voice/grammar/classify.ts', 'src/voice/index.ts', 'src/voice/listener.ts']);
     // The listener and the recorder only read the switch; the one writer is src/app/replay-switch.ts.
     for (const f of ['src/voice/index.ts', 'src/voice/listener.ts', 'src/replay/recorder.ts']) {
       expect(readFileSync(join(REPO_ROOT, f), 'utf8'), f).not.toMatch(/updateConfigSection|config-write/);

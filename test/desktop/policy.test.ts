@@ -140,13 +140,17 @@ describe('desktop config', () => {
     expect(parseDesktopConfig({ reuseTabs: null }).reuseTabs).toBe('site');
   });
 
-  it('rejects unknown keys and bad values with clear messages', () => {
-    expect(() => parseDesktopConfig({ allowApps: ['x'] })).toThrow(/unknown key "desktop.allowApps" \(allowed: enabled, allowedApps, blockedApps, reuseTabs\)/);
+  it('refuses an unknown key and names it (a typo must not empty the block list), and rejects bad values', () => {
+    const unknown: string[] = [];
+    expect(() => parseDesktopConfig({ blockedApp: ['Steam'] }, unknown)).toThrow(/unknown key: "desktop\.blockedApp"/);
+    expect(unknown).toEqual(['desktop.blockedApp']);
+    expect(() => parseDesktopConfig({ allowApps: ['x'], appToken: 'x' })).toThrow(/unknown keys: "desktop\.allowApps", a name that looks like a secret \(not shown\)/);
+    expect(() => parseDesktopConfig({ allowApps: ['x'], appToken: 'x' })).not.toThrow(/appToken/);
     expect(() => parseDesktopConfig({ reuseTabs: 'always' })).toThrow(/"desktop.reuseTabs": must be "site", "exact" or "never"/);
     expect(() => parseDesktopConfig({ enabled: 'yes' })).toThrow(/"desktop.enabled": must be true or false/);
     expect(() => parseDesktopConfig({ allowedApps: 'Steam' })).toThrow(/"desktop.allowedApps": must be a list of app names or bundle ids/);
     expect(() => parseDesktopConfig({ blockedApps: [''] })).toThrow(/"desktop.blockedApps.0": entries must be non-empty/);
     expect(() => parseDesktopConfig({ blockedApps: ['a\nb'] })).toThrow(/control characters/);
-    expect(() => parseDesktopConfig({ enabled: 1, extra: true })).toThrow(/Invalid "desktop" section in config.json: .*extra.*enabled/s);
+    expect(() => parseDesktopConfig({ enabled: 1, extra: true })).toThrow(/Invalid "desktop" section in config.json: "desktop.enabled": must be true or false/);
   });
 });

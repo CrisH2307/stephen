@@ -330,8 +330,11 @@ export class FakeGate implements ISafetyGate {
     this.reads.push(url);
   }
   dataReads: string[] = [];
-  notePrivateData(source: string): void {
+  /** The tool named on each notePrivateData call (for its private-read audit line). */
+  dataTools: Array<string | undefined> = [];
+  notePrivateData(source: string, tool?: string): void {
     this.dataReads.push(source);
+    this.dataTools.push(tool);
   }
   accountCalls = 0;
   /** Refusal text countAccountCall returns (null = allowed). */
@@ -340,6 +343,9 @@ export class FakeGate implements ISafetyGate {
     if (this.accountLimit) return this.accountLimit;
     this.accountCalls += 1;
     return null;
+  }
+  taintedHosts(): string[] {
+    return [...new Set([...this.reads.filter((u) => this.isPrivate(u)).map(hostOf), ...this.dataReads])];
   }
   isPrivate(url: string): boolean {
     return this.privateHosts.has(hostOf(url));

@@ -21,7 +21,12 @@ import { clean } from '../safety/text.js';
 import type { IAuditLog } from '../types.js';
 import { MAX_WALL_CLOCK_MIN } from './config.js';
 import { KILL_GRACE_MS, buildJobArgs, buildJobEnv, cleanJobOutput, isJobId, jobFiles, jobToolLists, type JobSpec } from './spec.js';
-import { isFinal, jobsDir, readJobState, writeJobState, type JobState, type JobStatus } from './state.js';
+import { isFinal, jobsDir, logRaw, readJobState, writeJobState, type JobState, type JobStatus } from './state.js';
+
+/** R7: a job that fails before Claude Code runs says one plain sentence. The raw detail goes to the log only. */
+export const JOB_SPEC_INVALID = "The job's settings weren't valid. The job did not start.";
+export const JOB_LOG_FAILED = "I couldn't open the job's log file. The job did not start.";
+export const JOB_CLAUDE_START_FAILED = "I couldn't start Claude Code for the job. The job did not start.";
 
 export type SpawnFn = (cmd: string, args: readonly string[], opts: SpawnOptions) => ChildProcess;
 
@@ -44,20 +49,26 @@ export interface SupervisorSpec {
 
 // ───────────── stream-json → events (pure, in src/lib/claude-stream.ts) ─────────────
 
+import { plainFailureLine } from '../lib/claude-failure.js';
 export { parseStreamLine as parseJobLine, type StreamEvent as JobEvent } from '../lib/claude-stream.js';
 import { parseStreamLine as parseJobLine, type StreamEvent as JobEvent } from '../lib/claude-stream.js';
+
+/** A CLI code word (subtype, startup reason, errno) shown only when it is a plain code: else 'unknown'. Never free text. */
+const codeWord = (s: string | undefined): string => (s && /^[A-Za-z_]{1,40}$/.test(s) ? s : 'unknown');
 
 /** A result event → final status and Stephen's words for it. */
 export function resultStatus(r: Extract<JobEvent, { kind: 'result' }>, spec: Pick<JobSpec, 'maxTurns' | 'maxBudgetUsd'>): { status: JobStatus; error: string } {
   if (r.startupFailure === 'sandbox_required_unavailable') {
     return { status: 'failed', error: "The sandbox isn't available on this computer, so the job didn't start (nothing ran)." };
   }
-  if (r.startupFailure) return { status: 'failed', error: `Claude Code didn't start (${clean(r.startupFailure, 60)}).` };
+  if (r.startupFailure) return { status: 'failed', error: `Claude Code didn't start (${codeWord(r.startupFailure)}).` };
   if (!r.isError && r.subtype === 'success') return { status: 'done', error: '' };
   if (r.subtype === 'error_max_turns') return { status: 'failed', error: `It ran out of turns (${spec.maxTurns}) before finishing.` };
   if (r.subtype === 'error_max_budget_usd') return { status: 'failed', error: `It reached the $${spec.maxBudgetUsd} budget before finishing.` };
-  const detail = r.errors[0] ? `: ${clean(r.errors[0], 160)}` : '';
-  return { status: 'failed', error: `Claude Code reported an error (${clean(r.subtype || 'unknown', 40)})${detail}.` };
+  const plain = plainFailureLine([r.text, ...r.errors].join('\n'));
+  if (plain) return { status: 'failed', error: plain };
+  // No marker: a fixed line naming only the code word. The CLI's own text can carry page text, so it is never copied.
+  return { status: 'failed', error: `Claude Code reported an error (${codeWord(r.subtype)}).` };
 }
 
 // ───────────── the supervisor ─────────────
@@ -215,7 +226,8 @@ export class JobSupervisor {
     try {
       args = buildJobArgs(spec);
     } catch (e) {
-      return this.finish('failed', `The job spec is invalid (${(e as Error).message}).`);
+      logRaw('job spec', (e as Error).message);
+      return this.finish('failed', JOB_SPEC_INVALID);
     }
     const f = jobFiles(spec.metaDir);
     let log: CappedFile;
@@ -224,7 +236,8 @@ export class JobSupervisor {
       log = new CappedFile(f.log, MAX_LOG_BYTES);
       errLog = new CappedFile(f.stderr, MAX_STDERR_BYTES);
     } catch (e) {
-      return this.finish('failed', `Could not open the job log (${(e as Error).message}).`);
+      logRaw('job log', (e as Error).message);
+      return this.finish('failed', JOB_LOG_FAILED);
     }
     const spawnFn: SpawnFn = this.d.spawn ?? ((c, a, o) => spawn(c, a as string[], o));
     const wallClockMs = Math.min(spec.wallClockMs, MAX_WALL_CLOCK_MIN * 60_000);
@@ -232,9 +245,11 @@ export class JobSupervisor {
     try {
       child = spawnFn(this.s.claudePath, args, { cwd: spec.cwd, env: buildJobEnv(this.d.env ?? process.env), stdio: ['ignore', 'pipe', 'pipe'], detached: true, shell: false });
     } catch (e) {
+      logRaw('claude spawn', (e as Error).message);
+      errLog.write(`could not start Claude Code: ${(e as Error).message}\n`); // the supervisor's own stderr is ignored
       log.close();
       errLog.close();
-      return this.finish('failed', `Could not start Claude Code (${(e as Error).message}).`);
+      return this.finish('failed', JOB_CLAUDE_START_FAILED);
     }
     this.child = child;
     const started = this.now();
@@ -273,7 +288,10 @@ export class JobSupervisor {
       this.stderrTail = (this.stderrTail + chunk).slice(-2000);
     });
     const exit = await new Promise<{ code: number | null; error?: string }>((res) => {
-      child.once('error', (e: NodeJS.ErrnoException) => res({ code: null, error: e.code === 'ENOENT' ? `Claude Code was not found ("${this.s.claudePath}")` : e.message }));
+      child.once('error', (e: NodeJS.ErrnoException) => {
+        logRaw(`claude start (${this.s.claudePath})`, e.message);
+        res({ code: null, error: e.code === 'ENOENT' ? 'Claude Code was not found' : `Claude Code couldn't be started (${codeWord(e.code)})` });
+      });
       child.once('close', (code) => res({ code }));
     });
     if (buf.trim()) this.onLine(buf.trim());
@@ -291,8 +309,10 @@ export class JobSupervisor {
       const r = resultStatus(this.result, spec);
       return this.finish(r.status, r.error);
     }
-    const lastErr = clean(this.stderrTail.trim().split('\n').filter(Boolean).at(-1) ?? '', 160);
-    return this.finish('failed', exit.error ? `${exit.error}.` : `Claude Code exited (code ${exit.code ?? 'killed'}) without a result${lastErr ? `: ${lastErr}` : ''}.`);
+    const plain = plainFailureLine(exit.error ?? this.stderrTail);
+    if (plain) return this.finish('failed', plain);
+    // No marker: a fixed line with the exit code only. The stderr tail stays in the job's own log file.
+    return this.finish('failed', exit.error ? `${exit.error}.` : `Claude Code exited (code ${exit.code ?? 'killed'}) without a result.`);
   }
 
   private onLine(line: string): void {

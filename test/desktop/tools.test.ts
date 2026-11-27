@@ -47,9 +47,9 @@ describe('registration', () => {
     expect(names).toContain('tab_open');
   });
 
-  it('an invalid desktop section stops the server with a clear message', async () => {
-    await expect(setupDesktop({ overrides: { desktop: { enabled: true, allowApps: ['Steam'] } } })).rejects.toThrow(
-      /Invalid "desktop" section in config.json: unknown key "desktop.allowApps"/,
+  it('a wrong type in the desktop section stops the server with a clear message', async () => {
+    await expect(setupDesktop({ overrides: { desktop: { enabled: true, allowedApps: 'Steam' } } })).rejects.toThrow(
+      /Invalid "desktop" section in config.json: "desktop.allowedApps": must be a list of app names or bundle ids/,
     );
   });
 

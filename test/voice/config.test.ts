@@ -32,6 +32,7 @@ describe('parseVoiceConfig', () => {
         continueSec: 4,
         maxCommandSec: 25,
         noSpeechTimeoutSec: 5,
+        dailyLimit: { enabled: true, usd: 1 },
       });
     }
   });
@@ -85,7 +86,6 @@ describe('parseVoiceConfig', () => {
   });
 
   it.each([
-    [{ wakeword: 'x' }, /unknown key "voice.wakeword"/],
     [{ stopPhrase: 'stop' }, /voice.stopPhrase.*2–4 plain English words/],
     [{ wakePhrases: [] }, /voice.wakePhrases/],
     [{ wakePhrases: ['hey stephen', 'hey 2'] }, /voice.wakePhrases.1/],
@@ -123,6 +123,30 @@ describe('parseVoiceConfig', () => {
   it('rejects a non-object section', () => {
     expect(() => parseVoiceConfig('on')).toThrow(/must be an object/);
     expect(() => parseVoiceConfig([1])).toThrow(/must be an object/);
+  });
+
+  it('dailyLimit: default values and partial overrides', () => {
+    expect(parseVoiceConfig({}).dailyLimit).toEqual({ enabled: true, usd: 1 });
+    expect(parseVoiceConfig({ dailyLimit: { usd: 2.5 } }).dailyLimit).toEqual({ enabled: true, usd: 2.5 });
+    expect(parseVoiceConfig({ dailyLimit: { enabled: false } }).dailyLimit).toEqual({ enabled: false, usd: 1 });
+  });
+
+  it.each([
+    [{ dailyLimit: { usd: 0 } }, /voice.dailyLimit.usd/],
+    [{ dailyLimit: { usd: -1 } }, /voice.dailyLimit.usd/],
+    [{ dailyLimit: { usd: 1001 } }, /voice.dailyLimit.usd/],
+    [{ dailyLimit: { usd: '1' } }, /voice.dailyLimit.usd/],
+    [{ dailyLimit: { usd: NaN } }, /voice.dailyLimit.usd/],
+    [{ dailyLimit: { enabled: 'yes' } }, /voice.dailyLimit.enabled/],
+    [{ dailyLimit: 5 }, /dailyLimit/],
+  ])('rejects dailyLimit %j', (raw, msg) => {
+    expect(() => parseVoiceConfig(raw)).toThrow(VoiceConfigError);
+    expect(() => parseVoiceConfig(raw)).toThrow(msg);
+  });
+
+  it('dailyLimit edge values are accepted', () => {
+    expect(parseVoiceConfig({ dailyLimit: { usd: 0.01 } }).dailyLimit).toEqual({ enabled: true, usd: 0.01 });
+    expect(parseVoiceConfig({ dailyLimit: { usd: 1000 } }).dailyLimit).toEqual({ enabled: true, usd: 1000 });
   });
 });
 

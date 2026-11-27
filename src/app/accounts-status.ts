@@ -31,7 +31,7 @@ export const ACCOUNT_HINTS = {
   canvas: 'Put CANVAS_API in .env (or the Keychain item stephen-canvas)',
   calendar: 'Put GOOGLE_CALENDAR_ICS (your secret iCal address) in .env',
   notion: 'Put NOTION_API in .env, then share your to-do database with the integration',
-  weather: 'No key needed. Change the place with: stephen accounts weather set <lat> <lon> <label>',
+  weather: 'No key needed. Change the place with: stephen accounts weather set <your city> (or <lat> <lon> <label>)',
   gmail: 'Connect it with: stephen connect gmail <label> (the refresh token goes in the Keychain)',
 } as const;
 

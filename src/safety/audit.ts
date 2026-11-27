@@ -163,7 +163,7 @@ export class AuditLog implements IAuditLog {
 
   private async write(line: string, retry = true): Promise<void> {
     const bytes = Buffer.byteLength(line);
-    let appended = false;
+    let writing = false; // set once the line may be (partly) on disk: a failure after that is never retried
     try {
       let size = await this.knownSize();
       if (size > 0 && size + bytes > this.maxBytes) {
@@ -177,13 +177,21 @@ export class AuditLog implements IAuditLog {
       }
       // fstat the open file on every write: a file recreated from outside (logrotate `create 0644`) gets 0600 back
       // before our line goes in, and the size kept in memory comes from the file we really write to.
-      const fh = await fs.open(this.path, 'a', 0o600);
+      // 'a+' (not 'a') so the last byte can be read: a torn line from an earlier failed write has no "\n" at its end,
+      // and the next line must start on a line of its own, never join the torn one.
+      const fh = await fs.open(this.path, 'a+', 0o600);
       try {
         const st = await fh.stat();
         if ((st.mode & 0o777) !== 0o600) await fh.chmod(0o600);
-        await fh.appendFile(line);
-        appended = true;
-        size = st.size;
+        let prefix = '';
+        if (st.size > 0) {
+          const last = Buffer.alloc(1);
+          await fh.read(last, 0, 1, st.size - 1);
+          if (last[0] !== 0x0a) prefix = '\n';
+        }
+        writing = true;
+        await fh.appendFile(prefix + line);
+        size = st.size + prefix.length;
       } finally {
         await fh.close();
       }
@@ -191,7 +199,7 @@ export class AuditLog implements IAuditLog {
     } catch (e) {
       this.size = undefined;
       // A stale size or a removed dir must not lose the entry: stat again and try once more.
-      if (retry && !appended) return this.write(line, false);
+      if (retry && !writing) return this.write(line, false);
       throw e;
     }
   }

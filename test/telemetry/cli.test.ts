@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { SLOWEST, TRIGGER_EXTRA_MS, buildReport, formatReport, parseLatencyArgs, runLatencyCli, spanMs, type LatencyReport } from '../../src/telemetry/cli.js';
+import { SLOWEST, TRIGGER_EXTRA_MS, buildReport, formatReport, parseLatencyArgs, runLatencyCli, spanMs, type DailyLimit, type LatencyReport } from '../../src/telemetry/cli.js';
 import { LatencyMonitor, latencyDir, parseLatencyRecord, type LatencyRecord } from '../../src/telemetry/latency.js';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'latency');
@@ -18,10 +18,11 @@ function monitor(withFixtures = true): LatencyMonitor {
   return new LatencyMonitor({ home, now: () => NOW });
 }
 
-async function run(argv: string[], m = monitor()) {
+// The limit is passed in, so no test reads the config.json of the machine it runs on.
+async function run(argv: string[], m = monitor(), limit: DailyLimit | null = { enabled: true, usd: 1 }) {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await runLatencyCli(argv, { monitor: m, out: (l) => out.push(l), err: (l) => err.push(l) });
+  const code = await runLatencyCli(argv, { monitor: m, limit, out: (l) => out.push(l), err: (l) => err.push(l) });
   return { code, out: out.join('\n'), err: err.join('\n') };
 }
 
@@ -93,7 +94,7 @@ describe('stephen latency', () => {
 
   it('no records, a bad option, help', async () => {
     expect(await run(['--days', '1'], monitor(false))).toMatchObject({ code: 0, out: 'No latency records in the last day.' });
-    expect(JSON.parse((await run(['--json'], monitor(false))).out)).toEqual({ days: 7, triggers: 0, outcomes: {}, ignored: {}, tiers: {}, reasons: {}, silence: null, groups: [], slowest: [] });
+    expect(JSON.parse((await run(['--json'], monitor(false))).out)).toEqual({ days: 7, triggers: 0, outcomes: {}, ignored: {}, tiers: {}, reasons: {}, silence: null, groups: [], slowest: [], cost: [], costTotal: 0, limit: { enabled: true, usd: 1 } });
     const bad = await run(['--days', '3']);
     expect(bad).toMatchObject({ code: 2, out: '' });
     expect(bad.err).toContain('--days must be 1, 7 or 30');
@@ -104,6 +105,27 @@ describe('stephen latency', () => {
 describe('buildReport', () => {
   const rec = (i: number, stages: LatencyRecord['stages'], over: Partial<LatencyRecord> = {}): LatencyRecord =>
     parseLatencyRecord({ v: 1, id: `h_${String(i).padStart(16, '0')}`, ts: new Date(NOW - i * 1000).toISOString(), trigger: 'ptt', route: 'model', outcome: 'ok', stages, ...over })!;
+
+  it('cost per local day: sums, newest first, and no cost line when nothing has a cost', () => {
+    const day = 86_400_000;
+    const rep = buildReport(
+      [
+        rec(1, { speechEnd: 0, replyReady: 100 }, { costUsd: 0.0123 }),
+        rec(2, { speechEnd: 0, replyReady: 100 }, { costUsd: 0.02, outcome: 'error' }),
+        rec(3, { speechEnd: 0, replyReady: 100 }, { ts: new Date(NOW - 2 * day).toISOString(), costUsd: 0.5 }),
+        rec(4, { speechEnd: 0, replyReady: 100 }),
+      ],
+      7,
+    );
+    expect(rep.cost.map((c) => c.n)).toEqual([2, 1]);
+    expect(rep.cost.map((c) => c.usd)).toEqual([0.03, 0.5]);
+    expect(rep.cost[0]!.day > rep.cost[1]!.day).toBe(true);
+    expect(rep.costTotal).toBe(0.53);
+    const text = formatReport(rep);
+    expect(text).toContain('Cost per day (model runs, USD):');
+    expect(text).toMatch(/total\s+0\.53 USD/);
+    expect(formatReport(buildReport([rec(5, { speechEnd: 0, replyReady: 100 })], 7))).not.toContain('Cost per day');
+  });
 
   it(`keeps the ${SLOWEST} slowest`, () => {
     const rep = buildReport(Array.from({ length: 12 }, (_, i) => rec(i, { speechEnd: 0, replyReady: (i + 1) * 100 })), 7);
@@ -196,5 +218,86 @@ describe('report: the new fields', () => {
     expect(text).toMatch(/tool navigate\s+2\s+400 ms/);
     expect(text).toContain('Esc to silence (n=2): p50 80 ms, p95 120 ms');
     expect(text).toContain('tier 2 reasons: question 2');
+  });
+});
+
+describe('buildReport with daily limit', () => {
+  const rec = (i: number, over: Partial<LatencyRecord> & { stages?: LatencyRecord['stages'] } = {}): LatencyRecord =>
+    parseLatencyRecord({ v: 1, id: `h_${String(i).padStart(16, '0')}`, ts: new Date(NOW - i * 1000).toISOString(), trigger: 'ptt', route: 'model', outcome: 'ok', stages: { speechEnd: 0, replyReady: 1000 }, ...over })!;
+
+  it('pct is calculated from unrounded sum', () => {
+    const limit: DailyLimit = { enabled: true, usd: 1 };
+    const rep = buildReport(
+      [
+        rec(1, { costUsd: 0.3 }),
+        rec(2, { costUsd: 0.5 }),
+      ],
+      7,
+      limit,
+    );
+    expect(rep.cost[0]!.pct).toBe(80);
+    expect(rep.cost[0]!.usd).toBe(0.8); // rounded
+    expect(rep.limit).toEqual(limit);
+  });
+
+  it('costs summing to exactly 1.0 give pct 100; 1.5 gives pct 150', () => {
+    const limit: DailyLimit = { enabled: true, usd: 1 };
+    const rep100 = buildReport([rec(1, { costUsd: 1.0 })], 7, limit);
+    expect(rep100.cost[0]!.pct).toBe(100);
+    const rep150 = buildReport([rec(1, { costUsd: 1.5 })], 7, limit);
+    expect(rep150.cost[0]!.pct).toBe(150);
+  });
+
+  it('pct uses unrounded sum: 0.004 + 0.004 with usd 0.01 gives pct 80 (rounded usd shows 0.01)', () => {
+    const limit: DailyLimit = { enabled: true, usd: 0.01 };
+    const rep = buildReport(
+      [
+        rec(1, { costUsd: 0.004 }),
+        rec(2, { costUsd: 0.004 }),
+      ],
+      7,
+      limit,
+    );
+    expect(rep.cost[0]!.pct).toBe(80);
+    expect(rep.cost[0]!.usd).toBe(0.01); // rounded to 0.01
+  });
+
+  it('limit enabled false gives pct null and formatReport shows "daily limit off"', () => {
+    const limit: DailyLimit = { enabled: false, usd: 1 };
+    const rep = buildReport([rec(1, { costUsd: 0.5 })], 7, limit);
+    expect(rep.cost[0]!.pct).toBeNull();
+    expect(rep.limit).toEqual(limit);
+    const text = formatReport(rep);
+    expect(text).toContain('daily limit off');
+    expect(text).not.toContain('% of limit');
+  });
+
+  it('limit null gives pct null and "daily limit unknown"', () => {
+    const rep = buildReport([rec(1, { costUsd: 0.5 })], 7, null);
+    expect(rep.cost[0]!.pct).toBeNull();
+    expect(rep.limit).toBeNull();
+    const text = formatReport(rep);
+    expect(text).toContain('daily limit unknown (config could not be read)');
+  });
+
+  it('runLatencyCli uses env.limit: 80% of limit in the text', async () => {
+    const home = mkdtempSync(join(tmp, 'h'));
+    const m = new LatencyMonitor({ home, now: () => NOW });
+    m.begin('h_a', 'ptt', NOW - 2000);
+    m.end('h_a', 'ok', { route: 'model', costUsd: 0.3 });
+    m.begin('h_b', 'ptt', NOW - 1000);
+    m.end('h_b', 'ok', { route: 'model', costUsd: 0.5 });
+    const r = await run(['--days', '1'], m, { enabled: true, usd: 1 });
+    expect(r.out).toContain('80% of limit');
+    expect(r.out).toContain('daily limit 1.00 USD');
+    expect((await run(['--days', '1'], m, { enabled: true, usd: 2 })).out).toContain('40% of limit');
+  });
+
+  it('no cost records: no "daily limit" line at all', () => {
+    const limit: DailyLimit = { enabled: true, usd: 1 };
+    const rep = buildReport([rec(1)], 7, limit);
+    expect(rep.cost).toEqual([]);
+    const text = formatReport(rep);
+    expect(text).not.toContain('daily limit');
   });
 });

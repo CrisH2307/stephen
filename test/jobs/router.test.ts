@@ -6,11 +6,11 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { runListen, type ListenEnv } from '../../src/voice/index.js';
 import { fakeClaudePath, readFakeLog, RecordingChimes, RecordingSpeaker } from '../voice/helpers.js';
 import { parseJobIntent, startsWithWork } from '../../src/jobs/intent.js';
-import { JobRouter, startPrompt } from '../../src/jobs/router.js';
+import { JOB_SOMETHING_WRONG, JobRouter, startPrompt } from '../../src/jobs/router.js';
 import { writeJobState, type JobState } from '../../src/jobs/state.js';
 import type { ConfirmOutcome, ConfirmPrompt, Confirmer } from '../../src/types.js';
 import { Assistant, type CommandRunner } from '../../src/voice/assistant.js';
@@ -147,6 +147,35 @@ describe('JobRouter: every start asks in the native dialog', () => {
     const r = await t.router.route('start a job to write my lab report', { source: 'voice-ptt' });
     expect(r?.reply).toMatch(/already running/);
     expect(t.confirmer.prompts).toEqual([]);
+  });
+});
+
+describe('R7: an unexpected job error is one plain sentence', () => {
+  const RAW = 'ENOENT: no such file or directory, /Users/x/.stephen/jobs';
+  async function withSpy<T>(fn: () => Promise<T>): Promise<{ r: T; logged: string }> {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const r = await fn();
+      return { r, logged: spy.mock.calls.flat().join('\n') };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('voice or typed: the reply is the constant; the raw text goes to the log only', async () => {
+    const t = setup('approved');
+    vi.spyOn(t.manager, 'plan').mockRejectedValue(new Error(RAW));
+    const { r, logged } = await withSpy(() => t.router.route('in the background, research the printing press', { source: 'voice-ptt' }));
+    expect(r).toEqual({ reply: JOB_SOMETHING_WRONG, changed: false });
+    expect(logged).toContain(RAW);
+  });
+
+  it('a phone start: the same constant; the raw text goes to the log only', async () => {
+    const t = setup('approved');
+    vi.spyOn(t.manager, 'plan').mockRejectedValue(new Error(RAW));
+    const { r, logged } = await withSpy(() => t.router.startFromPhone('research the printing press', false));
+    expect(r).toEqual({ ok: false, text: JOB_SOMETHING_WRONG });
+    expect(logged).toContain(RAW);
   });
 });
 

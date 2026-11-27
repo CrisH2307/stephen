@@ -1,17 +1,17 @@
 // Stephen Helper: the main window's frame (UI v4 shell, docs/research/UI-V4-IA-PLAN.md sections 5, 7 and 8).
 // Sidebar (glass): wordmark and collapse (⌘\, 60 pt icon rail, remembered), two groups: Talk (Home, Conversations,
-// Jobs) and Control (Memory, Settings), ⌘1…⌘5, then at the bottom left the solid "Recording on" sign and the state row.
+// Activity, Jobs) and Control (Memory, Settings), ⌘1…⌘6, then at the bottom left the solid "Recording on" sign and the state row.
 // Content column: the toolbar (glass: page title, page actions, Search ⌘K), the waiting-question banner (solid), then
 // the page. The ⌘K palette (Palette.swift) opens over the page, under the banner.
 
 import AppKit
 import SwiftUI
 
-/** The window's pages. The five sidebar rows are Page.talk + Page.control (⌘1…⌘5). */
+/** The window's pages. The six sidebar rows are Page.talk + Page.control (⌘1…⌘6). */
 enum Page: String, CaseIterable, Identifiable {
-  case home, conversations, jobs, memory, settings
+  case home, conversations, activity, jobs, memory, settings
 
-  static let talk: [Page] = [.home, .conversations, .jobs]
+  static let talk: [Page] = [.home, .conversations, .activity, .jobs]
   static let control: [Page] = [.memory, .settings]
 
   var id: String { return rawValue }
@@ -20,6 +20,7 @@ enum Page: String, CaseIterable, Identifiable {
     switch self {
     case .home: return "Home"
     case .conversations: return "Conversations"
+    case .activity: return "Activity"
     case .jobs: return "Jobs"
     case .memory: return "Memory"
     case .settings: return "Settings"
@@ -30,13 +31,14 @@ enum Page: String, CaseIterable, Identifiable {
     switch self {
     case .home: return "house"
     case .conversations: return "bubble.left.and.bubble.right"
+    case .activity: return "clock.arrow.circlepath"
     case .jobs: return "tray.full"
     case .memory: return "note.text"
     case .settings: return "gearshape"
     }
   }
 
-  /** "1"…"5" for the sidebar pages (⌘1…⌘5). */
+  /** "1"…"6" for the sidebar pages (⌘1…⌘6). */
   var key: KeyEquivalent? {
     guard let i = (Page.talk + Page.control).firstIndex(of: self) else { return nil }
     return KeyEquivalent(Character(String(i + 1)))
@@ -104,6 +106,9 @@ private struct MainWindowView: View {
   @AppStorage("sidebarCollapsed") private var collapsed = false
   /// The expanded sidebar's content width, dragged on the divider (clamped by SidebarMetrics).
   @AppStorage("sidebarWidth") private var sidebarWidth = Double(SidebarMetrics.expanded)
+  /// F9: the first-run setup sheet shows until it is finished once.
+  @AppStorage("onboarded") private var onboarded = false
+  @State private var showSetup = false
 
   var body: some View {
     let width = SidebarMetrics.clamp(CGFloat(sidebarWidth))
@@ -135,6 +140,12 @@ private struct MainWindowView: View {
     // A wider sidebar needs a wider window, so the pages keep their measured room (#154). The icon rail needs none.
     .frame(minWidth: WindowMetrics.minContent.width + (collapsed ? 0 : max(0, width - SidebarMetrics.expanded)),
            minHeight: WindowMetrics.minContent.height)
+    .onAppear { if !onboarded { showSetup = true } }
+    .onChange(of: onboarded) { if !$0 { showSetup = true } }  // Settings, About: Run setup again
+    .sheet(isPresented: $showSetup) {
+      OnboardingSheet(control: control, finish: { onboarded = true; showSetup = false }, later: { showSetup = false })
+        .stephenThemedBySettings()
+    }
   }
 
   /// On every page while a question waits (#138). Safety: it only opens the Ask box, where the card is. No Allow, no
@@ -172,6 +183,7 @@ private struct MainWindowView: View {
       switch nav.page {
       case .home: HomeView(model: model, nav: nav, actions: actions)
       case .conversations: ConversationsPage(model: model, nav: nav)
+      case .activity: ActivityPage(model: model, nav: nav)
       case .jobs: JobsView(model: model)
       case .settings: SettingsView(model: model, nav: nav, control: control)
       case .memory: MemoryPage(model: model)

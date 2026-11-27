@@ -7,6 +7,7 @@
  */
 import { z } from 'zod';
 import { HubError } from '../errors.js';
+import { unknownKeyPaths, unknownKeysMessage } from '../config.js';
 
 export interface DesktopConfig {
   /** Register open_app / open_url / desktop_status. Default true. */
@@ -41,7 +42,7 @@ const appList = z
   .max(MAX_APP_ENTRIES, `at most ${MAX_APP_ENTRIES} entries`)
   .nullish();
 
-const DesktopConfigSchema = z.strictObject({
+const DesktopConfigSchema = z.object({
   enabled: z.boolean({ error: 'must be true or false' }).nullish(),
   allowedApps: appList,
   blockedApps: appList,
@@ -49,20 +50,22 @@ const DesktopConfigSchema = z.strictObject({
 });
 
 /** Validate the raw `desktop` section and apply defaults. Throws HubError('INVALID_ARG') with every problem listed. */
-export function parseDesktopConfig(raw: unknown): DesktopConfig {
+export function parseDesktopConfig(raw: unknown, unknownKeys?: string[]): DesktopConfig {
   const r = DesktopConfigSchema.safeParse(raw ?? {});
   if (!r.success) {
     const problems = r.error.issues
       .map((i) => {
         const key = ['desktop', ...i.path.map(String)].join('.');
-        if (i.code === 'unrecognized_keys') {
-          return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"desktop.${k}"`).join(', ')} (allowed: enabled, allowedApps, blockedApps, reuseTabs)`;
-        }
         return `"${key}": ${i.message}`;
       })
       .join('; ');
     throw new HubError('INVALID_ARG', `Invalid "desktop" section in config.json: ${problems}`);
   }
+  // A typo here (say "blockedApp") would leave the block list empty, so it is refused, not dropped. The keys still go
+  // to unknownKeys first, so doctor and the start check can name them.
+  const typos = unknownKeyPaths(raw ?? {}, r.data, 'desktop');
+  unknownKeys?.push(...typos);
+  if (typos.length) throw new HubError('INVALID_ARG', `Invalid "desktop" section in config.json: ${unknownKeysMessage(typos)}`);
   const d = r.data;
   return {
     enabled: d.enabled ?? true,

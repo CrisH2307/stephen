@@ -7,6 +7,7 @@
  */
 import { z } from 'zod';
 import { ConfigError } from '../lib/errors.js';
+import { unknownKeyPaths } from '../config.js';
 
 /** Hard caps (rule 5). */
 export const MAX_WALL_CLOCK_MIN = 180;
@@ -14,7 +15,7 @@ export const MAX_RUNNING_CAP = 2;
 /** A repo name as the owner says it ("stephen", "sofe-3980"): also used in the branch name. */
 export const REPO_NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
-const JobsConfigSchema = z.strictObject({
+const JobsConfigSchema = z.object({
   /** Recognize "start a job to …" and friends. Off: those phrases go to Claude, which can't start jobs either. */
   enabled: z.boolean().default(true),
   /** Where job folders are made, one per job (`<root>/<date>-<slug>/`). */
@@ -47,7 +48,6 @@ export class JobsConfigError extends ConfigError {
 function describe(err: z.ZodError): string {
   return err.issues
     .map((i) => {
-      if (i.code === 'unrecognized_keys') return `unknown key${i.keys.length > 1 ? 's' : ''} ${i.keys.map((k) => `"jobs.${k}"`).join(', ')}`;
       const key = i.path.map(String).join('.');
       return `"jobs${key ? `.${key}` : ''}": ${i.message}`;
     })
@@ -55,7 +55,7 @@ function describe(err: z.ZodError): string {
 }
 
 /** Validate the raw `jobs` section (null values mean "use the default"). Throws JobsConfigError. */
-export function parseJobsConfig(raw: unknown): JobsConfig {
+export function parseJobsConfig(raw: unknown, unknownKeys?: string[]): JobsConfig {
   const obj: Record<string, unknown> = {};
   if (raw !== null && raw !== undefined) {
     if (typeof raw !== 'object' || Array.isArray(raw)) throw new JobsConfigError('"jobs" must be an object');
@@ -63,5 +63,6 @@ export function parseJobsConfig(raw: unknown): JobsConfig {
   }
   const r = JobsConfigSchema.safeParse(obj);
   if (!r.success) throw new JobsConfigError(`Invalid jobs config: ${describe(r.error)}`);
+  unknownKeys?.push(...unknownKeyPaths(obj, r.data, 'jobs'));
   return r.data;
 }

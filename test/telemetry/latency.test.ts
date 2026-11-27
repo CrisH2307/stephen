@@ -62,6 +62,17 @@ describe('LatencyMonitor', () => {
     expect(parseLatencyRecord({ ...rows[0], firstTokenMs: 'soon' })).not.toHaveProperty('firstTokenMs');
   });
 
+  it('end() writes the model cost as a number, and drops a bad one', () => {
+    const t = setup();
+    t.m.begin('h_c', 'ptt');
+    t.m.end('h_c', 'ok', { route: 'model', turns: 1, costUsd: 0.0123456789 });
+    t.m.begin('h_d', 'ptt');
+    t.m.end('h_d', 'ok', { route: 'model', costUsd: 'a lot' as never });
+    const rows = t.lines().map((l) => JSON.parse(l));
+    expect(rows[0].costUsd).toBe(0.012346);
+    expect(rows[1]).not.toHaveProperty('costUsd');
+  });
+
   it('a trigger that never became a command still gets a row; a second end and unknown ids do nothing', () => {
     const t = setup();
     t.m.begin('h_w', 'wake');
@@ -213,5 +224,26 @@ describe('new fields: closed lists, numbers only', () => {
     }
     expect(real.size).toBeGreaterThan(25);
     for (const n of real) expect(LATENCY_TOOLS as readonly string[], n).toContain(n);
+  });
+
+  describe('costUsd', () => {
+    const base = { v: 1, id: 'h_x', ts: '2026-11-10T15:00:00.000Z', trigger: 'ptt', route: 'model', outcome: 'ok', followUp: false, turns: 1, stages: { speechEnd: 0, done: 1000 } } as const;
+
+    it('accepts a valid costUsd (0 to 100, rounded to 6 dp)', () => {
+      expect(parseLatencyRecord({ ...base, costUsd: 0 })!.costUsd).toBe(0);
+      expect(parseLatencyRecord({ ...base, costUsd: 0.000001 })!.costUsd).toBe(0.000001);
+      expect(parseLatencyRecord({ ...base, costUsd: 1.23456789 })!.costUsd).toBe(1.234568); // rounded to 6 dp
+      expect(parseLatencyRecord({ ...base, costUsd: 99.999999 })!.costUsd).toBe(99.999999);
+      expect(parseLatencyRecord({ ...base, costUsd: 100 })!.costUsd).toBe(100);
+    });
+
+    it('drops a bad costUsd and keeps the record', () => {
+      for (const bad of [-0.000001, 100.000001, NaN, Infinity, '0.001', null, { usd: 1 }]) {
+        const r = parseLatencyRecord({ ...base, costUsd: bad });
+        expect(r, String(bad)).not.toBeNull();
+        expect(r, String(bad)).not.toHaveProperty('costUsd');
+      }
+      expect(parseLatencyRecord({ ...base })).not.toHaveProperty('costUsd');
+    });
   });
 });

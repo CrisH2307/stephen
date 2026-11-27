@@ -3,7 +3,7 @@ import { registerDesktopTools } from '../desktop/index.js';
 import { registerAccountTools } from '../accounts/index.js';
 import { registerAnnounceTool } from '../voice/announce.js';
 import { homedir } from 'node:os';
-import { basename } from 'node:path';
+import { basename, isAbsolute } from 'node:path';
 import type { McpServer, ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ShapeOutput, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
@@ -13,7 +13,8 @@ import { expandPath } from '../config.js';
 import { ZEN_ATTACH_ONLY_LABEL, isZenAttachOnly } from '../drivers/zen.js';
 import { HubError, errorMessage } from '../errors.js';
 import { timed } from '../lib/step-timer.js';
-import { isOwnerOnlyFile } from '../lib/owner-only.js';
+import { isNeverReadFile, isOwnerOnlyFile, isUploadAllowedFile } from '../lib/owner-only.js';
+import { REPO_ROOT } from '../lib/repo.js';
 import { assertRefInTab, parseRef } from '../refs.js';
 import { redactValue, wrapUntrusted } from '../safety/index.js';
 import { EVALUATE_MAX_CHARS } from '../safety/policy.js';
@@ -628,7 +629,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
             { type: 'image', data: Buffer.from(png).toString('base64'), mimeType: 'image/png' },
             {
               type: 'text',
-              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''} at ${url}, ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${clipNote ? `\n${clipNote}` : ''}${hub.alertNotes(tab)}`,
+              text: `Screenshot of ${tab}${target ? ` element ${target}` : full_page ? ' (full page)' : ''}, ${kb} KB, scale ${s}. Use refs from snapshot/find to act.${clipNote ? `\n${clipNote}` : ''}\n${wrapUntrusted(tab, url, `Page URL: ${url}`)}${hub.alertNotes(tab)}`,
             },
           ],
         };
@@ -818,7 +819,7 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
           }
           await hub.audit({ ...base, urlAfter: safeUrl(page), outcome: 'ok' } satisfies Omit<AuditEntry, 'ts'>);
           done.push(`${p.target} ← ${shown}`);
-          hub.noteShown(urlBefore, p.el.frameUrl);
+          hub.noteShown('fill_form', urlBefore, p.el.frameUrl);
           facts.push(`field ${i + 1} (${p.target}): ${elementLabel(p.el)}`);
           if (r.dialog) {
             return okResult(hub.dialogNotice(tab, r.dialog, `Filled ${done.length} of ${plan.length} fields in ${tab}`));
@@ -982,10 +983,11 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
     },
   );
 
+  const UPLOAD_FOLDERS_LINE = 'I can only upload files from Downloads, Desktop or Documents.';
   tool(
     'upload_file',
     'Upload files',
-    'Attaches local files to a file input (the ref of an <input type=file> or the button that opens the picker). Always asks the user to approve, showing the file names. Paths must be absolute or start with ~.',
+    'Attaches local files to a file input (the ref of an <input type=file> or the button that opens the picker). Always asks the user to approve, showing the file names. Only files in Downloads, Desktop or Documents. Paths must be absolute or start with ~.',
     {
       target: refArg,
       paths: z.array(z.string().min(1)).min(1).max(20).describe('Absolute file paths (or ~/…).'),
@@ -995,10 +997,16 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
     async ({ target, paths, intent }) => {
       const files: string[] = [];
       for (const p of paths) {
-        const abs = expandPath(p, homedir());
+        const t = p.trim();
+        if (!isAbsolute(t) && t !== '~' && !t.startsWith('~/')) throw new HubError('INVALID_ARG', `${p} is not a full path. Paths must be absolute or start with ~.`);
+        const abs = expandPath(t, homedir());
         // Stephen's own private recordings never go to a web page (issue #48). Asked before `stat`, in any letter
         // case, so the answer never tells the model whether a clip exists (#169).
         if (isOwnerOnlyFile(abs, cfg.home)) throw new HubError('DENIED', `${basename(abs)} is one of Stephen's private files and is never uploaded.`);
+        // Nor anything a job's shell may never read: Stephen's home, keys, the repo .env (M1).
+        if (isNeverReadFile(abs, cfg.home, REPO_ROOT, homedir())) throw new HubError('DENIED', `${basename(abs)} is private (a key, password or private folder) and is never uploaded.`);
+        // And only from the folders a person saves files to attach: mail, browser profiles, keys, history stay home.
+        if (!isUploadAllowedFile(abs, homedir())) throw new HubError('DENIED', `${basename(abs)} is not in an upload folder. ${UPLOAD_FOLDERS_LINE}`);
         const st = await stat(abs).catch(() => null);
         if (!st?.isFile()) throw new HubError('INVALID_ARG', `File not found: ${abs}`);
         files.push(abs);
@@ -1021,6 +1029,10 @@ export function registerTools(mcp: McpServer, hub: Hub): string[] {
           run: () => {
             const late = files.find((f) => isOwnerOnlyFile(f, cfg.home));
             if (late) throw new HubError('DENIED', `${basename(late)} is one of Stephen's private files and is never uploaded.`);
+            const secret = files.find((f) => isNeverReadFile(f, cfg.home, REPO_ROOT, homedir()));
+            if (secret) throw new HubError('DENIED', `${basename(secret)} is private (a key, password or private folder) and is never uploaded.`);
+            const outside = files.find((f) => !isUploadAllowedFile(f, homedir()));
+            if (outside) throw new HubError('DENIED', `${basename(outside)} is not in an upload folder. ${UPLOAD_FOLDERS_LINE}`);
             return engine.uploadFile(page, target, files);
           },
           done: `Attached ${files.map((f) => quote(basename(f), 60)).join(', ')} to ${target}`,

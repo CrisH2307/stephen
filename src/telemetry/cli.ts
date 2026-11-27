@@ -15,19 +15,24 @@
  * group are shown as counts. Wake triggers get TRIGGER_EXTRA_MS on top of the base target. Also shown: wake_ignored by
  * reason, tool names with p50, cold versus warm, Esc to silence, wake to chime, and the tier labels (shadow mode).
  */
+import { localDate } from '../history/store.js';
 import { loadConfig } from '../config.js';
 import { percentile } from '../lib/step-timer.js';
 import { LATENCY_MODEL_FIELDS, LatencyMonitor, type LatencyRecord, type LatencyStage, type LatencyTrigger } from './latency.js';
+import { parseVoiceConfig } from '../voice/config.js';
 
 export const LATENCY_HELP = `stephen latency: how long Stephen takes, from the local latency log (ids and numbers only)
 
   stephen latency [--days 1|7|30] [--json]   default: the last 7 days
 
 Per trigger and route: p50 and p95 of each step, measured from end of speech.
-"OVER" marks a group that is slower than the plan's target. Then the 10 slowest commands by id.`;
+"OVER" marks a group that is slower than the plan's target. Then the 10 slowest commands by id.
+Cost per day shows the daily limit (voice.dailyLimit) and the percent used.`;
 
 export const LATENCY_DAYS = [1, 7, 30] as const;
 export const SLOWEST = 10;
+
+export type DailyLimit = { enabled: boolean; usd: number };
 
 export type LatencyArgs = { days: number; json: boolean };
 
@@ -116,17 +121,23 @@ export interface LatencyReport {
   silence: SpanStats | null;
   groups: LatencyGroup[];
   slowest: { id: string; ts: string; trigger: string; route: string; outcome: string; ms: number }[];
+  /** Model cost per local day (USD, 2 decimals), newest first; n = records with a cost. */
+  cost: { day: string; n: number; usd: number; pct: number | null }[];
+  costTotal: number;
+  /** The daily cost limit from config (null when the config could not be read). */
+  limit: DailyLimit | null;
 }
 
 const stats = (v: number[]): SpanStats => ({ n: v.length, p50: percentile(v, 50), p95: percentile(v, 95) });
 const bump = (m: Record<string, number>, k: string) => (m[k] = (m[k] ?? 0) + 1);
 
-export function buildReport(records: readonly LatencyRecord[], days: number): LatencyReport {
+export function buildReport(records: readonly LatencyRecord[], days: number, limit: DailyLimit | null = null): LatencyReport {
   const outcomes: Record<string, number> = {};
   const ignored: Record<string, number> = {};
   const tiers: Record<string, number> = {};
   const reasons: Record<string, number> = {};
   const byGroup = new Map<string, LatencyRecord[]>();
+  const costByDay = new Map<string, { n: number; usd: number }>();
   for (const r of records) {
     bump(outcomes, r.outcome);
     if (r.outcome === 'wake_ignored') bump(ignored, r.ignored ?? 'unknown');
@@ -134,6 +145,11 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
     if (r.reason) bump(reasons, r.reason);
     const key = `${r.trigger}/${r.route ?? 'none'}`;
     byGroup.set(key, [...(byGroup.get(key) ?? []), r]);
+    if (r.costUsd !== undefined) {
+      const day = localDate(new Date(r.ts));
+      const c = costByDay.get(day) ?? { n: 0, usd: 0 };
+      costByDay.set(day, { n: c.n + 1, usd: c.usd + r.costUsd });
+    }
   }
   const groups = [...byGroup.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -176,7 +192,16 @@ export function buildReport(records: readonly LatencyRecord[], days: number): La
     })
     .sort((a, b) => b.ms - a.ms)
     .slice(0, SLOWEST);
-  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest };
+  const usd = (n: number) => Math.round(n * 100) / 100;
+  const byDay = [...costByDay.entries()].sort(([a], [b]) => b.localeCompare(a));
+  const cost = byDay.map(([day, c]) => {
+    const unroundedUsd = c.usd;
+    const usdRounded = usd(c.usd);
+    const pct = limit?.enabled ? Math.round(unroundedUsd / limit.usd * 100) : null;
+    return { day, n: c.n, usd: usdRounded, pct };
+  });
+  const costTotal = usd(byDay.reduce((sum, [, c]) => sum + c.usd, 0));
+  return { days, triggers: records.length, outcomes, ignored, tiers, reasons, silence: silenceMs.length ? stats(silenceMs) : null, groups, slowest, cost, costTotal, limit };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -210,6 +235,16 @@ export function formatReport(r: LatencyReport): string {
     for (const [name, s] of Object.entries(g.tools)) lines.push(row(`tool ${name}`.slice(0, 15), s));
     for (const [name, s] of Object.entries(g.starts)) lines.push(row(`${name} start`, s));
   }
+  if (r.cost.length) {
+    lines.push('', 'Cost per day (model runs, USD):');
+    const limitLine = r.limit === null ? '  daily limit unknown (config could not be read)' : r.limit.enabled ? `  daily limit ${r.limit.usd.toFixed(2)} USD` : '  daily limit off';
+    for (const c of r.cost) {
+      const pctSuffix = c.pct !== null ? `  ${c.pct}% of limit` : '';
+      lines.push(`  ${c.day}  ${String(c.n).padStart(4)} runs  ${c.usd.toFixed(2).padStart(8)} USD${pctSuffix}`);
+    }
+    lines.push(`  ${'total'.padEnd(10)}  ${''.padStart(9)}  ${r.costTotal.toFixed(2).padStart(8)} USD`);
+    lines.push(limitLine);
+  }
   if (r.slowest.length) {
     lines.push('', `Slowest ${r.slowest.length} (${TOTAL_SPAN}):`);
     for (const s of r.slowest) lines.push(`  ${s.id}  ${when(s.ts)}  ${s.trigger} / ${s.route}  ${s.outcome}  ${s.ms} ms`);
@@ -221,6 +256,7 @@ export interface LatencyEnv {
   monitor?: Pick<LatencyMonitor, 'read'>;
   out?: (l: string) => void;
   err?: (l: string) => void;
+  limit?: DailyLimit | null;
 }
 
 export async function runLatencyCli(argv: string[], e: LatencyEnv = {}): Promise<number> {
@@ -235,7 +271,132 @@ export async function runLatencyCli(argv: string[], e: LatencyEnv = {}): Promise
     err(`${a.error}\n\n${LATENCY_HELP}`);
     return 2;
   }
-  const report = buildReport((e.monitor ?? new LatencyMonitor({ home: loadConfig().home })).read(a.days), a.days);
+  let limit: DailyLimit | null;
+  if (e.limit !== undefined) {
+    limit = e.limit;
+  } else {
+    try {
+      limit = parseVoiceConfig(loadConfig().voice).dailyLimit;
+    } catch {
+      limit = null;
+    }
+  }
+  const report = buildReport((e.monitor ?? new LatencyMonitor({ home: loadConfig().home })).read(a.days), a.days, limit);
   out(a.json ? JSON.stringify(report, null, 2) : formatReport(report));
+  return 0;
+}
+
+// ───────────── stephen report --week (F13) ─────────────
+
+/**
+ * `stephen report --week` (F13): a weekly summary a friend can paste to Cris. Content-free on purpose: it is built only
+ * from parsed latency and incident records, so every value is a number, a code word, a version or a date. No command
+ * text, page, host, name or path can reach it (the parsers drop every free-text field).
+ */
+export const WEEK_DAYS = 7;
+const VERSION_RE = /^\d{1,4}(\.\d{1,6}){0,3}$/;
+/** Trigger outcomes that were not a command (nothing was asked). */
+const NOT_A_COMMAND = new Set(['wake_ignored', 'no_wake', 'no_speech', 'short_press']);
+
+export interface WeeklySummary {
+  from: string;
+  to: string;
+  /** Oldest day first, every one of the 7 local days, zeros included. */
+  days: { day: string; commands: number; failed: number; jobs: number; usd: number; jobUsd: number }[];
+  incidents: Record<string, number>;
+  /** speech → reply of ok commands, split local routers and the model. */
+  local: SpanStats | null;
+  model: SpanStats | null;
+  commands: number;
+  failed: number;
+  jobs: number;
+  usd: number;
+  /** Background jobs' own model cost (job state costUsd), by the day each job ended or started. */
+  jobUsd: number;
+  stephen: string;
+  claude: string;
+}
+
+const safeVersion = (v: string | null | undefined): string => (v && VERSION_RE.test(v) ? v : 'unknown');
+
+export function buildWeekly(
+  latency: readonly LatencyRecord[],
+  incidents: readonly { ts: string; code: string }[],
+  now: Date,
+  versions: { stephen?: string | null; claude?: string | null },
+  jobCosts: readonly { at: number; usd: number }[] = [],
+): WeeklySummary {
+  const dayList = Array.from({ length: WEEK_DAYS }, (_, i) => localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (WEEK_DAYS - 1 - i))));
+  const days = new Map(dayList.map((day) => [day, { day, commands: 0, failed: 0, jobs: 0, usd: 0, jobUsd: 0 }]));
+  const local: number[] = [];
+  const model: number[] = [];
+  for (const r of latency) {
+    const d = days.get(localDate(new Date(r.ts)));
+    if (!d || NOT_A_COMMAND.has(r.outcome)) continue;
+    d.commands++;
+    if (r.outcome === 'error') d.failed++;
+    if (r.route === 'job') d.jobs++;
+    if (r.costUsd !== undefined) d.usd += r.costUsd;
+    const ms = r.outcome === 'ok' ? spanMs(r, 'speech', 'replyReady') : null;
+    if (ms !== null) (r.route === 'model' ? model : local).push(ms);
+  }
+  for (const j of jobCosts) {
+    const d = Number.isFinite(j.at) && Number.isFinite(j.usd) && j.usd >= 0 ? days.get(localDate(new Date(j.at))) : undefined;
+    if (d) d.jobUsd += j.usd;
+  }
+  const inc: Record<string, number> = {};
+  for (const i of incidents) if (days.has(localDate(new Date(i.ts)))) bump(inc, i.code);
+  const rows = [...days.values()].map((d) => ({ ...d, usd: Math.round(d.usd * 100) / 100, jobUsd: Math.round(d.jobUsd * 100) / 100 }));
+  const sum = (k: 'commands' | 'failed' | 'jobs') => rows.reduce((n, d) => n + d[k], 0);
+  return {
+    from: dayList[0]!,
+    to: dayList[WEEK_DAYS - 1]!,
+    days: rows,
+    incidents: inc,
+    local: local.length ? stats(local) : null,
+    model: model.length ? stats(model) : null,
+    commands: sum('commands'),
+    failed: sum('failed'),
+    jobs: sum('jobs'),
+    usd: Math.round(rows.reduce((n, d) => n + d.usd, 0) * 100) / 100,
+    jobUsd: Math.round(rows.reduce((n, d) => n + d.jobUsd, 0) * 100) / 100,
+    stephen: safeVersion(versions.stephen),
+    claude: safeVersion(versions.claude),
+  };
+}
+
+export function formatWeekly(s: WeeklySummary): string {
+  const time = (name: string, t: SpanStats | null) => `${name}: ${t ? `median ${t.p50} ms, p95 ${t.p95} ms (n=${t.n})` : 'no timed commands'}`;
+  return [
+    `Stephen week ${s.from} to ${s.to}`,
+    `Stephen ${s.stephen}, Claude Code ${s.claude}`,
+    `Commands ${s.commands}, failed ${s.failed}, jobs started ${s.jobs}, model cost ${s.usd.toFixed(2)} USD, job cost ${s.jobUsd.toFixed(2)} USD`,
+    time('Local commands, speech to reply', s.local),
+    time('Model commands, speech to reply', s.model),
+    `Incidents: ${Object.keys(s.incidents).length ? counts(Object.fromEntries(Object.entries(s.incidents).sort(([a], [b]) => a.localeCompare(b)))) : 'none'}`,
+    'Per day:',
+    ...s.days.map((d) => `  ${d.day}: commands ${d.commands}, failed ${d.failed}, jobs ${d.jobs}, model ${d.usd.toFixed(2)} USD, job ${d.jobUsd.toFixed(2)} USD`),
+  ].join('\n');
+}
+
+export interface WeeklyEnv {
+  monitor?: Pick<LatencyMonitor, 'read'>;
+  incidents?: { ts: string; code: string }[];
+  now?: Date;
+  stephen?: string | null;
+  claude?: string | null;
+  /** Each job's cost and when it ended (or started): numbers only. cli.ts reads them (src/telemetry may not load src/jobs). */
+  jobCosts?: { at: number; usd: number }[];
+  out?: (l: string) => void;
+}
+
+/** Prints the summary. Reads only the local logs; sends nothing. */
+export async function runWeeklyCli(e: WeeklyEnv = {}): Promise<number> {
+  const now = e.now ?? new Date();
+  let home: string | null = null;
+  const homeOf = () => (home ??= loadConfig().home);
+  const latency = (e.monitor ?? new LatencyMonitor({ home: homeOf() })).read(WEEK_DAYS + 1);
+  const incidents = e.incidents ?? (await import('./incidents.js')).readIncidents(homeOf(), 10_000);
+  (e.out ?? ((l: string) => console.log(l)))(formatWeekly(buildWeekly(latency, incidents, now, { stephen: e.stephen, claude: e.claude }, e.jobCosts ?? [])));
   return 0;
 }

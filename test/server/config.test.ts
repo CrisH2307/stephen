@@ -10,6 +10,7 @@ import {
   legacyHomeNotice,
   loadConfig,
   resolveStephenHome,
+  userConfigUnknownKeys,
 } from '../../src/config.js';
 import { HubError } from '../../src/errors.js';
 
@@ -182,9 +183,31 @@ describe('loadConfig', () => {
     expectInvalid(() => loadConfig({ safety: { blockedDomains: [''] } }, { HOME: join(HOME, 'x') }), '"safety.blockedDomains.0"');
   });
 
-  it('unknown keys are reported (catches typos)', () => {
-    writeJson(join(HOME, '.stephen/config.json'), { safety: { allowEval: true }, chorme: {} });
-    expectInvalid(() => loadConfig(undefined, { HOME }), '"safety.allowEval"', '"chorme"');
+  it('unknown keys do not stop Stephen; doctor names them', () => {
+    const raw = { chorme: {}, output: { outFoo: 1 } };
+    writeJson(join(HOME, '.stephen/config.json'), raw);
+    expect(() => loadConfig(undefined, { HOME })).not.toThrow();
+    expect(userConfigUnknownKeys(raw)).toEqual(['chorme', 'output.outFoo']);
+  });
+
+  it('an unknown safety key stops Stephen and is named: a typo must not fall back to the default lists', () => {
+    const raw = { safety: { blockDomains: ['bank.test'] } };
+    writeJson(join(HOME, '.stephen/config.json'), raw);
+    expectInvalid(() => loadConfig(undefined, { HOME }), 'unknown key: "safety.blockDomains"');
+    expect(userConfigUnknownKeys(raw)).toEqual(['safety.blockDomains']);
+    expect(() => loadConfig({ safety: { confrim: 'deny' } as never }, { HOME: join(HOME, 'x') })).toThrow(/"safety\.confrim"/);
+    expect(() => loadConfig({ safety: { apiToken: 'x' } as never }, { HOME: join(HOME, 'x') })).toThrow(/looks like a secret \(not shown\)/);
+    expect(() => loadConfig({ safety: { apiToken: 'x' } as never }, { HOME: join(HOME, 'x') })).not.toThrow(/apiToken/);
+  });
+
+  it.each([
+    [{ chrome: { mode: 'real', chromeFoo: 1 } }, 'chrome.chromeFoo'],
+    [{ zen: { mode: 'real', zenFoo: 1 } }, 'zen.zenFoo'],
+    [{ output: { saveDir: '/tmp/x', outFoo: 1 } }, 'output.outFoo'],
+  ])('an unknown key in a core section (%j) loads and is listed by doctor', (raw, path) => {
+    writeJson(join(HOME, '.stephen/config.json'), raw);
+    expect(() => loadConfig(undefined, { HOME })).not.toThrow();
+    expect(userConfigUnknownKeys(raw)).toEqual([path]);
   });
 
   it('a non-object config is rejected', () => {

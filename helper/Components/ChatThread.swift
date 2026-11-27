@@ -30,8 +30,18 @@ struct ChatThreadView: View {
           ForEach(thread) { b in
             ChatBubbleRow(bubble: b, isLast: b.id == thread.last?.id, retry: canRetry ? { retry() } : nil, links: links).id(b.id)
           }
+          // T6 step 2: Stop left the jobs alone. Offer to stop them too, under the stopped line only.
+          let running = model.jobs.filter { $0.isRunning }.count
+          if thread.last?.id == model.stoppedBubble && running > 0 {
+            HStack(spacing: Space.s) {
+              Text(verbatim: jobsStillRunning(running)).font(TypeScale.secondary).foregroundColor(t.ink2)
+              QuietButton("Stop them too", destructive: true) { model.stopRunningJobs() }
+            }
+            .id("jobs")
+          }
           if let q = model.confirms.first {
             ConfirmMessage(question: q, waiting: model.confirms.count) { model.answerConfirm(q.id, approve: $0) }
+              .modifier(PaperBacking())
               // Esc = Deny, in the Ask box and on Home, even while the text field has focus: a key equivalent runs
               // before the field editor. No 0.75 s delay: Esc can only deny. One card, so one question per press (R10a-5).
               .background(
@@ -39,9 +49,14 @@ struct ChatThreadView: View {
                   .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
               )
               .id("confirm")
-          } else if model.isWorking {
-            Text(verbatim: "Working…").font(TypeScale.secondary).foregroundColor(t.ink2)
-              .accessibilityLabel("Working. Press Escape to stop.").id("working")
+          } else if model.canStop {
+            // T6: a visible Stop (Esc still works). It sends chat.stop only; running jobs keep going.
+            HStack(spacing: Space.s) {
+              Text(verbatim: model.isWorking ? "Working…" : "Speaking…").font(TypeScale.secondary).foregroundColor(t.ink2)
+                .accessibilityLabel(model.isWorking ? "Working. Press Escape to stop." : "Speaking. Press Escape to stop.")
+              QuietButton("Stop", symbol: "stop.fill") { model.stopChat() }.accessibilityLabel("Stop Stephen")
+            }
+            .id("working")
           }
           Color.clear.frame(height: 1).id("end")
         }
@@ -68,10 +83,10 @@ struct ChatThreadView: View {
   }
 }
 
-/// The text Try again may re-send: your last message, only if you typed it (no source label). Spoken or phone words
+/// The text Try again may re-send: your last message, only if you typed it (its source, never its text). Spoken or phone words
 /// are never re-sent: chat.send runs as typed in the app, full trust, and the app must not claim another source (R10a-2).
 func retryableText(_ thread: [ChatBubble]) -> String? {
-  guard let last = thread.last(where: { $0.kind == .said }), last.detail.isEmpty else { return nil }
+  guard let last = thread.last(where: { $0.kind == .said }), last.source == .typed else { return nil }
   return last.text
 }
 
@@ -94,21 +109,16 @@ struct ChatBubbleRow: View {
   var body: some View {
     switch bubble.kind {
     case .said:
-      // Spoken or phone words carry where they came from, under the bubble; typed ones have no label.
-      VStack(alignment: .trailing, spacing: 2) {
-        HStack(spacing: 0) {
-          Spacer(minLength: Space.xxl)
-          Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
-            .padding(.horizontal, Space.m).padding(.vertical, Space.s)
-            .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.line))
-        }
-        if !bubble.detail.isEmpty {
-          Text(verbatim: bubble.detail).font(TypeScale.secondary).foregroundColor(t.ink2)
-        }
+      // No source label under the bubble, typed or spoken (owner, 2026-11-26). The source stays on the bubble for Try again.
+      HStack(spacing: 0) {
+        Spacer(minLength: Space.xxl)
+        Text(verbatim: bubble.text).font(TypeScale.body).foregroundColor(t.ink).textSelection(.enabled)
+          .padding(.horizontal, Space.m).padding(.vertical, Space.s)
+          .background(RoundedRectangle(cornerRadius: Corner.list).fill(t.line))
       }
       .frame(maxWidth: .infinity, alignment: .trailing)
       .accessibilityElement(children: .combine)
-      .accessibilityLabel(bubble.detail.isEmpty ? "You: \(bubble.text)" : "You, \(bubble.detail): \(bubble.text)")
+      .accessibilityLabel("You: \(bubble.text)")
     case .reply:
       // The work first, small and folded; the answer after it, as the main text (owner, 2026-11-09).
       VStack(alignment: .leading, spacing: Space.s) {
@@ -134,7 +144,11 @@ struct ChatBubbleRow: View {
         if isLast, let retry = retry { QuietButton("Try again", action: retry) }
       }
     case .info:
-      Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
+      // A stopped command keeps its folded chain, so you can see what already ran (T6).
+      VStack(alignment: .leading, spacing: Space.s) {
+        if !bubble.steps.isEmpty { ActionChain(steps: bubble.steps, seconds: bubble.detail) }
+        Text(verbatim: bubble.text).font(TypeScale.secondary).foregroundColor(t.ink2)
+      }
     }
   }
 
@@ -241,6 +255,21 @@ struct ActionChain: View {
   }
 }
 
+/// Paper only: a hard ink block 4 pt down-right behind the question card, the website's look. The card itself (its
+/// fill and warn outline, #139) is drawn by ConfirmMessage the same in every theme; this only adds the block.
+private struct PaperBacking: ViewModifier {
+  @Environment(\.stephenTheme) var t
+  func body(content: Content) -> some View {
+    if t.paper {
+      // Room for the block inside the thread's scroll view, which clips.
+      content.background(RoundedRectangle(cornerRadius: Corner.list).fill(t.ink).offset(x: 4, y: 4))
+        .padding(.trailing, 4).padding(.bottom, 4)
+    } else {
+      content
+    }
+  }
+}
+
 /// The gate's question as a message: computed facts first, model and page text quoted and labelled (the gate's own
 /// text). The full fact list is kept, in a short scroll, so the owner can decide from it alone, as with the dialog.
 struct ConfirmMessage: View {
@@ -252,10 +281,12 @@ struct ConfirmMessage: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.s) {
       Text(verbatim: "Needs your OK").safetyLabelStyle(t)
-      Text(verbatim: question.title).font(TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
+      Text(verbatim: question.title).font(t.paper ? paperHead(16) : TypeScale.body.weight(.semibold)).foregroundColor(t.ink).lineLimit(3)
       ScrollView {
-        Text(verbatim: question.body).font(TypeScale.secondary).foregroundColor(t.ink2).textSelection(.enabled)
+        Text(verbatim: question.body).font(TypeScale.secondary).foregroundColor(t.paper ? t.ink : t.ink2).textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(t.paper ? Space.s : 0)
+          .background(RoundedRectangle(cornerRadius: Corner.button).fill(t.paper ? Theme.sky : Color.clear))
       }
       .frame(maxHeight: 160).fixedSize(horizontal: false, vertical: true)
       .accessibilityLabel("Details: \(question.body)")

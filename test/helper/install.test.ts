@@ -11,10 +11,12 @@ import { helperDoctorChecks, type HelperDoctorDeps } from '../../src/helper/doct
 import {
   HELPER_FRAMEWORKS,
   HELPER_SOURCES,
+  type HelperInstallPlan,
   type InstallHelperDeps,
   codesignArgs,
   fallbackSdks,
   findSwiftCompiler,
+  helperFailure,
   helperSourceDir,
   installHelper,
   planHelperInstall,
@@ -91,8 +93,8 @@ describe('install-helper', () => {
       '-O', '-swift-version', '5', '-sdk', '/SDK', '-o', '/tmp/x/Stephen Helper',
       '/src/Core.swift', '/src/Theme.swift',
       '/src/Components/Sidebar.swift', '/src/Components/Controls.swift', '/src/Components/Lists.swift', '/src/Components/ChatThread.swift',
-      '/src/AppProtocol.swift', '/src/AppConnection.swift', '/src/AppClient.swift', '/src/AppConfirm.swift', '/src/StephenControl.swift', '/src/AppWindow.swift', '/src/AskBox.swift', '/src/MainWindow.swift', '/src/HomeView.swift', '/src/Palette.swift', '/src/MemoryPage.swift', '/src/ConversationsPage.swift', '/src/JobsPage.swift', '/src/AppearanceSettings.swift', '/src/SettingsPage.swift', '/src/main.swift',
-      '-framework', 'AppKit', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'SwiftUI',
+      '/src/AppProtocol.swift', '/src/AppConnection.swift', '/src/AppClient.swift', '/src/AppConfirm.swift', '/src/StephenControl.swift', '/src/AppWindow.swift', '/src/AskBox.swift', '/src/MainWindow.swift', '/src/OnboardingSheet.swift', '/src/HomeView.swift', '/src/Palette.swift', '/src/MemoryPage.swift', '/src/ConversationsPage.swift', '/src/ActivityPage.swift', '/src/JobsPage.swift', '/src/AppearanceSettings.swift', '/src/SettingsPage.swift', '/src/main.swift',
+      '-framework', 'AppKit', '-framework', 'AVFoundation', '-framework', 'CoreAudio', '-framework', 'CoreGraphics', '-framework', 'ServiceManagement', '-framework', 'SwiftUI',
     ]);
     expect(swiftcArgs('/src', '/o', null)).not.toContain('-sdk');
     expect(codesignArgs('/A/Stephen Helper.app')).toEqual(['--force', '--sign', '-', '--identifier', 'dev.stephen.helper', '/A/Stephen Helper.app']);
@@ -320,6 +322,29 @@ describe('install-helper skip unchanged', () => {
     const badSign = (cmd: string, args: string[]) => (cmd === '/usr/bin/codesign' ? fail('no') : happy(cmd, args));
     expect(await installHelper(p, {}, deps(fakeRun(badSign).run).deps)).toBe(1);
     expect(existsSync(stampOf(p))).toBe(false);
+  });
+});
+
+describe('helperFailure reads install-helper\'s real lines (setup shows a fixed line per word)', () => {
+  const words = async (p: HelperInstallPlan, respond: Responder, over: Partial<InstallHelperDeps> = {}) => {
+    const d = deps(fakeRun(respond).run, over);
+    expect(await installHelper(p, {}, d.deps)).toBe(1);
+    return helperFailure(d.out.join('\n'));
+  };
+
+  it('names each failure from its own log', async () => {
+    const noMacros: Responder = (cmd, args) => (cmd.endsWith('swiftc') && args[0] === '-O' ? fail(NO_MACROS) : happy(cmd, args));
+    expect(await words(plan(), noMacros, { fallbackSdks: () => [] })).toBe('sdk');
+    expect(await words(plan(), () => fail('xcrun: error: invalid active developer path'))).toBe('tools');
+    expect(await words(plan(), happy, { platform: 'linux' })).toBe('not_macos');
+    expect(await words(planHelperInstall({ appPath: join(dir, 'A.app'), stephenHome: join(dir, 'x'.repeat(120)), version: '1' }), happy)).toBe('home_too_long');
+    const theirs = plan();
+    mkdirSync(join(theirs.appPath, 'Contents'), { recursive: true });
+    writeFileSync(join(theirs.appPath, 'Contents', 'Info.plist'), '<plist><string>com.other</string></plist>');
+    expect(await words(theirs, happy)).toBe('not_ours');
+    rmSync(theirs.appPath, { recursive: true, force: true });
+    expect(await words(plan(), (cmd, args) => (cmd === '/usr/bin/codesign' ? fail('no') : happy(cmd, args)))).toBe('codesign');
+    expect(await words(plan(), (cmd, args) => (cmd.endsWith('swiftc') && args[0] === '-O' ? fail('error: boom') : happy(cmd, args)))).toBe('other');
   });
 });
 

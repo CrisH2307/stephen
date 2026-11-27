@@ -9,9 +9,10 @@
  *
  * Recording never fails a command: every error goes to `log`.
  */
-import { lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendPrivateLineCapped, readPrivateRegularFile } from '../lib/fs.js';
+import { lastStage, purgeDayFiles, recordIncident, type IncidentCode } from './incidents.js';
 import { localDate } from '../history/store.js';
 import { ASR_MODELS } from '../voice/config.js';
 import type { Reason } from '../voice/grammar/classify.js';
@@ -79,6 +80,8 @@ export interface LatencyRecord {
   reason?: LatencyReason;
   /** wake_ignored only: why. */
   ignored?: (typeof LATENCY_IGNORED)[number];
+  /** Model run only: what the run cost in USD, as Claude Code reports it (0 to 100, 6 decimals). A number, never text. */
+  costUsd?: number;
   /** 1 = the replay recorder was on for this F5 command (issue #48). Never anything about the clip itself. */
   replay?: 0 | 1;
   /** Which Stephen tools ran and how long each took, in call order. Names only, never arguments or results. */
@@ -196,6 +199,8 @@ export function parseLatencyRecord(v: unknown): LatencyRecord | null {
     }
     if (tools.length) extra.tools = tools;
   }
+  // A number only, 0 to 100 USD: anything else is dropped (the record stays).
+  if (typeof o.costUsd === 'number' && Number.isFinite(o.costUsd) && o.costUsd >= 0 && o.costUsd <= 100) extra.costUsd = Math.round(o.costUsd * 1e6) / 1e6;
   return {
     v: 1,
     id: o.id,
@@ -225,7 +230,8 @@ export interface LatencyTrace {
   note(id: string, note: LatencyNote): void;
 }
 
-export type LatencyEnd = { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes } & LatencyNote;
+/** failure: the incident code word for a failed command (R5), not written to the latency row. */
+export type LatencyEnd = { route?: LatencyRoute | null; followUp?: boolean; turns?: number; model?: LatencyModelTimes; costUsd?: number; failure?: IncidentCode } & LatencyNote;
 
 export interface LatencyMonitorOptions {
   home: string;
@@ -289,6 +295,11 @@ export class LatencyMonitor implements LatencyTrace {
       ...extra.model,
     });
     if (!rec) return;
+    // A failed command is an incident too (docs/NFR-STEPHEN.md section 9): its id, last stage and numbers, nothing else.
+    if (outcome === 'error') {
+      const model = Object.fromEntries(LATENCY_MODEL_FIELDS.flatMap((f) => (rec[f] === undefined ? [] : [[f, rec[f]]])));
+      recordIncident(this.o.home, { part: 'listen', code: extra.failure ?? 'command_error', id, stage: lastStage(rec.stages), stages: rec.stages, model }, new Date(this.now()));
+    }
     try {
       this.append(rec, new Date(t.t0));
     } catch (e) {
@@ -305,19 +316,7 @@ export class LatencyMonitor implements LatencyTrace {
 
   /** Delete day files older than LATENCY_RETENTION_DAYS (call at listener start). Returns how many were deleted. */
   purge(): number {
-    const n = new Date(this.now());
-    const cutoff = localDate(new Date(n.getFullYear(), n.getMonth(), n.getDate() - LATENCY_RETENTION_DAYS));
-    let removed = 0;
-    for (const { name, date } of this.files()) {
-      if (date >= cutoff) continue;
-      try {
-        unlinkSync(join(this.dir, name));
-        removed++;
-      } catch {
-        /* best effort */
-      }
-    }
-    return removed;
+    return purgeDayFiles(this.dir, this.files(), LATENCY_RETENTION_DAYS, new Date(this.now()));
   }
 
   /** Records of the last `days` days (1 to LATENCY_RETENTION_DAYS), oldest first. Bad lines are skipped. */

@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 600" width="980" height="600" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="t">Stephen: high-level architecture</title>
+  <desc id="d">The owner talks to the helper app and the listener on the Mac. The listener runs local rules or starts Claude Code. Claude Code calls the tool server over MCP. The tool server passes every action through the safety gate before it touches the browsers, the desktop or the account APIs. Jobs run in a separate sandbox. Only Claude traffic, account reads, the websites you browse, the phone link when on, and optional voice leave the Mac.</desc>
+  <style>
+    .bg{fill:#ffffff}
+    .zone{stroke-width:1.5;rx:14}
+    .own{fill:#eef4fb;stroke:#2f5d8a}
+    .mod{fill:#fdf6ea;stroke:#b7791f}
+    .job{fill:#f1f1f4;stroke:#6b6b80;stroke-dasharray:6 4}
+    .out{fill:#ffffff;stroke:#8a8fa3;stroke-dasharray:3 4}
+    .box{fill:#ffffff;stroke:#1d3557;stroke-width:1.4;rx:9}
+    .gate{fill:#1d3557;stroke:#1d3557;rx:9}
+    .h{font-size:15px;font-weight:700;fill:#1d3557}
+    .zt{font-size:12px;font-weight:700;letter-spacing:.06em;fill:#2f5d8a}
+    .zm{fill:#8a5a12}
+    .l.zm{fill:#b7791f}.zj{fill:#55556a}.zo{fill:#5c6178}
+    .s{font-size:12px;fill:#3a4256}
+    .w{font-size:14px;font-weight:700;fill:#ffffff}
+    .ws{font-size:11.5px;fill:#dfe8f3}
+    .l{font-size:11px;fill:#3a4256}
+    .a{stroke:#1d3557;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+    .ad{stroke:#b7791f;stroke-width:1.6;fill:none;stroke-dasharray:5 4;marker-end:url(#arm)}
+    #ar path{fill:#1d3557} #arm path{fill:#b7791f}
+    @media (prefers-color-scheme: dark){
+      .bg{fill:#0f1726}
+      .own{fill:#16263d;stroke:#7fa7d1}
+      .mod{fill:#2b2215;stroke:#e0a84a}
+      .job{fill:#1c1f29;stroke:#9a9ab0}
+      .out{fill:#0f1726;stroke:#7d849b}
+      .box{fill:#0f1726;stroke:#a9c4e2}
+      .gate{fill:#2f5d8a;stroke:#a9c4e2}
+      .h{fill:#e6eef8}.zt{fill:#9fc0e3}.zm{fill:#f0c37a}.zj{fill:#b9b9cc}.zo{fill:#a8aec2}
+      .s,.l{fill:#c4cede}
+      .a{stroke:#a9c4e2} #ar path{fill:#a9c4e2}
+    }
+  </style>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="arm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+  <rect class="bg" width="980" height="600"/>
+
+  <!-- Owner trust zone -->
+  <rect class="zone own" x="20" y="20" width="430" height="400"/>
+  <text class="zt" x="38" y="44">OWNER TRUST · on the Mac</text>
+
+  <rect class="box" x="40" y="62" width="390" height="92"/>
+  <text class="h" x="56" y="86">Helper app (Swift)</text>
+  <text class="s" x="56" y="106">Menu bar, Ask box, window, F5 key tap</text>
+  <text class="s" x="56" y="124">Allow and Deny buttons: clicks only</text>
+  <text class="s" x="56" y="142">helper/</text>
+
+  <rect class="box" x="40" y="196" width="390" height="206"/>
+  <text class="h" x="56" y="220">Listener · stephen listen (Node)</text>
+  <text class="s" x="56" y="242">Wake word, voice detection, speech to text</text>
+  <text class="s" x="56" y="260">Routers: memory, timers, jobs (no model)</text>
+  <text class="s" x="56" y="278">Stores: memory, timers, history, settings</text>
+  <text class="s" x="56" y="296">Warm Claude runner, speaks the reply</text>
+  <text class="s" x="56" y="314">Cost limit, latency and incident logs</text>
+  <text class="s" x="56" y="340">src/voice, src/memory, src/timers,</text>
+  <text class="s" x="56" y="358">src/history, src/app, src/telemetry</text>
+
+  <path class="a" d="M235,154 L235,196"/>
+  <path class="a" d="M255,196 L255,154"/>
+  <text class="l" x="264" y="179">helper.sock · app.sock (0600)</text>
+
+  <!-- Model side zone -->
+  <rect class="zone mod" x="480" y="20" width="480" height="400"/>
+  <text class="zt zm" x="498" y="44">MODEL SIDE · untrusted after any read</text>
+
+  <rect class="box" x="500" y="62" width="440" height="80"/>
+  <text class="h" x="516" y="86">Claude Code · claude -p</text>
+  <text class="s" x="516" y="106">The person's own install and sign-in</text>
+  <text class="s" x="516" y="124">Sees only Stephen's tools (strict MCP config)</text>
+
+  <rect class="box" x="500" y="180" width="440" height="222"/>
+  <text class="h" x="516" y="204">Tool server · stephen serve (Node)</text>
+  <text class="s" x="516" y="224">38 tools: 23 browser, 6 desktop, 9 account, + announce</text>
+  <rect class="gate" x="516" y="238" width="408" height="74"/>
+  <text class="w" x="532" y="262">Safety gate</text>
+  <text class="ws" x="532" y="282">one policy pass: taint, egress, rate limit rules</text>
+  <text class="ws" x="532" y="300">deny beats ask · ask = Allow / Deny click · audit log</text>
+  <text class="s" x="516" y="334">Browser drivers: Zen (WebDriver BiDi), Chrome (CDP)</text>
+  <text class="s" x="516" y="352">Untrusted text is wrapped before the model sees it</text>
+  <text class="s" x="516" y="380">src/server, src/safety, src/drivers, src/desktop,</text>
+  <text class="s" x="516" y="396">src/accounts</text>
+
+  <path class="a" d="M720,142 L720,180"/>
+  <path class="a" d="M740,180 L740,142"/>
+  <text class="l" x="750" y="166">MCP over stdio</text>
+
+  <!-- listener to claude -->
+  <path class="a" d="M430,222 C466,222 462,100 500,100"/>
+  <path class="a" d="M500,124 C478,124 474,240 430,240"/>
+  <text class="l" x="444" y="168" transform="rotate(-90 452 168)">stream-json</text>
+
+  <!-- confirm.ask back to app.sock -->
+  <path class="ad" d="M500,300 C470,300 460,300 430,300"/>
+  <text class="l zm" x="440" y="322">confirm.ask</text>
+
+  <!-- Job sandbox -->
+  <rect class="zone job" x="40" y="444" width="390" height="136"/>
+  <text class="zt zj" x="58" y="468">JOB SANDBOX</text>
+  <text class="h" x="58" y="494">Job supervisor, then claude -p</text>
+  <text class="s" x="58" y="514">Started only after a click. Files only.</text>
+  <text class="s" x="58" y="532">No MCP. Claude Code's sandbox for the shell.</text>
+  <text class="s" x="58" y="556">src/jobs</text>
+  <path class="a" d="M150,402 L150,444"/>
+
+  <!-- Outside -->
+  <rect class="zone out" x="480" y="444" width="480" height="136"/>
+  <text class="zt zo" x="498" y="468">OUTSIDE THE MAC</text>
+  <text class="s" x="498" y="494">Anthropic: command, memory block, tool results</text>
+  <text class="s" x="498" y="514">Your accounts: Gmail, Calendar, Canvas, Notion</text>
+  <text class="s" x="498" y="534">Websites you open in Zen or Chrome</text>
+  <text class="s" x="498" y="554">Optional: ElevenLabs voice. Never: audio, secrets</text>
+  <path class="a" d="M940,102 C968,102 968,470 942,470"/>
+  <path class="a" d="M720,402 L720,444"/>
+</svg>

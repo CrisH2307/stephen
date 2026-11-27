@@ -1,23 +1,35 @@
 #!/usr/bin/env node
 // Stephen CLI (`stephen`; `browser-hub` is a compatibility alias for the same file).
-// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | help | --version
+// Commands: serve (default) | doctor | selftest | install [--run] | listen | eval | eval-clicks | memory | history | latency | report | jobs | app | accounts | connect | disconnect | voice-setup | voice-key | zen-launch | install-zen-launcher | install-helper | setup | update | help | --version
 import { readCommandId } from './lib/command-id.js';
 import { parseServeArgs } from './serve-args.js';
 import { RESTARTED_EXIT_CODE, claimServeInstance } from './server/instance.js';
 import { withSessionState } from './safety/session-state.js';
 import type { ServerDepsWithVoice } from './voice/announce.js';
 import { voiceOutputChecks } from './voice/tts/doctor.js';
+import { otherUserCount, sharedMacReason } from './lib/other-users.js';
 import { parseTtsConfig } from './voice/tts/index.js';
 import { isTtsSetupArgs, runTtsSetup } from './voice/tts/setup.js';
 import { execFile } from 'node:child_process';
 import { helperDoctorChecks } from './helper/doctor.js';
 import { runInstallHelper } from './helper/install.js';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { REPO_ROOT } from './lib/repo.js';
 import { access, constants, mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configFilePath, legacyHomeNotice, loadConfig, resolveStephenHome, type HubConfig } from './config.js';
+import {
+  configFilePath,
+  legacyHomeNotice,
+  loadConfig,
+  looksLikeSecretKey,
+  showKeyName,
+  UNUSUAL_KEY_NAME,
+  readUserConfigFile,
+  resolveStephenHome,
+  userConfigUnknownKeys,
+  type HubConfig,
+} from './config.js';
 import { createBrowserManager } from './drivers/index.js';
 import { securePrivateDirs } from './drivers/util.js';
 import {
@@ -28,12 +40,16 @@ import {
   resolveZenRealProfile,
 } from './drivers/macos.js';
 import { LEGACY_ZEN_LAUNCHER_APP_NAME, ZEN_ATTACH_ONLY_LABEL, ZEN_LAUNCHER_APP_NAME, ZEN_WHY_LAUNCHER, ZenDriver, isZenAttachOnly } from './drivers/zen.js';
-import { errorMessage } from './errors.js';
+import { HubError, errorMessage } from './errors.js';
 import { defaultRunClaude, runInstall } from './install.js';
+import { runSetup, setupStatus } from './setup.js';
+import { execNoThrow } from './lib/process.js';
+import { runUpdate } from './update.js';
 import { pageEngine } from './page/index.js';
 import { createSafety } from './safety/index.js';
 import { SELFTEST_USAGE, emergencyCleanup, parseSelftestArgs, runSelftest } from './selftest/index.js';
 import { packageVersion, serveStdio } from './server/index.js';
+import { recordIncident } from './telemetry/incidents.js';
 import type { ResolvedConfig } from './types.js';
 import {
   ZEN_LAUNCHER_USAGE,
@@ -61,6 +77,10 @@ Usage:
   stephen selftest       Prove each browser works end to end, safely (temporary agent profile,
                          local test pages only; closes what it opened). Options:
                          --browser chrome|zen|all (default all)  --keep-open  --json
+  stephen setup          First-time setup in one command: checks, install, launcher, helper, doctor, then the 3 Mac
+                         permissions. Stops at the first problem and says what to do. Safe to run twice.
+  stephen update         Update to the newest version: git pull (fast-forward only), npm install, build, helper.
+                         Refuses a dirty folder. Says when Input Monitoring must be clicked again, and how to go back.
   stephen install        Print the "claude mcp add" command for this install
   stephen install --run  …and run it (registers stephen for all your projects; removes an old browser-hub registration)
   stephen listen         "Hey Stephen" voice listener (see docs/VOICE.md; --text "open youtube" skips the mic)
@@ -70,10 +90,20 @@ Usage:
                          What you asked Stephen to remember ("remember …"); clear asks first
   stephen history [--limit N] | clear
                          Show your recent commands (kept on this Mac only), or delete them
+  stephen data           What Stephen keeps on this Mac: each place, its size, how long it stays, how to delete it
+  stephen data delete --all
+                         Delete everything Stephen keeps (asks first, then asks again about your job folder)
+  stephen data export <new folder> [--history]
+                         Copy your settings, memory and timers (and history) into a new private folder (no secrets)
+  stephen data import <folder> [--config] [--yes]
+                         Replace them from such a folder (Stephen must be stopped; asks first; settings only with --config)
   stephen latency [--days 1|7|30] [--json]
                          How long commands take: p50 and p95 per trigger and route, and the 10 slowest
-  stephen replay delete --all | <id>
-                         Delete saved F5 recordings (saved only when voice.replay.enabled is on)
+  stephen report [--last N]
+                         Show recent crashes and failed commands; send them to GitHub only if you type y
+  stephen report --week  A weekly summary to paste to Cris: numbers, code words, versions and dates only
+  stephen replay list | label <id> <code> | accuracy [--days 7|30] | delete --all | <id>
+                         Saved F5 recordings (only when voice.replay.enabled is on): list, label, accuracy, delete
   stephen mac-checks [--json]
                          Pass or fail for the technical checks of the Mac test plan, section 13
   stephen jobs [list] | status <id> | show <id> | stop <id>
@@ -105,6 +135,26 @@ Config: ${configFilePath()}  (env STEPHEN_HOME, STEPHEN_CONFIG)`;
 
 // ───────────────────────────── serve ─────────────────────────────
 
+/** One start-time line that names the ignored keys (names only, never values). */
+export function ignoredKeysNotice(keys: string[]): string {
+  return `[stephen] config: ignored keys ${keys.map(showKeyName).join(', ')} (run stephen doctor)`;
+}
+
+/**
+ * Start check (serve and listen). A key whose name looks like a secret stops the start, and its name is not shown:
+ * secrets belong in the Keychain. Other unknown keys are ignored, and each start names them on stderr.
+ */
+export async function startConfigCheck(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const ignored = await configUnknownKeys(env, true);
+  if (ignored.some(looksLikeSecretKey)) {
+    throw new HubError(
+      'INVALID_ARG',
+      'config.json has a key whose name looks like a secret (key, token, secret or password). Secrets belong in the macOS Keychain, not in config.json (ElevenLabs can also read apiKeyFile). Remove that key and start again.',
+    );
+  }
+  if (ignored.length) console.error(ignoredKeysNotice(ignored));
+}
+
 async function serve(argv: string[] = []): Promise<void> {
   // stdout carries MCP JSON-RPC only — route all console output to stderr before anything can log.
   console.log = console.error.bind(console);
@@ -128,6 +178,8 @@ async function serve(argv: string[] = []): Promise<void> {
     await server.connect(new StdioServerTransport());
     return;
   }
+  // A refused start (secret-looking key) must claim nothing, so the check runs before the instance lock.
+  await startConfigCheck();
   // --instance: one serve per id. A second serve of the same id is Claude Code restarting a dead one behind the
   // listener's back (docs/REVIEW-7.md R7-1): it refuses every tool call and exits. Any other failure throws (no tools).
   let restarted: (() => void) | undefined;
@@ -180,6 +232,66 @@ async function serve(argv: string[] = []): Promise<void> {
 
 // ───────────────────────────── doctor ─────────────────────────────
 
+/** Sections whose readers serve and listen never load: their code stays out of the start-up path (memory, history). */
+const COLD_SECTIONS = ['memory', 'history', 'jobs', 'app'];
+
+/** The raw value at a dotted path (undefined when a segment is missing). Key names with a dot are not reached. */
+function valueAt(raw: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((v, k) => (v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined), raw);
+}
+
+/** Every dotted path in a raw value whose key name looks like a secret (any depth, arrays included). */
+function secretKeyPaths(value: unknown, prefix: string): string[] {
+  if (!value || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap((v, i) => secretKeyPaths(v, `${prefix}.${i}`));
+  return Object.entries(value).flatMap(([k, v]) => {
+    const path = `${prefix}.${k}`;
+    return [...(looksLikeSecretKey(path) ? [path] : []), ...secretKeyPaths(v, path)];
+  });
+}
+
+/**
+ * Keys in config.json that no reader uses, top level and in each section Stephen reads. The readers ignore them;
+ * doctor warns with the key name only. [] when the file cannot be read or is not valid JSON.
+ * `start` (serve, listen): only the readers that code already loads run. For the cold sections (COLD_SECTIONS) that
+ * means no reader at all; their raw keys are checked for a secret-looking name, the one thing the start refuses on.
+ */
+export async function configUnknownKeys(env: NodeJS.ProcessEnv = process.env, start = false): Promise<string[]> {
+  let raw: unknown;
+  try {
+    raw = readUserConfigFile(env);
+  } catch {
+    return [];
+  }
+  const found = new Set(userConfigUnknownKeys(raw));
+  const section = (name: string) => (raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[name] : undefined);
+  // On demand, like the other owner-only readers: the start-up graph stays free of these modules.
+  const [voice, desktop, accounts] = await Promise.all([import('./voice/config.js'), import('./desktop/config.js'), import('./accounts/config.js')]);
+  const readers: [string, (v: unknown, unknownKeys: string[]) => unknown][] = [
+    ['voice', voice.parseVoiceConfig],
+    ['desktop', desktop.parseDesktopConfig],
+    ['accounts', accounts.parseAccountsConfig],
+  ];
+  if (start) {
+    for (const name of COLD_SECTIONS) for (const path of secretKeyPaths(section(name), name)) found.add(path);
+  } else {
+    const [memory, history, jobs, app] = await Promise.all([import('./memory/config.js'), import('./history/config.js'), import('./jobs/config.js'), import('./app/config.js')]);
+    readers.push(['memory', memory.parseMemoryConfig], ['history', history.parseHistoryConfig], ['jobs', jobs.parseJobsConfig], ['app', app.parseAppConfig]);
+  }
+  for (const [name, read] of readers) {
+    const sink: string[] = [];
+    try {
+      read(section(name), sink);
+    } catch {
+      // A bad value in this section is reported by the check that reads it.
+    }
+    for (const key of sink) found.add(key);
+  }
+  // An unknown key is reported by its own name; a secret-looking key inside its value (an object or an array) too.
+  for (const path of [...found]) for (const inner of secretKeyPaths(valueAt(raw, path), path)) found.add(inner);
+  return [...found];
+}
+
 interface Check {
   ok: boolean;
   label: string;
@@ -222,7 +334,7 @@ async function writable(dir: string): Promise<string | null> {
   }
 }
 
-async function doctor(network = false, json = false): Promise<number> {
+export async function doctor(network = false, json = false): Promise<number> {
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
 
@@ -245,8 +357,28 @@ async function doctor(network = false, json = false): Promise<number> {
   try {
     cfg = loadConfig();
     add({ ok: true, label: 'Config loads', detail: existsSync(configFilePath()) ? configFilePath() : `defaults (no ${configFilePath()})` });
+    for (const key of await configUnknownKeys()) {
+      const shown = showKeyName(key);
+      const named = shown === UNUSUAL_KEY_NAME ? shown : `"${shown}"`;
+      if (looksLikeSecretKey(key)) {
+        // The name is never shown. A secret in config.json stops the start, so this one is a blocking problem.
+        add({ ok: false, blocking: true, label: 'Secret in config.json', detail: 'a key whose name looks like a secret (name not shown); `stephen serve` and `stephen listen` refuse to start', fix: `Remove it from ${configFilePath()}. Secrets belong in the macOS Keychain (ElevenLabs can also read apiKeyFile).` });
+      } else if (/^(desktop|accounts)\./.test(key)) {
+        // These sections refuse a typo (it could empty a block list): desktop stops the start, accounts turns its tools off.
+        const desktop = key.startsWith('desktop.');
+        add({ ok: false, blocking: desktop, label: 'Unknown config key', detail: `${named} is not a Stephen setting, so ${desktop ? 'Stephen will not start' : 'the account tools are off'}.`, fix: `Fix the spelling or remove it in ${configFilePath()}.` });
+      } else {
+        // Info only: Stephen ignores the key, so it is not a problem with the setup.
+        add({ ok: true, info: true, label: 'Unknown config key', detail: `${named} is ignored, not a Stephen setting. Remove it or fix the spelling in ${configFilePath()}.` });
+      }
+    }
   } catch (e) {
-    add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see README "Configuration").`, blocking: true });
+    add({ ok: false, label: 'Config loads', detail: errorMessage(e), fix: `Fix ${configFilePath()} (it must be valid JSON; see docs/guide/ADVANCED-SETUP.md#configuration).`, blocking: true });
+  }
+
+  const dropped = (await import('./voice/claude.js')).droppedEndpointEnv(process.env);
+  if (dropped.length) {
+    add({ ok: true, info: true, label: 'Claude endpoint', detail: `${dropped.join(', ')} set in this shell: Stephen does not pass it to Claude (voice, phone or jobs). A proxy set only in the shell is not used, so on a network that needs one, Claude cannot connect.` });
   }
 
   const homeInfo = resolveStephenHome();
@@ -299,6 +431,15 @@ async function doctor(network = false, json = false): Promise<number> {
     });
     if (!chromeExists && !zenPath) {
       add({ ok: false, label: 'At least one browser available', fix: 'Install Chrome or Zen (see above).', blocking: true });
+    }
+    if (zenPath) {
+      // B5: count only, never a name. Stephen will not start Zen's open port on a shared Mac (src/drivers/zen.ts).
+      const others = await otherUserCount();
+      add(
+        others === 0
+          ? { ok: true, label: 'Zen remote-control port', detail: 'only your account on this Mac' }
+          : { ok: false, label: 'Zen remote-control port', detail: sharedMacReason(others), fix: 'Use Chrome with Stephen on this Mac. Zen works with Stephen only on a Mac with one user account (until the Zen add-on, ADR-009).' },
+      );
     }
     const zenAttach = isZenAttachOnly(cfg);
     add({
@@ -367,8 +508,9 @@ async function doctor(network = false, json = false): Promise<number> {
 
     for (const c of await helperDoctorChecks(cfg.home)) add(c);
 
+    const claudeEnv = (await import('./lib/claude-env.js')).withoutSecrets(process.env);
     const claudeVersion = await new Promise<string | null>((res) => {
-      execFile(String(((cfg as Partial<HubConfig>).voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
+      execFile(String(((cfg as Partial<HubConfig>).voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { env: claudeEnv, timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
     });
     add((await import('./voice/claude.js')).claudeVersionCheck(claudeVersion));
 
@@ -376,6 +518,15 @@ async function doctor(network = false, json = false): Promise<number> {
     add({ ok: true, info: true, label: 'Saved output', detail: cfg.output.saveDir });
     for (const c of await voiceOutputChecks({ home: cfg.home, rawVoice: (cfg as Partial<HubConfig>).voice ?? {}, network })) add(c);
 
+    try {
+      const { DEFAULT_WEATHER } = await import('./accounts/weather.js');
+      const w = (await import('./accounts/config.js')).parseAccountsConfig((cfg as Partial<HubConfig>).accounts ?? {}).weather;
+      if (w.enabled && w.latitude === DEFAULT_WEATHER.latitude && w.longitude === DEFAULT_WEATHER.longitude) {
+        add({ ok: true, info: true, label: 'Weather place', detail: `Weather uses ${DEFAULT_WEATHER.label} (the built-in place). Set yours: stephen accounts weather set <your city>` });
+      }
+    } catch {
+      // a bad accounts section is reported where the config is checked
+    }
     add({ ok: true, info: true, label: 'Modes', detail: `chrome: ${cfg.chrome.mode} · zen: ${cfg.zen.mode} · default browser: ${cfg.defaultBrowser} · confirm: ${cfg.safety.confirm}` });
   }
 
@@ -442,6 +593,40 @@ async function install(run: boolean): Promise<number> {
   );
 }
 
+async function setup(): Promise<number> {
+  const cliPath = distCliPath();
+  const runStephen = async (args: string[]) => {
+    const r = await execNoThrow(process.execPath, [cliPath, ...args], 600_000);
+    return { code: r.code, stdout: r.stdout, stderr: r.stderr };
+  };
+  return runSetup({
+    nodeOk: nodeSupported(process.versions.node),
+    nodeVersion: process.versions.node,
+    runClaude: defaultRunClaude,
+    runStephen,
+    exists: existsSync,
+    launcherPath: zenLauncherAppPath(),
+    cliPath,
+    log: (l) => console.log(l),
+    ...(process.stdin.isTTY && process.stdout.isTTY ? { askWeather: async () => (await import('./connect/accounts-cli.js')).askWeatherCity() } : {}),
+  });
+}
+
+async function update(): Promise<number> {
+  return runUpdate({
+    run: (cmd, args) =>
+      new Promise((res) => {
+        // 15 minutes: npm install and the Swift build are slow on a first run. No shell, argv arrays only.
+        execFile(cmd, args, { cwd: REPO_ROOT, timeout: 900_000, maxBuffer: 20_000_000 }, (err, stdout, stderr) =>
+          res({ code: err ? (typeof err.code === 'number' ? err.code : null) : 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }),
+        );
+      }),
+    version: packageVersion,
+    cliPath: distCliPath(),
+    log: (l) => console.log(l),
+  });
+}
+
 // ───────────────────────────── zen-launch ─────────────────────────────
 
 async function zenLaunch(argv: string[]): Promise<number> {
@@ -478,7 +663,7 @@ async function installLauncher(argv: string[]): Promise<number> {
 
 // ───────────────────────────── main ─────────────────────────────
 
-async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const [cmd = 'serve', ...rest] = argv;
   switch (cmd) {
     case 'serve':
@@ -490,6 +675,16 @@ async function main(argv: string[]): Promise<number> {
       return selftest(rest);
     case 'install':
       return install(rest.includes('--run'));
+    case 'setup':
+      if (rest.length === 1 && rest[0] === '--status') {
+        // F9: one JSON line of code words for the onboarding sheet; nothing else is printed.
+        const { voiceModelsReady } = await import('./voice/index.js');
+        console.log(JSON.stringify(await setupStatus({ runClaude: defaultRunClaude, modelsReady: () => voiceModelsReady() })));
+        return 0;
+      }
+      return setup();
+    case 'update':
+      return update();
     case 'zen-launch':
       return zenLaunch(rest);
     case 'install-zen-launcher':
@@ -502,6 +697,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'listen':
       // Loaded on demand: `stephen serve` (the process Claude talks to) never loads memory, app or history code.
+      await startConfigCheck();
       return (await import('./voice/index.js')).runListen(rest);
     case 'eval':
       return (await import('./eval/cli.js')).runEvalCli(rest);
@@ -513,6 +709,46 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./history/cli.js')).runHistoryCli(rest);
     case 'latency':
       return (await import('./telemetry/cli.js')).runLatencyCli(rest);
+    case 'data': {
+      const { root } = (await import('./jobs/config.js')).parseJobsConfig(loadConfig().jobs ?? {});
+      const data = await import('./app/data-cli.js');
+      if (rest[0] === 'export' || rest[0] === 'import') {
+        // R20. The secret-key check is the one the start uses (configUnknownKeys, here in cli.ts).
+        const configSecretKeys = async (path: string) => (await configUnknownKeys({ ...process.env, STEPHEN_CONFIG: path }, true)).filter(looksLikeSecretKey);
+        return (await import('./app/data-export.js')).runDataMove(rest, { configSecretKeys, version: packageVersion() });
+      }
+      if (rest[0] !== 'delete') return data.runDataCli(rest, root);
+      // R10: the Keychain delete and Gmail disconnect are owner-only (src/connect), loaded here on demand.
+      const { keychainDelete } = await import('./connect/keychain-write.js');
+      const { runConnectCli } = await import('./connect/gmail-oauth.js');
+      return data.runDataDelete(rest.slice(1), root, { keychainDelete, disconnectGmail: (label) => runConnectCli('disconnect', ['gmail', label]) });
+    }
+    case 'report': {
+      if (rest[0] === '--week' && rest.length === 1) {
+        // F13: numbers, code words, versions and dates only. The Claude Code version comes from `claude --version`.
+        const cfg = loadConfig();
+        const env = (await import('./lib/claude-env.js')).withoutSecrets(process.env);
+        const out = await new Promise<string | null>((res) => {
+          execFile(String((cfg.voice as { claudePath?: unknown } | undefined)?.claudePath ?? 'claude'), ['--version'], { env, timeout: 15_000 }, (e, stdout) => res(e ? null : String(stdout)));
+        });
+        const claude = out === null ? null : (await import('./voice/claude.js')).claudeVersionStatus(out).version;
+        // Job spend: a plain read of each job's state file (never reconcile, which can write); numbers only.
+        const { readJobState } = await import('./jobs/state.js');
+        const jobCosts: { at: number; usd: number }[] = [];
+        let names: string[] = [];
+        try {
+          names = readdirSync(join(cfg.home, 'jobs')).filter((n) => n.endsWith('.json'));
+        } catch {
+          // no jobs yet
+        }
+        for (const n of names) {
+          const j = readJobState(cfg.home, n.slice(0, -5));
+          if (j && typeof j.costUsd === 'number') jobCosts.push({ at: j.endedAt ?? j.startedAt ?? j.createdAt, usd: j.costUsd });
+        }
+        return (await import('./telemetry/cli.js')).runWeeklyCli({ stephen: packageVersion(), claude, jobCosts });
+      }
+      return (await import('./telemetry/report.js')).runReportCli(rest);
+    }
     case 'replay':
       return (await import('./replay/recorder.js')).runReplayCli(rest, loadConfig().home);
     case 'mac-checks':
@@ -556,15 +792,50 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    if (code >= 0) process.exitCode = code;
-  },
-  (e: unknown) => {
-    console.error(`stephen: ${errorMessage(e)}`);
-    process.exit(1);
-  },
-);
+/** The incident part of a command's process: the long-running ones by name, the rest 'other'. */
+export function incidentPart(cmd: string | undefined): 'listen' | 'serve' | 'job' | 'other' {
+  return cmd === undefined || cmd === 'serve' ? 'serve' : cmd === 'listen' ? 'listen' : cmd === 'jobs' ? 'job' : 'other';
+}
+
+/** Write an incident line for a crash: the error's code word only, never its message (docs/NFR-STEPHEN.md section 9). */
+function crashIncident(cmd: string | undefined, e: unknown): void {
+  try {
+    recordIncident(resolveStephenHome().dir, { part: incidentPart(cmd), code: (e as { code?: unknown } | null)?.code as string | undefined, stage: 'run' });
+  } catch {
+    /* never in the way of the crash itself */
+  }
+}
+
+/**
+ * True only when this file is the program (`node dist/cli.js`, or the `stephen` bin link to it). A test that imports
+ * this file must not start `serve`: it used to start a real MCP server in the test process, whose late
+ * `console.log = console.error` made the doctor test read nothing (#109).
+ */
+export function isEntry(argv1: string | undefined = process.argv[1]): boolean {
+  try {
+    return !!argv1 && realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntry()) {
+  const argv0 = process.argv[2];
+  // A monitor only watches: Node still prints the error and exits as before. An uncaught crash is an incident for
+  // every command, one-shot ones too (part "other"); a one-shot command that fails normally is not (below).
+  process.on('uncaughtExceptionMonitor', (e) => crashIncident(argv0, e));
+  main(process.argv.slice(2)).then(
+    (code) => {
+      if (code >= 0) process.exitCode = code;
+    },
+    (e: unknown) => {
+      // A long-running part that failed is an incident; a one-shot command's error is shown to the person already.
+      if (incidentPart(argv0) !== 'other') crashIncident(argv0, e);
+      console.error(`stephen: ${errorMessage(e)}`);
+      process.exit(1);
+    },
+  );
+}
 
 /**
  * Personal files that belong in Stephen's home folder, not the repo (docs/PLAN-WORK-SPLIT.md §12): a repo copy (a job's

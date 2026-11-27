@@ -37,7 +37,7 @@ class EndlessSource implements AudioSource {
 const kws = await prepareKwsModel();
 
 describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
-  function start(app: Record<string, unknown> = {}, home = mkdtempSync(join(tmp, 'home-'))) {
+  function start(app: Record<string, unknown> = {}, home = mkdtempSync(join(tmp, 'home-')), safety?: { blockedDomains: string[]; sensitiveDomains: string[] }, extra: Partial<ListenEnv> = {}) {
     const root = mkdtempSync(join(tmp, 'models-'));
     symlinkSync(join(kws.ok ? kws.root : '', KWS_MODEL.dir), join(root, KWS_MODEL.dir));
     fakeInstall(root, VAD_MODEL);
@@ -46,7 +46,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     const out: string[] = [];
     const err: string[] = [];
     const e: ListenEnv = {
-      loadConfig: () => ({ home, voice: { claudeModel: 'haiku' }, app, auditLogPath: join(home, 'audit.log') }),
+      loadConfig: () => ({ home, voice: { claudeModel: 'haiku' }, app, auditLogPath: join(home, 'audit.log'), ...(safety ? { safety } : {}) }),
       configPath: join(home, 'config.json'),
       out: (l) => out.push(l),
       err: (l) => err.push(l),
@@ -59,6 +59,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
       helper: () => null,
       source,
       engines: async () => ({ spotter: new ScriptedSpotter({}), vad: new FakeVad(), transcriber: new FakeTranscriber([]) }),
+      ...extra,
     };
     const running = runListen(['--dry-run', '--no-helper'], e);
     return { home, source, out, err, running };
@@ -78,7 +79,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     expect(await c.waitFor((m) => m.type === 'chat.done')).toMatchObject({ entryId: a.entryId, reply: 'Dry run: Claude was not started.', outcome: 'ok' });
     expect(t.out).toContainEqual(expect.stringContaining('claude argv (dry run)'));
 
-    expect(await c.request({ id: 'm', type: 'memory.add', text: 'my gym is goodlife' })).toMatchObject({ type: 'memory', items: [{ text: 'my gym is goodlife', source: 'app' }] });
+    expect(await c.request({ id: 'm', type: 'memory.list' })).toEqual({ id: 'm', type: 'memory', items: [] });
     const s = await c.request({ id: 's', type: 'settings.get' });
     expect(s).toMatchObject({ type: 'settings', configPath: join(t.home, 'config.json'), config: { voice: { model: 'haiku' }, app: { enabled: true, speakReplies: false } } });
     expect(await c.request({ id: 'w', type: 'window.open' })).toEqual({ id: 'w', type: 'error', message: "Stephen Helper isn't connected to stephen listen" });
@@ -88,6 +89,57 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     expect(await t.running).toBe(0);
     expect(existsSync(sock)).toBe(false);
     expect(existsSync(launchInfoPath(t.home))).toBe(false); // R9-8: only install-helper writes it
+  });
+
+  it('T6 step 3: audit.recent hides the label, intent, error and args on mail and on the owner\'s sensitive sites', async () => {
+    const home = mkdtempSync(join(tmp, 'priv-'));
+    const line = (url: string) => JSON.stringify({ ts: new Date().toISOString(), tool: 'click', kind: 'click', urlBefore: url, element: 'row "your code is 771204"', intent: 'open the code mail', error: 'page said 771204', args: { text: '[6 chars] "771204"' }, outcome: 'error' });
+    writeFileSync(join(home, 'audit.log'), [line('https://mail.google.com/mail/u/0/'), line('https://intranet.example.org/x'), line('https://www.youtube.com/')].join('\n') + '\n');
+    const t = start({}, home, { blockedDomains: [], sensitiveDomains: ['intranet.example.org'] });
+    const sock = appSocketPath(t.home);
+    await waitFor(() => existsSync(sock), 10_000, 'app.sock');
+    const c = await TestClient.connect(sock);
+    const a = (await c.request({ id: 'a', type: 'audit.recent' })) as unknown as { entries: Record<string, unknown>[] };
+    const byUrl = (u: string) => a.entries.find((e) => String(e.urlBefore).startsWith(u))!;
+    for (const u of ['https://mail.google.com', 'https://intranet.example.org']) {
+      expect(byUrl(u)).toMatchObject({ tool: 'click', kind: 'click', outcome: 'error' });
+      expect(JSON.stringify(byUrl(u))).not.toContain('771204');
+      expect(byUrl(u)).not.toHaveProperty('intent');
+    }
+    expect(byUrl('https://www.youtube.com')).toMatchObject({ element: 'row "your code is 771204"', intent: 'open the code mail' });
+    c.close();
+    await t.source.stop();
+    expect(await t.running).toBe(0);
+  });
+
+  it('T6 step 3: the owner\'s sensitive sites reach the chat steps path, so chat.done hides their label and error', async () => {
+    const home = mkdtempSync(join(tmp, 'steps-'));
+    // A dry run can end in 0 ms, and a 0 ms command reads no steps. Its argv line is printed inside the command, so a
+    // 20 ms pause there gives the command a real window that covers the lines written just before it.
+    const out = (l: string) => {
+      if (!l.includes('claude argv (dry run)')) return;
+      const until = Date.now() + 20;
+      while (Date.now() < until);
+    };
+    const t = start({}, home, { blockedDomains: [], sensitiveDomains: ['intranet.example.org'] }, { out });
+    const sock = appSocketPath(t.home);
+    await waitFor(() => existsSync(sock), 10_000, 'app.sock');
+    const c = await TestClient.connect(sock);
+    await c.request({ id: 'h', type: 'hello', version: '1' });
+    await c.waitFor((m) => m.type === 'state' && m.state === 'listening');
+    // Lines stamped now fall inside the typed command's window (no command id: matched by time).
+    const line = (url: string, el: string) => JSON.stringify({ ts: new Date().toISOString(), tool: 'click', kind: 'click', urlBefore: url, element: el, error: 'page said 771204', outcome: 'error' });
+    writeFileSync(join(home, 'audit.log'), [line('https://intranet.example.org/x', 'row "your code is 771204"'), line('https://www.youtube.com/', 'row "lo-fi radio"')].join('\n') + '\n');
+    const a = await c.request({ id: 'c', type: 'chat.send', text: 'open youtube' });
+    const done = (await c.waitFor((m) => m.type === 'chat.done' && m.entryId === a.entryId)) as unknown as { steps?: { text: string; status: string }[] };
+    // Same time stamp on both lines, so the order is not part of the check.
+    expect(done.steps).toHaveLength(2);
+    expect(done.steps).toContainEqual({ text: 'Tried click, it failed', status: 'failed' });
+    expect(done.steps).toContainEqual({ text: 'Tried click row "lo-fi radio", it failed', status: 'failed' });
+    expect(JSON.stringify(done)).not.toContain('771204');
+    c.close();
+    await t.source.stop();
+    expect(await t.running).toBe(0);
   });
 
   it('R9-4: when listening ends, the Remote Control our own `phone on` started is stopped and the marker removed', async () => {

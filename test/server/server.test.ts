@@ -1,7 +1,10 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { HubError } from '../../src/errors.js';
+import { isUploadAllowedFile } from '../../src/lib/owner-only.js';
+import { REPO_ROOT } from '../../src/lib/repo.js';
 import { normalizeUrl } from '../../src/server/index.js';
 import type { ActionRequest } from '../../src/types.js';
 import { FakePage, allow, deny, setup, textOf } from './fakes.js';
@@ -122,7 +125,7 @@ describe('reads', () => {
     const res = await h.call('snapshot', { tab: 'z1' });
     expect(res.isError).toBeFalsy();
     const text = textOf(res);
-    expect(text.startsWith('<untrusted_web_content source="z1" origin="https://mail.example.com/inbox">')).toBe(true);
+    expect(text.startsWith('<untrusted_web_content source="z1" origin="https://mail.example.com">')).toBe(true);
     expect(text).toContain('[ref=z1:e1]');
     expect(h.gate.checks[0]).toMatchObject({ kind: 'read', tool: 'snapshot', tab: 'z1', browser: 'zen', pageUrl: 'https://mail.example.com/inbox' });
     expect(h.gate.reads).toEqual(['https://mail.example.com/inbox']);
@@ -239,12 +242,12 @@ describe('actions', () => {
     });
     const res = await h.call('click', { target: 'z1:e4', intent: 'send the reply', include_snapshot: true });
     const text = textOf(res);
-    expect(text).toContain('Clicked z1:e4 in z1.\n<untrusted_web_content source="z1" origin="https://mail.example.com/sent">');
+    expect(text).toContain('Clicked z1:e4 in z1.\n<untrusted_web_content source="z1" origin="https://mail.example.com">');
     // Page-derived facts (element label, title) are only ever inside the untrusted block.
     expect(text).toContain('element: button "Send"\npage now: "Sent – Mail" https://mail.example.com/sent</untrusted_web_content>');
     expect(text.split('<untrusted_web_content')[0]).not.toContain('Send');
     expect(text).toContain('refs from earlier snapshots are now stale');
-    expect(text).toContain('<untrusted_web_content source="z1" origin="https://mail.example.com/sent">');
+    expect(text).toContain('<untrusted_web_content source="z1" origin="https://mail.example.com">');
     expect(h.engine.click).toHaveBeenCalledWith(expect.anything(), 'z1:e4', {});
     expect(h.audit.entries).toHaveLength(1);
     expect(h.audit.entries[0]).toMatchObject({
@@ -438,7 +441,7 @@ describe('actions', () => {
 
   it('upload_file checks files exist and passes absolute paths to the gate', async () => {
     const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
-    const missing = await h.call('upload_file', { target: 'z1:e8', paths: ['/nope/x.pdf'], intent: 'attach' });
+    const missing = await h.call('upload_file', { target: 'z1:e8', paths: [join(h.tmp, 'nope.pdf')], intent: 'attach' });
     expect(textOf(missing)).toContain('File not found');
     const f = join(h.tmp, 'report.pdf');
     writeFileSync(f, 'pdf');
@@ -447,6 +450,125 @@ describe('actions', () => {
     expect(h.engine.uploadFile).toHaveBeenCalledWith(expect.anything(), 'z1:e8', [f]);
     expect(textOf(res)).toContain('Attached "report.pdf" to z1:e8 in z1.');
     expect(textOf(res)).toContain('element: button "Attach"');
+  });
+
+  // M1 (safety review 0.1.1): the folders a job's shell may never read are never uploaded either.
+  it('upload_file refuses every folder the job sandbox never reads, before looking for the file', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    const memory = join(h.cfg.home, 'memory.json');
+    mkdirSync(h.cfg.home, { recursive: true });
+    writeFileSync(memory, '{}');
+    for (const p of [memory, '~/.ssh/id_ed25519', '~/.aws/credentials', '~/.config/gh/hosts.yml', '~/Library/Keychains/login.keychain-db', join(REPO_ROOT, '.env'), '~/.SSH/id_ed25519']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/is private \(a key, password or private folder\) and is never uploaded/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('upload_file follows a symlink into a never-read folder', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    mkdirSync(h.cfg.home, { recursive: true });
+    mkdirSync(h.tmp, { recursive: true });
+    writeFileSync(join(h.cfg.home, 'memory.json'), '{}');
+    const link = join(h.tmp, 'notes.json');
+    symlinkSync(join(h.cfg.home, 'memory.json'), link);
+    expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [link], intent: 'attach' }))).toMatch(/never uploaded/);
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  // Security review 0.1.1 M1: a key or password file is never uploaded from any upload folder, by name or folder.
+  it('upload_file refuses secret file names and secret folders inside the upload folders', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    const secrets = ['.env', '.ENV.local', 'server.pem', 'tls.key', 'cert.p12', 'id_rsa', 'id_ed25519', 'credentials', 'credentials.json', '.npmrc', '.netrc', '.pgpass', 'proj/.git/config', 'backup/.ssh/notes.txt', 'x/.gnupg/a', 'x/.aws/a', 'x/.claude/a.json', 'x/.config/gh/hosts.yml'];
+    for (const s of secrets) {
+      const p = join(h.tmp, s);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, 'secret');
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' })), s).toMatch(/never uploaded/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+    // Siblings that only look close stay allowed: a public key, a report, a folder named git.
+    for (const ok of ['id_rsa.pub', 'report.pdf', 'git/notes.txt', 'keys.txt']) {
+      const p = join(h.tmp, ok);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, 'x');
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' })), ok).toContain('Attached');
+    }
+  });
+
+  it('upload_file follows a link in an upload folder to a secret file elsewhere', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    mkdirSync(join(h.tmp, 'proj'), { recursive: true });
+    writeFileSync(join(h.tmp, 'proj', '.env'), 'KEY=x');
+    const link = join(h.tmp, 'invoice.pdf');
+    symlinkSync(join(h.tmp, 'proj', '.env'), link);
+    expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [link], intent: 'attach' }))).toMatch(/never uploaded/);
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('upload_file refuses a relative path, as its description says', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    for (const p of ['notes.txt', './notes.txt', '../x.pdf']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/absolute|start with ~/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+  // Uploads come only from Downloads, Desktop, Documents and the temp folder (follow-up to M1).
+  it('upload_file refuses a file outside the upload folders, before looking for it', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    for (const p of ['~/Library/Mail/V10/x.emlx', '~/Library/Application Support/Google/Chrome/Default/Cookies', '~/.zsh_history', '/etc/hosts']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/only upload files from Downloads, Desktop or Documents/);
+    }
+    // Key and password files are refused earlier, by their secret name or folder (security review 0.1.1 M1).
+    for (const p of ['~/.gnupg/secring.gpg', '~/.netrc']) {
+      expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [p], intent: 'attach' }))).toMatch(/is private \(a key, password or private folder\) and is never uploaded/);
+    }
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('upload_file checks again after Allow: a file swapped for a link outside the upload folders is refused', async () => {
+    const h = await setup({ elements: { 'z1:e8': { role: 'button', name: 'Attach', tag: 'input', inputType: 'file' } } });
+    mkdirSync(h.tmp, { recursive: true });
+    const f = join(h.tmp, 'report.pdf');
+    writeFileSync(f, 'pdf');
+    h.gate.decide = () => {
+      rmSync(f);
+      symlinkSync('/etc/hosts', f);
+      return allow();
+    };
+    expect(textOf(await h.call('upload_file', { target: 'z1:e8', paths: [f], intent: 'attach' }))).toMatch(/only upload files from Downloads, Desktop or Documents/);
+    expect(h.engine.uploadFile).not.toHaveBeenCalled();
+  });
+
+  // /tmp is shared by every user and holds agent worktrees: only the per-user temp folder counts (review of #447).
+  const sharedTmp = realpathSync('/tmp');
+  it.skipIf(realpathSync(tmpdir()).startsWith(sharedTmp))('isUploadAllowedFile: a file in /tmp outside the user temp folder is refused', () => {
+    const dir = mkdtempSync(join(sharedTmp, 'stephen-up-'));
+    try {
+      writeFileSync(join(dir, 'a.pdf'), 'x');
+      expect(isUploadAllowedFile(join(dir, 'a.pdf'), '/nonexistent-home')).toBe(false);
+      expect(isUploadAllowedFile(join(realpathSync(tmpdir()), 'a.pdf'), '/nonexistent-home')).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('isUploadAllowedFile: Downloads, Desktop and Documents yes; links and .. out of them no', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-up-')));
+    try {
+      for (const d of ['Downloads', 'Desktop', 'Documents', '.gnupg', 'Library/Mail']) mkdirSync(join(home, d), { recursive: true });
+      for (const d of ['Downloads', 'Desktop', 'Documents']) {
+        writeFileSync(join(home, d, 'a.pdf'), 'x');
+        expect(isUploadAllowedFile(join(home, d, 'a.pdf'), home, [])).toBe(true);
+      }
+      writeFileSync(join(home, '.gnupg', 'key'), 'k');
+      symlinkSync(join(home, '.gnupg', 'key'), join(home, 'Downloads', 'key.pdf'));
+      expect(isUploadAllowedFile(join(home, 'Downloads', 'key.pdf'), home, [])).toBe(false);
+      expect(isUploadAllowedFile(join(home, 'Downloads', '..', '.netrc'), home, [])).toBe(false);
+      expect(isUploadAllowedFile(join(home, 'Library', 'Mail', 'x.emlx'), home, [])).toBe(false);
+      expect(isUploadAllowedFile(join(home, 'DOWNLOADS', 'a.pdf'), home, [])).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 

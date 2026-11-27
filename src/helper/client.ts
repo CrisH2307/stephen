@@ -20,7 +20,8 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { type Socket, createConnection } from 'node:net';
 import { LineFramer, encodeCommand, parseHelperLine } from './framing.js';
-import { helperAppPath, helperLogPath, helperSocketPath } from './paths.js';
+import { readPrivateJsonFile } from '../lib/fs.js';
+import { helperAppPath, helperLogPath, helperNoncePath, helperSocketPath } from './paths.js';
 import type { HelperCommand, HelperEvent } from './protocol.js';
 
 export type HelperEventType = HelperEvent['type'];
@@ -226,6 +227,7 @@ export class HelperClient implements IHelperClient {
       const conn: Conn = { socket, hello: null };
       const framer = new LineFramer();
       let settled = false;
+      let noNonce = false;
       const settle = (r: HelperStartResult) => {
         if (settled) return;
         settled = true;
@@ -233,15 +235,28 @@ export class HelperClient implements IHelperClient {
         resolve(r);
       };
       const helloTimer = setTimeout(() => {
-        settle({ ok: false, reason: `connected but no hello within ${this.opts.helloTimeoutMs} ms` });
+        // Without a key the helper waits its own 2 s before closing, so this timer can fire first: same plain reason.
+        const late = `connected but no hello within ${this.opts.helloTimeoutMs} ms`;
+        settle({ ok: false, reason: noNonce ? `${late}. ${helperKeyMissing(this.socketPath)}` : late });
         socket.destroy();
       }, this.opts.helloTimeoutMs);
 
       socket.on('error', (e: NodeJS.ErrnoException) => {
         settle({ ok: false, reason: e.code ?? e.message });
       });
+      // F15: the first line is the helper's per-launch nonce, or the helper drops this client before its hello.
+      socket.once('connect', () => {
+        const nonce = readHelperNonce(this.socketPath);
+        if (nonce) socket.write(`${JSON.stringify({ type: 'auth', nonce })}\n`);
+        else {
+          noNonce = true;
+          this.opts.log(`no readable ${helperNoncePath(this.socketPath)}: the helper will refuse this connection`);
+        }
+      });
       socket.on('close', () => {
-        settle({ ok: false, reason: 'connection closed before hello' });
+        // An older helper has no nonce file and still says hello; a closed connection without one means the helper's
+        // key file is gone or unreadable (#392 review): say that plainly.
+        settle({ ok: false, reason: noNonce ? helperKeyMissing(this.socketPath) : 'connection closed before hello' });
         if (this.conn === conn) this.onDrop(conn);
       });
       socket.on('data', (data: Buffer) => {
@@ -340,6 +355,18 @@ function safe(fn: () => void, log: (l: string) => void): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Why the helper refused us when its key file could not be read. */
+export function helperKeyMissing(socketPath: string): string {
+  return `Stephen Helper refused the connection: its key file ${helperNoncePath(socketPath)} is missing or not readable. Quit Stephen Helper (menu bar, Quit), then start Stephen again. If that does not help, run \`stephen install-helper\`.`;
+}
+
+/** The nonce from helper.nonce (0600, this user's, never a link), or null. */
+export function readHelperNonce(socketPath: string): string | null {
+  const r = readPrivateJsonFile(helperNoncePath(socketPath), 1024);
+  const n = 'state' in r ? (r.state as { nonce?: unknown } | null)?.nonce : null;
+  return typeof n === 'string' && /^[0-9a-f]{64}$/.test(n) ? n : null;
 }
 
 /**

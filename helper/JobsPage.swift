@@ -37,6 +37,11 @@ func jobFailed(_ job: JobRow) -> Bool { return !job.isRunning && jobStatusWord(j
 /** "Earlier (5)": finished and stopped jobs only. Failed jobs are never in it (Accordion rule in Controls.swift). */
 func jobsEarlierTitle(_ jobs: [JobRow]) -> String { return "Earlier (\(jobs.count))" }
 
+/** R7d: the Jobs page states, in plain words. */
+let JOBS_LOADING = "Loading your jobs..."
+let JOBS_LIST_FAILED = "Couldn't load your jobs right now."
+let JOBS_EMPTY = "No jobs yet. Say \"start a job to find 5 internships\"."
+
 /** ADR-010: off while a job is queued or running; the line said next to the button then. */
 let JOB_EDIT_STOP_FIRST = "Stop the job first to change its request."
 /** ADR-010: the longest edited request (src/jobs/spec.ts EDIT_REQUEST_MAX; a test keeps them equal), so it is never cut. */
@@ -74,8 +79,22 @@ struct JobsView: View {
           .font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true)
         if let n = model.jobsNotice { Text(verbatim: n).font(TypeScale.secondary).foregroundColor(t.ink2) }
         if let s = model.jobStarted { Text(verbatim: s).font(TypeScale.secondary).foregroundColor(t.ink2) }
-        if model.jobs.isEmpty {
-          Text(verbatim: "No jobs yet. Say \"start a job to find 5 internships\".").font(TypeScale.body).foregroundColor(t.ink2)
+        // R7d: loading, error and empty in words. Empty only after a list that worked.
+        switch model.jobsListOk {
+        case nil:
+          HStack(spacing: Space.s) {
+            ProgressView().controlSize(.small)
+            Text(verbatim: JOBS_LOADING).font(TypeScale.body).foregroundColor(t.ink2)
+          }
+        case false?:
+          VStack(alignment: .leading, spacing: Space.s) {
+            Text(verbatim: JOBS_LIST_FAILED).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
+            QuietButton("Try again", symbol: "arrow.clockwise") { model.refreshJobs() }
+          }
+        case true?:
+          if model.jobs.isEmpty {
+            Text(verbatim: JOBS_EMPTY).font(TypeScale.body).foregroundColor(t.ink2)
+          }
         }
         if !running.isEmpty { GroupedList("Running") { rows(running) } }
         // [DEV REVIEW] Safety: failed jobs are never inside a closed accordion.

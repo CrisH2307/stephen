@@ -5,6 +5,7 @@
 // name, so panes have no big title. Personal's parts live here (About you, the permission table, Connected, Routines).
 
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 /** Show `item` when Settings opens next (the pane is remembered under "settingsPane"). */
@@ -152,6 +153,14 @@ private struct Note: View {
   var body: some View { Text(verbatim: text).font(TypeScale.secondary).foregroundColor(t.ink2).fixedSize(horizontal: false, vertical: true) }
 }
 
+/// The label above a choice (#147). The Picker under it is read to VoiceOver with the same name, so this is hidden there.
+private struct Caption: View {
+  @Environment(\.stephenTheme) var t
+  let text: String
+  init(_ text: String) { self.text = text }
+  var body: some View { Text(verbatim: text).font(TypeScale.secondary.weight(.medium)).foregroundColor(t.ink2).accessibilityHidden(true) }
+}
+
 /** A section header in the pane's own words. */
 private func header(_ s: String) -> some View { return Text(verbatim: s) }
 
@@ -192,10 +201,26 @@ private struct VoiceSettingsPane: View {
         Section { Note(model.settingsNotice ?? "Stephen's settings are not available yet. Start Stephen and open this page again.") }
       } else {
         Section {
-          Segmented("Length", options: [("brief", "Brief"), ("balanced", "Balanced"), ("detailed", "Detailed")], selection: bind(\.length), caption: true)
-          Segmented("Tone", options: [("casual", "Casual"), ("friendly", "Friendly"), ("formal", "Formal")], selection: bind(\.tone), caption: true)
-          FormRow("Speak replies out loud") { switchView("Speak replies out loud", bind(\.speak)) }
-          FormRow("Explain steps as you go") { switchView("Explain steps as you go", bind(\.explain)) }
+          VStack(alignment: .leading, spacing: Space.xs) {
+            Caption("Length")
+            Picker("Length", selection: bind(\.length)) {
+              Text("Brief").tag("brief")
+              Text("Balanced").tag("balanced")
+              Text("Detailed").tag("detailed")
+            }
+            .labelsHidden().pickerStyle(.segmented)
+          }
+          VStack(alignment: .leading, spacing: Space.xs) {
+            Caption("Tone")
+            Picker("Tone", selection: bind(\.tone)) {
+              Text("Casual").tag("casual")
+              Text("Friendly").tag("friendly")
+              Text("Formal").tag("formal")
+            }
+            .labelsHidden().pickerStyle(.segmented)
+          }
+          Toggle("Speak replies out loud", isOn: bind(\.speak)).tint(t.accent)
+          Toggle("Explain steps as you go", isOn: bind(\.explain)).tint(t.accent)
         }
         Section {
           Text(verbatim: draft.preview).font(TypeScale.body).foregroundColor(t.ink).fixedSize(horizontal: false, vertical: true)
@@ -246,10 +271,6 @@ private struct VoiceSettingsPane: View {
     return Binding(get: { draft[keyPath: path] }, set: { draft[keyPath: path] = $0; saved = false })
   }
 
-  private func switchView(_ label: String, _ on: Binding<Bool>) -> some View {
-    return Toggle(label, isOn: on).labelsHidden().toggleStyle(StephenSwitch())
-  }
-
   private func save() {
     guard let old = model.talk else { return }
     problem = nil
@@ -290,12 +311,31 @@ private struct ModelSettingsPane: View {
   var body: some View {
     Form {
       Section {
-        Segmented("Model", options: Self.aliases.map { ($0, $0.capitalized) } + [("default", "Default"), ("other", "Other")], selection: $choice.onSet { saved = false }, caption: true)
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Caption("Model")
+          Picker("Model", selection: $choice.onSet { saved = false }) {
+            ForEach(Self.aliases, id: \.self) { Text(verbatim: $0.capitalized).tag($0) }
+            Text("Default").tag("default")
+            Text("Other").tag("other")
+          }
+          .labelsHidden().pickerStyle(.menu)
+        }
         if choice == "other" {
           TextField("Model name, for example claude-haiku-5-5", text: $custom).textFieldStyle(.roundedBorder).font(TypeScale.body)
             .accessibilityLabel("Model name").onChange(of: custom) { _ in saved = false }
         }
-        Segmented("Effort", options: [("default", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra"), ("max", "Max")], selection: $effort.onSet { saved = false }, caption: true)
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Caption("Effort")
+          Picker("Effort", selection: $effort.onSet { saved = false }) {
+            Text("Default").tag("default")
+            Text("Low").tag("low")
+            Text("Medium").tag("medium")
+            Text("High").tag("high")
+            Text("Extra").tag("xhigh")
+            Text("Max").tag("max")
+          }
+          .labelsHidden().pickerStyle(.menu)
+        }
       }
       Section {
         HStack(spacing: Space.m) {
@@ -405,10 +445,8 @@ private struct PrivacySettingsPane: View {
     Form {
       PermissionsSection(model: model)
       Section {
-        FormRow(Self.label) {
-          Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))
-            .toggleStyle(StephenSwitch()).disabled(model.connection != .online)
-        }
+        Toggle(Self.label, isOn: Binding(get: { model.recordingOn }, set: { change($0) }))
+          .tint(t.accent).disabled(model.connection != .online)
         if let d = done { Text(verbatim: d).font(TypeScale.secondary).foregroundColor(t.ok) }
         if let p = problem { Text(verbatim: p).font(TypeScale.secondary).foregroundColor(t.bad) }
       } footer: {
@@ -432,14 +470,14 @@ private struct PrivacySettingsPane: View {
     problem = nil
     done = nil
     model.saveReplay(on) { err in
-      problem = err.map { "Could not change it: \($0)" }
+      problem = err  // already one plain sentence (plainFailure)
       if err == nil && !on { askDelete = true }
     }
   }
 
   private func delete() {
     model.deleteRecordings { err in
-      if let e = err { problem = "Could not delete them: \(e)" } else { done = "Deleted." }
+      if let e = err { problem = e } else { done = "Deleted." }
     }
   }
 }
@@ -456,7 +494,11 @@ private struct AboutSettingsPane: View {
 
   var body: some View {
     Form {
+      Section { LoginItemRow() }
       Section {
+        FormRow("First-run setup", detail: "Check Claude Code, the voice models and the Mac permissions again.") {
+          QuietButton("Run setup again") { UserDefaults.standard.set(false, forKey: "onboarded") }
+        }
         FormRow("Config file", detail: model.configPath ?? "unknown") {
           QuietButton("Open") { openConfigFile(model.configPath) }
         }
@@ -479,6 +521,46 @@ private struct AboutSettingsPane: View {
 
   private func openDoctor(_ result: String) {
     if !result.isEmpty { UserDefaults.standard.set(true, forKey: Self.doctorKey) }
+  }
+}
+
+/**
+ * F5: "Start Stephen at login" (SMAppService, macOS 13+; the helper needs macOS 14). The switch shows what macOS says,
+ * not what was asked: after a change it reads the status again. Needs approval: macOS lists Stephen Helper in System
+ * Settings > General > Login Items, and the row says so.
+ */
+private struct LoginItemRow: View {
+  @Environment(\.stephenTheme) var t
+  @State private var status = SMAppService.mainApp.status
+  @State private var problem: String? = nil
+
+  var body: some View {
+    let on = Binding(get: { status == .enabled || status == .requiresApproval }, set: { change($0) })
+    VStack(alignment: .leading, spacing: Space.xs) {
+      Toggle("Start Stephen at login", isOn: on).tint(t.accent)
+      Note(detail)
+    }
+    .onAppear { status = SMAppService.mainApp.status }
+  }
+
+  private var detail: String {
+    if let p = problem { return p }
+    switch status {
+    case .requiresApproval: return "Turn on Stephen Helper in System Settings, General, Login Items."
+    case .enabled: return "Stephen's menu bar icon opens when you log in."
+    default: return "Off: open Stephen yourself after you log in."
+    }
+  }
+
+  private func change(_ want: Bool) {
+    problem = nil
+    do {
+      if want { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+    } catch {
+      problem = "macOS said no: \(error.localizedDescription)"
+    }
+    status = SMAppService.mainApp.status
+    if status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
   }
 }
 

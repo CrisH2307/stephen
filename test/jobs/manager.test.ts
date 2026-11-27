@@ -3,12 +3,13 @@
  * running and daily caps (rule 5), restart recovery (a job whose supervisor is gone is marked failed), git worktrees
  * for code jobs, and one end-to-end run through the real `stephen jobs _run` supervisor process (needs the build).
  */
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { runJobsCli } from '../../src/jobs/cli.js';
-import { JobManager, jobIdArg, stephenRepoRoot } from '../../src/jobs/manager.js';
+import { JOB_FILES_FAILED, JOB_FOLDER_FAILED, JOB_RUNNER_FAILED, JobManager, jobIdArg, stephenRepoRoot } from '../../src/jobs/manager.js';
 import { listJobStates, readJobState, reconcile, writeJobState, type JobState } from '../../src/jobs/state.js';
 import { isPidAlive } from '../../src/lib/process.js';
 import { FAKE_CLAUDE, NOW, TODAY, harness, tempRoot, until } from './helpers.js';
@@ -128,10 +129,61 @@ describe('folder rules (rule 4)', () => {
     mkdirSync(elsewhere, { recursive: true });
     mkdirSync(h.root, { recursive: true });
     symlinkSync(elsewhere, p.folder);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const r = await h.manager.start(p, 'voice-ptt');
-    expect(r).toEqual({ refused: expect.stringMatching(/couldn't make the job folder.*EEXIST/) });
+    // R7: one plain sentence; the raw EEXIST reason goes to the log only.
+    expect(r).toEqual({ refused: JOB_FOLDER_FAILED });
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^jobs: job folder: .*EEXIST/));
+    log.mockRestore();
     expect(readdirSync(elsewhere)).toEqual([]);
     expect(readJobState(h.home, p.id)).toBeNull();
+  });
+
+  it("a failed write of the job's files is one plain sentence; the raw reason goes to the log only (R7)", async () => {
+    // A stephenRepo that is not a path makes jobSettings throw a raw TypeError inside the write step.
+    const h = harness(tmp, { stephenRepo: 42 as unknown as string });
+    const p = await h.manager.plan('write my lab report draft');
+    if ('error' in p) throw new Error(p.error);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const r = await h.manager.start(p, 'voice-ptt');
+    expect(r).toEqual({ refused: JOB_FILES_FAILED });
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^jobs: job files: .*argument/));
+    log.mockRestore();
+    expect(h.supervisor.calls).toEqual([]);
+  });
+
+  it('a job runner that cannot start (spawn throws) fails the job with one plain sentence; the raw reason goes to the log only (R7)', async () => {
+    const h = harness(tmp, {
+      spawn: () => {
+        throw new Error('spawn EACCES /secret/path/node');
+      },
+    });
+    const p = await h.manager.plan('write my lab report draft');
+    if ('error' in p) throw new Error(p.error);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await h.manager.start(p, 'voice-ptt')).toMatchObject({ status: 'failed', error: JOB_RUNNER_FAILED });
+      expect(readJobState(h.home, p.id)).toMatchObject({ status: 'failed', error: JOB_RUNNER_FAILED });
+      expect(log).toHaveBeenCalledWith('jobs: job runner: spawn EACCES /secret/path/node');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("a job runner that emits 'error' after the spawn fails the job with one plain sentence; the raw reason goes to the log only (R7)", async () => {
+    const child = Object.assign(new EventEmitter(), { unref: () => undefined }) as unknown as ChildProcess;
+    const h = harness(tmp, { spawn: () => child });
+    const p = await h.manager.plan('write my lab report draft');
+    if ('error' in p) throw new Error(p.error);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await h.manager.start(p, 'voice-ptt')).toMatchObject({ status: 'queued' });
+      child.emit('error', new Error('spawn ENOENT /secret/path/node'));
+      expect(readJobState(h.home, p.id)).toMatchObject({ status: 'failed', error: JOB_RUNNER_FAILED });
+      expect(log).toHaveBeenCalledWith('jobs: job runner: spawn ENOENT /secret/path/node');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('a root that is a symlink is refused (plan and start)', async () => {

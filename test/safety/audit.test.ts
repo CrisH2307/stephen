@@ -312,3 +312,58 @@ describe('R1: audit privacy', () => {
     expect(e.args).toEqual({ text: '[redacted, 7 chars]', expression: '[14 chars, sha256:a37bf3152178]', files: ['/Users/me/a.pdf'] });
   });
 });
+
+describe('a write that fails after a partial write is never re-appended (post-release review of #226)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('the torn write is not retried: no entry is doubled and the entry before it stays whole', async () => {
+    const path = join(dir, 'audit.log');
+    const log = new AuditLog({ path });
+    await log.append({ tool: 'before', outcome: 'ok' });
+    const realOpen = fsp.open.bind(fsp);
+    let tear = true;
+    const open = vi.spyOn(fsp, 'open').mockImplementation(async (...args: unknown[]) => {
+      const fh = await (realOpen as (...a: unknown[]) => Promise<Awaited<ReturnType<typeof fsp.open>>>)(...args);
+      if (tear) {
+        tear = false;
+        (fh as unknown as { appendFile: (data: string) => Promise<void> }).appendFile = async (data: string) => {
+          const buf = Buffer.from(data);
+          await fh.write(buf, 0, Math.floor(buf.length / 2)); // half the line reaches the disk ...
+          throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }); // ... then the write fails
+        };
+      }
+      return fh;
+    });
+    await expect(log.append({ tool: 'torn', outcome: 'ok' })).rejects.toThrow('ENOSPC');
+    expect(open).toHaveBeenCalledTimes(1); // the failed write is not tried again
+    const raw = readFileSync(path, 'utf8');
+    expect(raw.split('"tool":"torn"').length - 1).toBe(1); // only the torn fragment, never a second copy
+    expect((await log.recent(10)).map((e) => e.tool)).toEqual(['before']);
+  });
+
+  it('the next append after a torn write is a whole line of its own and is read back', async () => {
+    const path = join(dir, 'audit.log');
+    const log = new AuditLog({ path });
+    await log.append({ tool: 'before', outcome: 'ok' });
+    const realOpen = fsp.open.bind(fsp);
+    let tear = true;
+    vi.spyOn(fsp, 'open').mockImplementation(async (...args: unknown[]) => {
+      const fh = await (realOpen as (...a: unknown[]) => Promise<Awaited<ReturnType<typeof fsp.open>>>)(...args);
+      if (tear) {
+        tear = false;
+        (fh as unknown as { appendFile: (data: string) => Promise<void> }).appendFile = async (data: string) => {
+          const buf = Buffer.from(data);
+          await fh.write(buf, 0, Math.floor(buf.length / 2));
+          throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+        };
+      }
+      return fh;
+    });
+    await expect(log.append({ tool: 'torn', outcome: 'ok' })).rejects.toThrow('ENOSPC');
+    await log.append({ tool: 'after', outcome: 'ok' });
+    const lines = readFileSync(path, 'utf8').split('\n');
+    expect(lines.filter((l) => l.includes('"tool":"after"'))).toEqual([expect.stringMatching(/^\{"tool":"after".*\}$/)]);
+    expect(lines.some((l) => l.includes('"tool":"torn"') && l.includes('"tool":"after"'))).toBe(false);
+    expect((await log.recent(10)).map((e) => e.tool)).toEqual(['after', 'before']);
+  });
+});

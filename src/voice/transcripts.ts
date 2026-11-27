@@ -14,6 +14,7 @@
 import { lstatSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { claudeConfigDir } from '../lib/claude-env.js';
 import { SESSION_ID_RE } from './claude.js';
 
 /** Claude Code's project folder name for a cwd: every character that isn't a letter or digit becomes "-". */
@@ -23,7 +24,8 @@ export function claudeProjectSlug(cwd: string): string {
 
 /** `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/<slug>` for the voice workdir. */
 export function claudeTranscriptDir(workDir: string, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
-  const base = env.CLAUDE_CONFIG_DIR && env.CLAUDE_CONFIG_DIR.trim() ? env.CLAUDE_CONFIG_DIR : join(home, '.claude');
+  // The same check as the env Claude gets (src/lib/claude-env.ts), so Claude writes where Stephen deletes.
+  const base = claudeConfigDir(env, home) ?? join(home, '.claude');
   return join(resolve(base), 'projects', claudeProjectSlug(workDir));
 }
 

@@ -113,7 +113,7 @@ the phone session reads text the owner didn't write (Stephen's replies quote web
 | T10 | Mac asleep / process died | Phone silently unanswered | `claude remote-control` exits after ~10 min without network **[docs]**: owner chose on-demand only (decision 2): `stephen phone status` and doctor show it |
 
 ### Bridge rules (what the code enforces, whatever the session does)
-- Not a client of `app.sock`: `app.sock` also offers `memory.add`, `history.clear`, `settings.get` and more. The bridge
+- Not a client of `app.sock`: `app.sock` also offers `memory.update`, `history.clear`, `settings.get` and more. The bridge
   gets its own `phone.sock` with exactly three requests.
 - Source `voice-phone` → trust `wake`. So: email is summary only, the gate refuses confirm-level actions ("confirm at
   the Mac"), and the model never writes memory or timers (as today).

@@ -9,8 +9,10 @@
 import { createTts, type TtsSpeaker } from './tts/index.js';
 import { TalkStore, talkFromConfig } from '../app/talk.js';
 import { ModelStore } from '../app/model.js';
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isPidAlive, sleep } from '../lib/process.js';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { AppConfigError, parseAppConfig, type AppConfig } from '../app/config.js';
 import { AppServer, listenerQueue } from '../app/server.js';
@@ -20,7 +22,7 @@ import { appSettings } from '../app/settings.js';
 import { writeReplaySwitch } from '../app/replay-switch.js';
 import { configFilePath, loadConfig } from '../config.js';
 import { HistoryConfigError, parseHistoryConfig, type HistoryConfig } from '../history/config.js';
-import { HistoryStore } from '../history/store.js';
+import { HistoryStore, localDate } from '../history/store.js';
 import { ResumeArm, conversationEntries, quotePrompt } from '../history/resume.js';
 import { branchView } from '../history/branch.js';
 import { MemoryConfigError, parseMemoryConfig, type MemoryConfig } from '../memory/config.js';
@@ -28,11 +30,14 @@ import { buildNameList } from './names.js';
 import { MemoryStore } from '../memory/store.js';
 import { ProposalStore } from '../memory/proposals.js';
 import { AuditLog } from '../safety/audit.js';
+import { compileLists, isPrivateUrl, type PolicyLists } from '../safety/policy.js';
 import { DialogConfirmer } from '../safety/confirm.js';
 import { newServeInstance, serveLockPath, sweepServeLocks } from '../server/instance.js';
 import { commandFilePath, toolLogPath } from '../server/tool-log.js';
 import { buildReport, formatReport } from '../telemetry/cli.js';
+import { purgeIncidents, recordIncident } from '../telemetry/incidents.js';
 import { LatencyMonitor } from '../telemetry/latency.js';
+import { DailyLimit } from './daily-limit.js';
 import { defaultDesktopDeps } from '../desktop/system.js';
 import { listApps } from '../desktop/resolve.js';
 import { classify } from './grammar/classify.js';
@@ -72,7 +77,7 @@ import { soundControl, type SoundControl } from './media-command.js';
 import { HELPER_HINT, HelperBridge, PTT_NEEDS_HELPER, assistantHooks, loadHelperClient, type HelperLink } from './helper-link.js';
 import { Listener } from './listener.js';
 import { MemoryRouter } from './memory-router.js';
-import { ensureModels, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelPaths } from './models.js';
+import { ensureModels, isInstalled, modelPaths, modelsDir, requiredArchives, resolveAsrModel, type Downloader, type ModelEvent, type ModelPaths } from './models.js';
 import { AfplayChimes, silentChimes, silentSpeaker, type Chimes, type Speaker } from './speech.js';
 import { cleanTypedCommand } from './transcript.js';
 import { ownerZone } from '../accounts/calendar.js';
@@ -105,6 +110,8 @@ export interface Engines {
 
 /** Everything runListen touches outside itself — injectable for tests. */
 export interface ListenEnv {
+  /** F9b: model download progress as code words (voice-setup --json-progress). */
+  onModelEvent?: (e: ModelEvent) => void;
   loadConfig?: () => {
     home: string;
     voice: Record<string, unknown>;
@@ -114,6 +121,8 @@ export interface ListenEnv {
     accounts?: Record<string, unknown>;
     jobs?: Record<string, unknown>;
     auditLogPath?: string;
+    /** The owner's safety lists (T6: private fields hidden in audit.recent). Absent = the built-in lists only. */
+    safety?: { blockedDomains: string[]; sensitiveDomains: string[] };
   };
   /** Shown in the Stephen window's Settings (default: configFilePath()). */
   configPath?: string;
@@ -176,6 +185,10 @@ async function connectHelper(env: ListenEnv, home: string): Promise<{ bridge: He
     return { reason: (e as Error).message };
   }
   if (!link) return { reason: 'Stephen Helper is not installed' };
+  // A dropped helper connection is an incident (code word only). onConnection(false) never fires on our own close.
+  link.onConnection?.((up) => {
+    if (!up) recordIncident(home, { part: 'helper', code: 'helper_lost', stage: 'run' });
+  });
   return HelperBridge.connect(link);
 }
 
@@ -238,6 +251,8 @@ interface LoadedVoice {
   /** Raw "accounts" section (accounts.status). */
   accounts: unknown;
   auditLogPath: string | null;
+  /** The safety lists (built-in plus the owner's), for hiding private fields in audit.recent (T6). */
+  lists: PolicyLists;
 }
 
 function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null {
@@ -253,6 +268,7 @@ function loadVoice(env: ListenEnv, err: (l: string) => void): LoadedVoice | null
       jobs: parseJobsConfig(c.jobs),
       accounts: c.accounts ?? {},
       auditLogPath: c.auditLogPath ?? null,
+      lists: compileLists({ blockedDomains: c.safety?.blockedDomains ?? [], sensitiveDomains: c.safety?.sensitiveDomains ?? [] }),
     };
   } catch (e) {
     const known = e instanceof VoiceConfigError || e instanceof MemoryConfigError || e instanceof HistoryConfigError || e instanceof AppConfigError || e instanceof JobsConfigError;
@@ -269,13 +285,66 @@ async function setupModels(
   env: ListenEnv,
   out: (l: string) => void,
 ): Promise<ModelPaths> {
-  const installed = await ensureModels(root, requiredArchives(asr), { log: out, download: env.download });
+  const installed = await ensureModels(root, requiredArchives(asr), { log: out, download: env.download, ...(env.onModelEvent ? { onEvent: env.onModelEvent } : {}) });
   const paths = modelPaths(root, asr);
   // Tokenize the configured phrases now, so a phrase the model can't spot fails here with a clear message.
   await mkdir(workDir, { recursive: true, mode: 0o700 });
-  writeKeywordsFile(paths, spotterOptions(cfg, workDir));
+  try {
+    writeKeywordsFile(paths, spotterOptions(cfg, workDir));
+  } catch (e) {
+    throw new KeywordsError((e as Error).message);
+  }
   if (installed.length) out(`Speech models ready in ${root}.`);
   return paths;
+}
+
+/** The models are in place but the wake phrase cannot be used (F9b review: not an internet problem). */
+class KeywordsError extends Error {}
+
+/**
+ * One voice-setup at a time per models folder (F9b review): `<root>/.voice-setup.lock` holds the pid. A lock whose pid
+ * is gone is taken over. Returns a release function, or null when another live run holds it.
+ */
+function lockModels(root: string): (() => void) | null {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const lock = join(root, '.voice-setup.lock');
+  const take = `${lock}.takeover`;
+  const create = (path: string): boolean => {
+    try {
+      writeFileSync(path, String(process.pid), { flag: 'wx', mode: 0o600 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const holderAlive = (): boolean => {
+    try {
+      const pid = Number(readFileSync(lock, 'utf8').trim());
+      return Number.isInteger(pid) && pid > 0 && pid !== process.pid && isPidAlive(pid);
+    } catch {
+      return false; // gone, or unreadable: nobody holds it
+    }
+  };
+  const release = () => rmSync(lock, { force: true });
+  if (create(lock)) return release;
+  if (holderAlive()) return null;
+  // A dead run's lock: one taker at a time (O_EXCL on a second file, #401 review), so two runs never both remove it
+  // and both go on. The taker checks again under its own lock; the other one says busy.
+  if (!create(take)) {
+    try {
+      if (Date.now() - statSync(take).mtimeMs > 60_000) rmSync(take, { force: true }); // a taker that died
+    } catch {
+      // already gone
+    }
+    return null;
+  }
+  try {
+    if (holderAlive()) return null;
+    rmSync(lock, { force: true });
+    return create(lock) ? release : null;
+  } finally {
+    rmSync(take, { force: true });
+  }
 }
 
 /** `stephen voice-setup`: download + verify + extract the speech models (never re-downloads). */
@@ -286,13 +355,52 @@ export async function runVoiceSetup(argv: string[], env: ListenEnv = {}): Promis
     out('stephen voice-setup   Download the "Hey Stephen" speech models (wake word, VAD, speech-to-text) into <stephen home>/models');
     return 0;
   }
-  if (argv.length) {
-    err(`Unknown option "${argv[0]}". Usage: stephen voice-setup`);
+  // F9b: --json-progress prints only code-word JSON lines (the setup sheet's own text goes with each), no free text.
+  const json = argv.length === 1 && argv[0] === '--json-progress';
+  if (argv.length && !json) {
+    err(`Unknown option "${argv[0]}". Usage: stephen voice-setup [--json-progress]`);
     return 2;
   }
-  const loaded = loadVoice(env, err);
-  if (!loaded) return 2;
+  const emit = (e: object) => out(JSON.stringify(e));
+  const loaded = loadVoice(env, json ? () => {} : err);
+  if (!loaded) {
+    if (json) emit({ event: 'failed', reason: 'config' });
+    return 2;
+  }
   const root = env.modelsRoot ?? modelsDir(loaded.home);
+  const release = lockModels(root);
+  if (!release) {
+    if (json) emit({ event: 'failed', reason: 'busy' });
+    else err('Another voice-setup is running for these models. Wait for it to finish, then run this again.');
+    return 1;
+  }
+  try {
+    return await voiceSetupLocked(root, loaded, json, emit, env, out, err);
+  } finally {
+    release();
+  }
+}
+
+async function voiceSetupLocked(
+  root: string,
+  loaded: NonNullable<ReturnType<typeof loadVoice>>,
+  json: boolean,
+  emit: (e: object) => void,
+  env: ListenEnv,
+  out: (l: string) => void,
+  err: (l: string) => void,
+): Promise<number> {
+  if (json) {
+    try {
+      const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
+      await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), { ...env, onModelEvent: emit }, () => {});
+      emit({ event: 'done' });
+      return 0;
+    } catch (e) {
+      emit({ event: 'failed', reason: e instanceof KeywordsError ? 'keywords' : 'download' });
+      return 1;
+    }
+  }
   try {
     const asr = loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL;
     await setupModels(root, loaded.cfg, asr, join(loaded.home, 'voice'), env, out);
@@ -494,6 +602,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
     : new LatencyMonitor({ home, log: err, loop: { reset: () => loopDelay.reset(), p99Ms: () => loopDelay.percentile(99) / 1e6 } });
   try {
     latency?.purge();
+    if (!args.dryRun) purgeIncidents(home);
   } catch (e) {
     err(`Note: couldn't clear old latency logs (${(e as Error).message}).`);
   }
@@ -543,11 +652,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       turns: r.turns,
       ...(r.model ? { model: r.model } : {}),
       ...(r.ranClaude ? { start: r.model || r.followUp ? 'warm' : 'cold' } : {}),
+      ...(r.costUsd !== undefined ? { costUsd: r.costUsd } : {}),
+      ...(r.failure ? { failure: r.failure } : {}),
       ...(calls.length ? { tools: calls.map((t) => ({ name: t.tool, ms: t.ms })) } : {}),
       ...(r.silenceMs !== undefined ? { silenceMs: r.silenceMs } : {}),
       ...(heard && lastTts() ? { tts: lastTts()! } : {}),
     });
-    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end }).then(() => {
+    finishing = finishCommand(r, calls, { audit, record: recordHistory, app, log: err, end, isPrivateUrl: (u) => isPrivateUrl(u, loaded.lists) }).then(() => {
       // ADR-010: one audit line per edit and resend (ids and the old source, no text), after the steps were read.
       const line = editResendAudit(r);
       if (line && audit) return audit.append(line).catch((e: unknown) => err(`Note: could not audit the edit (${(e as Error).message}).`));
@@ -568,7 +679,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         return tts;
       };
       if (talk.get().speak) {
-        void ttsFor().warm().catch(() => {});
+        void ttsFor().warm().catch((e: unknown) => err(`Note: the voice could not warm up (${(e as Error).message}).`));
       }
       speaker = { speak: (t) => ttsFor().speak(t) };
     }
@@ -606,6 +717,8 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
           cliPath,
           ...(env.jobSpawn ? { spawn: env.jobSpawn } : {}),
           ...(env.now ? { now: env.now } : {}),
+          // The same daily cost limit as a model run (DailyLimit below, read at each start): at 100% no new job.
+          dailyLimitUsed: (): boolean => dailyLimit?.allowed() === false,
         });
   if (jobManager) {
     try {
@@ -622,6 +735,24 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
         ...(env.now ? { now: env.now } : {}),
       })
     : null;
+  // Daily cost limit (docs/NFR-STEPHEN.md section 6). The config is read again on every check, so an edit applies at
+  // once; a config that no longer parses keeps the value Stephen started with. A dry run costs nothing: no limit.
+  const dailyLimit = latency
+    ? new DailyLimit({
+        limit: () => {
+          try {
+            return parseVoiceConfig((env.loadConfig ?? loadConfig)().voice).dailyLimit;
+          } catch (e) {
+            err(`Note: config could not be read, so the daily limit stays at the start value (${(e as Error).message}).`);
+            return cfg.dailyLimit;
+          }
+        },
+        records: () => latency.read(1),
+        // A job's cost counts on the day it ended (or started, while it runs). Jobs keep their own budget too.
+        jobSpend: (day) => (jobManager?.list() ?? []).reduce((sum, j) => (j.costUsd !== null && localDate(new Date(j.endedAt ?? j.startedAt ?? j.createdAt)) === day ? sum + j.costUsd : sum), 0),
+        log: err,
+      })
+    : null;
   let finishWatcher: FinishWatcher | null = null;
   const makeAssistant = (bridge: HelperBridge | null) => {
     const hooks = assistantHooks(bridge);
@@ -634,6 +765,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       memory: memoryRouter,
       timers: timerRouter,
       jobs: jobRouter,
+      limit: dailyLimit,
       onDone,
       onStart,
       ...hooks,
@@ -684,6 +816,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       endConversation: () => a.endConversation(),
       history,
       audit,
+      isPrivateUrl: (url: string) => isPrivateUrl(url, loaded.lists),
       settings: () => appSettings({ voice: cfg, memory: loaded.memory, history: loaded.history, app: loaded.app, configPath, talk: talk.get(), model: modelStore.get(), replay: rec.on() }),
       accounts: allAccounts,
       personal: async () => personalSummary({ aboutMe: cfg.aboutMe, accounts: await allAccounts(), jobsOn: jobManager !== null }),
@@ -909,7 +1042,7 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
           if (run) {
             pending.length = 0;
             await run.catch(() => undefined);
-          } else await new Promise((r) => setTimeout(r, 500));
+          } else await sleep(500);
         }
         pending.length = 0;
       } finally {
@@ -966,4 +1099,13 @@ export async function runListen(argv: string[], env: ListenEnv = {}): Promise<nu
       process.off('exit', onExit);
     }
   }
+}
+
+/** F9: are the speech models for the configured speech-to-text in place? (`stephen setup --status`). Reads only. */
+export async function voiceModelsReady(env: ListenEnv = {}): Promise<boolean> {
+  const loaded = loadVoice(env, () => {});
+  if (!loaded) return false;
+  const root = env.modelsRoot ?? modelsDir(loaded.home);
+  for (const m of requiredArchives(loaded.cfg.asrModel ?? DEFAULT_ASR_MODEL)) if (!(await isInstalled(root, m))) return false;
+  return true;
 }

@@ -363,22 +363,24 @@ and allow the microphone for Stephen Helper once. Quit any Terminal listener.
   See: the chat context bar (after a first command) and the memory bar are there. They turn amber with "almost full" from 80%.
 
 ### 11.6 Main window
-- [ ] `[hands]` **11.6.1** Do: press ⌘1 to ⌘5. Press ⌘\. Restart Stephen. Look at the status row.
+- [ ] `[hands]` **11.6.1** Do: press ⌘1 to ⌘6. Press ⌘\. Restart Stephen. Look at the status row.
   See: the pages switch. ⌘\ collapses the sidebar and the choice survives a restart. The status row has Start/Stop.
 - [ ] `[hands]` **11.6.2** Do: open Home. Press Send. Click a chip.
   See: "Morning/Afternoon, Cris." and the date, and the Today list. Send shows the reply in the Ask box. Chips fill the box.
-- [ ] `[hands]` **11.6.3** Do: open Settings (⌘5) and click each pane in the "You" group.
+- [ ] `[hands]` **11.6.3** Do: open Settings (⌘6) and click each pane in the "You" group.
   See: About you, Connected, Privacy and permissions (the permission table: Send or submit: Asks you / Asks you / Never), Routines. There is no Personal page, and no "‹ Personal" link on Memory.
-- [ ] `[hands]` **11.6.4** Do: open Memory (⌘4) to see the graph. Tell Stephen "I moved to Fit4Less". Press Keep. Run `node dist/cli.js memory list`
+- [ ] `[hands]` **11.6.4** Do: open Memory (⌘5) to see the graph. Tell Stephen "I moved to Fit4Less". Press Keep. Run `node dist/cli.js memory list`
   before and after. Switch between Graph and List (try VoiceOver).
   See: a dashed amber node under Places and a row in "New from your chats" at the top of the page. `memory list` does not show it yet. After Keep: a solid node, the inspector says
   "You told Stephen · you kept it", and `memory list` shows it. The Graph / List switch works with VoiceOver.
 - [ ] `[hands]` **11.6.5** Do: open Settings, Voice. Choose Detailed + Formal + Explain steps. Press Save. Then turn Speak off. Then set macOS voice.
   See: "Saved". `~/.browser-hub/config.json` has the keys under `voice`. The next reply changes. With Speak off, the next reply is silent. macOS voice uses `say`.
-- [ ] `[hands]` **11.6.6** Do: open Settings, Appearance. Try Navy, Rose, Sun, Dark, Light, Follow the Mac.
+- [ ] `[hands]` **11.6.6** Do: open Settings, Appearance. Try Navy, Rose, Sun, Paper, Dark, Light, Follow the Mac.
   See: the window and the Ask box change together.
-- [ ] `[hands]` **11.6.7** Do: open Conversations (⌘2), search, and read a chat. Open Jobs (⌘3), start a job, press Stop, press Open output folder.
+- [ ] `[hands]` **11.6.7** Do: open Conversations (⌘2), search, and read a chat. Open Jobs (⌘4), start a job, press Stop, press Open output folder.
   See: Conversations is one list by day. A click on a row shows the reply and its actions; "Refused: …" lines show even on a closed row. In Jobs, Stop moves the job to Earlier as Stopped. Open output folder opens it.
+- [ ] `[hands]` **11.6.8** Do: open a site with Stephen, then open Activity (⌘3). Click a line.
+  See: one line per action, newest first: time, the action in words, the site name only (no path), and the result in words. A stopped job says "stopped by you". The click opens that chat in Conversations. On a mail site, no button labels show.
 
 ## 12. UI v3.2 (chat thread, Home chat, sidebar motion, spacing)
 Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
@@ -398,12 +400,14 @@ Build the helper from the `qa` branch (`node dist/cli.js install-helper`), then:
   See: the thread shows and the composer sits at the bottom. After ⌘N, Home is empty again.
 - [ ] `[hands]` **12.8 Sidebar collapse (⌘\).** Do: press ⌘\. Then turn on Reduce Motion in System Settings, Accessibility, Display, and press ⌘\ again.
   See: the wordmark fades, the width animates, the icons do not move. With Reduce Motion on, it switches at once.
-- [ ] `[hands]` **12.9 Current page.** Do: click through all five pages (⌘1 to ⌘5).
+- [ ] `[hands]` **12.9 Current page.** Do: click through all six pages (⌘1 to ⌘6).
   See: the open page is semibold with a tinted row and a bar on the left.
 - [ ] `[hands]` **12.10 Spacing.** Do: make the window as small as it goes (720 x 440). Look at each page.
   See: pages feel roomier and nothing is cut off.
-- [ ] `[hands]` **12.11 All five themes.** Do: in Settings, Appearance, choose Light, Dark, Navy, Rose, Sun, one by one. Look at the Ask box, Home and the sidebar.
+- [ ] `[hands]` **12.11 All six themes.** Do: in Settings, Appearance, choose Light, Dark, Navy, Rose, Sun, Paper, one by one. Look at the Ask box, Home and the sidebar.
   See: the Ask box, Home and the sidebar look right in every theme.
+  In Paper, ask for something that needs your OK. See: a lavender Ask box, Deny and Allow the same size, Allow
+  stays dim for a moment, Return does not answer, Esc denies.
 
 ## 13. Latency monitor and command id (A2, issue #43, PRs #44, #46, #47)
 Build from `qa` (section 0) and start Stephen. Then give about 10 real commands: 3 with "Hey Stephen", 3 with F5, 1 typed in
@@ -483,9 +487,9 @@ The full acceptance is 20 holds and 10 of each stop. If you have little time, do
 - [ ] `[scripted]` **14.8** Do: run `npx vitest run test/app/steps.test.ts`.
   See: all tests pass. (R10a-1, #93, #110)
 - [ ] `[hands]` **14.9** Do: turn Wi-Fi off. Say "Hey Stephen, what's my day". Turn Wi-Fi on again.
-  See: the problem shows. Under your words it says "From: Hey Stephen". There is no "Try again" button. (R10a-2, #94, #111; the way to make it fail is not in the PR, so this is a guess: if no problem shows, note it in the issue)
+  See: the problem shows. No source line is under your words. There is no "Try again" button. (R10a-2, #94, #111; the way to make it fail is not in the PR, so this is a guess: if no problem shows, note it in the issue)
 - [ ] `[hands]` **14.10** Do: only if you use the phone page: send a command from the phone while Wi-Fi is off. Otherwise skip.
-  See: the problem shows, under your words it says "From: Phone", and there is no "Try again" button. Skip if you do not use the phone. (R10a-2, #94, #111)
+  See: the problem shows, no source line is under your words, and there is no "Try again" button. Skip if you do not use the phone. (R10a-2, #94, #111)
 - [ ] `[hands]` **14.11** Do: turn Wi-Fi off. Open the Ask box and type "what time is it", then press Return. Turn Wi-Fi on. Click "Try again".
   See: the problem shows with a "Try again" button. After the click, the same words are sent again and a reply shows. (R10a-2, #94, #111)
 - [ ] `[hands]` **14.12** Do: ask for a gated action in the Ask box. When the question shows, click in the text field so the cursor is there. Press Esc.
@@ -521,10 +525,10 @@ The full acceptance is 20 holds and 10 of each stop. If you have little time, do
 
 ### 14.5 Claude Code and Stephen (PRs #115, #116)
 - [ ] `[scripted]` **14.25** Do: run `node dist/cli.js doctor`.
-  See: a line "Claude Code version" with your version and `(tested 2.1.316 to 2.1.319)`. If your version is outside the range, the line is a warning and it says older or newer. Send me the line. Doctor still ends without a stop. (S4-8, #65, #115)
+  See: a line "Claude Code version" with your version and `(tested 2.1.316 to 2.1.332)`. If your version is outside the range, the line is a warning and it says older or newer. Send me the line. Doctor still ends without a stop. (S4-8, #65, #115)
 - [ ] `[hands]` **14.26** Do: open Settings, "Model and effort", set the effort to high. Hold F5 and say "what time is it".
   See: the command runs and a reply shows. Set the effort back to what it was. (S4-8, #65, #115; from the PR text)
-- [ ] `[scripted]` **14.27** Do: run `npx vitest run test/voice/claude-contract.test.ts test/memory/boundary.test.ts test/voice/review4.test.ts`.
+- [ ] `[scripted]` **14.27** Do: run `npx vitest run test/voice/claude-contract.test.ts test/memory/boundary.test.ts test/voice/claude-env-and-flag-probe.test.ts`.
   See: all tests pass. (R10a-6, #67, #116)
 - [ ] `[hands]` **14.28** Do: only if you hit your Claude plan limit this week, send any command.
   See: the message "You've reached your Claude plan limit." and, when known, "It resets at" and a time. You cannot make this happen on purpose. Skip it if it did not happen. (R10a-6, #67, #115)
@@ -660,7 +664,7 @@ Send back: any box you could not tick, with its id.
 
 ## 17. UI v4 step c: Settings in 3 groups, sidebar resize (branch `feat/ui-v4-settings`)
 Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen.
-- [ ] `[hands]` **17.1** Do: open Settings (⌘5). Read the left list.
+- [ ] `[hands]` **17.1** Do: open Settings (⌘6). Read the left list.
   See: three labels, You, Stephen and App, and 8 panes: About you, Connected, Privacy and permissions, Routines; Voice, Model and effort; Appearance, About. Each pane looks like System Settings (grouped rows). No table sits in a box inside another box.
 - [ ] `[hands]` **17.2** Do: open Privacy and permissions. Turn "Save my F5 commands to measure mistakes" on, then off.
   See: the table first, then the switch with the same words as before, then a closed "Where these rules come from". On shows "Recording on" in the sidebar. Off asks "Delete the saved recordings too?". The note says "Read only. These come from Stephen's safety rules."
@@ -681,7 +685,7 @@ Send back: any box you could not tick, with its id.
 
 ## 18. UI v4 step d: Memory and Jobs (branch `feat/ui-v4-memory-jobs`)
 Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Have at least one kept memory item.
-- [ ] `[hands]` **18.1** Do: open Memory (⌘4). Read the page from the top. Press Esc.
+- [ ] `[hands]` **18.1** Do: open Memory (⌘5). Read the page from the top. Press Esc.
   See: under the toolbar title, the line "Things Stephen remembers about you. It only saves what you tell it or keep." No "‹ Personal" link and no big "Memory" title in the page. Esc does nothing: you stay on Memory.
 - [ ] `[hands]` **18.2** Do: with nothing waiting to keep, look at the top. Then type "I moved to Fit4Less" in "Tell Stephen" and press Return.
   See: no "New from your chats" box at first. After Return it appears at the top, above the search field, with Keep, Edit and Skip. Nothing is in `node dist/cli.js memory list` yet.
@@ -694,7 +698,7 @@ Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen. Ha
   See: ⌘F puts the cursor in "Search memory". Wide: the Selected card sits beside the graph. Narrow: it moves under the graph. Nothing is cut off. (#148)
 - [ ] `[hands]` **18.6** Do: scroll to the bottom. Open "About memory". Open the ⋯ menu.
   See: "About memory" is closed at first and says what counts toward the 8 KB per chat (kept items, at most 30, 200 characters each; suggestions don't count). The ⋯ menu has Refresh and "Forget all…" and no "% of 8 KB" line. The "% full" chip shows only from 80%.
-- [ ] `[hands]` **18.7** Do: say "start a job to find 5 internships". Open Jobs (⌘3) while it runs.
+- [ ] `[hands]` **18.7** Do: say "start a job to find 5 internships". Open Jobs (⌘4) while it runs.
   See: the intro "Long tasks Stephen runs in the background. Each summary is written by the job: check it before you rely on it." The job is under Running (open), with a line like "Started 2:10 PM · 3 min · $0.12 spent", the word Running and a Stop button.
 - [ ] `[hands]` **18.8** Do: press Stop. Then open the row.
   See: the job moves into the closed "Earlier (N)" accordion; open it and the row says Stopped with no Stop button. The open row shows "Summary, written by the job" (when there is one), the turns and "Open output folder". There is no separate footer line.
@@ -797,7 +801,7 @@ Send back: any box you could not tick, with its id.
 Setup: run `npm run build && node dist/cli.js install-helper`. Start Stephen with the window open and jobs on. Put a
 small file in the jobs inbox, then ask "start a job to write a short poem about rain" and allow the dialog. Let it
 finish. Start a second job, "start a job to write a long story about snow", and leave it running.
-- [ ] `[hands]` **22.1** Do: open Jobs (⌘3) and look at the running job's row.
+- [ ] `[hands]` **22.1** Do: open Jobs (⌘4) and look at the running job's row.
   See: `[DEV REVIEW]` "Edit request" is there but off (greyed, clicking does nothing), with the line "Stop the job first to change its request." under the row. Stop is next to it.
 - [ ] `[hands]` **22.2** Do: click Stop on the running job. When it says Stopped, look at its row again.
   See: "Edit request" is on now, and the "Stop the job first" line is gone.

@@ -1,6 +1,6 @@
 /**
  * `<home>/run/phone.sock`: the only way the phone bridge (`stephen phone-bridge`, the Remote Control session's MCP
- * server) reaches `stephen listen` (docs/ADR-005, Bridge rules). Not app.sock: that one also offers memory.add,
+ * server) reaches `stephen listen` (docs/ADR-005, Bridge rules). Not app.sock: that one also offers memory.update,
  * history.clear and more. This one has three requests, one JSON line each way:
  *   {id, type: 'ask', text}            → {id, type: 'reply', text}   (runs as source 'phone': wake-word data rules,
  *                                                                     every confirmation declined, no memory writes)

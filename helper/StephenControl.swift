@@ -91,25 +91,39 @@ func appRequestOnce(
   }
 }
 
+/** R7: a failed menu or doctor request says what failed in a plain sentence, never a raw "error". */
+let PHONE_LINK_FAILED = "Couldn't change the phone link right now."
+let ZEN_OPEN_FAILED = "Couldn't open Zen for Stephen right now."
+let SPEED_FAILED = "Couldn't load the speed report right now."
+let DOCTOR_FAILED = "Couldn't run the doctor checks right now."
+let LAUNCH_INFO_MISSING = "Stephen Helper doesn't know how to start Stephen. Run `stephen install-helper` once in Terminal."
+let LISTEN_START_FAILED = "Couldn't start Stephen right now. Try again in a moment."
+let REPORT_RUN_FAILED = "Couldn't make the problem report right now."
+
 /** Plain text for a `phone` answer (what `stephen phone on|off` printed) or an error. */
 func phoneText(_ msg: AppMessage) -> String {
-  return msg.type == "phone" ? (msg.lines ?? []).joined(separator: "\n") : msg.message ?? "error"
+  return msg.type == "phone" ? (msg.lines ?? []).joined(separator: "\n") : plainFailure(msg.message, PHONE_LINK_FAILED)
 }
 
 /** nil when Zen for Stephen is ready, else why not (the `zen` answer's message or an error). */
 func zenProblem(_ msg: AppMessage) -> String? {
-  return msg.type == "zen" && msg.ok == true ? nil : msg.message ?? "error"
+  if msg.type == "zen" {  // the launcher's own words, or the plain line when it said nothing
+    if msg.ok == true { return nil }
+    let m = msg.message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return m.isEmpty ? ZEN_OPEN_FAILED : m
+  }
+  return plainFailure(msg.message, ZEN_OPEN_FAILED)
 }
 
 /** Plain text for a `latency` answer, like `stephen latency` prints it. An older listener answers with an error. */
 func latencyText(_ msg: AppMessage) -> String {
-  guard msg.type == "latency" else { return msg.message ?? "error" }
+  guard msg.type == "latency" else { return plainFailure(msg.message, SPEED_FAILED) }
   return msg.text ?? ""
 }
 
 /** Plain text for a `doctor` answer, like `stephen doctor` prints it. */
 func doctorText(_ msg: AppMessage) -> String {
-  guard msg.type == "doctor" else { return msg.message ?? "error" }
+  guard msg.type == "doctor" else { return plainFailure(msg.message, DOCTOR_FAILED) }
   var out: [String] = []
   for c in msg.checks ?? [] {
     let mark = c.info == true ? "•" : c.ok ? "✓" : "✗"
@@ -223,7 +237,8 @@ final class StephenControl: ObservableObject {
     if case .running = listener { return done("Stephen is already running.") }
     if listener == .starting { return done(nil) }
     guard let info = readLaunchInfo() else {
-      return done("Stephen Helper doesn't know how to start Stephen: \(launchInfoPath) is missing or unsafe. Run `stephen install-helper` once in Terminal.")
+      log("start: \(launchInfoPath) is missing or unsafe")
+      return done(LAUNCH_INFO_MISSING)
     }
     try? makePrivateDir(home + "/logs")
     let fm = FileManager.default
@@ -232,7 +247,10 @@ final class StephenControl: ObservableObject {
       try? fm.moveItem(atPath: logPath, toPath: logPath + ".1")
     }
     let fd = Darwin.open(logPath, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0o600)
-    guard fd >= 0 else { return done("Couldn't open \(logPath): \(String(cString: strerror(errno)))") }
+    guard fd >= 0 else {
+      log("start: couldn't open \(logPath): \(String(cString: strerror(errno)))")
+      return done(LISTEN_START_FAILED)
+    }
     let out = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     let p = Process()
     p.executableURL = URL(fileURLWithPath: info.node)
@@ -256,7 +274,8 @@ final class StephenControl: ObservableObject {
     do {
       try p.run()
     } catch {
-      return done("Couldn't start stephen listen: \(error.localizedDescription)")
+      log("start: couldn't run stephen listen: \(error.localizedDescription)")
+      return done(LISTEN_START_FAILED)
     }
     try? out.close()  // the child has its own copy
     child = p
@@ -312,6 +331,123 @@ final class StephenControl: ObservableObject {
   }
   func openZen(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .zenOpen("c-zen"), done) }
   func runDoctor(_ done: @escaping (AppMessage) -> Void) { appRequestOnce(appSocketPath, .doctorRun("c-doctor"), done) }
+
+  /**
+   * F9 onboarding: where Claude Code stands, from `stephen setup --status` (fixed argv from the launch info, no shell).
+   * `done` gets one of SETUP_CLAUDE_WORDS, or "unknown": never the command's own output, which the sheet does not show.
+   */
+  func setupStatus(_ done: @escaping (String, String) -> Void) {
+    guard let info = readLaunchInfo() else { return done("no_launch_info", "unknown") }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: info.node)
+    p.arguments = [info.cli, "setup", "--status"]
+    var env = ProcessInfo.processInfo.environment
+    if !info.path.isEmpty { env["PATH"] = info.path }
+    env["STEPHEN_HOME"] = home
+    p.environment = env
+    p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+    p.standardInput = FileHandle.nullDevice
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = FileHandle.nullDevice
+    p.terminationHandler = { _ in
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      DispatchQueue.main.async { done(setupClaudeWord(data), setupModelsWord(data)) }
+    }
+    do { try p.run() } catch { done("unknown", "unknown") }
+  }
+
+  /**
+   * F9b: `stephen voice-setup --json-progress`, streamed. Each line becomes a ModelProgress (code words and numbers
+   * only; any other line is dropped). `done(true)` when it finished, `done(false)` when it failed or could not start.
+   */
+  func voiceSetup(progress: @escaping (ModelProgress) -> Void, done: @escaping (Bool) -> Void) {
+    // One download per helper (F9b review): a second caller (the sheet closed with Later and opened again) joins the
+    // running one instead of starting another that would write the same model folders. voice-setup also locks.
+    setupWatchers.append((progress, done))
+    if setupWatchers.count > 1 {
+      if let last = lastSetupProgress { progress(last) }
+      return
+    }
+    lastSetupProgress = nil
+    let all: (ModelProgress) -> Void = { [weak self] ev in
+      self?.lastSetupProgress = ev
+      for w in self?.setupWatchers ?? [] { w.0(ev) }
+    }
+    let finish: (Bool) -> Void = { [weak self] ok in
+      let ws = self?.setupWatchers ?? []
+      self?.setupWatchers = []
+      for w in ws { w.1(ok) }
+    }
+    runVoiceSetup(progress: all, done: finish)
+  }
+
+  private var setupWatchers: [((ModelProgress) -> Void, (Bool) -> Void)] = []
+  private var lastSetupProgress: ModelProgress? = nil
+
+  private func runVoiceSetup(progress: @escaping (ModelProgress) -> Void, done: @escaping (Bool) -> Void) {
+    guard let info = readLaunchInfo() else { return done(false) }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: info.node)
+    p.arguments = [info.cli, "voice-setup", "--json-progress"]
+    var env = ProcessInfo.processInfo.environment
+    if !info.path.isEmpty { env["PATH"] = info.path }
+    env["STEPHEN_HOME"] = home
+    p.environment = env
+    p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+    p.standardInput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    var pending = Data()
+    pipe.fileHandleForReading.readabilityHandler = { h in
+      let chunk = h.availableData
+      if chunk.isEmpty { h.readabilityHandler = nil; return }
+      pending.append(chunk)
+      while let nl = pending.firstIndex(of: 10) {
+        let line = pending[pending.startIndex..<nl]
+        pending = Data(pending[(nl + 1)...])
+        if let ev = parseModelProgress(Data(line)) { DispatchQueue.main.async { progress(ev) } }
+      }
+      if pending.count > 4096 { pending.removeAll() }  // no line is this long: drop it
+    }
+    p.terminationHandler = { proc in
+      DispatchQueue.main.async { done(proc.terminationStatus == 0) }
+    }
+    do { try p.run() } catch { done(false) }
+  }
+  /**
+   * F12 "Report a problem…": run `stephen report --copy`, which puts the incident text (ids, versions and code words
+   * only) on the clipboard and opens GitHub's empty issue form. It sends nothing; `done` gets its last lines.
+   */
+  func reportProblem(_ done: @escaping (String) -> Void) {
+    guard let info = readLaunchInfo() else {
+      return done("Stephen Helper doesn't know where Stephen is: run `stephen install-helper` once in Terminal.")
+    }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: info.node)
+    p.arguments = [info.cli, "report", "--copy"]
+    var env = ProcessInfo.processInfo.environment
+    if !info.path.isEmpty { env["PATH"] = info.path }
+    env["STEPHEN_HOME"] = home
+    p.environment = env
+    p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+    p.standardInput = FileHandle.nullDevice
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = pipe
+    p.terminationHandler = { _ in
+      let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      let tail = text.split(separator: "\n").suffix(4).joined(separator: "\n")
+      DispatchQueue.main.async { done(tail.isEmpty ? "Nothing to report." : tail) }
+    }
+    do {
+      try p.run()
+    } catch {
+      log("report: couldn't run stephen report: \(error.localizedDescription)")
+      done(REPORT_RUN_FAILED)
+    }
+  }
   /** Settings > Speed: the latency report (ids and numbers only); quick, so a short timeout. */
   func latency(_ done: @escaping (AppMessage) -> Void) {
     appRequestOnce(appSocketPath, .latencyGet("c-latency"), timeout: APP_REQUEST_TIMEOUT_SECONDS, done)
@@ -354,4 +490,52 @@ final class StephenControl: ObservableObject {
     logLines.append(contentsOf: parts)
     if logLines.count > LISTEN_LOG_MAX_LINES { logLines.removeFirst(logLines.count - LISTEN_LOG_MAX_LINES) }
   }
+}
+
+
+/** The code words `stephen setup --status` may give for Claude Code (src/setup.ts SetupStatus). */
+let SETUP_CLAUDE_WORDS: Set<String> = ["missing", "signed_out", "ok"]
+
+/** `{"models":"…"}` → "missing" or "ok", else "unknown". Pure. */
+func setupModelsWord(_ data: Data) -> String {
+  guard data.count <= 1024, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let w = j["models"] as? String, w == "missing" || w == "ok"
+  else { return "unknown" }
+  return w
+}
+
+/** One progress step of the model download (src/voice/models.ts ModelEvent, plus done and failed). */
+struct ModelProgress: Equatable {
+  let event: String
+  let index: Int
+  let total: Int
+  let mb: Int
+  /** For "failed": download, keywords, busy or config; else "". */
+  var reason: String = ""
+}
+
+let MODEL_FAIL_REASONS: Set<String> = ["download", "keywords", "busy", "config"]
+
+let MODEL_EVENTS: Set<String> = ["downloading", "extracting", "installed", "done", "failed"]
+
+/** A `--json-progress` line → ModelProgress, or nil for anything else (unknown events, odd numbers). Pure. */
+func parseModelProgress(_ data: Data) -> ModelProgress? {
+  guard data.count <= 512, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let e = j["event"] as? String, MODEL_EVENTS.contains(e)
+  else { return nil }
+  let n = { (k: String) -> Int in
+    guard let v = j[k] as? NSNumber, v.doubleValue >= 0, v.doubleValue <= 100_000 else { return 0 }
+    return v.intValue
+  }
+  let r = j["reason"] as? String ?? ""
+  return ModelProgress(event: e, index: n("index"), total: n("total"), mb: n("mb"), reason: MODEL_FAIL_REASONS.contains(r) ? r : "")
+}
+
+/** `{"claude":"…"}` → its word if it is one of ours, else "unknown". Pure. */
+func setupClaudeWord(_ data: Data) -> String {
+  guard data.count <= 1024,
+    let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let w = j["claude"] as? String, SETUP_CLAUDE_WORDS.contains(w)
+  else { return "unknown" }
+  return w
 }
