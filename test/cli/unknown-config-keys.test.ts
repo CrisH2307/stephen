@@ -286,9 +286,9 @@ describe('unknown config keys are a doctor warning, not a start failure', () => 
     expect(() => parseVoiceConfig({ fooBar: 1, claudePath: 5 })).toThrow(/"voice\.claudePath"/);
   });
 
-  it('safety keys keep their checks; an unknown safety key is only listed', async () => {
+  it('safety keys keep their checks; an unknown safety key is listed and refuses to load', async () => {
     useConfig({ safety: { allowEval: true } });
-    expect(() => loadConfig(undefined, env)).not.toThrow();
+    expect(() => loadConfig(undefined, env)).toThrow(/unknown key: "safety\.allowEval"/);
     expect(await configUnknownKeys(env)).toEqual(['safety.allowEval']);
 
     useConfig({ safety: { maxActionsPerMinute: 0 } });

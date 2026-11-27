@@ -88,7 +88,8 @@ const prefs = z
   .refine((r) => !Object.hasOwn(r, 'remote.prefs.recommended'), 'remote.prefs.recommended is managed by Stephen')
   .nullish();
 
-// Unknown keys are dropped, not refused: userConfigUnknownKeys lists them for doctor.
+// Unknown keys are dropped, not refused: userConfigUnknownKeys lists them for doctor. "safety" is the exception:
+// validate() refuses an unknown key there.
 const UserConfigSchema = z.object({
   home: optPath,
   defaultBrowser: z.enum(['chrome', 'zen']).nullish(),
@@ -169,7 +170,19 @@ function validate(raw: unknown, source: string): ParsedUserConfig {
   if (!r.success) {
     throw new HubError('INVALID_ARG', `Invalid config in ${source}: ${describeIssues(r.error)}`);
   }
+  // A typo in "safety" must not fall back to the defaults (block lists, confirm mode): refuse it and name it.
+  const typos = unknownKeyPaths((raw as Record<string, unknown> | null)?.safety, r.data.safety, 'safety');
+  if (typos.length) throw new HubError('INVALID_ARG', `Invalid config in ${source}: ${unknownKeysMessage(typos)}`);
   return r.data;
+}
+
+/**
+ * The sections where a typo would weaken a safety setting (safety, desktop, accounts) refuse unknown keys. The
+ * message names each key, except a secret-looking or odd one (not shown, as in doctor), and never a value.
+ */
+export function unknownKeysMessage(paths: string[]): string {
+  const shown = paths.map((k) => (looksLikeSecretKey(k) ? 'a name that looks like a secret (not shown)' : showKeyName(k) === k ? `"${k}"` : UNUSUAL_KEY_NAME));
+  return `unknown key${paths.length > 1 ? 's' : ''}: ${shown.join(', ')} (check the spelling, or remove it)`;
 }
 
 /**

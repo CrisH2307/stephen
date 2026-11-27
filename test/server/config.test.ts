@@ -184,10 +184,20 @@ describe('loadConfig', () => {
   });
 
   it('unknown keys do not stop Stephen; doctor names them', () => {
-    const raw = { safety: { allowEval: true }, chorme: {} };
+    const raw = { chorme: {}, output: { outFoo: 1 } };
     writeJson(join(HOME, '.stephen/config.json'), raw);
     expect(() => loadConfig(undefined, { HOME })).not.toThrow();
-    expect(userConfigUnknownKeys(raw)).toEqual(['safety.allowEval', 'chorme']);
+    expect(userConfigUnknownKeys(raw)).toEqual(['chorme', 'output.outFoo']);
+  });
+
+  it('an unknown safety key stops Stephen and is named: a typo must not fall back to the default lists', () => {
+    const raw = { safety: { blockDomains: ['bank.test'] } };
+    writeJson(join(HOME, '.stephen/config.json'), raw);
+    expectInvalid(() => loadConfig(undefined, { HOME }), 'unknown key: "safety.blockDomains"');
+    expect(userConfigUnknownKeys(raw)).toEqual(['safety.blockDomains']);
+    expect(() => loadConfig({ safety: { confrim: 'deny' } as never }, { HOME: join(HOME, 'x') })).toThrow(/"safety\.confrim"/);
+    expect(() => loadConfig({ safety: { apiToken: 'x' } as never }, { HOME: join(HOME, 'x') })).toThrow(/looks like a secret \(not shown\)/);
+    expect(() => loadConfig({ safety: { apiToken: 'x' } as never }, { HOME: join(HOME, 'x') })).not.toThrow(/apiToken/);
   });
 
   it.each([
