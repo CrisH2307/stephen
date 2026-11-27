@@ -25,6 +25,12 @@ export const HELPER_SOURCES = [
 export const HELPER_FRAMEWORKS = ['AppKit', 'AVFoundation', 'CoreAudio', 'CoreGraphics', 'ServiceManagement', 'SwiftUI'] as const;
 /** The start of the line install-helper prints when it skipped the build. update and setup match it to tell a skip from a rebuild. */
 export const HELPER_UNCHANGED = 'Nothing changed';
+/** install-helper's own fixed failure words. helperFailure reads them back, so setup never shows tool output. */
+export const NOT_MACOS = 'install-helper is macOS-only';
+export const SOURCES_MISSING = 'The helper sources are missing';
+export const HOME_TOO_LONG = "too long for the helper's socket";
+export const NOT_OURS = 'already exists and was not made by Stephen';
+export const CODESIGN_FAILED = '✗ codesign failed';
 export const XCODE_TOOLS_FIX = 'Install Apple\'s command line tools: run `xcode-select --install` (or install Xcode), then run `stephen install-helper` again.';
 
 /** `<package>/helper` — the Swift sources ship next to dist/ and src/. */
@@ -66,6 +72,19 @@ export const SWIFTUI_MACROS_MISSING = /plugin for module 'SwiftUIMacros' not fou
 export const SDK_FIX =
   'Install an older macOS SDK next to the default one in ' + CLT_SDKS_DIR + ' (a Command Line Tools package that ships ' +
   'MacOSX26.x.sdk), or install the full Xcode for this macOS and select it: `sudo xcode-select -s /Applications/Xcode.app`.';
+
+/** Why install-helper failed, as a code word, read from its own fixed lines (setup shows a fixed line per word). Pure. */
+export type HelperFailure = 'sdk' | 'tools' | 'not_macos' | 'sources_missing' | 'home_too_long' | 'not_ours' | 'codesign' | 'other';
+export function helperFailure(output: string): HelperFailure {
+  if (output.includes(SDK_FIX)) return 'sdk';
+  if (output.includes(XCODE_TOOLS_FIX)) return 'tools';
+  if (output.includes(NOT_MACOS)) return 'not_macos';
+  if (output.includes(SOURCES_MISSING)) return 'sources_missing';
+  if (output.includes(HOME_TOO_LONG)) return 'home_too_long';
+  if (output.includes(NOT_OURS)) return 'not_ours';
+  if (output.includes(CODESIGN_FAILED)) return 'codesign';
+  return 'other';
+}
 
 /**
  * The other macOS SDKs to try, newest first: `MacOSX<version>.sdk` entries of `names`, each real folder once (MacOSX26.sdk
@@ -320,15 +339,15 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
   }
 
   if (!darwin) {
-    log('install-helper is macOS-only: it builds a Swift menu-bar app. (Use --dry-run to see what it would do.)');
+    log(`${NOT_MACOS}: it builds a Swift menu-bar app. (Use --dry-run to see what it would do.)`);
     return 1;
   }
   if (missing.length || !deps.exists(join(plan.sourceDir, 'Info.plist'))) {
-    log(`The helper sources are missing from ${plan.sourceDir} (${[...missing, 'Info.plist'].join(', ')}). Reinstall Stephen.`);
+    log(`${SOURCES_MISSING} from ${plan.sourceDir} (${[...missing, 'Info.plist'].join(', ')}). Reinstall Stephen.`);
     return 1;
   }
   if (sockBytes > MAX_SOCKET_PATH_BYTES) {
-    log(`Stephen's home folder path is too long for the helper's socket (${helperSocketPath(plan.stephenHome)}, ${sockBytes} bytes; max ${MAX_SOCKET_PATH_BYTES}). Set STEPHEN_HOME to a shorter folder.`);
+    log(`Stephen's home folder path is ${HOME_TOO_LONG} (${helperSocketPath(plan.stephenHome)}, ${sockBytes} bytes; max ${MAX_SOCKET_PATH_BYTES}). Set STEPHEN_HOME to a shorter folder.`);
     return 1;
   }
 
@@ -344,7 +363,7 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
   if (deps.exists(plan.appPath)) {
     const plist = await readFile(plistPath, 'utf8').catch(() => '');
     if (!plist.includes(`<string>${HELPER_BUNDLE_ID}</string>`)) {
-      log(`${plan.appPath} already exists and was not made by Stephen. Move it away (or rename it), then run this again.`);
+      log(`${plan.appPath} ${NOT_OURS}. Move it away (or rename it), then run this again.`);
       return 1;
     }
   }
@@ -394,7 +413,7 @@ export async function installHelper(plan: HelperInstallPlan, opts: { dryRun?: bo
     await chmod(exe, 0o755);
     const sign = await deps.run('/usr/bin/codesign', codesignArgs(staging), 120_000);
     if (sign.code !== 0) {
-      log(`✗ codesign failed: ${(sign.stderr || sign.stdout).trim() || `exit code ${sign.code}`}`);
+      log(`${CODESIGN_FAILED}: ${(sign.stderr || sign.stdout).trim() || `exit code ${sign.code}`}`);
       return 1;
     }
 
