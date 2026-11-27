@@ -34,7 +34,7 @@ nothing about who merges.
    section 4). The cost is the sum of `costUsd` in the report file:
    `node -e "const r=require(process.argv[1]);console.log(r.results.reduce((s,x)=>s+(x.costUsd||0),0).toFixed(2))" <report file>`.
 4c. **Claude Code's error wording (R5 markers):** `claude --version` on the owner's Mac. The failure markers in
-   `src/lib/claude-failure.ts` were read from Claude Code 2.1.316 to 2.1.319 (`TESTED_CLAUDE_MIN` and `TESTED_CLAUDE_MAX`
+   `src/lib/claude-failure.ts` were read from Claude Code 2.1.316 to 2.1.332 (`TESTED_CLAUDE_MIN` and `TESTED_CLAUDE_MAX`
    in `src/voice/claude.ts`). If the installed version is newer, check its error wording for the six failures (missing,
    signed out, plan limit, busy, offline, other), update the markers and the range if it changed, and run
    `npx vitest run test/voice/claude-errors.test.ts test/jobs/runner.test.ts`. A wording that no marker matches is not a

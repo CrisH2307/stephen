@@ -525,7 +525,7 @@ The full acceptance is 20 holds and 10 of each stop. If you have little time, do
 
 ### 14.5 Claude Code and Stephen (PRs #115, #116)
 - [ ] `[scripted]` **14.25** Do: run `node dist/cli.js doctor`.
-  See: a line "Claude Code version" with your version and `(tested 2.1.316 to 2.1.319)`. If your version is outside the range, the line is a warning and it says older or newer. Send me the line. Doctor still ends without a stop. (S4-8, #65, #115)
+  See: a line "Claude Code version" with your version and `(tested 2.1.316 to 2.1.332)`. If your version is outside the range, the line is a warning and it says older or newer. Send me the line. Doctor still ends without a stop. (S4-8, #65, #115)
 - [ ] `[hands]` **14.26** Do: open Settings, "Model and effort", set the effort to high. Hold F5 and say "what time is it".
   See: the command runs and a reply shows. Set the effort back to what it was. (S4-8, #65, #115; from the PR text)
 - [ ] `[scripted]` **14.27** Do: run `npx vitest run test/voice/claude-contract.test.ts test/memory/boundary.test.ts test/voice/claude-env-and-flag-probe.test.ts`.
