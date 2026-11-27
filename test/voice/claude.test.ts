@@ -11,6 +11,8 @@ import {
   buildClaudeArgs,
   CLAUDE_NOT_FOUND,
   CLAUDE_START_FAILED,
+  MCP_CONFIG_FAILED,
+  PERSONA_FAILED,
   claudeSpawnOptions,
   mcpConfig,
   parseClaudeOutput,
@@ -258,6 +260,35 @@ describe('ClaudeRunner with a fake claude', () => {
     });
     return { runner, log };
   };
+
+  it('an MCP config or persona file that cannot be written: a fixed line, the error (with its path) in the log only (R7)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const noSpawn: SpawnFn = () => {
+        throw new Error('should not spawn');
+      };
+      const a = new ClaudeRunner({
+        ...settings,
+        claudePath: fake,
+        cwd: tmp,
+        spawn: noSpawn,
+        serveInstance: async () => {
+          throw new Error('EACCES: permission denied, open /Users/someone/secret/mcp.json');
+        },
+      });
+      expect(await a.run('open youtube')).toEqual({ kind: 'error', message: MCP_CONFIG_FAILED, sessionId: null });
+      const blocker = join(tmp, 'persona-blocker');
+      mkdirSync(join(blocker, 'persona.txt'), { recursive: true }); // a folder where the file should go
+      const b = new ClaudeRunner({ ...settings, claudePath: fake, cwd: tmp, personaFile: join(blocker, 'persona.txt'), spawn: noSpawn });
+      const r = await b.run('open youtube');
+      expect(r).toEqual({ kind: 'error', message: PERSONA_FAILED, sessionId: null });
+      const log = spy.mock.calls.flat().join('\n');
+      expect(log).toContain('/Users/someone/secret/mcp.json');
+      expect(log).toContain(blocker);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 
   it('serveInstance (R7-1): every run gets a fresh `serve --instance` config, and its lock is deleted after the run', async () => {
     const home = join(tmp, 'inst-home');

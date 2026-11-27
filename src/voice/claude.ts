@@ -682,7 +682,8 @@ export class ClaudeRunner {
       try {
         inst = await this.o.serveInstance(run.trust ?? 'wake', run.assumePrivateRead === true);
       } catch (e) {
-        return { kind: 'error', message: `Could not write the MCP config (${(e as Error).message}).`, sessionId: null };
+        logStartRaw(this.o.claudePath, (e as Error).message);
+        return { kind: 'error', message: MCP_CONFIG_FAILED, sessionId: null };
       }
       if (this.child) throw new Error('a command is already running');
     }
@@ -693,7 +694,8 @@ export class ClaudeRunner {
       try {
         await writePersonaFile(this.o.personaFile, personaFor(this.o.aboutMe, memory, this.o.talk?.()));
       } catch (e) {
-        return { kind: 'error', message: `Could not write the persona file (${(e as Error).message}).`, sessionId: null };
+        logStartRaw(this.o.claudePath, (e as Error).message);
+        return { kind: 'error', message: PERSONA_FAILED, sessionId: null };
       }
       if (this.child) throw new Error('a command is already running');
     }
@@ -778,6 +780,9 @@ export function claudeSpawnOptions(o: { cwd: string; env?: NodeJS.ProcessEnv }, 
 export const CLAUDE_NOT_FOUND = 'Claude Code was not found. Install it, or set "voice": {"claudePath": "…"}.';
 /** R7: what both wrappers say when Claude Code could not be started for another reason. */
 export const CLAUDE_START_FAILED = "I couldn't start Claude Code. Run stephen doctor to see what is wrong.";
+/** R7: what both wrappers say when the run's MCP config or persona file can't be written. The error (with its path) goes to the log only. */
+export const MCP_CONFIG_FAILED = 'Could not write the MCP config. Run stephen doctor to see what is wrong.';
+export const PERSONA_FAILED = 'Could not write the persona file. Run stephen doctor to see what is wrong.';
 
 /** R7: the raw reason Claude Code did not start, for the log (stderr). Never shown or spoken. */
 export function logStartRaw(claudePath: string, detail: string): void {
