@@ -130,13 +130,38 @@ describe('release number sheet (--sheet, checklist steps 4 and 9)', () => {
       '+++ b/.env.example',
     ].join('\n');
     expect(secretHits(diff)).toEqual(['a.ts:3', '.env (env file)']);
-    const text = sheet(fake({ 'git diff -U0 --no-renames origin/main..origin/qa': { code: 0, out: diff } })).text;
+    const text = sheet(fake({ 'git -c core.quotePath=false diff -U0 --no-renames origin/main..origin/qa': { code: 0, out: diff } })).text;
     expect(text).toContain('Secrets scan: FAIL, check a.ts:3, .env (env file)');
     expect(text).not.toContain(key);
   });
 
-  it('reads vitest totals with or without colors', () => {
+  it('keeps hits under the right file for a path with a space or a non-ASCII letter', () => {
+    const key = `sk-${'y'.repeat(24)}`;
+    const diff = [
+      'diff --git a/my notes.md b/my notes.md',
+      '+++ b/my notes.md\t',
+      '@@ -0,0 +1 @@',
+      `+${key}`,
+      'diff --git a/caf\u00e9.md b/caf\u00e9.md',
+      '+++ b/caf\u00e9.md',
+      '@@ -0,0 +1,2 @@',
+      '+ok',
+      `+${key}`,
+    ].join('\n');
+    expect(secretHits(diff)).toEqual(['my notes.md:1', 'caf\u00e9.md:2']);
+  });
+
+  it('finds Stripe live keys and Google API keys', () => {
+    const one = (text: string) => secretHits(`+++ b/k.ts\n@@ -0,0 +1 @@\n+${text}`);
+    expect(one(`sk_live_${'a'.repeat(24)}`)).toEqual(['k.ts:1']);
+    expect(one(`rk_live_${'b'.repeat(24)}`)).toEqual(['k.ts:1']);
+    expect(one(`AIza${'c'.repeat(35)}`)).toEqual(['k.ts:1']);
+    expect(one('sk_test_short and AIza too short')).toEqual([]);
+  });
+
+  it('reads vitest totals with or without colors, from the last Tests line', () => {
     expect(testTotals('      Tests  1 failed | 9 passed | 2 skipped (12)')).toEqual({ found: true, passed: 9, failed: 1, skipped: 2 });
+    expect(testTotals('Tests for the parser: 3 passed earlier\n      Tests  4 passed (4)').passed).toBe(4);
     expect(testTotals('nothing').found).toBe(false);
   });
 });
