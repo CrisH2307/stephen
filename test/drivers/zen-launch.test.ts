@@ -26,6 +26,8 @@ import {
   parseZenLaunchArgs,
   planZenLauncher,
   runZenLaunch,
+  quitFailedMessage,
+  ZEN_LAUNCH_FAILED,
   shellQuote,
   zenLauncherAppPath,
 } from '../../src/zen-launcher.js';
@@ -89,6 +91,8 @@ function launchHarness(o: {
   launchError?: Error;
   /** Use a real ZenDriver (fake spawn/connect) instead of a stub. */
   realDriver?: boolean;
+  /** With realDriver: what the fake Zen writes to its log, and its exit code (it then exits at once). */
+  zenLog?: { line: string; exitCode: number };
   /** Other user accounts (B5); default a single-user Mac. */
   others?: number | null;
 }): LaunchHarness {
@@ -114,7 +118,8 @@ function launchHarness(o: {
         h.spawns.push({ cmd, args, opts });
         const child = new FakeChild(7000 + h.spawns.length);
         h.children.push(child);
-        writeSync((opts.stdio as number[])[2]!, 'WebDriver BiDi listening on ws://127.0.0.1:4545\n');
+        writeSync((opts.stdio as number[])[2]!, `${o.zenLog?.line ?? 'WebDriver BiDi listening on ws://127.0.0.1:4545'}\n`);
+        if (o.zenLog) process.nextTick(() => child.emit('exit', o.zenLog!.exitCode, null));
         return child as unknown as SpawnedProcess;
       },
       connect: async () => {
@@ -178,6 +183,12 @@ describe('zen-launch', () => {
     expect(killSpy).not.toHaveBeenCalled();
     expect(h.runs).toEqual([]); // no osascript, no open
     expect(formatZenLaunch(r)).toMatch(/^✓ Started Zen with Stephen access \(pid 7001\)\./);
+    // R7: success never shows the profile or log paths (they stay in --json)
+    const shown = formatZenLaunch({ ...r, logPath: '/x/zen.log' });
+    expect(shown).not.toContain(join(tc.home, 'real-profile'));
+    expect(shown).not.toContain('/x/zen.log');
+    expect(shown).not.toMatch(/Profile:|Zen log:/);
+    expect(r.profileDir).toBe(join(tc.home, 'real-profile'));
   });
 
   it('a Stephen-ready Zen is already running: brings it to the front (open -a Zen.app) and exits 0 without launching', async () => {
@@ -187,12 +198,23 @@ describe('zen-launch', () => {
     const h = launchHarness({ readiness: 'ready', running: [true] });
     const r = await runZenLaunch({ quitRunning: true }, h.deps);
     expect(r).toMatchObject({ exitCode: 0, status: 'already-running', pid: 4242 });
+    expect(r.notes).toEqual([]);
+    expect(r.detail).toBeUndefined();
     expect(h.launches).toBe(0);
     expect(h.runs).toEqual([{ cmd: '/usr/bin/open', args: ['-a', app] }]);
     // not on macOS: nothing to bring to the front
     const linux = launchHarness({ readiness: 'ready', platform: 'linux' });
     expect((await runZenLaunch({}, linux.deps)).exitCode).toBe(0);
     expect(linux.runs).toEqual([]);
+  });
+
+  it('R7: open -a fails on a ready Zen: a plain note, the raw words only in detail', async () => {
+    tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
+    const h = launchHarness({ readiness: 'ready', running: [true], runResult: { code: 1, stderr: 'LSOpenURLsWithRole() failed with error -600\n' } });
+    const r = await runZenLaunch({}, h.deps);
+    expect(r).toMatchObject({ exitCode: 0, status: 'already-running', detail: 'LSOpenURLsWithRole() failed with error -600' });
+    expect(r.notes).toEqual(['Could not bring Zen to the front. Click Zen in the Dock.']);
+    expect(formatZenLaunch(r)).not.toContain('LSOpen');
   });
 
   it('Zen open normally, no --quit-running: exit 2 with a clear message; nothing quit, nothing launched', async () => {
@@ -227,19 +249,33 @@ describe('zen-launch', () => {
     const h = launchHarness({ running: [true] });
     const r = await runZenLaunch({ quitRunning: true }, h.deps);
     expect(r).toMatchObject({ exitCode: 2, status: 'quit-failed' });
-    expect(r.message).toMatch(/did not quit within 20 s.*never force-quits/);
+    expect(r.message).toMatch(/did not quit within 20 s\. It may be asking.*never force-quits/);
+    expect(r.message).not.toMatch(/[\u2013\u2014]/);
     expect(h.runs.map((x) => x.cmd)).toEqual(['/usr/bin/osascript']);
     expect(h.runs[0]!.args).toEqual(osascriptQuitArgv('app.zen-browser.zen')); // no Info.plist → default bundle id
     expect(h.launches).toBe(0);
   });
 
-  it('--quit-running: osascript refused (e.g. no Automation permission) → exit 2 with the reason', async () => {
+  it('--quit-running: osascript refused (no Automation permission) → exit 2, a plain line, the raw reason only in detail', async () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
-    const h = launchHarness({ running: [true], runResult: { code: 1, stderr: 'execution error: Not authorized to send Apple events to Zen. (-1743)\n' } });
+    const raw = 'execution error: Not authorized to send Apple events to Zen. (-1743)';
+    const h = launchHarness({ running: [true], runResult: { code: 1, stderr: `${raw}\n` } });
     const r = await runZenLaunch({ quitRunning: true }, h.deps);
-    expect(r).toMatchObject({ exitCode: 2, status: 'quit-failed' });
-    expect(r.message).toMatch(/Not authorized to send Apple events/);
+    expect(r).toMatchObject({ exitCode: 2, status: 'quit-failed', detail: raw });
+    expect(r.message).toMatch(/^This Mac did not let Stephen ask Zen to quit\..*Privacy & Security, Automation/);
+    // review of #443: the switch is under whichever app started Stephen (the Zen for Stephen app or Terminal)
+    expect(r.message).toMatch(/Zen for Stephen.*Terminal|Terminal.*Zen for Stephen/);
+    expect(formatZenLaunch(r)).not.toContain('-1743');
     expect(h.launches).toBe(0);
+  });
+
+  it('R7: quitFailedMessage maps "not allowed" and keeps every other reason generic', () => {
+    expect(quitFailedMessage('(-1743)')).toMatch(/did not let Stephen/);
+    expect(quitFailedMessage('Not authorised to send Apple events')).toMatch(/did not let Stephen/);
+    for (const why of ['osascript exit code 1', 'execution error: Zen got an error: User canceled. (-128)', '']) {
+      const m = quitFailedMessage(why);
+      expect(m).toBe('Could not ask Zen to quit. Quit Zen yourself (⌘Q), then try again. Stephen never force-quits Zen.');
+    }
   });
 
   it('--quit-running off macOS: exit 2, nothing run', async () => {
@@ -264,8 +300,37 @@ describe('zen-launch', () => {
     expect(await runZenLaunch({}, broken.deps)).toMatchObject({ exitCode: 1, status: 'error' });
     const weird = launchHarness({ launchError: new Error('EACCES boom') });
     const r = await runZenLaunch({}, weird.deps);
-    expect(r).toMatchObject({ exitCode: 1, status: 'error' });
-    expect(formatZenLaunch(r)).toMatch(/^✗ EACCES boom/);
+    expect(r).toMatchObject({ exitCode: 1, status: 'error', message: ZEN_LAUNCH_FAILED, detail: 'EACCES boom' });
+    expect(formatZenLaunch(r)).toBe(`✗ ${ZEN_LAUNCH_FAILED}`);
+    // review of #443: only NEEDS_USER keeps its own message; every other HubError is plain, raw words in detail
+    expect(await runZenLaunch({}, broken.deps)).toMatchObject({ message: ZEN_LAUNCH_FAILED, detail: 'Zen was not found at /x' });
+    expect((await runZenLaunch({}, needs.deps)).detail).toBeUndefined();
+  });
+
+  it.each([
+    ['NOT_CONNECTED', 'Launched Zen (pid 9) but could not open a WebDriver BiDi session at ws://127.0.0.1:4545/session (boom). Retry browser_connect.'],
+    ['NOT_CONNECTED', 'Zen exited during startup (code 1). Zen said: /Users/someone/Library/Application Support/zen/Profiles/abc.default is locked'],
+    ['TIMEOUT', 'Zen did not open its remote-control port within 30 s — see /Users/someone/.stephen/state/zen.log'],
+    ['INTERNAL', 'EACCES: permission denied, open \'/Users/someone/.stephen/state/zen.json\''],
+  ])('review of #443: a %s error never shows paths, ports or "Zen said:" in the normal output', async (code, raw) => {
+    tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
+    const r = await runZenLaunch({}, launchHarness({ launchError: new HubError(code as never, raw) }).deps);
+    expect(r).toMatchObject({ exitCode: 1, status: 'error', message: ZEN_LAUNCH_FAILED, detail: raw });
+    const shown = formatZenLaunch(r);
+    expect(shown).toBe(`✗ ${ZEN_LAUNCH_FAILED}`);
+    expect(shown).not.toMatch(/\/Users\/|ws:\/\/|Zen said:|pid \d|[\u2013\u2014]/);
+  });
+
+  it('review of #443: a NEEDS_USER exit (profile in use) is plain; Zen\'s log and the exit reason stay in detail', async () => {
+    tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
+    const log = `Zen is already running, but is not responding. Profile ${join(tc.home, 'real-profile')} is locked`;
+    const r = await runZenLaunch({}, launchHarness({ realDriver: true, zenLog: { line: log, exitCode: 0 } }).deps);
+    expect(r).toMatchObject({ exitCode: 2, status: 'needs-user' });
+    const shown = formatZenLaunch(r);
+    expect(shown).toMatch(/another Zen is probably using your Zen profile/);
+    expect(shown).not.toMatch(/Zen said:|already running, but|exit code|real-profile|[\u2013\u2014]/);
+    expect(r.detail).toContain(log);
+    expect(r.detail).toMatch(/exit code 0/);
   });
 
   it('notes when the config would not use this Zen (agent mode) or may launch it (launch: auto)', async () => {

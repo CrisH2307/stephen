@@ -164,7 +164,7 @@ export interface ZenReadiness {
 }
 
 export const ZEN_RUNNING_MESSAGE =
-  'Quit Zen (⌘Q) and retry — Zen must be relaunched with remote control enabled; Stephen never force-quits it.';
+  'Quit Zen (⌘Q) and retry. Zen must be relaunched with remote control enabled; Stephen never force-quits it.';
 
 const USER_JS_BEGIN = '// >>> stephen';
 const USER_JS_END = '// <<< stephen';
@@ -544,7 +544,7 @@ export class ZenDriver extends DriverBase {
       throw new HubError(
         'NEEDS_USER',
         `Could not find your Zen profile (no usable profiles.ini in ${this.#cfg.zen.zenAppSupportDir}). ` +
-          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.stephen/config.json — or use mode "agent".`,
+          `In Zen open about:profiles, copy the "Root Directory" of the profile marked "in use", and set "zen.profilePath" to it in ~/.stephen/config.json. Or use mode "agent".`,
       );
     }
     if (!(await isDir(dir))) {
@@ -659,9 +659,11 @@ export class ZenDriver extends DriverBase {
         const tail = lastLines(text, 5);
         this.detail = `Zen exited before enabling remote control (${exited}).`;
         if (mode === 'real' || /already running|is already open|profile.*(locked|in use)/i.test(text)) {
-          throw new HubError(
-            'NEEDS_USER',
-            `Zen exited without enabling remote control (${exited}) — another Zen is probably using profile ${profileDir}. ${ZEN_RUNNING_MESSAGE}${tail ? ` Zen said: ${tail}` : ''}`,
+          // Review of #443: the person and the model get the plain line. Zen's own log words, the exit reason and the
+          // profile path stay in `detail` (zen-launch --json shows it; no formatter or model-facing text reads it).
+          throw Object.assign(
+            new HubError('NEEDS_USER', `Zen closed before Stephen could connect: another Zen is probably using your Zen profile. ${ZEN_RUNNING_MESSAGE}`),
+            { detail: `Zen exited without enabling remote control (${exited}), profile ${profileDir}.${tail ? ` Zen said: ${tail}` : ''}` },
           );
         }
         throw new HubError(
