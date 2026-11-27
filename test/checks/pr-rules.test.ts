@@ -59,6 +59,25 @@ describe('pr rules check', () => {
     expect(dashLines(diff)).toEqual(['src/a.ts:2', 'src/b.ts:1']);
   });
 
+  it('rule 1: a pure rename adds nothing; a rename with edits flags only the edited added line', () => {
+    const pure = ['diff --git a/test/a.test.ts b/test/x/a.test.ts', 'similarity index 100%', 'rename from test/a.test.ts', 'rename to test/x/a.test.ts'];
+    const edited = [
+      'diff --git a/src/old.ts b/src/new.ts',
+      'similarity index 90%',
+      'rename from src/old.ts',
+      'rename to src/new.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/old.ts',
+      '+++ b/src/new.ts',
+      '@@ -5 +5 @@',
+      '-old line',
+      `+new ${EM} line`,
+    ];
+    expect(dashLines(pure.join('\n'))).toEqual([]);
+    expect(dashLines([...edited, ...pure].join('\n'))).toEqual(['src/new.ts:5']);
+    expect(dashLines([...pure, ...edited].join('\n'))).toEqual(['src/new.ts:5']);
+  });
+
   it('rule 2: Cris authors; committer is Cris or the GitHub merge button; anything else is named by short sha', () => {
     const log = [
       `${'a'.repeat(40)}\t${CRIS}\t${CRIS}`,
