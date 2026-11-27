@@ -124,8 +124,8 @@ All confirmed by grep: no use outside the defining file, or only tests use them.
 | T7 | test/app/personal.test.ts:44 | Greps the exact source line in voice/claude.ts; duplicates a behaviour test in test/phone/routers.test.ts:33 | Call `mcpConfig(..., 'phone')` and check `--confirm deny` | 0 net | low | permission table **SEC** | test/phone/routers.test.ts:33 |
 | T8 | test/helper/install.test.ts:88-92 | Copies the full swiftc file list; :98 already checks every Swift file compiles | Check only the argv shape | 3 | low | none | install.test.ts:98 |
 | T9 | test/helpers/smoke.int.test.ts | Tests the test harness by starting 2 real browsers; every page/*.int test does the same | Retire | 16 | low | none | test/page/*.int.test.ts |
-| T10 | test/voice/claude-help-real.test.ts; test/voice/review4.test.ts:31-54 | `checkClaudeFlags` tested in 4 files with the same fixture | Merge into claude-contract.test.ts | about 10 | low | none | claude-contract.test.ts |
-| T11 | test/e2e/mcp.int.test.ts:146, :152 | E2e copies of unit checks (0700 dirs, tool list) | Drop the 2 duplicates | about 12 | low | none | review1.test.ts:118, server.test.ts:55 |
+| T10 | test/voice/claude-help-real.test.ts; test/voice/claude-env-and-flag-probe.test.ts:31-54 | `checkClaudeFlags` tested in 4 files with the same fixture | Merge into claude-contract.test.ts | about 10 | low | none | claude-contract.test.ts |
+| T11 | test/e2e/mcp.int.test.ts:146, :152 | E2e copies of unit checks (0700 dirs, tool list) | Drop the 2 duplicates | about 12 | low | none | session-owner-and-private-dirs.test.ts:118, server.test.ts:55 |
 
 ## Needs dev-lane security review
 
