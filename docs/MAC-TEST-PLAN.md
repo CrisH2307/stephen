@@ -528,7 +528,7 @@ The full acceptance is 20 holds and 10 of each stop. If you have little time, do
   See: a line "Claude Code version" with your version and `(tested 2.1.316 to 2.1.319)`. If your version is outside the range, the line is a warning and it says older or newer. Send me the line. Doctor still ends without a stop. (S4-8, #65, #115)
 - [ ] `[hands]` **14.26** Do: open Settings, "Model and effort", set the effort to high. Hold F5 and say "what time is it".
   See: the command runs and a reply shows. Set the effort back to what it was. (S4-8, #65, #115; from the PR text)
-- [ ] `[scripted]` **14.27** Do: run `npx vitest run test/voice/claude-contract.test.ts test/memory/boundary.test.ts test/voice/review4.test.ts`.
+- [ ] `[scripted]` **14.27** Do: run `npx vitest run test/voice/claude-contract.test.ts test/memory/boundary.test.ts test/voice/claude-env-and-flag-probe.test.ts`.
   See: all tests pass. (R10a-6, #67, #116)
 - [ ] `[hands]` **14.28** Do: only if you hit your Claude plan limit this week, send any command.
   See: the message "You've reached your Claude plan limit." and, when known, "It resets at" and a time. You cannot make this happen on purpose. Skip it if it did not happen. (R10a-6, #67, #115)

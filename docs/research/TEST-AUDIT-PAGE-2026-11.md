@@ -35,7 +35,7 @@ no mock-only tests in this folder: every case drives real Chromium over CDP or B
 
 | File | Test name | Category | Why | Code it keeps alive | Safe to delete |
 |---|---|---|---|---|---|
-| `test/page/robust.int.test.ts:100` | `snapshots a large page quickly` | duplicate | Same assertions as `review2.int.test.ts:277`: truncated is true, text is at most 20000, elapsed is under 5000, and `Delete 1499` is found. Only the row count differs (1500 vs 30000), and the larger case is strictly stronger. | `src/page/index.ts` `snapshot()` lines 231 to 278 and the frame walk budget | yes |
+| `test/page/robust.int.test.ts:100` | `snapshots a large page quickly` | duplicate | Same assertions as `frames-and-secret-fields.int.test.ts:277`: truncated is true, text is at most 20000, elapsed is under 5000, and `Delete 1499` is found. Only the row count differs (1500 vs 30000), and the larger case is strictly stronger. | `src/page/index.ts` `snapshot()` lines 231 to 278 and the frame walk budget | yes |
 | `test/page/snapshot.int.test.ts:240` | `shows an empty-state hint when nothing interactive is visible` | constant | Only asserts a hardcoded UI string and `refCount` 0. The hint plumbing is already unit tested in `format.test.ts:83`. | `src/page/index.ts:261-264` `emptyHint`, consumed at `format.ts:173` | maybe: the `emptyHint` branch loses its only end-to-end check, but the string is cosmetic |
 | `test/page/robust.int.test.ts:31` | `runs its runtime in an isolated world the page can neither see nor pre-empt` (line 46 only) | constant | `expect(RUNTIME_KEY).toMatch(/^__bh_[0-9a-f]{10}$/)` asserts the shape of an exported constant. The rest of the test is valuable: it poisons the real key and checks that nothing leaks. The export is **not** test-only; the test needs the real key at line 37. | `src/page/frames.ts:27`, used at 222, 249 and 289 | no: delete line 46 only, keep the export |
 | `test/page/read.int.test.ts:54` | `find searches inside iframes and scoped text candidates` (lines 60 to 65 only) | duplicate | The click-cross-link, `waitFor('cross clicked')`, then read `#out` block repeats `snapshot.int.test.ts:225-233` and `robust.int.test.ts:162-167`. The find assertions in the same test are unique. | `src/page/index.ts` `click()` and `frames.ts` `resolveRef()` | no: delete lines 60 to 65 only |
@@ -43,7 +43,7 @@ no mock-only tests in this folder: every case drives real Chromium over CDP or B
 | `test/page/format.test.ts:249` | `screenshot capture planning (finding #14) > clips very long pages so the output height ≤ 8000 and captured pixels ≤ 25 MP` | constant (self-referential bound) | The bounds are `MAX_OUTPUT_DIM` and `MAX_CAPTURE_PIXELS`, the same constants `planCapture` defaults to, so changing 8000 to 4000 still passes. The 8000 in the name is never pinned. | `planCapture`, `src/page/png.ts:282-303`, constants at 263-265 | no: replace the bounds with the literals 8000 and 25000000 |
 | `test/page/format.test.ts:258` | `screenshot capture planning (finding #14) > reduces the scale for very wide pages instead of exceeding 8000 px` | constant (self-referential bound) | The width bound repeats `MAX_OUTPUT_DIM`; only `clipped` is independent. The real 8000 is pinned end to end by `security.int.test.ts:386`. | `planCapture` width branch, `src/page/png.ts:293-296` | maybe: keep it and assert 8000 literally |
 | `test/page/format.test.ts:31` | `summaryLine > says when the walk stopped for time / size (review #2 finding 15)` | duplicate (one assertion) | The `chars` call hits the same truncated-summary branch as the previous test's non-null `truncatedAt`; `src/page/format.ts:136-139` treats both identically. The `time` and `nodes` cases are unique. | `summaryLine`, `src/page/format.ts:133-140` | no: drop only the `chars` line |
-| `test/page/review2.int.test.ts:194` | `#4 describeFocused reports a focused button, and null for the body` (one assertion) | duplicate | The blur-to-null assertion repeats `security.int.test.ts:360`. The button shape assertion is new. | `describeFocused`, `src/page/index.ts:1179-1207` | no: drop the null assertion only |
+| `test/page/frames-and-secret-fields.int.test.ts:194` | `#4 describeFocused reports a focused button, and null for the body` (one assertion) | duplicate | The blur-to-null assertion repeats `security.int.test.ts:360`. The button shape assertion is new. | `describeFocused`, `src/page/index.ts:1179-1207` | no: drop the null assertion only |
 
 ## Sleep-based tests
 
@@ -56,7 +56,7 @@ no mock-only tests in this folder: every case drives real Chromium over CDP or B
 | `test/page/actions.int.test.ts:188` | `waits for text to appear / disappear and times out` | none, but a wall-clock assertion | `>= 300` elapsed adds nothing; see the table above. | no: drop the assertion |
 
 Related wall-clock bounds that are not sleeps: `security.int.test.ts:113,137,370` and
-`review2.int.test.ts:282,292,297,308,312,316,320` use 5 s, 16.5 s, 25 s, 2 s and 500 ms limits. They carry the
+`frames-and-secret-fields.int.test.ts:282,292,297,308,312,316,320` use 5 s, 16.5 s, 25 s, 2 s and 500 ms limits. They carry the
 same flake risk on a loaded machine. The limits are generous, so keep them and watch CI.
 
 ## Cross-file duplicates
@@ -64,20 +64,20 @@ same flake risk on a loaded machine. The limits are generous, so keep them and w
 - `snapshot.int.test.ts:27` `renders the §3.2 format with header, indented tree and summary` overlaps `format.test.ts:47`. Keep: it exercises
   the real runtime role and ref emission.
 - `snapshot.int.test.ts:183` `truncates at a line boundary` overlaps `format.test.ts:64` and
-  `review2.int.test.ts:277`. Keep: only here is the hidden count at the cut verified.
+  `frames-and-secret-fields.int.test.ts:277`. Keep: only here is the hidden count at the cut verified.
 - `snapshot.int.test.ts:127` repeats the reload-to-STALE_REF case from `security.int.test.ts:207`. Keep: the
   rename, remove and bad-ref cases are unique.
 - `read.int.test.ts:17` find ranking overlaps `format.test.ts:99`. Keep: it proves real candidate extraction
   and `describe().idAttr`.
 - `actions.int.test.ts:214` repeats the 640 by 450 screenshot case from `security.int.test.ts:377`. Keep: the
   scale and element-size cases are unique.
-- `actions.int.test.ts:41` repeats the `describeFocused` null case from `review2.int.test.ts:194` and
+- `actions.int.test.ts:41` repeats the `describeFocused` null case from `frames-and-secret-fields.int.test.ts:194` and
   `security.int.test.ts:346`. Keep: the iframe focus and ref shape are unique.
 - `actions.int.test.ts:141` repeats the `Hyper+Q` invalid-key assertion from `format.test.ts:160`. Keep: the
   real key dispatch and modifier-release log are unique.
-- `security.int.test.ts:158-161` and `review2.int.test.ts:229-242` both pin the OBSCURED split (message carries
+- `security.int.test.ts:158-161` and `frames-and-secret-fields.int.test.ts:229-242` both pin the OBSCURED split (message carries
   role and ref, page text carries the name). Review2 adds a hostile cover name and ref stability. Keep both.
-- `format.test.ts:265-278` and `review2.int.test.ts:247-262` both cover invisible characters. One is unit
+- `format.test.ts:265-278` and `frames-and-secret-fields.int.test.ts:247-262` both cover invisible characters. One is unit
   level, the other is end to end. Keep both.
 - No exact cross-file duplicate was found. The only full duplicate is `robust.int.test.ts:100`, listed above.
 
@@ -165,7 +165,7 @@ code, not from memory.
 ## Recommendations
 
 1. Delete `test/page/robust.int.test.ts:100` (`snapshots a large page quickly`). It is an exact weaker copy of
-   `review2.int.test.ts:277`. This is the only full test deletion.
+   `frames-and-secret-fields.int.test.ts:277`. This is the only full test deletion.
 2. Delete the shape assertion at `test/page/robust.int.test.ts:46`. Keep the export: the test needs the real
    key at line 37 to poison it.
 3. Delete the duplicated click block at `test/page/read.int.test.ts:60-65`. Keep the find assertions.
@@ -173,7 +173,7 @@ code, not from memory.
 5. Replace the self-referential bounds at `test/page/format.test.ts:249` and `:258` with the literals 8000 and
    25000000, so a changed default fails the test.
 6. Drop the `chars` line at `test/page/format.test.ts:31`. Keep the `time` and `nodes` cases.
-7. Drop the null assertion at `test/page/review2.int.test.ts:194`. Keep the button shape assertion.
+7. Drop the null assertion at `test/page/frames-and-secret-fields.int.test.ts:194`. Keep the button shape assertion.
 8. Rewrite the two fixed sleeps in `test/page/security.int.test.ts:139` and `:250` as waits on a fixture flag.
    Keep both tests. Do the same for `actions.int.test.ts:256` and `robust.int.test.ts:173` when someone is in
    the file.

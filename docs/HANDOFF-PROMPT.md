@@ -44,7 +44,7 @@ default I give below (or the safest one), write it in the PR under "Decisions to
 - Each PR stays small enough to review in 15 minutes. Split if bigger.
 - Before every push: `npm run build`, `npm run typecheck`, and the tests that touch your change; before opening the PR:
   the full suite (`npx vitest run`, about 10 min; run it in the background). Known flaky under full load, pass alone:
-  `test/page/review2.int.test.ts #15`, `test/drivers/review1` "60 s Allow wait". Swift: compile with the exact
+  `test/page/frames-and-secret-fields.int.test.ts #15`, `test/drivers/session-owner-and-private-dirs` "60 s Allow wait". Swift: compile with the exact
   `swiftc` line `stephen install-helper --dry-run` prints (this Mac has the compiler). Red PRs are not allowed;
   if something can only be checked by me on the Mac, say so in the PR.
 

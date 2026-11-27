@@ -302,7 +302,7 @@ HISTORY_PURGE(now, keep_days):                     # src/history/store.ts:349-39
 a maximum item count instead.
 
 **Tests.** `test/history/store.test.ts` ("retention is a rolling cutoff at the default 7 days: 7 d - 1 s is listed, 7 d + 1 s
-is purged"), `test/voice/review5.test.ts` ("R5-6: history retention is a rolling window, purged at start and on list"),
+is purged"), `test/voice/wake-memory-and-history.test.ts` ("R5-6: history retention is a rolling window, purged at start and on list"),
 `test/voice/transcripts.test.ts` ("purges old sessions, keeps new ones and the live one, ignores other files"),
 `test/telemetry/incidents.test.ts` ("deletes a day file older than 30 days and keeps a recent one"),
 `test/timers/timers.test.ts`.

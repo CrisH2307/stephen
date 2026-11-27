@@ -193,15 +193,15 @@ memory text goes to ElevenLabs. The dialog says only "it is sent to Claude with 
 | ID | Status | What changed | Tests |
 |----|--------|--------------|-------|
 | R5-1 | Fixed | `src/voice/transcripts.ts`: Claude Code's transcript of a voice session is deleted when the conversation drops it (end, expiry, new id, failed run); history purge deletes older ones (rolling window), `history clear` all of them and ends the conversation. Only the voice workdir's project folder; symlinks refused; the live session is kept. | `test/voice/transcripts.test.ts` |
-| R5-2 | Fixed | `conversation.json` stores a hash of the memory list the session was built with; `begin()` starts fresh when it differs (CLI, app, hand edit) or can't be read. | `review5.test.ts` R5-2 |
-| R5-3 | Fixed | `persona.txt` is deleted after every run and on listener exit; a refused secret is stored in history as `remember [refused: looks like a secret]`. (The live `heard` push to the open window is display-only and not stored.) | `index.test.ts` persona, `review5.test.ts` R5-3 |
-| R5-4 | Fixed | NFKC before the check; 8+ digits in spoken groups; comma lists of 4+ single digits; `pin's`, `pass word`, `code for the door`, `opens with 4417`; one-word "remember 4417/hunter2" refused locally; comment says 6+. | `review5.test.ts` R5-4 |
-| R5-5 | Fixed | Wake-word forget asks ("Forget this?", Deny default, unavailable keeps it); wake-word list and tie replies give only the count. | `review5.test.ts` R5-5 |
-| R5-6 | Fixed | Rolling window (same time N days ago, DST-safe); expired lines trimmed from the boundary day file; purge at listener start, in `list()` and in `stephen history`. | `review5.test.ts` R5-6, `history/store.test.ts` |
+| R5-2 | Fixed | `conversation.json` stores a hash of the memory list the session was built with; `begin()` starts fresh when it differs (CLI, app, hand edit) or can't be read. | `wake-memory-and-history.test.ts` R5-2 |
+| R5-3 | Fixed | `persona.txt` is deleted after every run and on listener exit; a refused secret is stored in history as `remember [refused: looks like a secret]`. (The live `heard` push to the open window is display-only and not stored.) | `index.test.ts` persona, `wake-memory-and-history.test.ts` R5-3 |
+| R5-4 | Fixed | NFKC before the check; 8+ digits in spoken groups; comma lists of 4+ single digits; `pin's`, `pass word`, `code for the door`, `opens with 4417`; one-word "remember 4417/hunter2" refused locally; comment says 6+. | `wake-memory-and-history.test.ts` R5-4 |
+| R5-5 | Fixed | Wake-word forget asks ("Forget this?", Deny default, unavailable keeps it); wake-word list and tie replies give only the count. | `wake-memory-and-history.test.ts` R5-5 |
+| R5-6 | Fixed | Rolling window (same time N days ago, DST-safe); expired lines trimmed from the boundary day file; purge at listener start, in `list()` and in `stephen history`. | `wake-memory-and-history.test.ts` R5-6, `history/store.test.ts` |
 | R5-7 | Fixed | `src/history/` is a boundary; `src/cli.ts` loads `voice/index.js` on demand, and a test checks `stephen serve`'s start-up graph has no memory/app/history code. | `test/memory/boundary.test.ts` |
 | R5-8 | Open (Info) | Same-user only; still review 4 #6 (helper.sock nonce + flock). Needs Swift, so it is a Mac task. | — |
-| R5-9 | Fixed (dialog) | The wake-word dialog shows `Allow also runs: "<rest>"`. COMMAND_VERBS unchanged. | `review5.test.ts` R5-9 |
-| R5-10 | Fixed (docs + dialog) | Dialog says memory is also read out through the voice service; VOICE.md says so. | `review5.test.ts` R5-10 |
+| R5-9 | Fixed (dialog) | The wake-word dialog shows `Allow also runs: "<rest>"`. COMMAND_VERBS unchanged. | `wake-memory-and-history.test.ts` R5-9 |
+| R5-10 | Fixed (docs + dialog) | Dialog says memory is also read out through the voice service; VOICE.md says so. | `wake-memory-and-history.test.ts` R5-10 |
 
 ## Checked, OK
 

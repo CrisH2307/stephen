@@ -151,7 +151,7 @@ Severity "not rated" means the review named the problem but gave no level.
 | I-248 | tester intern, Mac test 0.2 and 0.4 | Medium | `swiftc` cannot find `SwiftUIMacros.StateMacro` on macOS 27.2.1, so `install-helper` fails | closed (#251: fall back to an older SDK; Mac check passed 2026-11-23; issue closed; release #279) | dev | #248 |
 | I-249 | tester intern | Low | `npx vitest run` fails on Node 21.5.0 but `doctor` passes it | closed (#250: engines `^20.19.0 \|\| >=22.12.0`, doctor checks the same) | dev | #249 |
 | I-262 | macOS CI | Low | Two macOS CI flakes: Zen early exit race, cross-site iframe click read too early | closed (#262) | dev | #109, #262 |
-| I-263 | macOS CI on qa `cd8027e` | Low | `test/drivers/review1.test.ts` D4 "defaults to a 60 s Allow wait" got "Not connected." | open (flake, not rerun alone yet) | dev | #263, #109 |
+| I-263 | macOS CI on qa `cd8027e` | Low | `test/drivers/session-owner-and-private-dirs.test.ts` D4 "defaults to a 60 s Allow wait" got "Not connected." | open (flake, not rerun alone yet) | dev | #263, #109 |
 | CI-14 | GitHub, PR #259 | Low | GitHub retired the hosted `macos-14` runner on 2026-11-02; no macOS 14 job is possible | closed (#259: macOS 14 is the minimum, the `macos` job on macos-15 builds the helper for a macOS 14 target; #260 research) | review | #259, #260 |
 | I-171 | tracker | Low | Second test suite: the lock message was lost in a vitest TypeError | closed (#178; issue closed; release #279) | dev | #171 |
 | I-207 | CI #195 | Low | A click after typing is lost when the Chrome window is not painting (macOS CI) | open; CI uses headless Chrome on macOS as the workaround (#195) | dev | #207 |

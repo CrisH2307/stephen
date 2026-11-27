@@ -205,7 +205,7 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
 - 2026-11-01 17:00 — **Security review #5 done and fixed** (docs/REVIEW-5.md). Fresh opus subagent that didn't build
   1.9 (Jev couldn't size it: openrouter.ai is blocked from both the Mac VM shell and the cloud, 403; used Jev's earlier
   "large → opus"). No Critical/High: nothing Claude, a page, an email or a tool result does can write memory; app.sock
-  is safe from lower-trust actors. Fixed, each with tests (test/voice/review5.test.ts, transcripts.test.ts):
+  is safe from lower-trust actors. Fixed, each with tests (test/voice/wake-memory-and-history.test.ts, transcripts.test.ts):
   R5-1 Claude Code's own session transcripts (`~/.claude/projects/<voice workdir slug>/`) deleted when a conversation
   drops a session, purged with the history window, all on `history clear` (src/voice/transcripts.ts);
   R5-2 conversation.json keeps a memory-list hash, a change from anywhere (CLI, hand edit) starts fresh;
@@ -268,7 +268,7 @@ cd /home/claude/browser-hub && git archive --format=zip --prefix=browser-hub/ -o
   Assistant (`timers` option), fired only while `stephen listen` runs; persona says Claude can't set them; boundary
   `src/timers/` vs CLAUDE_REACHABLE; eval case `timer-no-time`. Time-zone math moved to src/util/zone.ts.
   (3) **Security review #6** (fresh opus; docs/REVIEW-6.md): no Critical/High. Fixed R6-2…R6-10 with tests
-  (test/accounts/review6.test.ts): linear HTML stripping + input cut, zone formatter cache, RRULE skip-ahead + BYDAY
+  (test/accounts/hostile-input-and-tokens.test.ts): linear HTML stripping + input cut, zone formatter cache, RRULE skip-ahead + BYDAY
   dedupe + iteration/feed caps, wake-word timer trust (count-only list, cancel dialog, 5-item cap), alerts through
   listener.submit/Assistant.announce, secret value checks + fixed network error words, `*.stephen.invalid` blocked,
   more link/code shapes cleaned, account env names stripped from claude's env, .env parser fixes. R6-1 not an issue
