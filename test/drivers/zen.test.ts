@@ -714,7 +714,12 @@ describe('ZenDriver.inspect / launchForClaude (zen-launch)', () => {
     tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
     const dir = realProfile();
     const h = harness({ resolveRealProfile: async () => dir, line: 'Zen is already running, but is not responding', exitCode: 0 });
-    await expectHubError(h.driver.launchForClaude(), 'NEEDS_USER', /another Zen is probably using profile/);
+    const e = await expectHubError(h.driver.launchForClaude(), 'NEEDS_USER', /another Zen is probably using your Zen profile/);
+    // review of #443: the model and the person get the plain line; Zen's log, the exit reason and the path are detail only
+    expect(e.message).not.toMatch(/Zen said:|already running, but|exit code|[\u2013\u2014]/);
+    expect(e.message).not.toContain(dir);
+    expect((e as { detail?: string }).detail).toMatch(/exit code 0.*Zen said: .*Zen is already running, but is not responding/s);
+    expect((e as { detail?: string }).detail).toContain(dir);
     expect(h.children).toHaveLength(1);
     expect(h.children[0]!.killed).toBe(false);
     expect(existsSync(statePath())).toBe(false);

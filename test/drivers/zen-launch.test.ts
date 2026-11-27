@@ -91,6 +91,8 @@ function launchHarness(o: {
   launchError?: Error;
   /** Use a real ZenDriver (fake spawn/connect) instead of a stub. */
   realDriver?: boolean;
+  /** With realDriver: what the fake Zen writes to its log, and its exit code (it then exits at once). */
+  zenLog?: { line: string; exitCode: number };
   /** Other user accounts (B5); default a single-user Mac. */
   others?: number | null;
 }): LaunchHarness {
@@ -116,7 +118,8 @@ function launchHarness(o: {
         h.spawns.push({ cmd, args, opts });
         const child = new FakeChild(7000 + h.spawns.length);
         h.children.push(child);
-        writeSync((opts.stdio as number[])[2]!, 'WebDriver BiDi listening on ws://127.0.0.1:4545\n');
+        writeSync((opts.stdio as number[])[2]!, `${o.zenLog?.line ?? 'WebDriver BiDi listening on ws://127.0.0.1:4545'}\n`);
+        if (o.zenLog) process.nextTick(() => child.emit('exit', o.zenLog!.exitCode, null));
         return child as unknown as SpawnedProcess;
       },
       connect: async () => {
@@ -316,6 +319,18 @@ describe('zen-launch', () => {
     const shown = formatZenLaunch(r);
     expect(shown).toBe(`✗ ${ZEN_LAUNCH_FAILED}`);
     expect(shown).not.toMatch(/\/Users\/|ws:\/\/|Zen said:|pid \d|[\u2013\u2014]/);
+  });
+
+  it('review of #443: a NEEDS_USER exit (profile in use) is plain; Zen\'s log and the exit reason stay in detail', async () => {
+    tc = makeTestConfig({ zen: { mode: 'real', launch: 'never' } });
+    const log = `Zen is already running, but is not responding. Profile ${join(tc.home, 'real-profile')} is locked`;
+    const r = await runZenLaunch({}, launchHarness({ realDriver: true, zenLog: { line: log, exitCode: 0 } }).deps);
+    expect(r).toMatchObject({ exitCode: 2, status: 'needs-user' });
+    const shown = formatZenLaunch(r);
+    expect(shown).toMatch(/another Zen is probably using your Zen profile/);
+    expect(shown).not.toMatch(/Zen said:|already running, but|exit code|real-profile|[\u2013\u2014]/);
+    expect(r.detail).toContain(log);
+    expect(r.detail).toMatch(/exit code 0/);
   });
 
   it('notes when the config would not use this Zen (agent mode) or may launch it (launch: auto)', async () => {
