@@ -71,11 +71,12 @@ describe('pr rules check', () => {
     expect(badCommits('')).toEqual([]);
   });
 
-  it('rule 3: only new names count, in dependencies and devDependencies; a version bump is not new', () => {
+  it('rule 3: only new names count, in all four dependency lists; a version bump is not new', () => {
     const old = { dependencies: { a: '1' }, devDependencies: { b: '1' } };
     expect(newDeps(old, { dependencies: { a: '2' }, devDependencies: { b: '1' } })).toEqual([]);
     expect(newDeps(old, { dependencies: { a: '1', z: '1' }, devDependencies: { b: '1', c: '1' } })).toEqual(['c', 'z']);
     expect(newDeps({}, { scripts: { x: 'y' } })).toEqual([]);
+    expect(newDeps(old, { ...old, optionalDependencies: { o: '1' }, peerDependencies: { p: '1' } })).toEqual(['o', 'p']);
   });
 
   it('messages: each rule names what failed and never prints the title; the tag only excuses rule 3', () => {

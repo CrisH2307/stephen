@@ -51,7 +51,7 @@ export function badCommits(log) {
 
 /** Dependency names in the new package.json that the old one did not have. Pure. */
 export function newDeps(oldPkg, newPkg) {
-  const names = (p) => new Set(['dependencies', 'devDependencies'].flatMap((k) => Object.keys(p?.[k] ?? {})));
+  const names = (p) => new Set(['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].flatMap((k) => Object.keys(p?.[k] ?? {})));
   const had = names(oldPkg);
   return [...names(newPkg)].filter((n) => !had.has(n)).sort();
 }
