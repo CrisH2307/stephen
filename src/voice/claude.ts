@@ -507,7 +507,7 @@ function withFailure(o: { kind: 'error'; message: string; sessionId: string | nu
 
 /** Claude Code versions Stephen's recorded fixtures (help text, stream-json) come from: the oldest and newest tested. */
 export const TESTED_CLAUDE_MIN = '2.1.316';
-export const TESTED_CLAUDE_MAX = '2.1.319';
+export const TESTED_CLAUDE_MAX = '2.1.332';
 
 const versionParts = (v: string): number[] | null => {
   const m = /(\d+)\.(\d+)\.(\d+)/.exec(v);
