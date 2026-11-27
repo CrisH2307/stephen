@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 /** Folders end with "/", the rest are single files. */
-/** The one list (docs/AGENT-LOOP.md "Always Claude-only" points here). The incident ladder list must stay inside it. */
+/** The one list (docs/AGENT-LOOP.md "Always Claude-only" points here). src/telemetry/incident-ladder.ts holds an exact copy (a test checks they are equal). */
 export const SAFETY_PATHS = [
   'src/safety/',
   // Allow and Deny: the confirm dialog, and the ask box and chat thread (their Allow delay, Esc as Deny).
@@ -27,6 +27,9 @@ export const SAFETY_PATHS = [
   'src/app/replay-switch.ts',
   'src/app/protocol.ts',
   'src/app/server.ts',
+  // Data import writes memory, timers and config; the data CLI deletes them.
+  'src/app/data-export.ts',
+  'src/app/data-cli.ts',
   // Dependencies, CI and the release gate.
   'package.json',
   'package-lock.json',

@@ -60,6 +60,10 @@ describe('safety paths check', () => {
     expect(LADDER_PATHS.filter((p) => safetyFiles([p]).length === 0)).toEqual([]);
   });
 
+  it.each(['src/app/data-export.ts', 'src/app/data-cli.ts'])('%s is a safety path (import writes memory, timers, config)', (f) => {
+    expect(safetyFiles([f])).toEqual([f]);
+  });
+
   it('every listed path exists, so a rename cannot drop a file from the check', () => {
     expect((SAFETY_PATHS as string[]).filter((p) => !existsSync(join(ROOT, p)))).toEqual([]);
   });
