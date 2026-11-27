@@ -33,6 +33,7 @@ export const SAFETY_PATHS = [
   'docs/RELEASE-CHECKLIST.md',
   '.github/workflows/',
   'scripts/safety-paths.mjs',
+  'scripts/pr-rules.mjs',
 ];
 
 export const TAG = '[DEV REVIEW]';
