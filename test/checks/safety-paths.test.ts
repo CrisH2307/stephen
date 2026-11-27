@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: a plain .mjs script, no types
 import { SAFETY_PATHS, safetyFiles, safetyProblem } from '../../scripts/safety-paths.mjs';
+import { SAFETY_PATHS as LADDER_PATHS } from '../../src/telemetry/incident-ladder.js';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const git = (cwd: string, ...args: string[]) =>
@@ -31,6 +32,17 @@ describe('safety paths check', () => {
       'src/memory/store.ts',
       '.github/workflows/new.yml',
     ]);
+  });
+
+  it('the script is the one list: AGENT-LOOP.md points to it and names no path of its own', () => {
+    const doc = readFileSync(join(ROOT, 'docs/AGENT-LOOP.md'), 'utf8');
+    const section = doc.split('## Always Claude-only')[1]?.split('\n## ')[0] ?? '';
+    expect(section).toContain('scripts/safety-paths.mjs');
+    expect(section.match(/`(src|helper|\.github|docs)\/[^`]*`/g) ?? []).toEqual([]);
+  });
+
+  it('the incident ladder list stays inside the script list', () => {
+    expect(LADDER_PATHS.filter((p) => !(SAFETY_PATHS as string[]).includes(p))).toEqual([]);
   });
 
   it('every listed path exists, so a rename cannot drop a file from the check', () => {
