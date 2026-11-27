@@ -505,6 +505,19 @@ describe('actions', () => {
     expect(h.engine.uploadFile).not.toHaveBeenCalled();
   });
 
+  // /tmp is shared by every user and holds agent worktrees: only the per-user temp folder counts (review of #447).
+  const sharedTmp = realpathSync('/tmp');
+  it.skipIf(realpathSync(tmpdir()).startsWith(sharedTmp))('isUploadAllowedFile: a file in /tmp outside the user temp folder is refused', () => {
+    const dir = mkdtempSync(join(sharedTmp, 'stephen-up-'));
+    try {
+      writeFileSync(join(dir, 'a.pdf'), 'x');
+      expect(isUploadAllowedFile(join(dir, 'a.pdf'), '/nonexistent-home')).toBe(false);
+      expect(isUploadAllowedFile(join(realpathSync(tmpdir()), 'a.pdf'), '/nonexistent-home')).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('isUploadAllowedFile: Downloads, Desktop and Documents yes; links and .. out of them no', () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'stephen-up-')));
     try {

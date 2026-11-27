@@ -60,7 +60,7 @@ export function isNeverReadFile(path: string, stephenHome: string, stephenRepo: 
 }
 
 /** The only folders upload_file sends from: what a person saves to attach (after M1, safety review 0.1.1). */
-export function uploadFolders(userHome: string, tempDirs = [tmpdir(), '/tmp']): string[] {
+export function uploadFolders(userHome: string, tempDirs = [tmpdir()]): string[] {
   return [join(userHome, 'Downloads'), join(userHome, 'Desktop'), join(userHome, 'Documents'), ...tempDirs];
 }
 
