@@ -45,7 +45,9 @@ describe('safety list', () => {
     ['src/Safety/Policy.ts', true],
     ['helper/appconfirm.swift', true],
     ['src/safetyx/a.ts', false],
-    ['src/memory/intent.ts', false],
+    ['src/memory/intent.ts', true],
+    ['src/jobs/runner.ts', true],
+    ['src/app/data-export.ts', true],
     ['src/app/config.ts', false],
     ['src/voice/claude.ts', false],
   ])('%s is safety: %s', (p, want) => {
