@@ -3,6 +3,7 @@
  * It refuses a dirty tree, a branch with no upstream and a pull that is not a fast-forward. It never resets,
  * checks out or force-anything. It prints the version before and after, says when the helper was rebuilt (macOS
  * then asks for Input Monitoring again), and how to go back (docs/RELEASE-CHECKLIST.md, "Going back").
+ * Running it again after a failed step finishes the update: steps 2 to 4 are safe to repeat.
  *
  * Every program runs through `deps`, so the tests never touch git, npm or the helper.
  */
@@ -86,6 +87,8 @@ export async function runUpdate(deps: UpdateDeps): Promise<number> {
   const moved = now !== prev;
   if (!moved) log('No new version. Running the other steps again, so an update that stopped before can finish.');
 
+  // ponytail: on a rerun after a failure, the "To go back" lines below name the current commit, since the old one is
+  // only known in the first run. Upgrade path if it matters: read it from `git reflog -1 HEAD@{1}`.
   log('[2/4] Install packages (npm install)');
   const npmI = await run('npm', ['install']);
   if (npmI.code !== 0) return stop(`The packages did not install. Fix the error, then run \`stephen update\` again. To go back: git checkout ${prev}`, firstLine(npmI.stderr || npmI.stdout));
