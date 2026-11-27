@@ -705,7 +705,8 @@ export class ClaudeRunner {
       child = spawnFn(this.o.claudePath, args, claudeSpawnOptions(this.o, 'ignore'));
     } catch (e) {
       if (inst) removeServeLock(inst.lockPath);
-      return { kind: 'error', message: `Could not start Claude Code (${(e as Error).message}).`, sessionId: null };
+      logStartRaw(this.o.claudePath, (e as Error).message);
+      return { kind: 'error', message: CLAUDE_START_FAILED, sessionId: null };
     }
     this.child = child;
     let out = '';
@@ -718,11 +719,8 @@ export class ClaudeRunner {
     });
     const outcome = await new Promise<ClaudeOutcome>((resolveRun) => {
       child.once('error', (e: NodeJS.ErrnoException) => {
-        resolveRun({
-          kind: 'error',
-          message: e.code === 'ENOENT' ? claudeNotFound(this.o.claudePath) : `Could not start Claude Code (${e.message}).`,
-          sessionId: null,
-        });
+        logStartRaw(this.o.claudePath, e.message);
+        resolveRun({ kind: 'error', message: e.code === 'ENOENT' ? CLAUDE_NOT_FOUND : CLAUDE_START_FAILED, sessionId: null });
       });
       child.once('close', (code) => {
         resolveRun(this.cancelled ? { kind: 'cancelled' } : parseClaudeOutput(out, code, err));
@@ -776,9 +774,14 @@ export function claudeSpawnOptions(o: { cwd: string; env?: NodeJS.ProcessEnv }, 
   return { cwd: o.cwd, env: withoutSecrets(o.env ?? process.env), stdio: [stdin, 'pipe', 'pipe'], detached: true, shell: false };
 }
 
-/** What both wrappers say when the claude program is missing (spawn ENOENT). */
-export function claudeNotFound(claudePath: string): string {
-  return `Claude Code was not found ("${claudePath}"). Install it, or set "voice": {"claudePath": "…"}.`;
+/** What both wrappers say when the claude program is missing (spawn ENOENT). The path goes to the log only (R7). */
+export const CLAUDE_NOT_FOUND = 'Claude Code was not found. Install it, or set "voice": {"claudePath": "…"}.';
+/** R7: what both wrappers say when Claude Code could not be started for another reason. */
+export const CLAUDE_START_FAILED = "I couldn't start Claude Code. Run stephen doctor to see what is wrong.";
+
+/** R7: the raw reason Claude Code did not start, for the log (stderr). Never shown or spoken. */
+export function logStartRaw(claudePath: string, detail: string): void {
+  console.error(`voice: claude start (${claudePath}): ${detail}`);
 }
 
 /** Lock-down flags without which Stephen refuses to run a voice command (they keep built-in tools and user settings out). */

@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { appControl, cliRunner, launchInfoPath, PHONE_UNTRUSTED, writeLaunchInfo, type RunCli } from '../../src/app/control.js';
+import { appControl, cliRunner, launchInfoPath, PHONE_UNTRUSTED, writeLaunchInfo, ZEN_OPEN_FAILED, type RunCli } from '../../src/app/control.js';
 import { urlHost } from '../../src/cli.js';
 import type { PhoneCliEnv } from '../../src/phone/cli.js';
 import { phoneConfigDir, phoneDir, phoneOnPath } from '../../src/phone/setup.js';
@@ -94,12 +94,16 @@ describe('phone on / off', () => {
 });
 
 describe('zen.open and doctor.run', () => {
-  it('zen-launch: ok from the exit code, message from its output', async () => {
+  it('zen-launch: ok from the exit code; a failure says one plain sentence and logs the raw output (R7)', async () => {
     const seen: string[][] = [];
-    const run: RunCli = async (args) => (seen.push(args), { code: 1, stdout: '', stderr: 'Zen is open without Stephen access. Quit it first.\n' });
-    const r = await appControl({ home: newHome(), cliPath: 'x', run }).openZen();
+    const logged: string[] = [];
+    const run: RunCli = async (args) => (seen.push(args), { code: 1, stdout: '', stderr: 'Could not ask Zen to quit (/Users/x/secret).\n' });
+    const r = await appControl({ home: newHome(), cliPath: 'x', run, log: (l) => logged.push(l) }).openZen();
     expect(seen).toEqual([['zen-launch']]);
-    expect(r).toEqual({ ok: false, message: 'Zen is open without Stephen access. Quit it first.' });
+    expect(r).toEqual({ ok: false, message: ZEN_OPEN_FAILED });
+    expect(logged.join('\n')).toContain('/Users/x/secret');
+    const ok: RunCli = async () => ({ code: 0, stdout: 'Zen is ready for Stephen (pid 4242).\n', stderr: '' });
+    expect(await appControl({ home: newHome(), cliPath: 'x', run: ok }).openZen()).toEqual({ ok: true, message: 'Zen is ready for Stephen (pid 4242).' });
   });
 
   it('doctor --json: checks and counts; output that is not JSON is an error', async () => {
