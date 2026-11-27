@@ -246,6 +246,19 @@ describe('WarmClaude against the fake stream-json claude', () => {
     }
   });
 
+  it('an exit mid-turn on a plan limit says the plan limit line (with the reset time), not "say it again"', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const t = setup({ FAKE_CLAUDE_MODE: 'exit-mid-turn', FAKE_CLAUDE_STDERR: 'Usage limit reached · limit resets 3pm' });
+      const p = new WarmClaude(t.o, undefined);
+      await p.ready();
+      expect(await p.turn('hi')).toEqual({ kind: 'error', message: "You've reached your Claude plan limit. It resets at 3pm.", failure: 'claude_usage_limit', sessionId: null });
+      await p.kill();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('a refused control request: a fixed line, Claude Code\'s error text in the log only (R7)', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
