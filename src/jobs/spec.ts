@@ -11,6 +11,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reduceLinks } from '../accounts/result.js';
 import { escapeUntrustedTags, stripUnsafe, truncate } from '../safety/text.js';
+import { neverReadPaths } from '../lib/owner-only.js';
 
 /** The only tools a job has (`--tools`); the init message must list exactly these (runner checks it). */
 export const JOB_TOOLS = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep'] as const;
@@ -217,7 +218,7 @@ export function jobSettings(o: { stephenHome: string; stephenRepo: string; testO
       // No Unix sockets (#208): a job's shell must never reach <home>/run/app.sock (the Settings switches) or
       // helper.sock. This is Claude Code's default; written out so no later change can turn it on without a failing test.
       network: { allowedDomains: [], strictAllowlist: true, allowUnixSockets: [], allowAllUnixSockets: false },
-      filesystem: { denyRead: [o.stephenHome, '~/.ssh', '~/.aws', '~/.config', '~/Library/Keychains', join(o.stephenRepo, '.env')] },
+      filesystem: { denyRead: neverReadPaths(o.stephenHome, o.stephenRepo) },
     },
     permissions: {
       blockReadsOutsideWorkingDirectories: true,

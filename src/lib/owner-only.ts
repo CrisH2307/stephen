@@ -34,8 +34,26 @@ export function isOwnerOnlyFile(path: string, home: string): boolean {
   // The spelling check ignores case and Unicode form too, so a missing folder answers the same as a present one
   // (#169: otherwise `Replay/x.wav` would tell whether recording was ever on). Cost: on a case-sensitive disk,
   // `<home>/REPLAY/...` is refused as well.
+  return insideFolded(path, dir);
+}
+
+/** `path` lies in `dir`, after symlinks, ignoring letter case and Unicode form (APFS, #169). */
+function insideFolded(path: string, dir: string): boolean {
   const fold = (p: string) => resolve(p).normalize('NFC').toLowerCase();
   // Folded after following links too: through a link to <home>, `Replay/x.wav` must not answer differently before
   // and after the folder exists (review of #170).
   return isInside(fold(realThroughParent(path)), fold(realThroughParent(dir))) || isInside(fold(path), fold(dir));
+}
+
+/**
+ * What a job's shell may never read (jobSettings denyRead) and upload_file never sends: Stephen's home, the keys
+ * folders and the Stephen repo's .env. One list, so the two cannot drift (safety review 0.1.1, M1).
+ */
+export function neverReadPaths(stephenHome: string, stephenRepo: string): string[] {
+  return [stephenHome, '~/.ssh', '~/.aws', '~/.config', '~/Library/Keychains', join(stephenRepo, '.env')];
+}
+
+/** True when `path` (after symlinks, in any letter case) lies in one of neverReadPaths, `~` being `userHome`. */
+export function isNeverReadFile(path: string, stephenHome: string, stephenRepo: string, userHome: string): boolean {
+  return neverReadPaths(stephenHome, stephenRepo).some((d) => insideFolded(path, d.startsWith('~/') ? join(userHome, d.slice(2)) : d));
 }
