@@ -274,7 +274,7 @@ The first time, macOS asks whether your terminal app may use the microphone  all
 
 ## Configuration
 
-Optional file: `~/.stephen/config.json` (all keys optional; unknown keys are reported as errors so typos don't go unnoticed). Paths may start with `~`; relative paths are relative to `~/.stephen`. Run `stephen doctor` after editing.
+Optional file: `~/.stephen/config.json` (all keys optional; an unknown key under `safety`, `desktop` or `accounts` is an error, because a typo there could empty a block list; anywhere else it is ignored and `stephen doctor` names it). Paths may start with `~`; relative paths are relative to `~/.stephen`. Run `stephen doctor` after editing.
 
 ```json
 {
