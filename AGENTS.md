@@ -17,6 +17,7 @@ Stephen is Cris's Mac voice and browser assistant. The repo is public. New here?
   write paths, or the app.sock protocol need `[DEV REVIEW]` and an independent review. The `safety-paths` CI check
   fails a PR that touches them without the tag (the list is in `scripts/safety-paths.mjs`).
 - Checks before a PR: `npm run build && npm run typecheck && npx vitest run`.
+- Which check enforces each rule, and which rules are prose only: `docs/RULES-ENFORCED.md`. Adding a check? Update its row.
 - **Cheapest model that can do the job, with a precise spec.** Every chat and every brief: free agents first
   (OpenCode, freellm) for drafts, docs, tests and planned non-safety code, then a cheaper model (Haiku or Sonnet) for
   read-only checks and mechanical steps. Opus only for safety code, design and reviews. The cheaper the model, the
