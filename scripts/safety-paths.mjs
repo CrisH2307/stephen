@@ -8,18 +8,34 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 /** Folders end with "/", the rest are single files. */
+/** The one list (docs/AGENT-LOOP.md "Always Claude-only" points here). The incident ladder list must stay inside it. */
 export const SAFETY_PATHS = [
   'src/safety/',
   'helper/AppConfirm.swift',
+  'helper/AppProtocol.swift',
+  // Memory, timer and job writes: the before-Claude grammars, the routers, the stores, and the atomic write they share.
+  'src/memory/intent.ts',
   'src/memory/store.ts',
   'src/memory/proposals.ts',
+  'src/timers/intent.ts',
+  'src/timers/router.ts',
   'src/timers/store.ts',
+  'src/jobs/intent.ts',
+  'src/jobs/router.ts',
   'src/jobs/manager.ts',
   'src/jobs/runner.ts',
   'src/jobs/spec.ts',
   'src/jobs/state.ts',
+  'src/lib/fs.ts',
+  // The replay recorder and its owner-only switch.
+  'src/replay/recorder.ts',
+  'src/app/replay-switch.ts',
   'src/app/protocol.ts',
   'src/app/server.ts',
+  // Dependencies, CI and the release gate.
+  'package.json',
+  'package-lock.json',
+  'docs/RELEASE-CHECKLIST.md',
   '.github/workflows/',
   'scripts/safety-paths.mjs',
 ];
