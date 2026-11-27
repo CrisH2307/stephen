@@ -656,8 +656,6 @@ export class AppServer {
         } catch {
           return { id, type: 'error', message: MEMORY_MESSAGES.unreadable };
         }
-      case 'memory.add':
-        return mem ? this.memory(id, () => mem.add(req.text, 'app')) : { id, type: 'error', message: MEMORY_OFF_MESSAGE };
       case 'memory.update':
         return mem ? this.memory(id, () => mem.update(req.memId, req.text)) : { id, type: 'error', message: MEMORY_OFF_MESSAGE };
       case 'memory.forget':

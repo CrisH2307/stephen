@@ -27,7 +27,6 @@ describe('parseAppRequest', () => {
     ],
     ['history.clear', { id: 'a', type: 'history.clear' }, { id: 'a', type: 'history.clear' }],
     ['memory.list', { id: 'a', type: 'memory.list' }, { id: 'a', type: 'memory.list' }],
-    ['memory.add', { id: 'a', type: 'memory.add', text: 'my gym is goodlife' }, { id: 'a', type: 'memory.add', text: 'my gym is goodlife' }],
     ['memory.update', { id: 'a', type: 'memory.update', memId: 'm3', text: 'x' }, { id: 'a', type: 'memory.update', memId: 'm3', text: 'x' }],
     ['memory.forget', { id: 'a', type: 'memory.forget', memId: 'm3' }, { id: 'a', type: 'memory.forget', memId: 'm3' }],
     ['memory.clear', { id: 'a', type: 'memory.clear' }, { id: 'a', type: 'memory.clear' }],
@@ -80,7 +79,7 @@ describe('parseAppRequest', () => {
     ['model.set empty', line({ id: 'a', type: 'model.set' }), { kind: 'invalid', id: 'a', message: 'give a model or an effort' }],
     ['model.set bad model', line({ id: 'a', type: 'model.set', model: 'haiku; rm -rf /' }), { kind: 'invalid', id: 'a', message: 'model must be a model alias or name like "haiku"' }],
     ['model.set bad effort', line({ id: 'a', type: 'model.set', effort: 'turbo' }), { kind: 'invalid', id: 'a', message: 'effort must be default or one of low, medium, high, xhigh, max' }],
-    ['memory.add huge text', line({ id: 'a', type: 'memory.add', text: 'x'.repeat(5000) }), { kind: 'invalid', id: 'a', message: 'text is too long (2000 characters at most)' }],
+    ['memory.update huge text', line({ id: 'a', type: 'memory.update', memId: 'm3', text: 'x'.repeat(5000) }), { kind: 'invalid', id: 'a', message: 'text is too long (2000 characters at most)' }],
   ];
   it.each(invalid)('refuses %s', (_name, raw, expected) => {
     expect(parseAppRequest(raw)).toEqual(expected);
@@ -91,9 +90,13 @@ describe('parseAppRequest', () => {
     expect(parseAppRequest(line({ type: 'future.thing' }))).toEqual({ kind: 'unknown', type: 'future.thing' });
   });
 
+  it('memory.add is gone: a window or any local process cannot add a memory over app.sock (an unknown type)', () => {
+    expect(parseAppRequest(line({ id: 'a', type: 'memory.add', text: 'my gym is goodlife' }))).toEqual({ kind: 'unknown', type: 'memory.add' });
+  });
+
   it('knows every request type of the table plus window.open, the confirm pair and the P2 control requests', () => {
     expect([...APP_REQUEST_TYPES].sort()).toEqual(
-      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'latency.get', 'jobs.stop', 'memory.add', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage', 'replay.set', 'replay.delete', 'media.key', 'chat.resume', 'chat.resume.cancel', 'chat.edit', 'history.versions', 'history.deleteVersion', 'jobs.edit'].sort(),
+      ['audit.recent', 'chat.send', 'chat.stop', 'accounts.status', 'hello', 'history.clear', 'history.list', 'jobs.list', 'latency.get', 'jobs.stop', 'memory.clear', 'memory.forget', 'memory.list', 'memory.update', 'settings.get', 'settings.set', 'model.set', 'window.open', 'confirm.ask', 'confirm.answer', 'phone.on', 'phone.off', 'zen.open', 'doctor.run', 'usage.get', 'personal.summary', 'memory.graph', 'memory.suggestions', 'memory.propose', 'memory.keep', 'memory.skip', 'memory.usage', 'replay.set', 'replay.delete', 'media.key', 'chat.resume', 'chat.resume.cancel', 'chat.edit', 'history.versions', 'history.deleteVersion', 'jobs.edit'].sort(),
     );
   });
 
@@ -129,7 +132,7 @@ describe('parseAppRequest', () => {
 });
 
 describe('Memory page requests (UI-PLAN v3.1 section 7a)', () => {
-  it('memory.propose takes text (capped like memory.add); extra fields such as origin are dropped', () => {
+  it('memory.propose takes text (capped like memory.update); extra fields such as origin are dropped', () => {
     expect(parseAppRequest(line({ id: 'p', type: 'memory.propose', text: 'I moved to Fit4Less', origin: 'canvas' }))).toEqual({
       kind: 'request',
       req: { id: 'p', type: 'memory.propose', text: 'I moved to Fit4Less' },

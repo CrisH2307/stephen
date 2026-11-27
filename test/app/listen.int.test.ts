@@ -79,7 +79,7 @@ describe.skipIf(!kws.ok)('stephen listen serves app.sock', () => {
     expect(await c.waitFor((m) => m.type === 'chat.done')).toMatchObject({ entryId: a.entryId, reply: 'Dry run: Claude was not started.', outcome: 'ok' });
     expect(t.out).toContainEqual(expect.stringContaining('claude argv (dry run)'));
 
-    expect(await c.request({ id: 'm', type: 'memory.add', text: 'my gym is goodlife' })).toMatchObject({ type: 'memory', items: [{ text: 'my gym is goodlife', source: 'app' }] });
+    expect(await c.request({ id: 'm', type: 'memory.list' })).toEqual({ id: 'm', type: 'memory', items: [] });
     const s = await c.request({ id: 's', type: 'settings.get' });
     expect(s).toMatchObject({ type: 'settings', configPath: join(t.home, 'config.json'), config: { voice: { model: 'haiku' }, app: { enabled: true, speakReplies: false } } });
     expect(await c.request({ id: 'w', type: 'window.open' })).toEqual({ id: 'w', type: 'error', message: "Stephen Helper isn't connected to stephen listen" });

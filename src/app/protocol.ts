@@ -100,7 +100,7 @@ export const APP_PROTOCOL_VERSION = '1';
 export const APP_MAX_LINE_BYTES = 256 * 1024;
 /** chat.send text limit in characters (grapheme clusters, like Swift's String.count; APP_CHAT_MAX_CHARS). */
 export const APP_CHAT_MAX_CHARS = 2000;
-/** memory.add / memory.update text sent on to the store (which allows 200 and explains a refusal). */
+/** memory.update / memory.propose text sent on to the store (which allows 200 and explains a refusal). */
 export const APP_MEMORY_TEXT_MAX_CHARS = 2000;
 export const APP_HISTORY_LIMIT_MAX = 100;
 export const APP_AUDIT_LIMIT_MAX = 200;
@@ -128,7 +128,6 @@ export type AppRequest =
   | { id: string; type: 'history.list'; before?: string; limit?: number }
   | { id: string; type: 'history.clear' }
   | { id: string; type: 'memory.list' }
-  | { id: string; type: 'memory.add'; text: string }
   | { id: string; type: 'memory.update'; memId: string; text: string }
   | { id: string; type: 'memory.forget'; memId: string }
   | { id: string; type: 'memory.clear' }
@@ -174,7 +173,6 @@ export const APP_REQUEST_TYPES: readonly AppRequestType[] = [
   'history.list',
   'history.clear',
   'memory.list',
-  'memory.add',
   'memory.update',
   'memory.forget',
   'memory.clear',
@@ -312,7 +310,6 @@ const CHECKS: Record<AppRequestType, (o: Fields) => Check> = {
   },
   'history.clear': () => ok,
   'memory.list': () => ok,
-  'memory.add': (o) => text(o, 'text', APP_MEMORY_TEXT_MAX_CHARS, 'text'),
   'memory.update': (o) => {
     const m = memId(o);
     return m.ok ? text(o, 'text', APP_MEMORY_TEXT_MAX_CHARS, 'text') : m;
@@ -395,7 +392,6 @@ function pick(type: AppRequestType, id: string, o: Fields): AppRequest {
     case 'confirm.answer':
       return { id, type, confirmId: o.confirmId as string, approve: o.approve as boolean };
     case 'chat.send':
-    case 'memory.add':
     case 'memory.propose':
       return { id, type, text: o.text as string };
     case 'memory.keep':

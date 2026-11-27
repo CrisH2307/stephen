@@ -275,7 +275,7 @@ ignored; every request has a client `id` echoed in the response; errors are `{id
 | `{id,type:"history.list",before?,limit?}` (limit ≤ 100) | `{id,type:"history",entries:[…section 2 history entry…]}` |
 | `{id,type:"history.clear"}` | `{id,type:"ok"}` |
 | `{id,type:"memory.list"}` | `{id,type:"memory",items:[{id,text,source,createdAt,updatedAt}]}` |
-| `{id,type:"memory.add",text}` / `memory.update {memId,text}` / `memory.forget {memId}` / `memory.clear` | `{id,type:"memory",items}` or `{id,type:"error",message}` (refusal reason, e.g. looks like a secret); any change ends the conversation (section 3) |
+| `memory.update {memId,text}` / `memory.forget {memId}` / `memory.clear` | `{id,type:"memory",items}` or `{id,type:"error",message}` (refusal reason, e.g. looks like a secret); any change ends the conversation (section 3). There is no `memory.add` (removed 2026-11-26): it gets the unknown-type answer (ignored). New items come only from a typed or spoken "remember", `stephen memory add`, or Keep on a proposal |
 | `{id,type:"settings.get"}` | `{id,type:"settings",config:{…read-only resolved voice/memory/history…},configPath}` |
 | `{id,type:"audit.recent",limit?}` (≤ 200) | `{id,type:"audit",entries:[…]}` |
 | (push) | `{type:"state",state:"idle"\|"listening"\|"recording"\|"working"\|"speaking"}`, `{type:"heard",text,source}` for voice commands so the chat shows them live |
