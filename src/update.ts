@@ -3,6 +3,7 @@
  * It refuses a dirty tree, a branch with no upstream and a pull that is not a fast-forward. It never resets,
  * checks out or force-anything. It prints the version before and after, says when the helper was rebuilt (macOS
  * then asks for Input Monitoring again), and how to go back (docs/RELEASE-CHECKLIST.md, "Going back").
+ * Running it again after a failed step finishes the update: steps 2 to 4 are safe to repeat.
  *
  * Every program runs through `deps`, so the tests never touch git, npm or the helper.
  */
@@ -49,7 +50,7 @@ export function goBackLines(prev: string, branch: string): string[] {
   ];
 }
 
-/** Run the update. Returns the exit code: 0 done (or already up to date), 1 stopped. */
+/** Run the update. Returns the exit code: 0 done (also when there was no new commit), 1 stopped. */
 export async function runUpdate(deps: UpdateDeps): Promise<number> {
   const { log, run } = deps;
   const stop = (sentence: string, detail?: string): number => {
@@ -80,11 +81,14 @@ export async function runUpdate(deps: UpdateDeps): Promise<number> {
     return stop('Git could not move forward cleanly, so nothing was changed. Ask Cris, or check `git status`.', firstLine(pull.stderr || pull.stdout));
   }
   const nowR = await run('git', ['rev-parse', '--short', 'HEAD']);
-  if (out(nowR) === prev) {
-    log(`\nAlready up to date: Stephen ${before} (${prev}). Nothing to do.`);
-    return 0;
-  }
+  const now = nowR.code === 0 ? out(nowR) : prev;
+  // No new commit still runs the steps: a run that pulled and then failed at install, build or helper must finish
+  // when it is run again. Every step below is safe to run twice.
+  const moved = now !== prev;
+  if (!moved) log('No new version. Running the other steps again, so an update that stopped before can finish.');
 
+  // ponytail: on a rerun after a failure, the "To go back" lines below name the current commit, since the old one is
+  // only known in the first run. Upgrade path if it matters: read it from `git reflog -1 HEAD@{1}`.
   log('[2/4] Install packages (npm install)');
   const npmI = await run('npm', ['install']);
   if (npmI.code !== 0) return stop(`The packages did not install. Fix the error, then run \`stephen update\` again. To go back: git checkout ${prev}`, firstLine(npmI.stderr || npmI.stdout));
@@ -101,10 +105,11 @@ export async function runUpdate(deps: UpdateDeps): Promise<number> {
   const rebuilt = !helper.stdout.includes(HELPER_UNCHANGED);
 
   const after = deps.version();
-  log(`\nUpdated: Stephen ${before} (${prev}) to ${after} (${out(nowR)}).`);
+  if (moved) log(`\nUpdated: Stephen ${before} (${prev}) to ${after} (${now}).`);
+  else log(`\nAlready up to date: Stephen ${after} (${now}). Every step is done.`);
   if (rebuilt) for (const l of HELPER_REBUILT_LINES) log(l);
   else log('The helper did not change, so your permissions are kept.');
   log('Quit and start Stephen again so the new version runs.\n');
-  for (const l of goBackLines(prev, branch)) log(l);
+  if (moved) for (const l of goBackLines(prev, branch)) log(l);
   return 0;
 }
