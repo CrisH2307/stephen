@@ -80,6 +80,8 @@ export interface ZenLaunchResult {
   wsUrl?: string;
   profileDir?: string;
   logPath?: string;
+  /** Raw tool or error text, for --json and debugging only. The human output never shows it (R7). */
+  detail?: string;
 }
 
 /** Start of the exit-2 message for "Zen is open normally"; the launcher app keys its "Reopen" dialog on it. */
@@ -121,7 +123,14 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
   } else if (!isZenAttachOnly(cfg)) {
     notes.push('"zen.launch" is "auto": Stephen may also start Zen itself when it is not running.');
   }
-  const fail = (exitCode: ExitCode, status: ZenLaunchStatus, message: string): ZenLaunchResult => ({ exitCode, status, message, notes });
+  const fail = (exitCode: ExitCode, status: ZenLaunchStatus, message: string, detail?: string): ZenLaunchResult => ({
+    exitCode,
+    status,
+    message,
+    notes,
+    ...(detail ? { detail } : {}),
+  });
+  let detail: string | undefined;
 
   try {
     const readiness = await deps.driver.inspect('real');
@@ -131,7 +140,10 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
         const { app, bundleId } = await zenBundleId(cfg);
         // Bring it to the front (activates the running Zen; does not start another).
         const r = await deps.run('/usr/bin/open', app ? ['-a', app] : ['-b', bundleId], 10_000);
-        if (r.code !== 0) notes.push(`Could not bring Zen to the front: ${(r.stderr || r.stdout).trim().split('\n')[0] ?? ''}`);
+        if (r.code !== 0) {
+          notes.push('Could not bring Zen to the front. Click Zen in the Dock.');
+          detail = (r.stderr || r.stdout).trim().split('\n')[0] || `open exit code ${r.code}`;
+        }
       }
       return {
         exitCode: 0,
@@ -142,6 +154,7 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
         wsUrl: st.wsUrl,
         profileDir: st.profileDir,
         ...(st.logPath ? { logPath: st.logPath } : {}),
+        ...(detail ? { detail } : {}),
       };
     }
 
@@ -158,7 +171,7 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
       const r = await deps.run('/usr/bin/osascript', osascriptQuitArgv(bundleId), 30_000);
       if (r.code !== 0) {
         const why = (r.stderr || r.stdout).trim().split('\n')[0] || `osascript exit code ${r.code}`;
-        return fail(2, 'quit-failed', `Could not ask Zen to quit (${why}). Quit Zen yourself (⌘Q), then try again. Stephen never force-quits Zen.`);
+        return fail(2, 'quit-failed', quitFailedMessage(why), why);
       }
       const deadline = deps.clock.now() + deps.quitTimeoutMs;
       while (await deps.isProcessRunning('zen')) {
@@ -166,7 +179,7 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
           return fail(
             2,
             'quit-failed',
-            `Zen did not quit within ${Math.round(deps.quitTimeoutMs / 1000)} s — it may be asking you to confirm closing windows or tabs. ` +
+            `Zen did not quit within ${Math.round(deps.quitTimeoutMs / 1000)} s. It may be asking you to confirm closing windows or tabs. ` +
               'Answer that (or quit Zen with ⌘Q), then try again. Stephen never force-quits Zen.',
           );
         }
@@ -190,8 +203,22 @@ export async function runZenLaunch(opts: ZenLaunchOptions, deps: ZenLaunchDeps):
     };
   } catch (e) {
     const needsUser = isHubError(e) && e.code === 'NEEDS_USER';
-    return fail(needsUser ? 2 : 1, needsUser ? 'needs-user' : 'error', isHubError(e) ? e.message : errText(e));
+    // HubError messages are written for people; anything else is raw (an errno, a stack line) and stays in detail.
+    if (isHubError(e)) return fail(needsUser ? 2 : 1, needsUser ? 'needs-user' : 'error', e.message);
+    return fail(1, 'error', ZEN_LAUNCH_FAILED, errText(e));
   }
+}
+
+/** R7: the plain line for an unexpected zen-launch failure. The raw error is in the result's detail. */
+export const ZEN_LAUNCH_FAILED = "Couldn't open Zen for Stephen. Run `stephen doctor` to see what is wrong.";
+
+/** R7: osascript's quit refusal as a plain line. -1743 is macOS saying "not allowed" (Automation privacy). */
+export function quitFailedMessage(why: string): string {
+  const notAllowed = /-1743|not authori[sz]ed/i.test(why);
+  return notAllowed
+    ? 'This Mac did not let Stephen ask Zen to quit. Quit Zen yourself (⌘Q), then try again. ' +
+        'To allow it next time, turn on Zen for Stephen in System Settings, Privacy & Security, Automation.'
+    : 'Could not ask Zen to quit. Quit Zen yourself (⌘Q), then try again. Stephen never force-quits Zen.';
 }
 
 /** Human-readable zen-launch output. */
@@ -199,9 +226,8 @@ export function formatZenLaunch(r: ZenLaunchResult): string {
   const lines: string[] = [];
   if (r.exitCode === 0) {
     lines.push(`✓ ${r.message}`);
-    if (r.profileDir) lines.push(`  Profile: ${r.profileDir}`);
+    // R7: no profile or log paths here (they are in --json). The local port stays: the warning below is about it.
     if (r.wsUrl) lines.push(`  Remote control: ${r.wsUrl} (this Mac only)`);
-    if (r.logPath) lines.push(`  Zen log: ${r.logPath}`);
     lines.push(
       '  Stephen can now use your open Zen windows.',
       '  While this Zen runs, any program on this Mac can control it (no password on that local port).',
@@ -370,7 +396,7 @@ export function defaultInstallLauncherDeps(): InstallLauncherDeps {
 export async function installZenLauncher(plan: LauncherPlan, opts: { dryRun?: boolean }, deps: InstallLauncherDeps): Promise<ExitCode> {
   const { log } = deps;
   if (opts.dryRun) {
-    log(`Dry run — nothing was created.${deps.platform === 'darwin' ? '' : ' (install-zen-launcher only works on macOS.)'}\n`);
+    log(`Dry run. Nothing was created.${deps.platform === 'darwin' ? '' : ' (install-zen-launcher only works on macOS.)'}\n`);
     log(formatLauncherPlan(plan));
     return 0;
   }
@@ -379,7 +405,7 @@ export async function installZenLauncher(plan: LauncherPlan, opts: { dryRun?: bo
     return 1;
   }
   if (!(await deps.exists(plan.cliPath))) {
-    log(`${plan.cliPath} does not exist yet — run \`npm run build\` first, then run install-zen-launcher again.`);
+    log(`${plan.cliPath} does not exist yet. Run \`npm run build\` first, then run install-zen-launcher again.`);
     return 1;
   }
   if (await deps.exists(plan.appPath)) {
