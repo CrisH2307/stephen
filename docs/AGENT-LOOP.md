@@ -40,11 +40,9 @@ Claude checks and fixes before it lands anywhere.
 
 ## Always Claude-only
 
-- `src/safety/` (gate, trust tiers, taint, egress, confirms, audit log)
-- `helper/AppConfirm.swift` and every Allow or Deny path
-- Memory, timer and job write paths (`src/memory/`, `src/timers/`, `src/jobs/`), and the recorder
-- The app.sock protocol (`src/app/protocol.ts`, `src/app/server.ts`) and the replay boundary
-- `.github/workflows/`, `package.json` dependencies, `docs/RELEASE-CHECKLIST.md`
+Every path in `SAFETY_PATHS` in `scripts/safety-paths.mjs`. That script is the one list: the `safety-paths` CI check
+uses it, and a PR that touches one of those paths needs `[DEV REVIEW]` in its title. Do not copy the list here
+(`test/checks/safety-paths.test.ts` fails if this section names a path).
 
 ## Reviewing a free agent's diff
 
