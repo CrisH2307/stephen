@@ -7,7 +7,7 @@
  */
 import { z } from 'zod';
 import { HubError } from '../errors.js';
-import { unknownKeyPaths } from '../config.js';
+import { unknownKeyPaths, unknownKeysMessage } from '../config.js';
 
 export interface DesktopConfig {
   /** Register open_app / open_url / desktop_status. Default true. */
@@ -61,7 +61,11 @@ export function parseDesktopConfig(raw: unknown, unknownKeys?: string[]): Deskto
       .join('; ');
     throw new HubError('INVALID_ARG', `Invalid "desktop" section in config.json: ${problems}`);
   }
-  unknownKeys?.push(...unknownKeyPaths(raw ?? {}, r.data, 'desktop'));
+  // A typo here (say "blockedApp") would leave the block list empty, so it is refused, not dropped. The keys still go
+  // to unknownKeys first, so doctor and the start check can name them.
+  const typos = unknownKeyPaths(raw ?? {}, r.data, 'desktop');
+  unknownKeys?.push(...typos);
+  if (typos.length) throw new HubError('INVALID_ARG', `Invalid "desktop" section in config.json: ${unknownKeysMessage(typos)}`);
   const d = r.data;
   return {
     enabled: d.enabled ?? true,
