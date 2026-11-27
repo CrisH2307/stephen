@@ -13,11 +13,11 @@ Checked against the repo and its GitHub rulesets on 2026-11-26. When you add a c
 | `linux` and `macos` green before a merge into `qa` | Ruleset `qa` (required checks `linux`, `macos`) | |
 | Safety paths need `[DEV REVIEW]` in the title | `safety-paths` CI check (`scripts/safety-paths.mjs`, `test/checks/safety-paths.test.ts`) | The check is not a required check in the `qa` ruleset: a red one does not block the merge button. |
 | An independent review for safety paths | Prose only | The tag is checked, the review is not. |
-| Commits authored and committed as Cris on the noreply email | Prose only | |
+| Commits authored and committed as Cris on the noreply email | `pr-rules` CI check (`scripts/pr-rules.mjs`, `test/checks/pr-rules.test.ts`) | PRs into `qa` only. Not a required check. |
 | No AI author, no Co-Authored-By, no footer | Prose only | |
-| No em dashes or en dashes | Prose only | Some tests check dashes in a few user texts, not in docs or code. |
+| No em dashes or en dashes | `pr-rules` CI check, on added lines | PRs into `qa` only. Skips the lookalike tables, `test/safety/` and `test/fixtures/`. Not a required check. |
 | No secrets | GitGuardian Security Checks on each PR | |
-| No new dependency without asking | Prose only | |
+| No new dependency without asking | `pr-rules` CI check: a new name in `package.json` needs `[DEV REVIEW]` | The tag is checked, the asking is not. Not a required check. |
 | Workflows: pinned actions, no event text in `run:`, read-only permissions, no risky triggers | `test/checks/workflow-rules.test.ts` | |
 | One test suite at a time | The lock in `test/global-setup.ts` (`test/helpers/suite-lock.ts`) | |
 | Fix flaky tests at the cause, no retries | Prose only | No retry option in the vitest config. |
