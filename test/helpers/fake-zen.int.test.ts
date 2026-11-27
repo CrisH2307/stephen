@@ -40,7 +40,7 @@ function start(profile: string, extras: string[]): Promise<{ proc: ChildProcess;
     proc.stderr!.on('data', (c: Buffer) => {
       err += c.toString();
       const m = /WebDriver BiDi listening on (ws:\/\/\S+)/.exec(err);
-      if (m) done({ proc, url: m[1] });
+      if (m?.[1]) done({ proc, url: m[1] });
     });
     proc.on('exit', (code) => fail(new Error(`fake zen exited ${code}: ${err}`)));
   });
