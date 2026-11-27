@@ -106,7 +106,10 @@ describe('Stephen selftest (real Chromium)', () => {
     expect(chrome.version).toMatch(/Chrome\/\d+/);
     expect(chrome.profileDir!.startsWith(join(home, 'selftest', 'chrome-'))).toBe(true);
     expect(chrome.profileDir!.endsWith('/profile')).toBe(true);
-    expect(chrome.checks[15]!.detail).toMatch(/browser quit on request.*temp profile deleted/);
+    // How the browser stopped depends on how fast Chrome shuts down: under machine load it once took longer than
+    // the 10 s quit wait, and the SIGTERM fallback stopped it (check 16 still passes). Both are correct; a SIGKILL,
+    // or a browser left running, is not.
+    expect(chrome.checks[15]!.detail).toMatch(/browser (quit on request|stopped with SIGTERM) .*temp profile deleted/);
     expectCleanHome();
   }, 180_000);
 
