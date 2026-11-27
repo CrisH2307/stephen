@@ -374,7 +374,7 @@ export class Assistant {
         out = { kind: 'error', message: (e as Error).message, sessionId: null };
       }
       replyAt = now();
-      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}), ...(out.kind === 'ok' && typeof out.costUsd === 'number' ? { costUsd: out.costUsd } : {}) };
+      const claude = { ranClaude: true, followUp, turns: out.kind === 'ok' ? (out.turns ?? 0) : 0, ...(out.kind === 'ok' && out.model ? { model: out.model } : {}), ...(out.kind !== 'cancelled' && typeof out.costUsd === 'number' ? { costUsd: out.costUsd } : {}) };
       try {
         this.o.limit?.add(id, claude.costUsd); // also a run cancelled after it finished: its cost was spent
       } catch (e) {

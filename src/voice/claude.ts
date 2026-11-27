@@ -466,7 +466,7 @@ export type ClaudeOutcome =
       /** Set by the conversation runners: private data read in this conversation (null: state unreadable). */
       privateRead?: boolean | null;
     }
-  | { kind: 'error'; message: string; sessionId: string | null; privateRead?: boolean | null; failure?: ClaudeFailure }
+  | { kind: 'error'; message: string; sessionId: string | null; costUsd?: number; privateRead?: boolean | null; failure?: ClaudeFailure }
   | { kind: 'cancelled' };
 
 /** One command's model run, measured from its stream lines (src/voice/warm-claude.ts). All in ms. */
@@ -500,7 +500,7 @@ const ERROR_TEXT: Record<string, string> = {
 };
 
 /** The error outcome with `failure` set when the raw CLI text (result text or stderr) has a known marker. */
-function withFailure(o: { kind: 'error'; message: string; sessionId: string | null }, raw: string): ClaudeOutcome {
+function withFailure(o: { kind: 'error'; message: string; sessionId: string | null; costUsd?: number }, raw: string): ClaudeOutcome {
   const failure = claudeFailure(raw);
   return failure === 'claude_other' ? o : { ...o, failure };
 }
@@ -565,14 +565,16 @@ export function outcomeFromResult(res: ResultJson): ClaudeOutcome {
   const sessionId = typeof res.session_id === 'string' && SESSION_ID_RE.test(res.session_id) ? res.session_id : null;
   const text = typeof res.result === 'string' ? res.result : '';
   if (res.is_error || (res.subtype && res.subtype !== 'success')) {
+    // A failed run still spent money: keep its cost so the daily limit counts it (review-B M2).
+    const cost = typeof res.total_cost_usd === 'number' ? { costUsd: res.total_cost_usd } : {};
     // max turns and budget are Stephen's own limits, not a Claude failure: the subtype decides and their text (which a
     // page can steer) is never classified, not even for the plan-limit line.
     if (res.subtype === 'error_max_turns' || res.subtype === 'error_max_budget_usd') {
-      return { kind: 'error', message: ERROR_TEXT[res.subtype]!, sessionId };
+      return { kind: 'error', message: ERROR_TEXT[res.subtype]!, sessionId, ...cost };
     }
     // No marker: a fixed line, never the result text (a page can steer it into what Stephen says; #382's rule for jobs).
     const msg = planLimitMessage(text) ?? ERROR_TEXT[res.subtype ?? ''] ?? GENERIC_ERROR;
-    return withFailure({ kind: 'error', message: msg, sessionId }, text);
+    return withFailure({ kind: 'error', message: msg, sessionId, ...cost }, text);
   }
   return {
     kind: 'ok',
